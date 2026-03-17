@@ -87,7 +87,37 @@ Cross-reference each gap with AWS docs from Step 3. Add to `missing_threats[]` w
 `id` (THREAT-NNN), `asset`, `title`, `stride_category`, `priority` (HIGH/MEDIUM/LOW),
 `aws_doc_ref`, `ccmv4_objectives[]`, `suggested_mitigation`.
 
-## Step 6: Map to CCMv4
+## Step 6: Map to MITRE ATT&CK for Cloud
+
+For each `existing_mitigation` and each `missing_threat`, assign the closest MITRE ATT&CK technique
+using this STRIDE → ATT&CK mapping table. Pick the most specific sub-technique when applicable.
+
+| STRIDE Category | Primary Techniques |
+|---|---|
+| Spoofing | T1078.004 Valid Accounts: Cloud Accounts, T1606 Forge Web Credentials, T1556 Modify Authentication Process |
+| Tampering | T1565 Data Manipulation, T1070 Indicator Removal, T1490 Inhibit System Recovery |
+| Repudiation | T1562.008 Impair Defenses: Disable Cloud Logs, T1070.004 File Deletion |
+| Information Disclosure | T1530 Data from Cloud Storage, T1552 Unsecured Credentials, T1619 Cloud Storage Object Discovery |
+| Denial of Service | T1499 Endpoint Denial of Service, T1496 Resource Hijacking, T1578 Modify Cloud Compute Infrastructure |
+| Elevation of Privilege | T1098 Account Manipulation, T1548 Abuse Elevation Control Mechanism, T1484 Domain Policy Modification |
+
+Refine by asset context:
+- Data/storage asset + Information Disclosure → prefer T1530
+- IAM/role asset + Elevation of Privilege → prefer T1098 or T1548
+- Logging/audit asset + Repudiation → prefer T1562.008
+- Network/endpoint asset + DoS → prefer T1499
+
+Add `mitre_attack` to each `existing_mitigation` and `missing_threat`:
+```json
+"mitre_attack": {
+  "tactic": "<tactic-name>",
+  "technique_id": "<T####.###>",
+  "technique_name": "<name>",
+  "url": "https://attack.mitre.org/techniques/<T####>/"
+}
+```
+
+## Step 7: Map to CCMv4
 
 Open the CCMv4 xlsx file (path noted in Step 1). Read columns: `Control ID`, `Control Title`,
 `Control Specification`, `Domain`.
@@ -104,7 +134,7 @@ For each `existing_mitigation` and each `missing_threat`, apply the mapping algo
 Select 1-3 most specific matching Control IDs. Set `coverage`: FULL / PARTIAL / SUPPORTS.
 Populate `ccmv4_mappings[]`.
 
-## Step 7: Write output
+## Step 8: Write output
 
 Write `.service-approval/state/research.json` with this schema:
 
@@ -127,7 +157,13 @@ Write `.service-approval/state/research.json` with this schema:
       "request_parameters": ["..."],
       "resource_type": "AWS::...",
       "stride_categories": ["Spoofing"],
-      "ccmv4_objectives": ["IAM-01"]
+      "ccmv4_objectives": ["IAM-01"],
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1078.004",
+        "technique_name": "Valid Accounts: Cloud Accounts",
+        "url": "https://attack.mitre.org/techniques/T1078/004/"
+      }
     }
   ],
   "missing_threats": [
@@ -139,7 +175,13 @@ Write `.service-approval/state/research.json` with this schema:
       "priority": "HIGH",
       "aws_doc_ref": "https://docs.aws.amazon.com/...",
       "ccmv4_objectives": ["LOG-01"],
-      "suggested_mitigation": "..."
+      "suggested_mitigation": "...",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.008",
+        "technique_name": "Impair Defenses: Disable Cloud Logs",
+        "url": "https://attack.mitre.org/techniques/T1562/008/"
+      }
     }
   ],
   "enrichment_opportunities": [
@@ -181,6 +223,7 @@ Research complete:
   - Missing threats found: N (HIGH: X, MEDIUM: Y, LOW: Z)
   - Enrichment opportunities: N
   - CCMv4 objectives mapped: N
+  - MITRE ATT&CK techniques mapped: N
   - API operations analyzed: N
   - Doc sources reviewed: N
   Output: .service-approval/state/research.json
