@@ -1,0 +1,21 @@
+{
+  "_comment": "Confirm exact URLs for aws-documentation and aws-cdk from https://github.com/awslabs/mcp before use in production. awsknowledge and awsiac URLs are proven from pace-spark.",
+  "mcpServers": {
+    "aws-documentation": {
+      "type": "http",
+      "url": "https://mcp.awsdocs.amazon.com"
+    },
+    "aws-cdk": {
+      "command": "npx",
+      "args": ["-y", "@aws/cdk-mcp-server@latest"]
+    },
+    "awsknowledge": {
+      "type": "http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    },
+    "awsiac": {
+      "type": "http",
+      "url": "https://iac-mcp.global.api.aws"
+    }
+  }
+}
