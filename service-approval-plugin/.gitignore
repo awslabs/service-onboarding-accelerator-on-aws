@@ -4,3 +4,4 @@
 .service-approval-test-inputs/
 node_modules/
 .DS_Store
+input/
