@@ -64,11 +64,107 @@ For OPA policies:
 
 For each applicable policy type, generate using real condition keys from `awsknowledge` MCP:
 
-**SCP (`scp-policy.json`)**: Deny the relevant API actions unless required conditions are met.
-Pattern: Deny CreateX/UpdateX where the required parameter is missing or non-compliant.
-Must include at least one Deny statement — never Allow-only.
+**SCP (`scp-policy.json`)**:
 
-**RCP (`rcp-policy.json`)**: Restrict resource access to trusted identities and organizations.
+Only generate SCP for items where `scp_expressible: true` in `validated.json`.
+If `scp_expressible: false`, write a `_metadata.scp_gap` note in the file explaining why
+(e.g. "No condition key exists to enforce this control via SCP; use Config rule instead")
+and skip SCP statement generation for that item.
+
+Authoring rules (strict):
+- Always `"Effect": "Deny"` — never Allow-only
+- Always include the relevant condition key(s) — never a bare action deny without conditions
+  (bare denies block legitimate use; conditions target only non-compliant calls)
+- Use real condition keys from `awsknowledge` MCP — confirm each key is valid for the action
+- Use `"NotAction"` pattern only for region-restriction controls (see region-control pattern)
+- Use `"Principal": "*"` only in resource-based policies, NOT in SCPs
+- Respect the SCP size limit: track cumulative character count; if approaching 5120 chars,
+  split into separate guardrail files (one concern per file, merged at deploy time)
+- Add `"ArnNotLike": {"aws:PrincipalARN": ["arn:*:iam::*:role/BreakGlassRole"]}` exclusion
+  pattern in Condition for controls that should exempt emergency access roles
+
+Guardrail format (array of statements, no Version wrapper — pipeline adds it at merge time):
+```json
+[
+  {
+    "Effect": "Deny",
+    "Action": "<service>:CreateX",
+    "Resource": "*",
+    "Condition": {
+      "StringNotEquals": {
+        "<service>:ConditionKey": "required-value"
+      },
+      "ArnNotLike": {
+        "aws:PrincipalARN": ["arn:*:iam::*:role/BreakGlassRole"]
+      }
+    }
+  }
+]
+```
+
+Final `scp-policy.json` wraps all merged statements:
+```json
+{
+  "_metadata": { ... },
+  "Version": "2012-10-17",
+  "Statement": [ <merged array of all guardrail statements> ]
+}
+```
+
+After generating, validate using AWS IAM Access Analyzer (if `--env` is set):
+```bash
+aws accessanalyzer validate-policy \
+  --policy-document file://.service-approval/controls/preventive/scp-policy.json \
+  --policy-type SERVICE_CONTROL_POLICY \
+  --query 'findings[?findingType==`ERROR` || findingType==`SECURITY_WARNING`]'
+```
+Block on ERROR or SECURITY_WARNING findings. Log SUGGESTION and WARNING findings only.
+
+**RCP (`rcp-policy.json`)**:
+
+Only generate RCP for items where `rcp_expressible: true` in `validated.json`.
+Supported services: S3, STS, KMS (not AWS-managed keys, not kms:RetireGrant), SQS,
+Secrets Manager, Cognito, CloudWatch Logs, DynamoDB, ECR, OpenSearch Serverless.
+
+If `rcp_expressible: false`, write a `_metadata.rcp_gap` note explaining why and skip.
+
+Authoring rules (strict):
+- Always `"Effect": "Deny"` and always `"Principal": "*"` — RCPs require both
+- Use `"BoolIfExists": {"aws:PrincipalIsAWSService": "false"}` to exempt AWS service calls
+  when the denial should not block AWS-internal service operations
+- Use `"StringNotEquals": {"aws:PrincipalOrgID": "<org-id-placeholder>"}` to restrict
+  access to org principals only
+- Do NOT generate RCP for `kms:RetireGrant` — this action is exempt from RCPs
+- Do NOT generate RCP for AWS-managed KMS keys (`aws/...` aliases)
+
+Guardrail format (same array-of-statements pattern as SCP):
+```json
+[
+  {
+    "Effect": "Deny",
+    "Principal": "*",
+    "Action": "<service>:*",
+    "Resource": "*",
+    "Condition": {
+      "StringNotEquals": {
+        "aws:PrincipalOrgID": "${ORG_ID}"
+      },
+      "BoolIfExists": {
+        "aws:PrincipalIsAWSService": "false"
+      }
+    }
+  }
+]
+```
+
+After generating, validate using AWS IAM Access Analyzer (if `--env` is set):
+```bash
+aws accessanalyzer validate-policy \
+  --policy-document file://.service-approval/controls/preventive/rcp-policy.json \
+  --policy-type RESOURCE_CONTROL_POLICY \
+  --query 'findings[?findingType==`ERROR` || findingType==`SECURITY_WARNING`]'
+```
+Block on ERROR or SECURITY_WARNING findings.
 
 **Declarative Policy (`declarative-policy.json`)**: Only generate if `awsknowledge` MCP confirms
 a declarative policy type exists for this service.

@@ -31,6 +31,101 @@ For each IAM condition key referenced in any mitigation's `request_parameters` o
 - Call `awsknowledge` MCP to confirm the key is a real IAM global or service-specific condition key
 - Flag unrecognized keys as `verified: false`
 
+## Step 2b: Verify SCP and RCP expressibility
+
+This step determines whether each finding can actually be expressed as an SCP or RCP.
+Results feed into `applicable_controls` in Step 4. Run this BEFORE Step 4.
+
+**SCP expressibility check** — for each `existing_mitigation` and `missing_threat`:
+
+1. Identify the control intent (what must be enforced: encryption, IMDSv2, no public access, etc.)
+
+2. Call `awsknowledge` MCP: fetch the service authorization reference for `<service-prefix>`.
+   - Look up each API action involved in this control
+   - Extract the "Condition keys" column for those actions — these are the ONLY condition keys
+     that work with that action in an SCP
+   - If no service-specific condition key covers the control intent, check global condition keys
+     (`aws:RequestedRegion`, `aws:PrincipalArn`, `aws:SourceAccount`, `aws:PrincipalOrgID`, etc.)
+
+3. Call `aws-documentation` MCP to verify SCP limitations for this service:
+   ```
+   URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html
+   Extract: any service-specific SCP exemptions or limitations
+   ```
+
+4. Mark `scp_expressible: false` if ANY of:
+   - The action does not appear in the service authorization reference (not a real action)
+   - No condition key in the action's "Condition keys" column matches the control intent
+   - The control targets service-linked roles (exempt from SCPs)
+   - The control exclusively targets the management account
+   - The only enforcement path is a resource-based policy condition (use RCP instead)
+
+5. Set `scp_expressible: true/false` and `scp_gap_reason` — cite the specific condition key
+   found or explain exactly why none exists (e.g., "CreateAgentRuntime has no condition key
+   for KMS key enforcement; use resource policy + Config rule instead")
+
+**Declarative policy check:**
+```
+Call aws-documentation MCP:
+  URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_declarative.html
+  Extract: which services and resource types have declarative policy support
+```
+Set `declarative_policy_expressible: true/false` per finding based on live docs result.
+
+**Backup policy check:**
+```
+Call awsknowledge MCP: check if <cfn_type> resource is listed as AWS Backup-supported
+  OR call aws-documentation MCP:
+  URL: https://docs.aws.amazon.com/aws-backup/latest/devguide/whatisbackup.html
+  Extract: list of supported resource types
+```
+Set `backup_policy_applicable: true/false`.
+
+**Permission boundary check:**
+Permission boundaries apply to all IAM roles and users — always `true`.
+However, note which specific actions from `api_surface` should be scoped into the boundary.
+
+**AI opt-out policy check:**
+```
+Call aws-documentation MCP:
+  URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_ai_opt_out.html
+  Extract: which AI/ML services support opt-out policies
+```
+Set `ai_optout_applicable: true/false`.
+
+**RCP expressibility check** — do NOT use a hardcoded service list. Fetch the current live list:
+
+Step 1 — Fetch the current RCP-supported services from AWS docs:
+```
+Call aws-documentation MCP:
+  URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html
+  Extract: table of supported services and their service prefixes
+```
+Log the fetched list to `.service-approval/state/mcp-calls.log`.
+This is the authoritative current list — AWS adds services over time.
+
+Step 2 — For the target service, call `awsknowledge` MCP:
+- Query the service authorization reference for `<service-prefix>`
+- Look for "Resource control policies" column or RCP applicability notes
+- Check whether the specific action being controlled appears in the RCP-applicable action list
+
+Step 3 — Set `rcp_expressible`:
+- If service prefix NOT found in the live docs list → `rcp_expressible: false`,
+  `rcp_gap_reason: "Service <prefix> not in current RCP supported services list (fetched from AWS docs)"`
+- If service IS in the list but specific action is exempt (e.g., `kms:RetireGrant`, AWS-managed keys)
+  → `rcp_expressible: false`, `rcp_gap_reason: "<action> is exempt from RCPs per service authorization reference"`
+- If service IS in the list and action is covered → `rcp_expressible: true`
+
+Add to each `existing_mitigation`, `missing_threat`, and `enrichment_opportunity`:
+```json
+{
+  "scp_expressible": true,
+  "scp_gap_reason": "",
+  "rcp_expressible": false,
+  "rcp_gap_reason": "Service not supported by RCPs"
+}
+```
+
 ## Step 3: Verify enrichment opportunities
 
 For each item in `enrichment_opportunities[]`:
@@ -44,11 +139,11 @@ Enrichment opportunities ARE carried forward in `validated.json` and processed b
 ## Step 4: Verify AWS feature support
 
 For each `missing_threat`, `existing_mitigation`, and `enrichment_opportunity`, determine `applicable_controls`:
-- **SCP**: always applicable (all services are covered by SCPs)
-- **RCP**: check if service supports resource-based policies (confirm via `awsknowledge` MCP)
-- **Declarative Policy**: check if a declarative policy exists for this service via `awsknowledge` MCP
-- **AI Opt-out Policy**: applicable only if service is an AI/ML service
-- **Backup Policy**: applicable if service resources can be backed up via AWS Backup
+- **SCP**: applicable UNLESS `scp_expressible: false` from Step 2b
+- **RCP**: applicable ONLY if `rcp_expressible: true` from Step 2b (live docs confirmed)
+- **Declarative Policy**: applicable ONLY if `declarative_policy_expressible: true` from Step 2b
+- **AI Opt-out Policy**: applicable ONLY if `ai_optout_applicable: true` from Step 2b
+- **Backup Policy**: applicable ONLY if `backup_policy_applicable: true` from Step 2b
 - **Tag Policy**: always applicable
 - **Permission Boundary**: always applicable
 - **Config rules**: check if a managed Config rule exists for this resource type via `awsknowledge` MCP
