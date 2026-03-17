@@ -12,7 +12,7 @@
     {
       "name": "service-approval",
       "description": "Generate AWS security controls and compliant resource templates for any AWS service. Maps findings to CCMv4 control objectives.",
-      "source": ".",
+      "source": "service-approval-plugin",
       "version": "1.0.0",
       "keywords": [
         "aws",

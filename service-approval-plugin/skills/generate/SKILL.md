@@ -32,6 +32,7 @@ Every generated artifact MUST include these comment lines at the top:
 # LAYER: <proactive|preventive|detective|remediation>
 # MITIGATIONS: <comma-separated mitigation IDs>
 # CCMv4: <comma-separated control IDs>
+# MITRE: <comma-separated technique IDs e.g. T1530,T1562.008>
 # GENERATED: service-approval v1.0.0
 # SERVICE: <service-name>
 ```
