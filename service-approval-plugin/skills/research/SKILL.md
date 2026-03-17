@@ -73,6 +73,8 @@ Parameters not covered by any mitigation = potential gap. For each uncovered par
 - Determine if it has security relevance (skip purely functional params like pagination tokens)
 - If security-relevant: add to `missing_threats[]` with STRIDE category and priority
 
+When cross-referencing API parameters, also check mitigation `request_parameters` against the cataloged `api_surface`. If a mitigation references a parameter path not present in any cataloged operation, flag it as a potential gap in the api_surface catalog and add the missing parameter.
+
 ## Step 5: Identify STRIDE gaps
 
 For each resource asset, work through STRIDE categories:
@@ -87,22 +89,35 @@ Cross-reference each gap with AWS docs from Step 3. Add to `missing_threats[]` w
 `id` (THREAT-NNN), `asset`, `title`, `stride_category`, `priority` (HIGH/MEDIUM/LOW),
 `aws_doc_ref`, `ccmv4_objectives[]`, `suggested_mitigation`.
 
+For each existing mitigation, set `stride_categories[]` based on which STRIDE categories the mitigation addresses.
+
 ## Step 6: Map to CCMv4
 
 Open the CCMv4 xlsx file (path noted in Step 1). Read columns: `Control ID`, `Control Title`,
 `Control Specification`, `Domain`.
 
-For each `existing_mitigation` and each `missing_threat`, apply the mapping algorithm:
+Map EVERY `existing_mitigation` and EVERY `missing_threat`. Do not skip items. Each item must have at least one CCMv4 mapping.
+
+For each item, apply the mapping algorithm:
 - "IAM / Identity / Role / Principal" keywords → IAM domain controls (IAM-01 through IAM-09)
-- "Encryption / KMS / CMK / at-rest / in-transit" → DSP domain (DSP-01 through DSP-10)
+- "Encryption / KMS / CMK / at-rest / in-transit" → DSP domain (DSP-01 through DSP-19)
 - "Network / VPC / subnet / endpoint / firewall" → IVS domain (IVS-01 through IVS-09)
 - "Logging / CloudTrail / CloudWatch / audit" → LOG domain (LOG-01 through LOG-13)
 - "Tagging / owner / classification" → GRC domain (GRC-01 through GRC-07)
 - "Confused deputy / cross-account / resource policy" → IAM domain
 - "Backup / recovery / resilience / multi-AZ" → BCR domain (BCR-01 through BCR-11)
 
-Select 1-3 most specific matching Control IDs. Set `coverage`: FULL / PARTIAL / SUPPORTS.
+Mapping accuracy rules:
+- Encryption/KMS → DSP-17 (Encryption and Key Management), not DSP-03
+- Supply chain/artifact integrity → STA-06 (Supply Chain Security Assessment), not IAM-06
+- Data integrity/tampering → DSP-10 (Data Integrity), not DSP-07
+- Data retention → DSP-07 (Data Retention and Disposal), not GRC-05
+- When in doubt, read the CCMv4 Control Specification column — match on specifics, not just domain keywords
+
+Select 1-3 most specific matching Control IDs per item. Set `coverage`: FULL / PARTIAL / SUPPORTS.
 Populate `ccmv4_mappings[]`.
+
+For each existing mitigation, set `ccmv4_objectives[]` from the matching `ccmv4_mappings` entry.
 
 ## Step 7: Write output
 
@@ -144,33 +159,42 @@ Write `.service-approval/state/research.json` with this schema:
   ],
   "enrichment_opportunities": [
     {
+      "id": "ENRICH-001",
       "mitigation_id": "M-AgentRuntime.0",
-      "current_gap": "...",
-      "enhancement": "...",
+      "description": "...",
       "aws_doc_ref": "https://docs.aws.amazon.com/...",
-      "priority": "HIGH"
+      "recommended_action": "..."
     }
   ],
   "api_surface": {
     "operations": [
       {
-        "operation": "CreateX",
+        "name": "CreateX",
+        "http_method": "PUT",
+        "path": "/resources/",
         "parameters": [
-          { "path": "$.fieldName", "type": "string", "required": true }
-        ]
+          { "name": "fieldName", "type": "String", "required": true }
+        ],
+        "resource_type": "AWS::Service::Resource"
       }
     ]
   },
   "ccmv4_mappings": [
     {
       "mitigation_id": "M-AgentRuntime.0",
-      "ccmv4_control_id": "IAM-01",
-      "ccmv4_control_title": "...",
-      "domain": "Identity and Access Management",
-      "coverage": "FULL"
+      "ccmv4_controls": ["IAM-04", "IAM-09"],
+      "coverage": "FULL",
+      "rationale": "..."
     }
   ],
-  "doc_sources": ["https://docs.aws.amazon.com/..."]
+  "doc_sources": [
+    {
+      "url": "https://docs.aws.amazon.com/...",
+      "title": "...",
+      "topics_covered": ["..."],
+      "key_findings": "..."
+    }
+  ]
 }
 ```
 
