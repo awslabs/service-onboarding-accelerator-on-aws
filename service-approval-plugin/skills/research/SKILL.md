@@ -33,7 +33,9 @@ If neither is provided, ask the user for a service name before proceeding.
 For each file in the input folder:
 - `.json` files: attempt to parse as mitigation report (look for `entities` key with mitigation arrays)
 - `.md` files: extract mitigation IDs (pattern: `M-<Resource>.<N>`), threats, request parameters
-- `.xlsx` files: if filename contains "CCMv4" or "ccmv4", this is the CCMv4 source — note its path
+- `.xlsx` files:
+  - If filename contains "CCMv4" or "ccmv4" → this is the CCMv4 source — note its path
+  - Any other compliance framework file (NIST, PCI-DSS, ISO 27001, SOC2, CIS, internal catalog, etc.) → note its path and framework name
 - Other files: read for context
 
 Build an initial list of `existing_mitigations` with fields: `id`, `statement`, `mitigation_goal`,
@@ -43,12 +45,14 @@ Build an initial list of `existing_mitigations` with fields: `id`, `statement`, 
 
 Call `awsknowledge` MCP to retrieve the API reference for `--service`:
 - List all API operations (CreateX, UpdateX, DeleteX, GetX, ListX, TagResource, UntagResource, etc.)
-- For each operation, list all request parameters with their types and required flags
+- For each operation, capture: name, HTTP method, path, all request parameters (name, type, required), resource type
 - Populate `api_surface.operations[]` in research.json
 
 Log this MCP call to `.service-approval/state/mcp-calls.log`:
 ```
-[TIMESTAMP] awsknowledge: GetAPIReference service=<name>
+[TIMESTAMP] [Researcher] MCP CALL: awsknowledge
+  service=<name>
+  result: <N> operations cataloged
 ```
 
 ## Step 3: Fetch security documentation
@@ -63,7 +67,7 @@ Call `aws-documentation` MCP to read these doc pages for the service (use actual
 7. CloudTrail integration / logging
 8. Resilience / disaster recovery
 
-For each page, note URL and key security requirements found. Populate `doc_sources[]`.
+For each page, note URL, title, topics covered, and key security requirements found. Populate `doc_sources[]`.
 
 ## Step 4: Cross-reference — find uncovered parameters
 
@@ -72,6 +76,9 @@ Compare `api_surface.operations[].parameters[]` against `existing_mitigations[].
 Parameters not covered by any mitigation = potential gap. For each uncovered parameter:
 - Determine if it has security relevance (skip purely functional params like pagination tokens)
 - If security-relevant: add to `missing_threats[]` with STRIDE category and priority
+
+Also check in reverse: if a mitigation references a parameter path not present in any cataloged
+operation, flag it as a discrepancy — note the mitigation may reference a deprecated or renamed parameter.
 
 ## Step 5: Identify STRIDE gaps
 
@@ -86,6 +93,8 @@ For each resource asset, work through STRIDE categories:
 Cross-reference each gap with AWS docs from Step 3. Add to `missing_threats[]` with:
 `id` (THREAT-NNN), `asset`, `title`, `stride_category`, `priority` (HIGH/MEDIUM/LOW),
 `aws_doc_ref`, `ccmv4_objectives[]`, `suggested_mitigation`.
+
+For each existing mitigation, set `stride_categories[]` based on which STRIDE categories it addresses.
 
 ## Step 6: Map to MITRE ATT&CK for Cloud
 
@@ -117,22 +126,32 @@ Add `mitre_attack` to each `existing_mitigation` and `missing_threat`:
 }
 ```
 
-## Step 7: Map to CCMv4
+## Step 7: Map to compliance frameworks
 
-Open the CCMv4 xlsx file (path noted in Step 1). Read columns: `Control ID`, `Control Title`,
-`Control Specification`, `Domain`.
+### CCMv4 mapping
 
-For each `existing_mitigation` and each `missing_threat`, apply the mapping algorithm:
-- "IAM / Identity / Role / Principal" keywords → IAM domain controls (IAM-01 through IAM-09)
-- "Encryption / KMS / CMK / at-rest / in-transit" → DSP domain (DSP-01 through DSP-10)
-- "Network / VPC / subnet / endpoint / firewall" → IVS domain (IVS-01 through IVS-09)
-- "Logging / CloudTrail / CloudWatch / audit" → LOG domain (LOG-01 through LOG-13)
-- "Tagging / owner / classification" → GRC domain (GRC-01 through GRC-07)
-- "Confused deputy / cross-account / resource policy" → IAM domain
-- "Backup / recovery / resilience / multi-AZ" → BCR domain (BCR-01 through BCR-11)
+If a CCMv4 xlsx file was found in Step 1:
+- Read ALL rows from it. Extract every `Control ID`, `Control Title`, `Control Specification`, `Domain`
+- For each `existing_mitigation` and `missing_threat`, semantically match against the actual
+  `Control Specification` text in the file — do NOT use hardcoded keyword lists or ID ranges
+- Select the 1-3 controls whose specification text most directly addresses the mitigation/threat
+- Set `coverage`: FULL (control fully addressed), PARTIAL (partially addressed), SUPPORTS (relevant but indirect)
+- Add a `rationale` explaining why this control was selected
+- Populate `ccmv4_mappings[]` using the actual Control IDs read from the file
+- For each existing mitigation, set `ccmv4_objectives[]` from its matching `ccmv4_mappings` entries
 
-Select 1-3 most specific matching Control IDs. Set `coverage`: FULL / PARTIAL / SUPPORTS.
-Populate `ccmv4_mappings[]`.
+If NO CCMv4 file was provided:
+- Set `ccmv4_mappings: []` and `"ccmv4_note": "No CCMv4 file provided in input — skipped"`
+- Do NOT invent or guess control IDs
+
+### Other compliance frameworks
+
+For any other compliance/framework files found in the input folder:
+- Read the file and extract its control structure (ID, title, description)
+- Semantically map each `existing_mitigation` and `missing_threat` to relevant controls
+- Add a top-level key named after the framework (e.g., `nist_mappings[]`, `pci_mappings[]`)
+  using the same structure as `ccmv4_mappings[]`
+- Never hardcode control IDs for any framework — always derive from the provided file
 
 ## Step 8: Write output
 
@@ -157,7 +176,7 @@ Write `.service-approval/state/research.json` with this schema:
       "request_parameters": ["..."],
       "resource_type": "AWS::...",
       "stride_categories": ["Spoofing"],
-      "ccmv4_objectives": ["IAM-01"],
+      "ccmv4_objectives": ["<control-id-from-input-file>"],
       "mitre_attack": {
         "tactic": "Defense Evasion",
         "technique_id": "T1078.004",
@@ -174,7 +193,7 @@ Write `.service-approval/state/research.json` with this schema:
       "stride_category": "Repudiation",
       "priority": "HIGH",
       "aws_doc_ref": "https://docs.aws.amazon.com/...",
-      "ccmv4_objectives": ["LOG-01"],
+      "ccmv4_objectives": ["<control-id-from-input-file>"],
       "suggested_mitigation": "...",
       "mitre_attack": {
         "tactic": "Defense Evasion",
@@ -186,33 +205,42 @@ Write `.service-approval/state/research.json` with this schema:
   ],
   "enrichment_opportunities": [
     {
+      "id": "ENRICH-001",
       "mitigation_id": "M-AgentRuntime.0",
-      "current_gap": "...",
-      "enhancement": "...",
+      "description": "...",
       "aws_doc_ref": "https://docs.aws.amazon.com/...",
-      "priority": "HIGH"
+      "recommended_action": "..."
     }
   ],
   "api_surface": {
     "operations": [
       {
-        "operation": "CreateX",
+        "name": "CreateX",
+        "http_method": "PUT",
+        "path": "/resources/",
         "parameters": [
-          { "path": "$.fieldName", "type": "string", "required": true }
-        ]
+          { "name": "fieldName", "type": "String", "required": true }
+        ],
+        "resource_type": "AWS::Service::Resource"
       }
     ]
   },
   "ccmv4_mappings": [
     {
       "mitigation_id": "M-AgentRuntime.0",
-      "ccmv4_control_id": "IAM-01",
-      "ccmv4_control_title": "...",
-      "domain": "Identity and Access Management",
-      "coverage": "FULL"
+      "ccmv4_controls": ["<control-id-from-input-file>"],
+      "coverage": "FULL",
+      "rationale": "..."
     }
   ],
-  "doc_sources": ["https://docs.aws.amazon.com/..."]
+  "doc_sources": [
+    {
+      "url": "https://docs.aws.amazon.com/...",
+      "title": "...",
+      "topics_covered": ["..."],
+      "key_findings": "..."
+    }
+  ]
 }
 ```
 
@@ -234,12 +262,3 @@ Research complete:
 head -5 skills/research/SKILL.md
 ```
 Expected: starts with `---` and contains `name: research`.
-
-## Commit
-```bash
-cd "/Users/hardikvt/Library/CloudStorage/OneDrive-amazon.com/Hackathon/service-approval-plugin"
-git add skills/research/SKILL.md
-git commit -m "feat: add researcher agent skill"
-```
-
-Report: Status DONE + commit SHA.
