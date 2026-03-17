@@ -1,0 +1,8 @@
+# Git worktrees - parallel branch workspaces
+.worktrees
+
+# Service approval runtime state
+.service-approval/
+
+# OS
+.DS_Store
