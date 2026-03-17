@@ -1,0 +1,20 @@
+{
+  "name": "service-approval",
+  "version": "1.0.0",
+  "description": "AWS service security controls generator",
+  "skills": [
+    "service-approval",
+    "research",
+    "validate",
+    "generate",
+    "test",
+    "summarize"
+  ],
+  "mcpServers": {
+    "aws-documentation": { "type": "http", "url": "https://mcp.awsdocs.amazon.com" },
+    "aws-cdk": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] },
+    "awsknowledge": { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
+    "awsiac": { "type": "http", "url": "https://iac-mcp.global.api.aws" }
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,21 @@
+{
+  "name": "service-approval",
+  "version": "1.0.0",
+  "description": "AWS service security controls generator — proactive, preventive, detective, remediation",
+  "author": {
+    "name": "GFS PACE",
+    "email": "fsi-pace@amazon.com"
+  },
+  "skills": [
+    "service-approval",
+    "research",
+    "validate",
+    "generate",
+    "test",
+    "summarize"
+  ],
+  "includeMcpJson": true,
+  "tools": ["*"],
+  "resources": [],
+  "hooks": {}
+}
