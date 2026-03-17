@@ -41,10 +41,12 @@ Log every MCP call to `.service-approval/state/mcp-calls.log` with format:
 
 For each IAM condition key referenced in any mitigation's `request_parameters` or `statement`:
 - Extract condition key names (pattern: `aws:Source*`, `<service>:*`)
-- Call `awsknowledge` MCP to confirm the key is a real IAM global or service-specific condition key
-- Flag unrecognized keys as `verified: false`
+- Look up the key in the **IAM Service Authorization Reference** (`https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html`). Use `awsknowledge` MCP to read the service-specific authorization reference page (e.g., `list_<service>.html`) — this lists all supported condition keys, the actions they apply to, and their types.
+- Do NOT verify condition keys by checking the service's API reference — the API docs describe request parameters, not IAM condition keys. The authoritative source is the Service Authorization Reference.
+- For global condition keys (`aws:SourceArn`, `aws:PrincipalOrgID`, etc.), confirm against the global condition keys page in the Service Authorization Reference.
+- Flag keys not found in the Service Authorization Reference as `verified: false`
 
-Each `verification_note` must be specific to the condition key being verified. Include the specific key name, the MCP response that confirmed or denied it, and any caveats. Do NOT use identical notes across multiple items.
+Each `verification_note` must be specific to the condition key being verified. Include the specific key name, which actions it applies to (from the authorization reference), its type (String, ARN, etc.), and any caveats (e.g., "condition key exists but only applies to CreateX, not UpdateX"). Do NOT use identical notes across multiple items.
 
 Log every MCP call to `.service-approval/state/mcp-calls.log` with format:
 ```
@@ -73,8 +75,8 @@ Enrichment opportunities ARE carried forward in `validated.json` and processed b
 ## Step 4: Verify AWS feature support
 
 For each `missing_threat`, `existing_mitigation`, and `enrichment_opportunity`, determine `applicable_controls`:
-- **SCP**: always applicable (all services are covered by SCPs)
-- **RCP**: check if service supports resource-based policies (confirm via `awsknowledge` MCP)
+- **SCP**: Use `awsknowledge` MCP to read the SCPs documentation at `https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html`. SCPs are service-agnostic — they apply to all AWS services and actions. Always applicable.
+- **RCP**: Use `awsknowledge` MCP to read the RCPs documentation at `https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html`. RCPs are service-agnostic authorization policies that set permission guardrails on resources in your organization. Check the RCP documentation for any service-specific limitations or unsupported resource types. Do NOT conflate RCP support with whether a service has resource-based policies — RCPs are an Organizations feature, not a per-service resource policy feature.
 - **Declarative Policy**: check if a declarative policy exists for this service via `awsknowledge` MCP
 - **AI Opt-out Policy**: applicable only if service is an AI/ML service
 - **Backup Policy**: applicable if service resources can be backed up via AWS Backup
