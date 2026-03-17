@@ -26,6 +26,73 @@ and a compliant resource template for any AWS service.
 
 ## Prerequisites
 
+### MCP Pre-flight Check
+
+Before doing anything else, verify all required MCP servers are available. Run this check
+automatically — do not ask the user. Install any that are missing.
+
+Required MCPs (all from https://github.com/awslabs/mcp):
+
+| Name | Transport | Endpoint / Command |
+|------|-----------|-------------------|
+| `awsknowledge` | HTTP | `https://knowledge-mcp.global.api.aws` |
+| `aws-documentation` | HTTP | `https://mcp.awsdocs.amazon.com` |
+| `awsiac` | HTTP | `https://iac-mcp.global.api.aws` |
+| `aws-cdk-mcp-server` | stdio | `npx -y @aws/cdk-mcp-server@latest` |
+
+**Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
+- `Agent` tool in tool list → Claude Code
+- `KIRO_AGENT` env var set → Kiro
+- Otherwise → Generic
+
+**Step 2 — Check and install missing MCPs:**
+
+**Claude Code:**
+```bash
+INSTALLED=$(claude mcp list 2>/dev/null)
+for MCP in awsknowledge aws-documentation awsiac aws-cdk-mcp-server; do
+  echo "$INSTALLED" | grep -q "$MCP" && echo "OK: $MCP" || echo "MISSING: $MCP"
+done
+```
+For each MISSING entry, run the corresponding add command:
+```bash
+claude mcp add --transport http awsknowledge https://knowledge-mcp.global.api.aws
+claude mcp add --transport http aws-documentation https://mcp.awsdocs.amazon.com
+claude mcp add --transport http awsiac https://iac-mcp.global.api.aws
+claude mcp add aws-cdk-mcp-server -- npx -y @aws/cdk-mcp-server@latest
+```
+After adding any MCP, inform the user: "Added missing MCP servers: <list>. They are now active."
+
+**Kiro:**
+```bash
+cat ~/.kiro/settings/mcp.json 2>/dev/null || echo "{}"
+```
+For each missing MCP, add it to `~/.kiro/settings/mcp.json` using this structure:
+```json
+{
+  "mcpServers": {
+    "awsknowledge":       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
+    "aws-documentation":  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" },
+    "awsiac":             { "type": "http", "url": "https://iac-mcp.global.api.aws" },
+    "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+  }
+}
+```
+Merge (do not overwrite existing entries). Write back the updated file.
+After writing, inform the user: "Added missing MCP servers to ~/.kiro/settings/mcp.json: <list>. Restart Kiro if this is the first time adding them."
+
+**Generic (GitHub Copilot, Amazon Q, other):**
+Print instructions for each missing MCP and continue — do not block execution:
+```
+⚠ Missing MCP servers detected. Add these to your IDE's MCP configuration:
+  awsknowledge:       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" }
+  aws-documentation:  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" }
+  awsiac:             { "type": "http", "url": "https://iac-mcp.global.api.aws" }
+  aws-cdk-mcp-server: { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+See: https://github.com/awslabs/mcp
+Continuing with degraded MCP coverage — some steps may fall back to web search.
+```
+
 - [ ] If `--clean` was passed:
   ```bash
   rm -rf .service-approval/state .service-approval/controls .service-approval/APPROVAL-REPORT.md
