@@ -1,8 +1,21 @@
-# Git worktrees - parallel branch workspaces
+# Hidden directories at any depth (e.g. .omc, .claude-flow, .DS_Store dirs)
+.*
+**/.*
+
+# Exceptions — tracked dotfiles and dirs that must stay
+!.gitignore
+!.claude-plugin
+!.claude-plugin/**
+
+# Git worktrees
 .worktrees
 
 # Service approval runtime state
-.service-approval/
+.service-approval
 
-# OS
+# OS / editor noise
 .DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
