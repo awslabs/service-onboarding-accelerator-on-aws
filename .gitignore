@@ -6,6 +6,11 @@
 !.gitignore
 !.claude-plugin
 !.claude-plugin/**
+!.claude
+!.claude/skills
+!.claude/skills/**
+!.claude/rules
+!.claude/rules/**
 
 # Git worktrees
 .worktrees
