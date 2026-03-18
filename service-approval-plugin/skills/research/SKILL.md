@@ -22,7 +22,7 @@ Produce `.service-approval/state/research.json` following the schema exactly.
 
 Parse arguments:
 - `./input-folder` (optional) — read all `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files in this folder
-- `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore-control`)
+- `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`)
 
 If both are provided, use input-folder files AND --service name.
 If only --service is provided, use MCP-only mode.
@@ -257,8 +257,3 @@ Research complete:
   Output: .service-approval/state/research.json
 ```
 
-## Verify frontmatter
-```bash
-head -5 skills/research/SKILL.md
-```
-Expected: starts with `---` and contains `name: research`.

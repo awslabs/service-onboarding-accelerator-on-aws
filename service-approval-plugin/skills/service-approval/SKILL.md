@@ -15,7 +15,7 @@ and a compliant resource template for any AWS service.
 | Flag | Description | Default |
 |------|-------------|---------|
 | `./input-folder` | Path to folder with input files (.md, .json, .xlsx, .pdf, .docx) | None (MCP-only mode) |
-| `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore-control`) | Required if no folder |
+| `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`) | Required if no folder |
 | `--env=<profile>` | AWS CLI profile for Tester | None (skips Tester) |
 | `--skip-test` | Skip Tester agent | false |
 | `--dry-run` | Lint artifacts, do not deploy | false |
@@ -63,6 +63,16 @@ claude mcp add aws-cdk-mcp-server -- npx -y @aws/cdk-mcp-server@latest
 ```
 After adding any MCP, inform the user: "Added missing MCP servers: <list>. They are now active."
 
+**Step 3 — Handle MCPs that are registered but failing to connect:**
+If any MCP is listed but shows "Failed to connect" or is unreachable, warn the user:
+```
+⚠ MCP degraded coverage:
+  aws-documentation UNREACHABLE — Research Step 3 (security docs), Validate Step 2b (SCP/RCP live
+    docs), and Generate Step 5 (CDK/Terraform schemas) will fall back to web search.
+  awsiac UNREACHABLE — Generate Steps 1-2 (cfn-guard, CFN hooks) will use best-effort generation.
+```
+Do NOT block execution — continue with degraded coverage and note it in the final report.
+
 **Kiro:**
 ```bash
 cat ~/.kiro/settings/mcp.json 2>/dev/null || echo "{}"
@@ -98,6 +108,11 @@ Continuing with degraded MCP coverage — some steps may fall back to web search
   rm -rf .service-approval/state .service-approval/controls .service-approval/APPROVAL-REPORT.md
   ```
 
+- [ ] Check for stale state — if `.service-approval/state/` exists AND `--clean` was NOT passed:
+  Tell the user: "Existing state found in .service-approval/. Use --clean to start fresh, or I'll
+  run all phases again and overwrite. Proceeding with fresh run."
+  Then continue — NEVER silently read or report from old state files.
+
 - [ ] Create state directory and log file:
   ```bash
   mkdir -p .service-approval/state
@@ -105,7 +120,9 @@ Continuing with degraded MCP coverage — some steps may fall back to web search
   ```
 
 - [ ] Validate required input:
-  If no `./input-folder` AND no `--service`, ask the user: "What AWS service should I analyze? (e.g., bedrock-agentcore-control, s3, kms)"
+  If no `./input-folder` AND no `--service`, ask the user:
+  "What AWS service should I analyze? (e.g., bedrock-agentcore, s3, kms)"
+  Do NOT proceed until the user provides a service name or input folder.
 
 ## Environment Detection
 
@@ -186,17 +203,3 @@ Controls: .service-approval/controls/
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 ```
 
-## Verify frontmatter
-```bash
-head -5 skills/service-approval/SKILL.md
-```
-Expected: starts with `---` and contains `name: service-approval`.
-
-## Commit
-```bash
-cd "/Users/hardikvt/Library/CloudStorage/OneDrive-amazon.com/Hackathon/service-approval-plugin"
-git add skills/service-approval/SKILL.md
-git commit -m "feat: add orchestrator skill — wires all 5 agents with environment-aware dispatch"
-```
-
-Report: Status DONE + commit SHA.

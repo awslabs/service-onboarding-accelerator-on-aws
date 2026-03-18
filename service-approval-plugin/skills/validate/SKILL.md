@@ -280,8 +280,3 @@ Validation complete:
   Output: .service-approval/state/validated.json
 ```
 
-## Verify frontmatter
-```bash
-head -5 skills/validate/SKILL.md
-```
-Expected: starts with `---` and contains `name: validate`.
