@@ -33,7 +33,9 @@ If neither is provided, ask the user for a service name before proceeding.
 For each file in the input folder:
 - `.json` files: attempt to parse as mitigation report (look for `entities` key with mitigation arrays)
 - `.md` files: extract mitigation IDs (pattern: `M-<Resource>.<N>`), threats, request parameters
-- `.xlsx` files: if filename contains "CCMv4" or "ccmv4", this is the CCMv4 source — note its path
+- `.xlsx` files:
+  - If filename contains "CCMv4" or "ccmv4" → this is the CCMv4 source — note its path
+  - Any other compliance framework file (NIST, PCI-DSS, ISO 27001, SOC2, CIS, internal catalog, etc.) → note its path and framework name
 - Other files: read for context
 
 Build an initial list of `existing_mitigations` with fields: `id`, `statement`, `mitigation_goal`,
@@ -43,12 +45,14 @@ Build an initial list of `existing_mitigations` with fields: `id`, `statement`, 
 
 Call `awsknowledge` MCP to retrieve the API reference for `--service`:
 - List all API operations (CreateX, UpdateX, DeleteX, GetX, ListX, TagResource, UntagResource, etc.)
-- For each operation, list all request parameters with their types and required flags
+- For each operation, capture: name, HTTP method, path, all request parameters (name, type, required), resource type
 - Populate `api_surface.operations[]` in research.json
 
 Log this MCP call to `.service-approval/state/mcp-calls.log`:
 ```
-[TIMESTAMP] awsknowledge: GetAPIReference service=<name>
+[TIMESTAMP] [Researcher] MCP CALL: awsknowledge
+  service=<name>
+  result: <N> operations cataloged
 ```
 
 ## Step 3: Fetch security documentation
@@ -63,7 +67,7 @@ Call `aws-documentation` MCP to read these doc pages for the service (use actual
 7. CloudTrail integration / logging
 8. Resilience / disaster recovery
 
-For each page, note URL and key security requirements found. Populate `doc_sources[]`.
+For each page, note URL, title, topics covered, and key security requirements found. Populate `doc_sources[]`.
 
 ## Step 4: Cross-reference — find uncovered parameters
 
@@ -89,37 +93,66 @@ Cross-reference each gap with AWS docs from Step 3. Add to `missing_threats[]` w
 `id` (THREAT-NNN), `asset`, `title`, `stride_category`, `priority` (HIGH/MEDIUM/LOW),
 `aws_doc_ref`, `ccmv4_objectives[]`, `suggested_mitigation`.
 
-For each existing mitigation, set `stride_categories[]` based on which STRIDE categories the mitigation addresses.
+For each existing mitigation, set `stride_categories[]` based on which STRIDE categories it addresses.
 
-## Step 6: Map to CCMv4
+## Step 6: Map to MITRE ATT&CK for Cloud
 
-Open the CCMv4 xlsx file (path noted in Step 1). Read columns: `Control ID`, `Control Title`,
-`Control Specification`, `Domain`.
+For each `existing_mitigation` and each `missing_threat`, assign the closest MITRE ATT&CK technique
+using this STRIDE → ATT&CK mapping table. Pick the most specific sub-technique when applicable.
 
-Map EVERY `existing_mitigation` and EVERY `missing_threat`. Do not skip items. Each item must have at least one CCMv4 mapping.
+| STRIDE Category | Primary Techniques |
+|---|---|
+| Spoofing | T1078.004 Valid Accounts: Cloud Accounts, T1606 Forge Web Credentials, T1556 Modify Authentication Process |
+| Tampering | T1565 Data Manipulation, T1070 Indicator Removal, T1490 Inhibit System Recovery |
+| Repudiation | T1562.008 Impair Defenses: Disable Cloud Logs, T1070.004 File Deletion |
+| Information Disclosure | T1530 Data from Cloud Storage, T1552 Unsecured Credentials, T1619 Cloud Storage Object Discovery |
+| Denial of Service | T1499 Endpoint Denial of Service, T1496 Resource Hijacking, T1578 Modify Cloud Compute Infrastructure |
+| Elevation of Privilege | T1098 Account Manipulation, T1548 Abuse Elevation Control Mechanism, T1484 Domain Policy Modification |
 
-For each item, apply the mapping algorithm:
-- "IAM / Identity / Role / Principal" keywords → IAM domain controls (IAM-01 through IAM-09)
-- "Encryption / KMS / CMK / at-rest / in-transit" → DSP domain (DSP-01 through DSP-19)
-- "Network / VPC / subnet / endpoint / firewall" → IVS domain (IVS-01 through IVS-09)
-- "Logging / CloudTrail / CloudWatch / audit" → LOG domain (LOG-01 through LOG-13)
-- "Tagging / owner / classification" → GRC domain (GRC-01 through GRC-07)
-- "Confused deputy / cross-account / resource policy" → IAM domain
-- "Backup / recovery / resilience / multi-AZ" → BCR domain (BCR-01 through BCR-11)
+Refine by asset context:
+- Data/storage asset + Information Disclosure → prefer T1530
+- IAM/role asset + Elevation of Privilege → prefer T1098 or T1548
+- Logging/audit asset + Repudiation → prefer T1562.008
+- Network/endpoint asset + DoS → prefer T1499
 
-Mapping accuracy rules:
-- Encryption/KMS → DSP-17 (Encryption and Key Management), not DSP-03
-- Supply chain/artifact integrity → STA-06 (Supply Chain Security Assessment), not IAM-06
-- Data integrity/tampering → DSP-10 (Data Integrity), not DSP-07
-- Data retention → DSP-07 (Data Retention and Disposal), not GRC-05
-- When in doubt, read the CCMv4 Control Specification column — match on specifics, not just domain keywords
+Add `mitre_attack` to each `existing_mitigation` and `missing_threat`:
+```json
+"mitre_attack": {
+  "tactic": "<tactic-name>",
+  "technique_id": "<T####.###>",
+  "technique_name": "<name>",
+  "url": "https://attack.mitre.org/techniques/<T####>/"
+}
+```
 
-Select 1-3 most specific matching Control IDs per item. Set `coverage`: FULL / PARTIAL / SUPPORTS.
-Populate `ccmv4_mappings[]`.
+## Step 7: Map to compliance frameworks
 
-For each existing mitigation, set `ccmv4_objectives[]` from the matching `ccmv4_mappings` entry.
+### CCMv4 mapping
 
-## Step 7: Write output
+If a CCMv4 xlsx file was found in Step 1:
+- Read ALL rows from it. Extract every `Control ID`, `Control Title`, `Control Specification`, `Domain`
+- For each `existing_mitigation` and `missing_threat`, semantically match against the actual
+  `Control Specification` text in the file — do NOT use hardcoded keyword lists or ID ranges
+- Select the 1-3 controls whose specification text most directly addresses the mitigation/threat
+- Set `coverage`: FULL (control fully addressed), PARTIAL (partially addressed), SUPPORTS (relevant but indirect)
+- Add a `rationale` explaining why this control was selected
+- Populate `ccmv4_mappings[]` using the actual Control IDs read from the file
+- For each existing mitigation, set `ccmv4_objectives[]` from its matching `ccmv4_mappings` entries
+
+If NO CCMv4 file was provided:
+- Set `ccmv4_mappings: []` and `"ccmv4_note": "No CCMv4 file provided in input — skipped"`
+- Do NOT invent or guess control IDs
+
+### Other compliance frameworks
+
+For any other compliance/framework files found in the input folder:
+- Read the file and extract its control structure (ID, title, description)
+- Semantically map each `existing_mitigation` and `missing_threat` to relevant controls
+- Add a top-level key named after the framework (e.g., `nist_mappings[]`, `pci_mappings[]`)
+  using the same structure as `ccmv4_mappings[]`
+- Never hardcode control IDs for any framework — always derive from the provided file
+
+## Step 8: Write output
 
 Write `.service-approval/state/research.json` with this schema:
 
@@ -142,7 +175,13 @@ Write `.service-approval/state/research.json` with this schema:
       "request_parameters": ["..."],
       "resource_type": "AWS::...",
       "stride_categories": ["Spoofing"],
-      "ccmv4_objectives": ["IAM-01"]
+      "ccmv4_objectives": ["<control-id-from-input-file>"],
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1078.004",
+        "technique_name": "Valid Accounts: Cloud Accounts",
+        "url": "https://attack.mitre.org/techniques/T1078/004/"
+      }
     }
   ],
   "missing_threats": [
@@ -153,8 +192,14 @@ Write `.service-approval/state/research.json` with this schema:
       "stride_category": "Repudiation",
       "priority": "HIGH",
       "aws_doc_ref": "https://docs.aws.amazon.com/...",
-      "ccmv4_objectives": ["LOG-01"],
-      "suggested_mitigation": "..."
+      "ccmv4_objectives": ["<control-id-from-input-file>"],
+      "suggested_mitigation": "...",
+      "mitre_attack": {
+        "tactic": "Defense Evasion",
+        "technique_id": "T1562.008",
+        "technique_name": "Impair Defenses: Disable Cloud Logs",
+        "url": "https://attack.mitre.org/techniques/T1562/008/"
+      }
     }
   ],
   "enrichment_opportunities": [
@@ -182,7 +227,7 @@ Write `.service-approval/state/research.json` with this schema:
   "ccmv4_mappings": [
     {
       "mitigation_id": "M-AgentRuntime.0",
-      "ccmv4_controls": ["IAM-04", "IAM-09"],
+      "ccmv4_controls": ["<control-id-from-input-file>"],
       "coverage": "FULL",
       "rationale": "..."
     }
@@ -205,6 +250,7 @@ Research complete:
   - Missing threats found: N (HIGH: X, MEDIUM: Y, LOW: Z)
   - Enrichment opportunities: N
   - CCMv4 objectives mapped: N
+  - MITRE ATT&CK techniques mapped: N
   - API operations analyzed: N
   - Doc sources reviewed: N
   Output: .service-approval/state/research.json
