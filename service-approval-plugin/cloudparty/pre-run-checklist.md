@@ -46,13 +46,22 @@ Run the complete five-agent pipeline against the target service:
 /service-approval ./input-docs --service=bedrock-agentcore-control
 ```
 
-- [ ] **Researcher** completes — `.service-approval/state/research.json` written
+- [ ] **Researcher** completes — all four outputs written:
+  - `.service-approval/state/research.json`
+  - `.service-approval/state/controls-catalog.md`
+  - `.service-approval/state/threat-model.md`
+  - `.service-approval/state/ccmv4-mapping.md`
 - [ ] **Validator** completes — `.service-approval/state/validated.json` written
-- [ ] **Generator** completes — `.service-approval/controls/` populated (threat-mapping.md, compliance-mapping.md, terraform/)
+- [ ] **Generator** completes — `.service-approval/controls/` populated:
+  - `preventive/` — SCP, RCP, tag-policy, permission-boundary
+  - `proactive/` — cfn-guard-rules, checkov-config, OPA policies
+  - `detective/` — config-rules, eventbridge-rules, cloudwatch-alarms
+  - `remediation/` — lambda-remediator, ssm-runbook
+  - `iac/` — main.tf, modules/<asset>/, compliant-resource.cdk.ts, .cfn.yaml, .cdktf.ts
 - [ ] **Tester** completes (if `--env` available) — `.service-approval/state/test-results.json` written
 - [ ] **Summarizer** completes — `.service-approval/APPROVAL-REPORT.md` written
 
-**Verify:** Open `APPROVAL-REPORT.md` and confirm it has threat mapping, compliance mapping, and Terraform module sections.
+**Verify:** Open `APPROVAL-REPORT.md` and confirm it has verdict, CCMv4 matrix, control inventory, and test evidence sections.
 
 ---
 
@@ -85,16 +94,13 @@ python facilitate.py --stage session-2-gate-1
 
 ---
 
-## 7. Fallback: Pre-Cached research.json
+## 7. Fallback: Pre-Cached State Files
 
 If MCP tools are slow or unavailable during the live session:
 
-- [ ] Copy the pre-run `research.json` to a fallback location:
+- [ ] Copy the pre-run state files to fallback locations:
   ```bash
   cp .service-approval/state/research.json .service-approval/state/research.json.fallback
-  ```
-- [ ] Copy pre-run `validated.json` as fallback:
-  ```bash
   cp .service-approval/state/validated.json .service-approval/state/validated.json.fallback
   ```
 - [ ] Verify fallback files load correctly when swapped in
@@ -106,7 +112,7 @@ If MCP tools are slow or unavailable during the live session:
 ## 8. Presentation & Materials
 
 - [ ] Screen sharing works (projector or video call)
-- [ ] Sample outputs ready to project (`threat-mapping.md`, `compliance-mapping.md`, TF modules)
+- [ ] Sample outputs ready to project (`threat-model.md`, `ccmv4-mapping.md`, `controls-catalog.md`, IaC modules)
 - [ ] Runbook printed or accessible on a second screen
 - [ ] Pre-read materials sent to attendees (PRFAQ, architecture diagram, sample outputs)
 

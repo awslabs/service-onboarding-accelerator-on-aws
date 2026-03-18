@@ -22,27 +22,42 @@ One-day hands-on workshop teaching security and platform teams to automate AWS s
 
 Five-agent orchestration (Researcher → Validator → Generator → Tester → Summarizer):
 
-### Research outputs
+### Research outputs (Researcher agent)
 
-- **Threat-to-controls mapping:** Controls (proactive, preventative, detective, corrective) across platform/account/resource levels mapped to specific threats (MITRE)
-- **Compliance mapping:** Controls (proactive, preventative, detective, corrective) across platform/account/resource levels mapped to each control objective (CCMv4)
+- **`controls-catalog.md`** — All controls organized in a 4×3 matrix: Proactive/Preventive/Detective/Corrective × Organisation/Account/Resource
+- **`threat-model.md`** — Full threat register using MITRE ATT&CK tactics (10 tactics, TA0001–TA0040), each threat mapped to controls and mitigations with residual risk rating
+- **`ccmv4-mapping.md`** — All 197 CCMv4 control IDs across 17 domains, each mapped or marked N/A
 
-### Generated artifacts
+### Generated artifacts (Generator agent)
 
-- **Terraform modules:** Production-ready resource definitions (without SCPs/control artifacts)
-- **Validation reports:** ASH test results, compliance coverage matrix
+- **Security controls:** SCP (deny policies), RCP, tag policies, permission boundaries, CFN Guard rules, Config rules, EventBridge rules, Lambda remediator
+- **IaC templates:** Modular Terraform (one module per resource asset), CDK TypeScript, CloudFormation, CDK for Terraform
 
 ### Output structure
 
 ```
 .service-approval/
-  APPROVAL-REPORT.md        ← final verdict + CCMv4 matrix
-  approval-evidence/        ← facilitator agent decision records
+  APPROVAL-REPORT.md              ← final verdict + CCMv4 matrix (Summarizer)
+  approval-evidence/              ← facilitator agent decision records
+  state/
+    research.json                 ← machine-readable state (Researcher)
+    controls-catalog.md           ← controls matrix (Researcher)
+    threat-model.md               ← MITRE threat register (Researcher)
+    ccmv4-mapping.md              ← CCMv4 crosswalk (Researcher)
+    validated.json                ← verified findings (Validator)
+    test-results.json             ← test pass/fail (Tester)
+    mcp-calls.log                 ← all MCP calls made
   controls/
-    threat-mapping.md       ← controls mapped to MITRE threats
-    compliance-mapping.md   ← controls mapped to CCMv4 objectives
-  terraform/                ← TF modules (resources only)
-  state/                    ← agent handoff files
+    preventive/                   ← SCP, RCP, permission-boundary, tag-policy
+    proactive/                    ← cfn-guard-rules, cfn-hooks-policy, checkov-config, OPA policies
+    detective/                    ← config-rules, eventbridge-rules, cloudwatch-alarms
+    remediation/                  ← lambda-remediator, ssm-runbook, stepfunctions
+    iac/                          ← compliant IaC templates
+      main.tf                     ← root Terraform module
+      modules/<asset>/            ← per-resource Terraform modules
+      compliant-resource.cdk.ts   ← CDK TypeScript
+      compliant-resource.cfn.yaml ← CloudFormation
+      compliant-resource.cdktf.ts ← CDK for Terraform
 ```
 
 ---
@@ -68,7 +83,7 @@ Five-agent orchestration (Researcher → Validator → Generator → Tester → 
 
 - PRFAQ overview
 - Multi-agent architecture diagram
-- Sample outputs (`APPROVAL-REPORT.md`, `threat-mapping.md`, `compliance-mapping.md`, TF modules)
+- Sample outputs (`APPROVAL-REPORT.md`, `threat-model.md`, `ccmv4-mapping.md`, `controls-catalog.md`, IaC modules)
 - Plugin installation instructions for customer's preferred IDE
 
 ---
@@ -104,7 +119,7 @@ Five-agent orchestration (Researcher → Validator → Generator → Tester → 
 **Objectives:**
 
 - Run Researcher and Validator agents live
-- Security team reviews and approves MITRE threat mapping and mitigating controls
+- Security team reviews and approves MITRE threat model and controls catalog
 - Record security team approval before proceeding to compliance mapping
 
 **Activities:**
@@ -112,8 +127,11 @@ Five-agent orchestration (Researcher → Validator → Generator → Tester → 
 #### Live demo (30 min)
 
 - Invoke plugin: `/service-approval ./my-docs --service=bedrock-agentcore-control`
-- **Researcher agent:** Load Canopy threat model from GitHub, enrich via MCP (AWS Knowledge, AWS Docs)
-- **Validator agent:** Generate `threat-mapping.md` — controls (proactive, preventative, detective, corrective) across platform/account/resource levels → MITRE threats
+- **Researcher agent:** Load Canopy threat model from GitHub, enrich via MCP (AWS Knowledge, AWS Docs). Produces three artifacts:
+  - `state/controls-catalog.md` — all controls organized by category × scope matrix
+  - `state/threat-model.md` — MITRE ATT&CK tactic-based threat register with controls mapped
+  - `state/ccmv4-mapping.md` — all 197 CCMv4 IDs mapped or marked N/A
+- **Validator agent:** Verifies all findings via MCP — confirms condition keys, API parameters, MITRE assignments, CCMv4 IDs. Produces `state/validated.json`.
 
 #### Security team review — threat coverage (45 min)
 
@@ -121,19 +139,19 @@ Two approval gates in this review:
 
 **Gate 1: MITRE threats and mitigating controls (25 min)**
 
-- Interactive review: Project `threat-mapping.md` on screen
+- Interactive review: Project `state/threat-model.md` on screen
 - Questions via facilitator agent:
   - "Do these MITRE threats accurately represent the risk surface for this service?"
   - "Are the mitigating controls sufficient for each threat?"
-  - "Are controls categorized correctly (proactive/preventative/detective/corrective)?"
-  - "Are platform/account/resource levels appropriate for each control?"
+  - "Are controls categorized correctly (proactive/preventive/detective/corrective)?"
+  - "Are organisation/account/resource scope levels appropriate for each control?"
   - "Which controls require manual review or additional context?"
 - Validate coverage: Target >75% automated mapping
 - Record decision: Facilitator agent captures *"Security team approves MITRE threat mapping and mitigating controls"* with timestamp
 
 **Gate 2: Controls mapped to compliance objectives (20 min)**
 
-- Validator agent generates `compliance-mapping.md` — same controls mapped to CCMv4 (or customer's chosen framework)
+- Review `state/ccmv4-mapping.md` — same controls mapped to all 197 CCMv4 objectives
 - Security team validates that control-to-objective mappings are accurate from a security perspective
 - Questions via facilitator agent:
   - "Do the control-to-objective mappings make sense from a security standpoint?"
@@ -146,9 +164,9 @@ Two approval gates in this review:
 - Handle follow-up questions, iterate on flagged items
 - If security team finishes early, use time for informal discussion on institution-specific threat landscape
 
-> **Checkpoint:** Security team has approved both threat mapping and compliance mapping before risk team review
+> **Checkpoint:** Security team has approved both threat model and CCMv4 mapping before risk team review
 
-**Deliverable:** Security-approved `threat-mapping.md` + `compliance-mapping.md` with recorded decisions
+**Deliverable:** Security-approved `threat-model.md` + `ccmv4-mapping.md` with recorded decisions
 
 ---
 
@@ -160,14 +178,14 @@ Two approval gates in this review:
 
 **Objectives:**
 
-- Risk/compliance team reviews and approves the compliance mapping that security already validated
+- Risk/compliance team reviews and approves the CCMv4 mapping that security already validated
 - Record risk team approval to complete the mapping phase
 
 **Activities:**
 
 #### Risk/compliance validation (30 min)
 
-- Interactive review: Project `compliance-mapping.md` on screen (already security-approved)
+- Interactive review: Project `state/ccmv4-mapping.md` on screen (already security-approved)
 - Questions via facilitator agent:
   - "Does the CCMv4 mapping align with your compliance framework and interpretation?"
   - "Are control objectives covered comprehensively per your audit requirements?"
@@ -176,55 +194,51 @@ Two approval gates in this review:
 - Document adjustments: Note institution-specific customizations, regulatory nuances
 - Record decision: Facilitator agent captures *"Risk team approves compliance mapping"* with timestamp
 
-> **Checkpoint:** Both security and risk teams have approved all mappings — proceed to Terraform generation
+> **Checkpoint:** Both security and risk teams have approved all mappings — proceed to control generation
 
-**Deliverable:** Fully approved `threat-mapping.md` + `compliance-mapping.md` with dual sign-off recorded
+**Deliverable:** Fully approved `threat-model.md` + `ccmv4-mapping.md` with dual sign-off recorded
 
 ---
 
-### Session 3: Generate Terraform Modules (90 min)
+### Session 3: Generate Controls & IaC (90 min)
 
 **Objectives:**
 
 - Run Generator agent live
-- Review generated Terraform modules (resources only, no SCPs/control artifacts)
+- Review generated security controls and Terraform modules
 - Record platform team approval
 
 **Activities:**
 
 #### Generator agent demo (30 min)
 
-- Read approved `threat-mapping.md` and `compliance-mapping.md`
-- Query Terraform Registry via MCP
-- Generate Terraform modules (resources only):
-  - Encryption at rest with KMS
-  - Private networking with VPC
-  - Least-privilege IAM roles
-  - CloudWatch logging
-  - Security groups
-  - Compliance tags
+- Reads `state/validated.json` and generates the full controls matrix:
+  - **Org-level:** SCP deny policies, tag policies, Config org rules, Security Hub org config
+  - **Account-level:** CFN Guard rules, Checkov config, permission boundary, EventBridge rules, Config rules, Lambda remediator
+  - **Resource-level:** Resource policies, KMS key policies, RCP (where supported)
+  - **IaC:** Modular Terraform (one module per resource asset), CDK TypeScript, CloudFormation, CDK for Terraform — all with embedded security controls and inline control ID comments
 
 #### Platform team review (40 min)
 
-- Interactive review: Walk through `.service-approval/terraform/`
+- Interactive review: Walk through `controls/iac/` (Terraform modules) and `controls/preventive/` (SCP, RCP)
 - Questions via facilitator agent:
-  - "Do these patterns match your architectural standards?"
+  - "Do these Terraform patterns match your architectural standards?"
   - "Are security baselines sufficient?"
   - "Which variables need customization?"
   - "How do these integrate with existing Artifactory patterns?"
-- Validate controls: Confirm security controls embedded in resources
+- Validate controls: Confirm SCPs, Config rules, and remediators are correctly scoped
 - Document adjustments: Note naming conventions, tagging standards, network configurations
 
 #### Approval decision (20 min)
 
 - Questions via facilitator agent:
-  - "Platform team: Do you approve these Terraform modules for testing?"
-- Record decision: Facilitator agent captures *"Platform team approves TF modules for testing"* with timestamp
-- Iterate if needed: Refine modules based on feedback, re-run Generator agent
+  - "Platform team: Do you approve these controls and IaC modules for testing?"
+- Record decision: Facilitator agent captures *"Platform team approves controls and IaC for testing"* with timestamp
+- Iterate if needed: Refine with `--clean` flag, re-run Generator agent
 
-> **Checkpoint:** Platform team approves Terraform modules for testing
+> **Checkpoint:** Platform team approves controls and IaC for testing
 
-**Deliverable:** Approved Terraform modules (resources only) with recorded decision
+**Deliverable:** Approved security controls + IaC modules with recorded decision
 
 ---
 
@@ -246,17 +260,17 @@ Two approval gates in this review:
 
 - Run with `--env=<profile>` flag to deploy test resources
 - Execute `terraform validate`, `checkov`, `tfsec`, ASH
-- Generate validation report
+- Generate `state/test-results.json`
 - Show pass/fail status per control
 
 #### Platform team review (30 min)
 
-- Interactive review: Walk through validation report
+- Interactive review: Walk through test results
 - Questions via facilitator agent:
   - "Do failures indicate real issues or false positives?"
   - "Which controls need refinement?"
 - Iterate: Refine modules, re-run with `--clean` flag until tests pass
-- Record decision: Facilitator agent captures *"Platform team approves validated TF modules"* with timestamp
+- Record decision: Facilitator agent captures *"Platform team approves validated controls and IaC"* with timestamp
 
 #### CI/CD integration (10 min)
 
@@ -265,7 +279,7 @@ Two approval gates in this review:
 
 > **Checkpoint:** All tests pass, modules ready for Artifactory
 
-**Deliverable:** Validation report + test scripts with recorded decision
+**Deliverable:** `test-results.json` + test scripts with recorded decision
 
 ---
 
@@ -286,9 +300,9 @@ Two approval gates in this review:
 
 #### Run plugin independently (40 min)
 
-- **Security team:** Invoke `/service-approval --service=s3`, review `threat-mapping.md`
-- **Risk team:** Review `compliance-mapping.md`
-- **Platform team:** Review generated Terraform modules
+- **Security team:** Invoke `/service-approval --service=s3`, review `threat-model.md` and `controls-catalog.md`
+- **Risk team:** Review `ccmv4-mapping.md`
+- **Platform team:** Review generated IaC in `controls/iac/` and SCPs in `controls/preventive/`
 - **All teams:** Run Tester agent, validate outputs
 - **Facilitator agent:** Record decisions at each stage
 - **Facilitator:** Provide guidance, answer questions, troubleshoot
@@ -320,9 +334,9 @@ Two approval gates in this review:
 
 #### Deployment walkthrough (15 min)
 
-- **Platform team:** Push Terraform modules to Artifactory
-- **Security team:** Add `threat-mapping.md` to approved repository
-- **Risk team:** Add `compliance-mapping.md` to approved repository
+- **Platform team:** Push Terraform modules from `controls/iac/` to Artifactory
+- **Security team:** Add `threat-model.md` and `controls-catalog.md` to approved repository
+- **Risk team:** Add `ccmv4-mapping.md` to approved repository
 - **All teams:** Configure CI/CD pipeline with validation
 
 #### Runbook finalization (15 min)
