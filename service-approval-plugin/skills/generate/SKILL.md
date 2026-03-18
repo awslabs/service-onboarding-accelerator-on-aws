@@ -292,17 +292,3 @@ Control generation complete:
   Output: .service-approval/controls/
 ```
 
-## Verify frontmatter
-```bash
-head -5 skills/generate/SKILL.md
-```
-Expected: starts with `---` and contains `name: generate`.
-
-## Commit
-```bash
-cd "/Users/hardikvt/Library/CloudStorage/OneDrive-amazon.com/Hackathon/service-approval-plugin"
-git add skills/generate/SKILL.md
-git commit -m "feat: add control generator agent skill"
-```
-
-Report: Status DONE + commit SHA.
