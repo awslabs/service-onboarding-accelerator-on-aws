@@ -20,10 +20,7 @@ Read all state files and generate the final approval report at `.service-approva
 
 ## Step 1: Determine verdict
 
-Read `validated.json` for `unverified_count`.
-Read `test-results.json` if it exists.
-
-Apply verdict logic:
+Read `validated.json` for `unverified_count`. Read `test-results.json` if it exists.
 
 | Condition | Verdict |
 |-----------|---------|
@@ -41,15 +38,15 @@ From `validated.json` `ccmv4_mappings[]`, build a table:
 
 | CCMv4 Control ID | Title | Domain | Satisfied By | Coverage |
 
-Where "Satisfied By" = comma-separated mitigation IDs that map to this control.
+Where "Satisfied By" = comma-separated control IDs that map to this CCMv4 objective.
 
 ## Step 3: Build control inventory
 
 For each file in `.service-approval/controls/`, read its `_metadata` or header comments
-(lines starting with `# SCOPE:`, `# LAYER:`, `# MITIGATIONS:`, `# CCMv4:`).
+(lines starting with `# SCOPE:`, `# LAYER:`, `# CONTROLS:`, `# CCMv4:`).
 
 Build a table per layer:
-| Layer | Scope | Artifact | Mitigations | CCMv4 |
+| Layer | Scope | Artifact | Controls | CCMv4 |
 
 ## Step 4: Build artifact manifest
 
@@ -68,10 +65,10 @@ Write `.service-approval/APPROVAL-REPORT.md` with exactly these 8 H2 sections:
 [Coverage numbers: N controls generated, N CCMv4 objectives covered, test result]
 
 ## CCMv4 Coverage Matrix
-[Full table from Step 2]
+[Full table from Step 2 — all 197 CCMv4 IDs, mapped or N/A]
 
 ## Control Inventory
-[Per-layer table from Step 3]
+[Per-layer table from Step 3, organized by Controls Matrix cell]
 
 ## Test Evidence
 [Security Hub finding count, Config compliance status — or "Test not run" if skipped]
@@ -84,7 +81,7 @@ Write `.service-approval/APPROVAL-REPORT.md` with exactly these 8 H2 sections:
 
 ## Next Steps
 Deployment order:
-1. **Org level**: Apply SCPs, RCPs, tag policies via AWS Organizations console or CLI
+1. **Org level**: Apply SCPs, RCPs, tag policies via AWS Organizations
 2. **Account level**: Deploy Config conformance pack, Security Hub standards, Access Analyzer
 3. **Service level**: Deploy CloudFormation Hooks, Config org rules
 4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `controls/iac/`
@@ -93,6 +90,6 @@ Print:
 ```
 Report written: .service-approval/APPROVAL-REPORT.md
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
-CCMv4 objectives covered: N
+CCMv4 objectives covered: N / 197
 Total control artifacts: N
 ```
