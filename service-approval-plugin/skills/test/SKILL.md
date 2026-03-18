@@ -149,17 +149,9 @@ Test complete:
   RESULT: PASS/FAIL
 ```
 
-## Verify frontmatter
 ```bash
-head -5 skills/test/SKILL.md
-```
-Expected: starts with `---` and contains `name: test`.
-
-## Commit
-```bash
-cd "/Users/hardikvt/Library/CloudStorage/OneDrive-amazon.com/Hackathon/service-approval-plugin"
-git add skills/test/SKILL.md
-git commit -m "feat: add tester agent skill"
 ```
 
-Report: Status DONE + commit SHA.
+```bash
+```
+
