@@ -43,6 +43,10 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
 - `Agent` tool in tool list → Claude Code
 - `KIRO_AGENT` env var set → Kiro
+- `GEMINI_CLI_VERSION` env var set → Gemini CLI
+- `AMAZON_Q_CONTEXT` or `Q_DEVELOPER_CLI` env var set → Amazon Q Developer
+- `CURSOR_TRACE_ID` env var set → Cursor
+- `WINDSURF_EXTENSION_ID` or `CODEIUM_API_KEY` env var set → Windsurf
 - Otherwise → Generic
 
 **Step 2 — Check and install missing MCPs:**
@@ -91,7 +95,76 @@ For each missing MCP, add it to `~/.kiro/settings/mcp.json` using this structure
 Merge (do not overwrite existing entries). Write back the updated file.
 After writing, inform the user: "Added missing MCP servers to ~/.kiro/settings/mcp.json: <list>. Restart Kiro if this is the first time adding them."
 
-**Generic (GitHub Copilot, Amazon Q, other):**
+**Gemini CLI:**
+```bash
+cat ~/.gemini/settings.json 2>/dev/null || echo "{}"
+```
+For each missing MCP, add it to `~/.gemini/settings.json` under `mcpServers`:
+```json
+{
+  "mcpServers": {
+    "awsknowledge":       { "httpUrl": "https://knowledge-mcp.global.api.aws" },
+    "aws-documentation":  { "httpUrl": "https://mcp.awsdocs.amazon.com" },
+    "awsiac":             { "httpUrl": "https://iac-mcp.global.api.aws" },
+    "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+  }
+}
+```
+Merge (do not overwrite existing entries). Write back the updated file.
+After writing, inform the user: "Added missing MCP servers to ~/.gemini/settings.json: <list>. Restart Gemini CLI if this is the first time adding them."
+
+**Amazon Q Developer:**
+```bash
+cat ~/.aws/amazonq/mcp.json 2>/dev/null || echo "{}"
+```
+For each missing MCP, add it to `~/.aws/amazonq/mcp.json`:
+```json
+{
+  "mcpServers": {
+    "awsknowledge":       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
+    "aws-documentation":  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" },
+    "awsiac":             { "type": "http", "url": "https://iac-mcp.global.api.aws" },
+    "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+  }
+}
+```
+Merge and write back. Inform the user to restart Amazon Q Developer if MCPs were added.
+
+**Cursor:**
+```bash
+cat ~/.cursor/mcp.json 2>/dev/null || cat .cursor/mcp.json 2>/dev/null || echo "{}"
+```
+For each missing MCP, add it to `~/.cursor/mcp.json` (or workspace `.cursor/mcp.json`):
+```json
+{
+  "mcpServers": {
+    "awsknowledge":       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
+    "aws-documentation":  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" },
+    "awsiac":             { "type": "http", "url": "https://iac-mcp.global.api.aws" },
+    "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+  }
+}
+```
+Merge and write back. Inform the user: "Added MCPs to ~/.cursor/mcp.json. Restart Cursor to activate."
+
+**Windsurf:**
+```bash
+cat ~/.codeium/windsurf/mcp_config.json 2>/dev/null || echo "{}"
+```
+For each missing MCP, add it to `~/.codeium/windsurf/mcp_config.json`:
+```json
+{
+  "mcpServers": {
+    "awsknowledge":       { "serverUrl": "https://knowledge-mcp.global.api.aws" },
+    "aws-documentation":  { "serverUrl": "https://mcp.awsdocs.amazon.com" },
+    "awsiac":             { "serverUrl": "https://iac-mcp.global.api.aws" },
+    "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+  }
+}
+```
+Merge and write back. Inform the user: "Added MCPs to Windsurf config. Restart Windsurf to activate."
+
+**Generic (GitHub Copilot, Aider, Continue, other):**
 Print instructions for each missing MCP and continue — do not block execution:
 ```
 ⚠ Missing MCP servers detected. Add these to your IDE's MCP configuration:
@@ -129,7 +202,7 @@ Continuing with degraded MCP coverage — some steps may fall back to web search
 Detect execution environment to choose parallelism strategy:
 
 ```bash
-env | grep -E 'GITHUB_COPILOT|AMAZON_Q_CONTEXT|KIRO_AGENT' 2>/dev/null
+env | grep -E 'KIRO_AGENT|GEMINI_CLI_VERSION|AMAZON_Q_CONTEXT|Q_DEVELOPER_CLI|CURSOR_TRACE_ID|WINDSURF_EXTENSION_ID|CODEIUM_API_KEY|GITHUB_COPILOT' 2>/dev/null
 ```
 
 Additionally: check whether the `Agent` tool appears in your available tool list.
@@ -137,8 +210,12 @@ If it does, treat this as Claude Code regardless of env var results.
 
 Decision logic:
 - `Agent` tool available in tool list → **Claude Code — use Parallel Mode** (see below)
-- `KIRO_AGENT` env var set → **Kiro Sequential Mode** (Kiro does not support multi-agent dispatch from within a skill; run sequentially with file-state handoffs)
-- `GITHUB_COPILOT` or `AMAZON_Q_CONTEXT` env var set → **Sequential Mode**
+- `KIRO_AGENT` env var set → **Kiro — Sequential Mode**
+- `GEMINI_CLI_VERSION` env var set → **Gemini CLI — Sequential Mode**
+- `AMAZON_Q_CONTEXT` or `Q_DEVELOPER_CLI` env var set → **Amazon Q Developer — Sequential Mode**
+- `CURSOR_TRACE_ID` env var set → **Cursor — Sequential Mode**
+- `WINDSURF_EXTENSION_ID` or `CODEIUM_API_KEY` env var set → **Windsurf — Sequential Mode**
+- `GITHUB_COPILOT` env var set → **GitHub Copilot — Sequential Mode**
 - No signals detected → **Sequential Mode** (safe default)
 
 ## Sequential Mode (default for all non-Claude-Code clients)
