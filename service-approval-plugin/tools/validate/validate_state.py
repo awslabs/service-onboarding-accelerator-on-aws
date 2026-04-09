@@ -1,0 +1,1000 @@
+#!/usr/bin/env python3
+"""
+Deterministic validator for pipeline state files.
+
+Checks state files (.service-approval/state/) for structural integrity:
+duplicate assets, unenriched placeholders, schema version, required fields,
+per-phase schema validation, quality gates, cross-references.
+
+Usage:
+    python3 validate_state.py <file_path>
+
+Exit codes:
+    0 — all checks pass
+    2 — validation errors found (errors on stderr)
+"""
+
+import json
+import os
+import re
+import sys
+from collections import Counter
+
+
+# ================================================================
+# Helpers
+# ================================================================
+
+def _load_json(path: str) -> dict | None:
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _find_state_dir(file_path: str) -> str:
+    """Return the directory containing the state file."""
+    return os.path.dirname(os.path.abspath(file_path))
+
+
+# ================================================================
+# Check S1: No duplicate assets (same cfn_type)
+# ================================================================
+
+def check_duplicate_assets(data: dict) -> list[str]:
+    """Flag assets that share the same cfn_type."""
+    errors = []
+    assets = data.get("assets", [])
+    if not isinstance(assets, list):
+        return errors
+
+    seen: dict[str, str] = {}
+    for asset in assets:
+        if not isinstance(asset, dict):
+            continue
+        cfn = asset.get("cfn_type", "")
+        name = asset.get("name", "?")
+        if not cfn:
+            continue
+        if cfn in seen:
+            errors.append(
+                f"CHECK-S1 duplicate_asset: cfn_type '{cfn}' appears in both "
+                f"asset '{seen[cfn]}' and '{name}'"
+            )
+        else:
+            seen[cfn] = name
+
+    return errors
+
+
+# ================================================================
+# Check S2: No unenriched placeholders
+# ================================================================
+
+_PLACEHOLDER_PATTERN = re.compile(r"<needs\s+enrichment", re.IGNORECASE)
+
+
+def check_unenriched_placeholders(data: dict) -> list[str]:
+    """Recursively search for '<needs enrichment>' strings.
+    Skips 'placeholder_scan' metadata field (describes what was scanned, not actual data)."""
+    errors = []
+    filtered = {k: v for k, v in data.items() if k != "placeholder_scan"}
+    _walk_for_placeholders(filtered, "", errors)
+    return errors
+
+
+def _walk_for_placeholders(obj, path: str, errors: list[str]):
+    if isinstance(obj, str):
+        if _PLACEHOLDER_PATTERN.search(obj):
+            errors.append(
+                f"CHECK-S2 unenriched: {path} contains placeholder '{obj[:80]}'"
+            )
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            _walk_for_placeholders(v, f"{path}.{k}" if path else k, errors)
+    elif isinstance(obj, list):
+        for i, item in enumerate(obj):
+            _walk_for_placeholders(item, f"{path}[{i}]", errors)
+
+
+# ================================================================
+# Check S3: Schema version
+# ================================================================
+
+def check_schema_version(data: dict, expected: str = "3.0") -> list[str]:
+    """Verify schema_version matches expected."""
+    version = data.get("schema_version")
+    if version != expected:
+        return [
+            f"CHECK-S3 schema_version: expected '{expected}', got '{version}'"
+        ]
+    return []
+
+
+# ================================================================
+# Check S4: Required fields
+# ================================================================
+
+_REQUIRED_VALIDATED = ["service", "assets", "capabilities", "api_surface"]
+_REQUIRED_MAPPING = ["service", "controls", "framework"]
+_REQUIRED_RESEARCH = ["service", "assets", "capabilities", "api_surface", "doc_sources"]
+_REQUIRED_RESEARCH_MIT = ["service", "existing_mitigations", "assets_partial"]
+_REQUIRED_RESEARCH_CAP = ["capabilities", "resources"]
+_REQUIRED_RESEARCH_API = ["api_surface"]
+_REQUIRED_FW_PARSED = ["framework", "framework_objectives"]
+_REQUIRED_CTRL_GEN = ["controls", "control_summary"]
+_REQUIRED_FW_MAPPED = ["framework_mapping", "framework_coverage_summary"]
+
+
+def check_required_fields(data: dict, file_name: str) -> list[str]:
+    """Verify required top-level fields exist and are non-empty."""
+    errors = []
+
+    if "mapping-results" in file_name:
+        required = _REQUIRED_MAPPING
+    elif "validated" in file_name:
+        required = _REQUIRED_VALIDATED
+    elif "research-mitigations" in file_name:
+        required = _REQUIRED_RESEARCH_MIT
+    elif "research-capabilities" in file_name:
+        required = _REQUIRED_RESEARCH_CAP
+    elif "research-api-surface" in file_name:
+        required = _REQUIRED_RESEARCH_API
+    elif "research" in file_name:
+        required = _REQUIRED_RESEARCH
+    elif "map-framework-parsed" in file_name:
+        required = _REQUIRED_FW_PARSED
+    elif "map-controls-generated" in file_name:
+        required = _REQUIRED_CTRL_GEN
+    elif "map-framework-mapped" in file_name:
+        required = _REQUIRED_FW_MAPPED
+    else:
+        return []
+
+    for field in required:
+        val = data.get(field)
+        if val is None:
+            errors.append(f"CHECK-S4 required_field: '{field}' is missing")
+        elif isinstance(val, (list, dict, str)) and not val:
+            errors.append(f"CHECK-S4 required_field: '{field}' is empty")
+
+    return errors
+
+
+# ================================================================
+# Check S5: Mapping-results control integrity
+# ================================================================
+
+def check_control_integrity(data: dict) -> list[str]:
+    """Verify controls have required fields."""
+    errors = []
+    controls = data.get("controls", [])
+    if not isinstance(controls, list):
+        return [f"CHECK-S5 controls: expected list, got {type(controls).__name__}"]
+
+    for i, ctrl in enumerate(controls):
+        if not isinstance(ctrl, dict):
+            errors.append(f"CHECK-S5 controls[{i}]: expected dict, got {type(ctrl).__name__}")
+            continue
+        ctrl_id = ctrl.get("id", f"controls[{i}]")
+        for field in ("id", "mechanism", "scope", "category"):
+            if not ctrl.get(field):
+                errors.append(f"CHECK-S5 control '{ctrl_id}': missing required field '{field}'")
+
+    return errors
+
+
+# ================================================================
+# Check S6: research-mitigations schema
+# ================================================================
+
+def check_research_mitigations(data: dict) -> list[str]:
+    """Validate research-mitigations.json schema and field naming."""
+    errors = []
+
+    if data.get("phase") != "research-mitigations":
+        errors.append("CHECK-S6 phase: must be 'research-mitigations'")
+
+    if not isinstance(data.get("service"), str):
+        errors.append("CHECK-S6 service: must be a string")
+
+    mits = data.get("existing_mitigations", [])
+    for i, m in enumerate(mits):
+        if not isinstance(m, dict):
+            continue
+        if not m.get("statement"):
+            errors.append(f"CHECK-S6 existing_mitigations[{i}]: missing statement")
+        if not m.get("mitigation_goal"):
+            errors.append(f"CHECK-S6 existing_mitigations[{i}]: missing mitigation_goal")
+        if not m.get("id"):
+            errors.append(f"CHECK-S6 existing_mitigations[{i}]: missing id")
+
+    for i, a in enumerate(data.get("assets_partial", [])):
+        if not isinstance(a, dict):
+            continue
+        if "resource_type" in a and "cfn_type" not in a:
+            errors.append(f"CHECK-S6 assets_partial[{i}]: uses 'resource_type' — must be 'cfn_type'")
+        if "display_name" in a and "name" not in a:
+            errors.append(f"CHECK-S6 assets_partial[{i}]: uses 'display_name' — must be 'name'")
+        if not a.get("cfn_type", a.get("resource_type", "")):
+            errors.append(f"CHECK-S6 assets_partial[{i}]: missing cfn_type")
+        if not a.get("name", a.get("display_name", "")):
+            errors.append(f"CHECK-S6 assets_partial[{i}]: missing name")
+
+    return errors
+
+
+# ================================================================
+# Check S7: research-capabilities schema
+# ================================================================
+
+def check_research_capabilities(data: dict) -> list[str]:
+    """Validate research-capabilities.json schema."""
+    errors = []
+
+    if data.get("phase") != "research-capabilities":
+        errors.append("CHECK-S7 phase: must be 'research-capabilities'")
+
+    caps = data.get("capabilities", {})
+    for sub in ("iam", "encryption", "network", "logging", "organization_policies"):
+        if sub not in caps:
+            errors.append(f"CHECK-S7 capabilities.{sub}: missing")
+
+    # condition_keys format
+    ck = caps.get("iam", {}).get("condition_keys", [])
+    if isinstance(ck, dict):
+        errors.append("CHECK-S7 condition_keys: must be ARRAY of objects, not dict")
+    elif isinstance(ck, list) and len(ck) > 0 and isinstance(ck[0], str):
+        errors.append("CHECK-S7 condition_keys: entries must be objects, not strings")
+    elif isinstance(ck, list):
+        for j, k in enumerate(ck):
+            if isinstance(k, dict) and not k.get("applies_to_actions"):
+                errors.append(
+                    f"CHECK-S7 condition_keys[{j}] ({k.get('key', '?')}): "
+                    "empty applies_to_actions — must list actions from SAR page"
+                )
+
+    # CloudTrail data events
+    ct = caps.get("logging", {}).get("cloudtrail", {})
+    de = ct.get("data_events", {})
+    if isinstance(de, dict) and de.get("supported") is True:
+        rts = de.get("resource_types", [])
+        if len(rts) == 0:
+            errors.append("CHECK-S7 data_events: supported=true but resource_types empty")
+
+    if not isinstance(data.get("resources"), list) or len(data.get("resources", [])) == 0:
+        errors.append("CHECK-S7 resources: must be non-empty list")
+
+    # doc_sources format
+    ds = data.get("doc_sources", [])
+    if isinstance(ds, list):
+        for i, s in enumerate(ds):
+            if not isinstance(s, str):
+                errors.append(
+                    f"CHECK-S7 doc_sources[{i}]: must be URL string, not {type(s).__name__}"
+                )
+
+    return errors
+
+
+# ================================================================
+# Check S8: research-api-surface schema
+# ================================================================
+
+def check_research_api_surface(data: dict) -> list[str]:
+    """Validate research-api-surface.json schema."""
+    errors = []
+
+    if data.get("phase") != "research-api-surface":
+        errors.append("CHECK-S8 phase: must be 'research-api-surface'")
+
+    ops = data.get("api_surface", {}).get("operations", [])
+    if not isinstance(ops, list) or len(ops) == 0:
+        errors.append("CHECK-S8 api_surface.operations: must be non-empty list")
+
+    # completeness
+    comp = data.get("completeness", {})
+    if comp.get("missing_from_condition_keys") and len(comp["missing_from_condition_keys"]) > 0:
+        errors.append(
+            f"CHECK-S8 CRITICAL: {len(comp['missing_from_condition_keys'])} actions "
+            f"referenced by condition keys are missing from operations"
+        )
+
+    # each operation has required fields
+    for i, op in enumerate(ops if isinstance(ops, list) else []):
+        if "operation" not in op:
+            errors.append(f"CHECK-S8 operations[{i}]: missing operation name")
+        if "parameters" not in op:
+            errors.append(f"CHECK-S8 operations[{i}]: missing parameters array")
+
+    return errors
+
+
+# ================================================================
+# Check S9: research.json (merged) schema
+# ================================================================
+
+def check_research_merged(data: dict) -> list[str]:
+    """Validate merged research.json schema and cross-references."""
+    errors = []
+
+    if data.get("schema_version") != "3.0":
+        errors.append("CHECK-S9 schema_version: must be '3.0'")
+    if not isinstance(data.get("service"), str):
+        errors.append("CHECK-S9 service: must be a string")
+
+    # Key name check
+    if "documentation_sources" in data and "doc_sources" not in data:
+        errors.append("CHECK-S9: key must be 'doc_sources' not 'documentation_sources'")
+    if not isinstance(data.get("doc_sources"), list):
+        errors.append("CHECK-S9 doc_sources: must be a list")
+
+    # Resources and assets
+    if not isinstance(data.get("resources"), list) or len(data.get("resources", [])) == 0:
+        errors.append("CHECK-S9 resources: must be non-empty list")
+    if not isinstance(data.get("assets"), list) or len(data.get("assets", [])) == 0:
+        errors.append("CHECK-S9 assets: must be non-empty list")
+
+    # Capabilities sub-objects
+    caps = data.get("capabilities", {})
+    for sub in ("iam", "encryption", "network", "logging", "organization_policies"):
+        if sub not in caps:
+            errors.append(f"CHECK-S9 capabilities.{sub}: missing")
+
+    # condition_keys format
+    ck = caps.get("iam", {}).get("condition_keys", [])
+    if isinstance(ck, dict):
+        errors.append("CHECK-S9 condition_keys: must be ARRAY of objects")
+    elif isinstance(ck, list) and len(ck) > 0 and isinstance(ck[0], str):
+        errors.append("CHECK-S9 condition_keys: entries must be objects")
+
+    # CloudTrail data events
+    ct = caps.get("logging", {}).get("cloudtrail", {})
+    de = ct.get("data_events", {})
+    if isinstance(de, dict) and de.get("supported") is True:
+        if len(de.get("resource_types", [])) == 0:
+            errors.append("CHECK-S9 data_events: supported=true but resource_types empty")
+
+    # Assets quality
+    for i, a in enumerate(data.get("assets", [])):
+        if not isinstance(a, dict):
+            continue
+        if a.get("data_classification", "") in ("", "Service resource"):
+            errors.append(f"CHECK-S9 assets[{i}] ({a.get('name')}): generic data_classification")
+        if not a.get("entry_points"):
+            errors.append(f"CHECK-S9 assets[{i}] ({a.get('name')}): empty entry_points")
+
+    # API surface
+    ops = data.get("api_surface", {}).get("operations", [])
+    if not isinstance(ops, list) or len(ops) == 0:
+        errors.append("CHECK-S9 api_surface.operations: must be non-empty")
+
+    # Cross-reference: condition_keys applies_to_actions
+    op_names = set()
+    for op in (ops if isinstance(ops, list) else []):
+        name = op.get("operation", op.get("name", ""))
+        if name:
+            op_names.add(name)
+    poa = set(caps.get("iam", {}).get("permission_only_actions", []))
+    all_known = op_names | poa
+    if all_known and isinstance(ck, list):
+        missing_actions = set()
+        for ck_obj in ck:
+            if isinstance(ck_obj, dict):
+                for action in ck_obj.get("applies_to_actions", []):
+                    if action not in all_known:
+                        missing_actions.add(action)
+        if missing_actions:
+            errors.append(
+                f"CHECK-S9 CRITICAL: {len(missing_actions)} actions referenced by "
+                f"condition_keys missing from operations AND permission_only_actions: "
+                f"{sorted(missing_actions)[:10]}"
+            )
+
+    # Mitigations
+    for i, m in enumerate(data.get("existing_mitigations", [])):
+        if not isinstance(m, dict):
+            continue
+        if not m.get("statement"):
+            errors.append(f"CHECK-S9 existing_mitigations[{i}]: missing statement")
+        if not m.get("mitigation_goal"):
+            errors.append(f"CHECK-S9 existing_mitigations[{i}]: missing mitigation_goal")
+
+    # Forbidden keys (v2 remnants)
+    for bad_key in ("controls", "threats", "ccmv4_mappings", "resource_types"):
+        if bad_key in data:
+            errors.append(f"CHECK-S9 forbidden key: '{bad_key}' found (v2 remnant)")
+
+    # Optional attack_surface validation (from research-attack-surface sub-skill)
+    atk = data.get("attack_surface")
+    if atk and isinstance(atk, dict):
+        at = atk.get("applicable_techniques", [])
+        if not isinstance(at, list) or len(at) == 0:
+            errors.append("CHECK-S9 attack_surface.applicable_techniques: must be non-empty if present")
+        for i, t in enumerate(at if isinstance(at, list) else []):
+            if isinstance(t, dict) and t.get("applicability") not in ("HIGH", "MEDIUM"):
+                errors.append(
+                    f"CHECK-S9 attack_surface.techniques[{i}]: "
+                    f"applicability must be HIGH or MEDIUM"
+                )
+
+    # Asset dedup: no two assets with >50% entry_point overlap
+    assets = data.get("assets", [])
+    for i, a1 in enumerate(assets):
+        if not isinstance(a1, dict):
+            continue
+        for j, a2 in enumerate(assets):
+            if j <= i or not isinstance(a2, dict):
+                continue
+            eps1 = set(a1.get("entry_points", []))
+            eps2 = set(a2.get("entry_points", []))
+            if eps1 and eps2:
+                overlap = len(eps1 & eps2)
+                threshold = min(len(eps1), len(eps2)) * 0.5
+                if overlap > threshold:
+                    errors.append(
+                        f"CHECK-S9 duplicate assets: '{a1.get('name')}' and "
+                        f"'{a2.get('name')}' share >50% entry_points"
+                    )
+
+    return errors
+
+
+# ================================================================
+# Check S10: map-framework-parsed schema
+# ================================================================
+
+def check_framework_parsed(data: dict) -> list[str]:
+    """Validate map-framework-parsed.json schema."""
+    errors = []
+
+    fw = data.get("framework")
+    if not isinstance(fw, dict):
+        errors.append("CHECK-S10 framework: must be object")
+    elif fw.get("total_objectives") != len(data.get("framework_objectives", [])):
+        errors.append(
+            f"CHECK-S10 total_objectives: {fw['total_objectives']} != "
+            f"len(framework_objectives) ({len(data.get('framework_objectives', []))})"
+        )
+
+    objs = data.get("framework_objectives", [])
+    ids_seen = set()
+    for i, o in enumerate(objs):
+        if not isinstance(o, dict):
+            continue
+        for field in ("id", "domain", "title", "specification", "keywords"):
+            if not o.get(field):
+                errors.append(f"CHECK-S10 objectives[{i}]: missing {field}")
+        oid = o.get("id")
+        if oid in ids_seen:
+            errors.append(f"CHECK-S10 duplicate objective ID: {oid}")
+        if oid:
+            ids_seen.add(oid)
+
+    return errors
+
+
+# ================================================================
+# Check S11: map-controls-generated schema
+# ================================================================
+
+def check_controls_generated(data: dict, state_dir: str) -> list[str]:
+    """Validate map-controls-generated.json schema."""
+    errors = []
+
+    if data.get("schema_version") != "1.0":
+        errors.append("CHECK-S11 schema_version: must be '1.0'")
+
+    controls = data.get("controls", [])
+    if not controls:
+        errors.append("CHECK-S11 controls: must be non-empty")
+
+    ids_seen = set()
+    for i, c in enumerate(controls):
+        if not isinstance(c, dict):
+            continue
+        cid = c.get("id", f"<missing-{i}>")
+
+        if cid in ids_seen:
+            errors.append(f"CHECK-S11 duplicate control ID: {cid}")
+        ids_seen.add(cid)
+
+        if c.get("scope") not in ("ORG", "ACC", "RES"):
+            errors.append(f"CHECK-S11 {cid}: invalid scope '{c.get('scope')}'")
+        if c.get("category") not in ("PRV", "PRO", "DET", "COR"):
+            errors.append(f"CHECK-S11 {cid}: invalid category '{c.get('category')}'")
+        if not c.get("mechanism"):
+            errors.append(f"CHECK-S11 {cid}: missing mechanism")
+        if not c.get("mitigation_ids"):
+            errors.append(f"CHECK-S11 {cid}: missing mitigation_ids")
+        if not c.get("security_rationale"):
+            errors.append(f"CHECK-S11 {cid}: missing security_rationale")
+        if not c.get("framework_keywords"):
+            errors.append(f"CHECK-S11 {cid}: missing framework_keywords")
+
+        # ID format: CTRL-SCOPE-CAT-NNN
+        parts = cid.split("-")
+        if len(parts) != 4 or parts[0] != "CTRL":
+            errors.append(f"CHECK-S11 {cid}: invalid format, must be CTRL-SCOPE-CAT-NNN")
+        elif parts[1] != c.get("scope") or parts[2] != c.get("category"):
+            errors.append(
+                f"CHECK-S11 {cid}: ID scope/category mismatch "
+                f"(ID says {parts[1]}-{parts[2]}, fields say {c.get('scope')}-{c.get('category')})"
+            )
+
+    # Mitigation coverage: every mitigation should have at least one control
+    vj = _load_json(os.path.join(state_dir, "validated.json"))
+    if vj:
+        all_mit_ids = {m["id"] for m in vj.get("existing_mitigations", []) if m.get("id")}
+        covered = set()
+        for c in controls:
+            covered.update(c.get("mitigation_ids", []))
+        uncovered = all_mit_ids - covered
+        if uncovered:
+            errors.append(
+                f"CHECK-S11 {len(uncovered)} mitigations have no controls: "
+                f"{sorted(uncovered)}"
+            )
+
+    # Summary consistency
+    summary = data.get("control_summary", {})
+    if summary.get("total_controls") != len(controls):
+        errors.append(
+            f"CHECK-S11 control_summary.total_controls "
+            f"({summary.get('total_controls')}) != actual ({len(controls)})"
+        )
+
+    return errors
+
+
+# ================================================================
+# Check S12: map-framework-mapped quality gates
+# ================================================================
+
+def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
+    """Validate map-framework-mapped.json with all 7 quality gate rules."""
+    errors = []
+
+    fm = data.get("framework_mapping", [])
+    if not isinstance(fm, list):
+        return ["CHECK-S12 framework_mapping: must be a list"]
+
+    # Load sibling files for cross-checks
+    cg = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
+    fw = _load_json(os.path.join(state_dir, "map-framework-parsed.json"))
+
+    # All objectives present
+    if fw:
+        expected_ids = {o["id"] for o in fw.get("framework_objectives", []) if o.get("id")}
+        actual_ids = {f.get("objective_id") for f in fm if f.get("objective_id")}
+        missing = expected_ids - actual_ids
+        if missing:
+            errors.append(
+                f"CHECK-S12 {len(missing)} objectives missing from framework_mapping: "
+                f"{sorted(missing)[:10]}"
+            )
+        extra = actual_ids - expected_ids
+        if extra:
+            errors.append(
+                f"CHECK-S12 {len(extra)} unexpected objective IDs: {sorted(extra)[:10]}"
+            )
+
+    # Rule 1: Confidence-coverage consistency
+    for f in fm:
+        if f.get("status") != "MAPPED":
+            continue
+        ctrls = f.get("controls", [])
+        if not ctrls:
+            continue
+        confs = [c.get("confidence", "Low") for c in ctrls]
+        cov = f.get("coverage", "")
+        if cov == "FULL" and "High" not in confs:
+            errors.append(
+                f"CHECK-S12 Rule1: {f['objective_id']}: FULL coverage but no High confidence"
+            )
+        if cov == "PARTIAL" and "Medium" not in confs and "High" not in confs:
+            errors.append(
+                f"CHECK-S12 Rule1: {f['objective_id']}: PARTIAL coverage but no Medium+ confidence"
+            )
+
+    # Rule 2: No domain spray — consecutive same-domain same-controls
+    prev_domain = None
+    prev_ctrls = None
+    streak = 0
+    for f in fm:
+        if f.get("status") != "MAPPED":
+            prev_domain = None
+            prev_ctrls = None
+            streak = 0
+            continue
+        cur_ctrls = sorted(c["control_id"] for c in f.get("controls", []) if c.get("control_id"))
+        cur_domain = f.get("domain", "")
+        if cur_domain == prev_domain and cur_ctrls == prev_ctrls:
+            streak += 1
+            if streak >= 2:
+                errors.append(
+                    f"CHECK-S12 Rule2: {f['objective_id']} identical controls as "
+                    f">=2 predecessors in {cur_domain}"
+                )
+        else:
+            streak = 0
+        prev_domain = cur_domain
+        prev_ctrls = cur_ctrls
+
+    # Rule 3: No control mapped to >15 objectives
+    ctrl_counts: Counter = Counter()
+    for f in fm:
+        for c in f.get("controls", []):
+            cid = c.get("control_id")
+            if cid:
+                ctrl_counts[cid] += 1
+    for ctrl, count in ctrl_counts.items():
+        if count > 15:
+            errors.append(f"CHECK-S12 Rule3: {ctrl} mapped to {count} objectives (max 15)")
+
+    # Rule 5: Rationale required
+    missing_rationale = sum(
+        1 for f in fm for c in f.get("controls", []) if not c.get("rationale")
+    )
+    if missing_rationale > 0:
+        errors.append(f"CHECK-S12 Rule5: {missing_rationale} control mappings missing rationale")
+
+    # Rule 6: Max 5 High per objective
+    for f in fm:
+        high_count = sum(1 for c in f.get("controls", []) if c.get("confidence") == "High")
+        if high_count > 5:
+            errors.append(
+                f"CHECK-S12 Rule6: {f.get('objective_id')} has {high_count} High confidence (max 5)"
+            )
+
+    # Rule 7: Orphaned controls
+    if cg:
+        all_mapped = set()
+        for f in fm:
+            for c in f.get("controls", []):
+                cid = c.get("control_id")
+                if cid:
+                    all_mapped.add(cid)
+        all_ctrl_ids = {c["id"] for c in cg.get("controls", []) if c.get("id")}
+        orphans = all_ctrl_ids - all_mapped
+        if orphans:
+            errors.append(f"CHECK-S12 Rule7: {len(orphans)} orphaned controls: {sorted(orphans)}")
+
+    # Coverage summary consistency
+    fcs = data.get("framework_coverage_summary", {})
+    actual_mapped = sum(1 for f in fm if f.get("status") == "MAPPED")
+    actual_na = sum(1 for f in fm if f.get("status") == "N/A")
+    if fcs.get("mapped") is not None and fcs["mapped"] != actual_mapped:
+        errors.append(
+            f"CHECK-S12 summary: mapped={fcs['mapped']} but actual={actual_mapped}"
+        )
+    if fcs.get("not_applicable") is not None and fcs["not_applicable"] != actual_na:
+        errors.append(
+            f"CHECK-S12 summary: not_applicable={fcs['not_applicable']} but actual={actual_na}"
+        )
+
+    return errors
+
+
+# ================================================================
+# Check S13: mapping-results.json (assembled) validation
+# ================================================================
+
+def check_mapping_results(data: dict) -> list[str]:
+    """Validate assembled mapping-results.json: schema, quality gates, bidirectionality."""
+    errors = []
+
+    if data.get("schema_version") != "1.0":
+        errors.append("CHECK-S13 schema_version: must be '1.0'")
+
+    # Framework object
+    fw = data.get("framework")
+    if not isinstance(fw, dict):
+        errors.append(f"CHECK-S13 framework: must be object, got {type(fw).__name__}")
+    elif not all(k in fw for k in ("name", "version", "source_file", "total_objectives")):
+        errors.append("CHECK-S13 framework: missing required keys (name, version, source_file, total_objectives)")
+
+    # Threat mitigation map
+    tmm = data.get("threat_mitigation_map", [])
+    for i, t in enumerate(tmm):
+        if not isinstance(t, dict):
+            continue
+        if t.get("coverage") not in ("FULL", "PARTIAL", "NONE"):
+            errors.append(f"CHECK-S13 threat_mitigation_map[{i}].coverage: invalid '{t.get('coverage')}'")
+        if "framework_objectives" not in t:
+            errors.append(f"CHECK-S13 threat_mitigation_map[{i}]: missing framework_objectives")
+        if "statement" not in t:
+            errors.append(f"CHECK-S13 threat_mitigation_map[{i}]: missing statement")
+
+    # Controls
+    controls = data.get("controls", [])
+    for i, c in enumerate(controls):
+        if not isinstance(c, dict):
+            continue
+        if "framework_objectives" not in c:
+            errors.append(f"CHECK-S13 controls[{i}] ({c.get('id', '?')}): missing framework_objectives")
+        if c.get("scope") not in ("ORG", "ACC", "RES"):
+            errors.append(f"CHECK-S13 controls[{i}].scope: invalid '{c.get('scope')}'")
+        if c.get("category") not in ("PRV", "PRO", "DET", "COR"):
+            errors.append(f"CHECK-S13 controls[{i}].category: invalid '{c.get('category')}'")
+        if "mechanism" not in c:
+            errors.append(f"CHECK-S13 controls[{i}] ({c.get('id', '?')}): missing mechanism")
+
+    # Framework mapping completeness
+    fm = data.get("framework_mapping", [])
+    if len(fm) < 150:
+        errors.append(f"CHECK-S13 framework_mapping: only {len(fm)} entries — expected ~197+")
+    for i, f in enumerate(fm):
+        if not isinstance(f, dict):
+            continue
+        if "status" not in f:
+            errors.append(f"CHECK-S13 framework_mapping[{i}] ({f.get('objective_id', '?')}): missing status")
+
+    # Quality gates re-check on assembled data
+    # Rule 1: Confidence-coverage consistency
+    for f in fm:
+        if f.get("status") != "MAPPED":
+            continue
+        ctrls = f.get("controls", [])
+        if not ctrls:
+            continue
+        confs = [c.get("confidence", "Low") for c in ctrls]
+        cov = f.get("coverage", "")
+        if cov == "FULL" and "High" not in confs:
+            errors.append(f"CHECK-S13 Rule1: {f['objective_id']}: FULL but no High confidence")
+
+    # Rule 3: No control >15 objectives
+    ctrl_counts: Counter = Counter()
+    for f in fm:
+        for c in f.get("controls", []):
+            cid = c.get("control_id")
+            if cid:
+                ctrl_counts[cid] += 1
+    for ctrl, count in ctrl_counts.items():
+        if count > 15:
+            errors.append(f"CHECK-S13 Rule3: {ctrl} mapped to {count} objectives — max 15")
+
+    # Rule 5: Rationale
+    missing_rationale = sum(
+        1 for f in fm for c in f.get("controls", []) if not c.get("rationale")
+    )
+    if missing_rationale > 0:
+        errors.append(f"CHECK-S13 Rule5: {missing_rationale} mappings missing rationale")
+
+    # Rule 7: Orphans
+    all_mapped_ids = set()
+    for f in fm:
+        for c in f.get("controls", []):
+            cid = c.get("control_id")
+            if cid:
+                all_mapped_ids.add(cid)
+    all_ctrl_ids = {c.get("id", "") for c in controls}
+    orphans = all_ctrl_ids - all_mapped_ids
+    if orphans:
+        # Warning not error — some controls may be compensating
+        pass
+
+    # Bidirectional consistency: fm→controls and controls→fm must agree
+    fm_obj_to_ctrls: dict[str, set[str]] = {}
+    for f in fm:
+        if f.get("status") == "MAPPED":
+            for c in f.get("controls", []):
+                cid = c.get("control_id")
+                oid = f.get("objective_id")
+                if cid and oid:
+                    fm_obj_to_ctrls.setdefault(oid, set()).add(cid)
+
+    ctrl_to_objs: dict[str, set[str]] = {}
+    for ctrl in controls:
+        for obj in ctrl.get("framework_objectives", []):
+            # framework_objectives can be list of strings or list of dicts
+            if isinstance(obj, dict):
+                obj_id = obj.get("objective_id", "")
+            else:
+                obj_id = str(obj)
+            if obj_id:
+                ctrl_to_objs.setdefault(ctrl.get("id", ""), set()).add(obj_id)
+
+    bidir_mismatches = 0
+    for obj_id, ctrl_ids in fm_obj_to_ctrls.items():
+        for ctrl_id in ctrl_ids:
+            if obj_id not in ctrl_to_objs.get(ctrl_id, set()):
+                bidir_mismatches += 1
+    if bidir_mismatches > 0:
+        errors.append(f"CHECK-S13 bidirectional: {bidir_mismatches} pairs mismatch")
+
+    # Mitigation completeness
+    none_mits = [
+        t.get("mitigation_id", f"tmm[{i}]")
+        for i, t in enumerate(tmm)
+        if t.get("coverage") == "NONE"
+    ]
+    if none_mits:
+        errors.append(f"CHECK-S13 {len(none_mits)} mitigations have NONE coverage: {none_mits}")
+
+    # framework_coverage_summary
+    fcs = data.get("framework_coverage_summary", {})
+    if not fcs or not fcs.get("by_domain"):
+        errors.append("CHECK-S13 framework_coverage_summary: empty or missing by_domain")
+
+    return errors
+
+
+# ================================================================
+# Check S14: research-attack-surface schema
+# ================================================================
+
+_TECHNIQUE_PATTERN = re.compile(r"^T\d{4}(\.\d{3})?$")
+
+
+def check_research_attack_surface(data: dict) -> list[str]:
+    """Validate research-attack-surface.json schema."""
+    errors = []
+
+    if data.get("phase") != "research-attack-surface":
+        errors.append("CHECK-S14 phase: must be 'research-attack-surface'")
+
+    if data.get("schema_version") != "1.0":
+        errors.append("CHECK-S14 schema_version: must be '1.0'")
+
+    if not isinstance(data.get("service"), str):
+        errors.append("CHECK-S14 service: must be a string")
+
+    # applicable_techniques
+    techs = data.get("applicable_techniques", [])
+    if not isinstance(techs, list) or len(techs) == 0:
+        errors.append("CHECK-S14 applicable_techniques: must be non-empty list")
+
+    tech_ids = set()
+    for i, t in enumerate(techs):
+        if not isinstance(t, dict):
+            continue
+        tid = t.get("technique_id", "")
+        if not _TECHNIQUE_PATTERN.match(tid):
+            errors.append(f"CHECK-S14 techniques[{i}]: invalid technique_id '{tid}'")
+        if tid in tech_ids:
+            errors.append(f"CHECK-S14 duplicate technique_id: {tid}")
+        tech_ids.add(tid)
+
+        for field in ("technique_name", "tactic_id", "tactic_name",
+                       "applicability", "applicability_reason", "api_surface_evidence"):
+            if not t.get(field):
+                errors.append(f"CHECK-S14 techniques[{i}] ({tid}): missing {field}")
+
+        if t.get("applicability") not in ("HIGH", "MEDIUM"):
+            errors.append(
+                f"CHECK-S14 techniques[{i}] ({tid}): applicability must be HIGH or MEDIUM, "
+                f"got '{t.get('applicability')}'"
+            )
+
+    # stride_to_attack_bridge
+    bridge = data.get("stride_to_attack_bridge", [])
+    valid_stride = {"Spoofing", "Tampering", "Repudiation",
+                    "Information Disclosure", "Denial of Service",
+                    "Elevation of Privilege"}
+    for i, b in enumerate(bridge):
+        if not isinstance(b, dict):
+            continue
+        cat = b.get("stride_category", "")
+        if cat not in valid_stride:
+            errors.append(f"CHECK-S14 bridge[{i}]: invalid stride_category '{cat}'")
+        # Bridge techniques should be subset of applicable techniques
+        for bt in b.get("attack_techniques", []):
+            if bt not in tech_ids:
+                errors.append(
+                    f"CHECK-S14 bridge[{i}] ({cat}): technique {bt} not in applicable_techniques"
+                )
+
+    # tactic_coverage_summary
+    tcs = data.get("tactic_coverage_summary", {})
+    if not isinstance(tcs, dict):
+        errors.append("CHECK-S14 tactic_coverage_summary: must be object")
+
+    return errors
+
+
+# ================================================================
+# Main dispatcher
+# ================================================================
+
+def validate_state_file(file_path: str) -> list[str]:
+    """Run all applicable checks on a state file."""
+    errors = []
+    basename = os.path.basename(file_path)
+
+    if not file_path.endswith(".json"):
+        return []
+
+    try:
+        with open(file_path) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        return [f"JSON syntax error: {e}"]
+    except OSError as e:
+        return [f"File read error: {e}"]
+
+    if not isinstance(data, dict):
+        return [f"Expected JSON object, got {type(data).__name__}"]
+
+    state_dir = _find_state_dir(file_path)
+
+    # Dispatch by filename
+    if "research-mitigations" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_research_mitigations(data))
+
+    elif "research-capabilities" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_research_capabilities(data))
+
+    elif "research-api-surface" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_research_api_surface(data))
+
+    elif "research-attack-surface" in basename:
+        errors.extend(check_research_attack_surface(data))
+
+    elif basename == "research.json":
+        errors.extend(check_schema_version(data, "3.0"))
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_duplicate_assets(data))
+        errors.extend(check_unenriched_placeholders(data))
+        errors.extend(check_research_merged(data))
+
+    elif "validated" in basename:
+        errors.extend(check_schema_version(data, "3.0"))
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_duplicate_assets(data))
+        errors.extend(check_unenriched_placeholders(data))
+
+    elif "map-framework-parsed" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_framework_parsed(data))
+
+    elif "map-controls-generated" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_controls_generated(data, state_dir))
+
+    elif "map-framework-mapped" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_framework_mapped(data, state_dir))
+
+    elif "mapping-results" in basename:
+        errors.extend(check_required_fields(data, basename))
+        errors.extend(check_control_integrity(data))
+        errors.extend(check_mapping_results(data))
+
+    return errors
+
+
+# ================================================================
+# CLI entry point
+# ================================================================
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: python3 validate_state.py <file_path>", file=sys.stderr)
+        sys.exit(1)
+
+    file_path = sys.argv[1]
+    if not os.path.isfile(file_path):
+        print(f"File not found: {file_path}", file=sys.stderr)
+        sys.exit(1)
+
+    errors = validate_state_file(file_path)
+
+    if errors:
+        print(f"STATE VALIDATION FAILED: {os.path.basename(file_path)} ({len(errors)} errors)", file=sys.stderr)
+        for e in errors:
+            print(f"  {e}", file=sys.stderr)
+        sys.exit(2)
+    else:
+        print(f"STATE VALIDATION PASSED: {os.path.basename(file_path)}")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

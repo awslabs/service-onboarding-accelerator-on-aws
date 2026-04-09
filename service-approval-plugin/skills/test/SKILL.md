@@ -1,14 +1,14 @@
 ---
 name: test
-description: Deploy compliant resource template and validate zero Security Hub findings. Requires AWS credentials.
+description: Deploy compliant resource template and validate zero Config rule findings. Requires AWS credentials.
 disable-model-invocation: false
 argument-hint: "[--env=<profile>] [--keep] [--dry-run] [--timeout=<minutes>]"
 ---
 
 # Service Approval — Tester
 
-Deploy the generated compliant resource template and validate that it produces zero Security Hub
-findings and no Config rule violations. Write results to `.service-approval/state/test-results.json`.
+Deploy the generated compliant resource template and validate that it produces zero Config rule
+findings and no Config compliance violations. Write results to `.service-approval/state/test-results.json`.
 
 ## Prerequisites
 
@@ -21,18 +21,37 @@ findings and no Config rule violations. Write results to `.service-approval/stat
   - `--env=<profile>`: AWS CLI profile (REQUIRED for full mode)
   - `--keep`: keep deployed resources after test
   - `--dry-run`: lint only, no deployment
-  - `--timeout=<minutes>`: Security Hub polling timeout (default: 30)
+  - `--timeout=<minutes>`: Config evaluation timeout (default: 30)
 
 ## Dry-run mode (--dry-run or no --env)
 
-Run cfn-lint via `awsiac` MCP on `controls/iac/compliant-resource.cfn.yaml`.
+Run the deployability validator (Tier 1 + Tier 2 if credentials available):
+
+```bash
+python3 service-approval-plugin/tools/validate/validate_deployable.py \
+  [--profile {env}] [--tier1-only] .service-approval/controls/
+```
+
+**Without `--env`**: Runs Tier 1 only (static checks — JSON, YAML, terraform validate/fmt,
+CDK/CDKTF tsc, py_compile, cfn-lint). No AWS credentials needed.
+
+**With `--env=<profile>`**: Runs Tier 1 + Tier 2 (CloudFormation validate-template, IAM
+Access Analyzer validate-policy for SCPs, identity policies, resource policies).
+
+If credentials are missing when `--env` is provided, print instructions:
+```
+Run: aws sso login --profile <profile>
+```
+
 Write to `.service-approval/state/test-results.json`:
 ```json
 {
   "passed": null,
   "skipped": true,
-  "skip_reason": "dry-run — template syntax validated only",
-  "security_hub_findings": null,
+  "skip_reason": "dry-run — deployability validation only",
+  "tier1_result": "PASS|FAIL",
+  "tier2_result": "PASS|FAIL|SKIPPED",
+  "config_findings": null,
   "config_compliance": null,
   "cloudwatch_alarms_triggered": null,
   "deployed_resources": [],
@@ -80,27 +99,48 @@ aws cloudformation deploy \
   --profile {env}
 ```
 
-### Step 4: Wait for Security Hub to stabilize
+### Step 4: Wait for Config evaluations to stabilize
 
-Wait 60 seconds for initial findings to appear. Then poll every 60 seconds up to `--timeout` minutes.
+Wait 60 seconds for initial evaluations to complete. Then poll every 60 seconds up to `--timeout` minutes.
 
 ```bash
 sleep 60
-aws securityhub get-findings \
-  --filters '{"ResourceId":[{"Value":"<resource-arn>","Comparison":"PREFIX"}]}' \
+aws configservice get-compliance-details-by-resource \
+  --resource-type "<cfn-resource-type>" \
+  --resource-id "<resource-id>" \
   --profile {env} \
-  --query 'Findings[*].{Title:Title,Severity:Severity.Label,Resource:Resources[0].Id}' \
+  --query 'EvaluationResults[*].{RuleName:EvaluationResultIdentifier.EvaluationResultQualifier.ConfigRuleName,ComplianceType:ComplianceType}' \
   --output json
 ```
 
-Filter findings: only count those where `Resources[].Id` matches a deployed resource ARN.
-Record `filtered_ambient` count (findings on other resources, ignored).
+Filter evaluations: only count those where the resource matches a deployed resource ARN.
+Record `filtered_ambient` count (evaluations on other resources, ignored).
 
 ### Step 5: Evaluate results
 
-- `security_hub_findings.total = 0`: PASS
+- `config_compliance.non_compliant_rules` is empty: PASS
 - All Config rules COMPLIANT: PASS
 - No CloudWatch alarms in ALARM state: PASS
+
+### Step 5b: Coverage Verification
+
+Read `.service-approval/state/mapping-results.json` and verify:
+
+**Mitigation coverage:**
+- For every entry in `threat_mitigation_map[]`:
+  - Verify at least one control from `controls[]` has a deployed artifact
+  - If `coverage == "NONE"`, flag as uncovered
+- Calculate `mitigation_coverage`: covered / total mitigations
+
+**Framework coverage:**
+- For every entry in `framework_mapping[]` where `status == "MAPPED"`:
+  - Verify at least one mapped control has a deployed artifact
+  - If no deployed artifact exists for any mapped control, flag the objective
+- Calculate `framework_coverage`: objectives with deployed artifacts / total mapped objectives
+
+**Assessment gap coverage (if mapping-results.json references assessment gaps):**
+- For controls linked to `assessment_gap_ids[]`, verify deployed artifacts exist
+- Flag any assessment gap without a deployed control artifact
 
 ### Step 6: Teardown (unless --keep)
 
@@ -121,7 +161,7 @@ Write `.service-approval/state/test-results.json`:
   "passed": true,
   "skipped": false,
   "skip_reason": null,
-  "security_hub_findings": {
+  "config_findings": {
     "total": 0,
     "by_resource": {},
     "filtered_ambient": 3
@@ -134,6 +174,18 @@ Write `.service-approval/state/test-results.json`:
   "deployed_resources": [
     { "type": "AWS::...", "arn": "arn:aws:..." }
   ],
+  "mitigation_coverage": {
+    "total": 37,
+    "covered": 35,
+    "uncovered": ["M-AgentRuntime.15", "M-Gateway.12"],
+    "percentage": 94.6
+  },
+  "framework_coverage": {
+    "total_mapped": 112,
+    "with_deployed_artifacts": 110,
+    "missing": ["CEK-19", "LOG-11"],
+    "percentage": 98.2
+  },
   "teardown_complete": true
 }
 ```
@@ -141,10 +193,12 @@ Write `.service-approval/state/test-results.json`:
 Print summary:
 ```
 Test complete:
-  Security Hub findings (filtered): N
+  Config rule findings (filtered): N
   Config compliance: COMPLIANT/NON_COMPLIANT
   CloudWatch alarms triggered: N
   Deployed resources: N
+  Mitigation coverage: N/N ({percentage}%)
+  Framework coverage: N/N ({percentage}%)
   Teardown: complete/skipped (--keep)
   RESULT: PASS/FAIL
 ```
