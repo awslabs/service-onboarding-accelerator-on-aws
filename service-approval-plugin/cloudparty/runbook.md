@@ -213,7 +213,7 @@ Two approval gates in this review:
 #### Generator agent demo (30 min)
 
 - Reads `state/validated.json` and generates the full controls matrix:
-  - **Org-level:** SCP deny policies, tag policies, Config org rules, Security Hub org config
+  - **Org-level:** SCP deny policies, tag policies, Config org rules, Config conformance packs
   - **Account-level:** CFN Guard rules, Checkov config, permission boundary, EventBridge rules, Config rules, Lambda remediator
   - **Resource-level:** Resource policies, KMS key policies, RCP (where supported)
   - **IaC:** Modular Terraform (one module per resource asset), CDK TypeScript, CloudFormation, CDK for Terraform — all with embedded security controls and inline control ID comments

@@ -1,14 +1,16 @@
 ---
-name: service-approval
-description: Orchestrate all 5 service-approval agents to generate AWS security controls and compliant resource templates for any AWS service
+name: service-approval-v3
+description: Orchestrate all 7 service-approval agents (Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service
 disable-model-invocation: false
-argument-hint: "[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean]"
+argument-hint: "[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--questions=<file>] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>]"
 ---
 
-# Service Approval — Orchestrator
+# Service Approval — Orchestrator v3
 
-Coordinate the 5 service-approval agents to produce a complete set of AWS security controls
+Coordinate the service-approval agents to produce a complete set of AWS security controls
 and a compliant resource template for any AWS service.
+
+**Pipeline**: Assess → Research (3 sub-skills) → Validate → Map (4 sub-skills) → Generate (3 sub-skills) → Test → Summarize
 
 ## Flags
 
@@ -19,10 +21,13 @@ and a compliant resource template for any AWS service.
 | `--env=<profile>` | AWS CLI profile for Tester | None (skips Tester) |
 | `--skip-test` | Skip Tester agent | false |
 | `--dry-run` | Lint artifacts, do not deploy | false |
-| `--timeout=<minutes>` | Security Hub polling timeout | 30 |
+| `--timeout=<minutes>` | Config evaluation timeout | 30 |
 | `--keep` | Keep deployed test resources | false |
 | `--include-unverified` | Allow unverified items in generation | false |
+| `--questions=<file>` | Path to SITCO Bar Questions file (.docx or .txt) — passed to Phase 0 | None |
 | `--clean` | Delete existing .service-approval/ state before run | false |
+| `--framework=<type>` | Control framework type (ccmv4, nist, cis, iso) — passed to Map phase | auto-detect |
+| `--framework-file=<path>` | Explicit path to framework file — passed to Map phase | auto-detect from input folder |
 
 ## Prerequisites
 
@@ -70,10 +75,9 @@ After adding any MCP, inform the user: "Added missing MCP servers: <list>. They 
 **Step 3 — Handle MCPs that are registered but failing to connect:**
 If any MCP is listed but shows "Failed to connect" or is unreachable, warn the user:
 ```
-⚠ MCP degraded coverage:
-  aws-documentation UNREACHABLE — Research Step 3 (security docs), Validate Step 2b (SCP/RCP live
-    docs), and Generate Step 5 (CDK/Terraform schemas) will fall back to web search.
-  awsiac UNREACHABLE — Generate Steps 1-2 (cfn-guard, CFN hooks) will use best-effort generation.
+MCP degraded coverage:
+  aws-documentation UNREACHABLE — Research and Validate will fall back to web search.
+  awsiac UNREACHABLE — Generate will use best-effort generation.
 ```
 Do NOT block execution — continue with degraded coverage and note it in the final report.
 
@@ -111,7 +115,6 @@ For each missing MCP, add it to `~/.gemini/settings.json` under `mcpServers`:
 }
 ```
 Merge (do not overwrite existing entries). Write back the updated file.
-After writing, inform the user: "Added missing MCP servers to ~/.gemini/settings.json: <list>. Restart Gemini CLI if this is the first time adding them."
 
 **Amazon Q Developer:**
 ```bash
@@ -145,7 +148,7 @@ For each missing MCP, add it to `~/.cursor/mcp.json` (or workspace `.cursor/mcp.
   }
 }
 ```
-Merge and write back. Inform the user: "Added MCPs to ~/.cursor/mcp.json. Restart Cursor to activate."
+Merge and write back.
 
 **Windsurf:**
 ```bash
@@ -162,12 +165,12 @@ For each missing MCP, add it to `~/.codeium/windsurf/mcp_config.json`:
   }
 }
 ```
-Merge and write back. Inform the user: "Added MCPs to Windsurf config. Restart Windsurf to activate."
+Merge and write back.
 
 **Generic (GitHub Copilot, Aider, Continue, other):**
 Print instructions for each missing MCP and continue — do not block execution:
 ```
-⚠ Missing MCP servers detected. Add these to your IDE's MCP configuration:
+Missing MCP servers detected. Add these to your IDE's MCP configuration:
   awsknowledge:       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" }
   aws-documentation:  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" }
   awsiac:             { "type": "http", "url": "https://iac-mcp.global.api.aws" }
@@ -218,58 +221,259 @@ Decision logic:
 - `GITHUB_COPILOT` env var set → **GitHub Copilot — Sequential Mode**
 - No signals detected → **Sequential Mode** (safe default)
 
+---
+
 ## Sequential Mode (default for all non-Claude-Code clients)
 
-Run each agent in order. Pass all relevant flags through to each agent.
+Run each phase in order. Pass all relevant flags through.
 
-### Phase 1: Research
-Follow ALL instructions in `skills/research/SKILL.md` exactly.
-Pass: input folder path, `--service` flag.
-When done: verify `.service-approval/state/research.json` exists before proceeding.
+### Phase 0: Assess (Mandatory)
+Follow ALL instructions in `skills/assess/SKILL.md` exactly.
+Pass: input folder path, `--service` flag, `--questions` flag if provided.
+When done: verify these files exist before proceeding:
+- `.service-approval/state/sar-facts.json`
+- `.service-approval/state/checkpoint-results.json`
+- `.service-approval/state/assessment-summary.md`
+
+**Skip condition**: Phase 0 is skipped ONLY if all three assessment artifacts already
+exist (from a previous `/assess` run). There is no flag to skip assessment.
+
+### Phase 1: Research (3+1 sub-skills, sequential in this mode)
+
+**Step 1a — Mitigations:**
+Follow ALL instructions in `skills/research-mitigations/SKILL.md`.
+Pass: `./input-folder`, `--service`.
+Wait for `.service-approval/state/research-mitigations.json`.
+
+**Step 1b — Capabilities:**
+Follow ALL instructions in `skills/research-capabilities/SKILL.md`.
+Pass: `--service`.
+Wait for `.service-approval/state/research-capabilities.json`.
+
+**Step 1c — API Surface:**
+Follow ALL instructions in `skills/research-api-surface/SKILL.md`.
+Pass: `--service`.
+Wait for `.service-approval/state/research-api-surface.json`.
+
+**Step 1d — ATT&CK Attack Surface (optional):**
+Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
+Pass: `--service`.
+Wait for `.service-approval/state/research-attack-surface.json`.
+Skip this step if ATT&CK enrichment is not needed (no customer threat model input).
+
+**Step 1e — Merge:**
+Run the merge step from `skills/research/SKILL.md` → "Merge Step" section.
+Verify `.service-approval/state/research.json` exists and has `schema_version: "3.0"`.
 
 ### Phase 2: Validate
 Follow ALL instructions in `skills/validate/SKILL.md` exactly.
 When done: verify `.service-approval/state/validated.json` exists before proceeding.
 
-### Phase 3: Generate
-Follow ALL instructions in `skills/generate/SKILL.md` exactly.
-Pass: `--include-unverified` if set.
-When done: verify `.service-approval/controls/` directory has files before proceeding.
+### Phase 3: Map (4 sub-skills, sequential in this mode)
 
-### Phase 4: Test
+**Step 3a — Parse Framework:**
+Follow ALL instructions in `skills/map-parse-framework/SKILL.md`.
+Pass: `--framework` and `--framework-file` flags if provided.
+Wait for `.service-approval/state/map-framework-parsed.json`.
+
+**Step 3b — Generate Controls:**
+Follow ALL instructions in `skills/map-generate-controls/SKILL.md`.
+Pass: `--service`.
+Wait for `.service-approval/state/map-controls-generated.json`.
+
+**Step 3c — Framework Mapping:**
+Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`.
+Wait for `.service-approval/state/map-framework-mapped.json`.
+
+**Step 3d — Assemble:**
+Follow ALL instructions in `skills/map-assemble/SKILL.md`.
+Verify these files exist before proceeding:
+- `.service-approval/state/mapping-results.json`
+- `.service-approval/state/controls-catalog.md`
+- `.service-approval/state/framework-mapping.md`
+
+### Phase 4: Generate (3 sub-skills, sequential in this mode)
+
+**Step 4a — Preventive/Proactive:**
+Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
+Pass: `--service`, `--include-unverified` if set.
+Wait for `controls/preventive/` and `controls/proactive/` to be populated.
+
+**Step 4b — Detective/Corrective:**
+Follow ALL instructions in `skills/generate-detective/SKILL.md`.
+Pass: `--service`, `--include-unverified` if set.
+Wait for `controls/detective/` and `controls/remediation/` to be populated.
+
+**Step 4c — IaC Templates:**
+Follow ALL instructions in `skills/generate-iac/SKILL.md`.
+Pass: `--service`, `--include-unverified` if set.
+Wait for `controls/iac/` to have all 4 formats.
+
+**Step 4d — Final Validation:**
+Run the final validation from `skills/generate/SKILL.md` → "Final Validation" section.
+
+### Phase 5: Test
 If `--skip-test` OR `--dry-run` OR no `--env` provided: skip this phase entirely.
 Otherwise: follow ALL instructions in `skills/test/SKILL.md` exactly.
 Pass: `--env`, `--keep`, `--dry-run`, `--timeout` flags.
 
-### Phase 5: Summarize
+### Phase 6: Summarize
 Follow ALL instructions in `skills/summarize/SKILL.md` exactly.
 Report the final verdict to the user.
 
+---
+
 ## Parallel Mode (Claude Code only — Agent tool available)
 
-IMPORTANT: "Parallel" means Phase 1 runs as a background subagent while the orchestrator
-monitors for its output. Phases 2-5 have strict sequential dependencies and run one at a time.
-This is NOT bulk parallelism — only Phase 1 benefits from background dispatch.
+Leverage the Agent tool to parallelize independent sub-skills within each phase.
 
-Execution:
-1. Dispatch Researcher as background subagent using the Agent tool.
-   Provide the full text of `skills/research/SKILL.md` as the prompt plus input folder and flags.
-   Poll `.service-approval/state/research.json` every 10s while other work continues.
-2. When `research.json` appears: dispatch Validator as subagent (foreground).
-   Provide full text of `skills/validate/SKILL.md` as prompt.
-   Wait for `validated.json`.
-3. When `validated.json` appears: dispatch Generator as subagent (foreground).
-   Provide full text of `skills/generate/SKILL.md` as prompt.
-   Wait for `controls/` to be populated.
-4. When `controls/` is populated and test not skipped: dispatch Tester as subagent (foreground).
-   Provide full text of `skills/test/SKILL.md` as prompt plus `--env` and flags.
-   Wait for `test-results.json`.
-5. Dispatch Summarizer as subagent (foreground).
-   Provide full text of `skills/summarize/SKILL.md` as prompt.
-   Wait for `APPROVAL-REPORT.md`.
+### Phase 0: Assess (Mandatory)
+If all 3 assessment artifacts already exist, skip (previous `/assess` run).
+Otherwise: dispatch Assessor as foreground subagent.
+Wait for all 3 assessment artifacts.
 
-If polling exceeds `--timeout` minutes for any phase, proceed to Summarizer with partial results.
+### Phase 1: Research (3+1 sub-skills in parallel)
+
+Dispatch all 4 research sub-skills simultaneously as background subagents:
+
+```
+Agent 1: research-mitigations (background)
+  Prompt: Full text of skills/research-mitigations/SKILL.md + input folder + --service flag
+  Output: research-mitigations.json
+
+Agent 2: research-capabilities (background)
+  Prompt: Full text of skills/research-capabilities/SKILL.md + --service flag
+  Output: research-capabilities.json
+
+Agent 3: research-api-surface (background)
+  Prompt: Full text of skills/research-api-surface/SKILL.md + --service flag
+  Output: research-api-surface.json
+
+Agent 4: research-attack-surface (background, optional)
+  Prompt: Full text of skills/research-attack-surface/SKILL.md + --service flag
+  Output: research-attack-surface.json
+  Note: Always dispatch — runs fast and enriches controls with threat traceability.
+  If it fails, pipeline continues without it (backward compatible).
+```
+
+**IMPORTANT:** Dispatch all 4 in a single message with 4 Agent tool calls.
+Do NOT set `model` parameter — let subagents inherit the caller's model.
+
+When all 4 complete (or 3 complete + Agent 4 fails gracefully), run the merge step
+from `skills/research/SKILL.md`:
+- Combine the 3 required partial JSONs into `research.json`
+- If `research-attack-surface.json` exists, merge its data into `attack_surface`
+- Run the validation script
+- If CRITICAL cross-reference errors exist (actions missing from both operations[] and
+  permission_only_actions[]), re-dispatch the api-surface agent with the missing action list
+
+### Phase 2: Validate
+Dispatch Validator as foreground subagent.
+Provide full text of `skills/validate/SKILL.md`.
+Wait for `validated.json`.
+
+### Phase 3: Map (4 sub-skills, 2 parallel + 2 sequential)
+
+**Steps 3a+3b: Parallel dispatch**
+
+Dispatch both independent sub-skills simultaneously as background subagents:
+
+```
+Agent 3a: map-parse-framework (background)
+  Prompt: Full text of skills/map-parse-framework/SKILL.md + framework flags
+  Output: map-framework-parsed.json
+
+Agent 3b: map-generate-controls (background)
+  Prompt: Full text of skills/map-generate-controls/SKILL.md + --service flag
+  Output: map-controls-generated.json
+```
+
+**IMPORTANT:** Dispatch both in a single message with 2 Agent tool calls.
+
+**Step 3c: Framework mapping (foreground, after 3a+3b complete)**
+
+When both complete, dispatch as foreground subagent:
+
+```
+Agent 3c: map-framework-mapping (foreground)
+  Prompt: Full text of skills/map-framework-mapping/SKILL.md
+  Input: map-framework-parsed.json + map-controls-generated.json
+  Output: map-framework-mapped.json
+```
+
+This is the most reasoning-heavy step — MUST run in foreground to ensure quality gates pass.
+
+**Step 3d: Assembly (foreground, after 3c completes)**
+
+Dispatch as foreground subagent:
+
+```
+Agent 3d: map-assemble (foreground)
+  Prompt: Full text of skills/map-assemble/SKILL.md
+  Input: All 3 intermediate files + validated.json
+  Output: mapping-results.json + controls-catalog.md + framework-mapping.md
+```
+
+Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
+
+### Phase 4: Generate (3 sub-skills in parallel)
+
+Dispatch all 3 generate sub-skills simultaneously as background subagents:
+
+```
+Agent 4: generate-preventive (background)
+  Prompt: Full text of skills/generate-preventive/SKILL.md + --service + --include-unverified
+  Output: controls/preventive/ + controls/proactive/
+
+Agent 5: generate-detective (background)
+  Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
+  Output: controls/detective/ + controls/remediation/
+
+Agent 6: generate-iac (background)
+  Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified
+  Output: controls/iac/
+```
+
+**IMPORTANT:** Dispatch all 3 in a single message with 3 Agent tool calls.
+
+When all 3 complete, run the final validation from `skills/generate/SKILL.md`.
+If any IaC templates are missing, re-dispatch the generate-iac agent.
+
+### Phase 5: Test
+If not skipped: dispatch Tester as foreground subagent.
+
+### Phase 6: Summarize
+Dispatch Summarizer as foreground subagent.
+Wait for `APPROVAL-REPORT.md`.
+
+### Parallelism Summary
+
+```
+Phase 0: Assess          (1 agent, foreground)
+Phase 1: Research         (4 agents in parallel, then merge)
+  1a: Mitigations         (background) ─┐
+  1b: Capabilities        (background) ─┤
+  1c: API Surface         (background) ─┤
+  1d: ATT&CK Surface      (background) ─┤
+                                        └─ 1e: Merge (foreground)
+Phase 2: Validate         (1 agent, foreground)
+Phase 3: Map              (2 agents in parallel, then 2 sequential)
+  3a: Parse Framework     (background) ─┐
+  3b: Generate Controls   (background) ─┤
+                                        ├─ 3c: Framework Mapping (foreground)
+                                        └─ 3d: Assemble          (foreground)
+Phase 4: Generate         (3 agents in parallel, then validate)
+Phase 5: Test             (1 agent, foreground)
+Phase 6: Summarize        (1 agent, foreground)
+```
+
+Total agents: up to 14 (vs 7 in monolithic mode), but with 3 parallelization windows
+that significantly reduce wall-clock time.
+
+If any agent exceeds `--timeout` minutes, proceed to Summarizer with partial results.
 Summarizer marks the timed-out agent as INCOMPLETE in the report.
+
+---
 
 ## Final Output
 
@@ -279,4 +483,3 @@ Report: .service-approval/APPROVAL-REPORT.md
 Controls: .service-approval/controls/
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 ```
-
