@@ -7,7 +7,7 @@ Generate AWS security controls and compliant resource templates for any AWS serv
 Orchestrates 5 agents to produce:
 - **Proactive controls**: cfn-guard rules, CloudFormation hooks, Checkov config, OPA policies
 - **Preventive controls**: SCPs, RCPs, declarative policies, AI opt-out, backup, tag policies, permission boundaries, Config org rules, conformance packs
-- **Detective controls**: Config rules, EventBridge rules, CloudWatch alarms, Security Hub config, Access Analyzer, CloudTrail org trail
+- **Detective controls**: Config rules, EventBridge rules, CloudWatch alarms, Access Analyzer, CloudTrail org trail
 - **Auto-remediation**: Lambda functions, SSM runbooks, Step Functions workflows
 - **Compliant IaC**: CDK (TypeScript), Terraform, CloudFormation, CDK for Terraform
 
@@ -41,7 +41,7 @@ Configure `kiro/agent.json`, then invoke the `service-approval` agent.
 | `--env=<profile>` | AWS CLI profile for Tester | None (skips Tester) |
 | `--skip-test` | Skip deployment validation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
-| `--timeout=<minutes>` | Security Hub polling timeout | 30 |
+| `--timeout=<minutes>` | Config evaluation timeout | 30 |
 | `--keep` | Keep deployed test resources | false |
 | `--include-unverified` | Include unverified items in generation | false |
 | `--clean` | Delete existing state before run | false |

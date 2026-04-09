@@ -17,5 +17,29 @@
   "includeMcpJson": true,
   "tools": ["*"],
   "resources": [],
-  "hooks": {}
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 service-approval-plugin/tools/validate/hook_post_tool_use.py",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 service-approval-plugin/tools/validate/hook_stop.py",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
 }
