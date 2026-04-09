@@ -16,6 +16,18 @@
     "awsiac": {
       "type": "http",
       "url": "https://iac-mcp.global.api.aws"
+    },
+    "kb-search": {
+      "command": "python3",
+      "args": ["tools/kb-search-mcp/server.py"],
+      "env": {
+        "AWS_PROFILE": "delegated-admin",
+        "AWS_REGION": "us-east-1"
+      }
+    },
+    "terraform": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.4.0"]
     }
   }
 }

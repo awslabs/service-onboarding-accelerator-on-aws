@@ -1,22 +1,28 @@
 ---
-name: validate
-description: Verify research.json findings via MCP — confirm controls, threats, MITRE assignments, and CCMv4 mappings are real. Produce validated.json.
+name: validate-v3
+description: >
+  Verify research.json v3.0 findings via MCP — confirm capabilities, API parameters, condition keys,
+  SCP/RCP expressibility, and mitigation feasibility. Produce validated.json.
 disable-model-invocation: false
 ---
 
-# Service Approval — Validator v2
+# Service Approval — Validator v3
 
-Read `.service-approval/state/research.json` (produced by Researcher v2). Verify every control,
-threat, MITRE ATT&CK assignment, and CCMv4 mapping against live MCP sources.
+Read `.service-approval/state/research.json` (schema v3.0 produced by Researcher v3). Verify
+every capability claim, API parameter, and mitigation against live MCP sources.
 Produce `.service-approval/state/validated.json`.
 
 ## Prerequisites
 
-- [ ] Confirm research.json exists:
+- [ ] Confirm research.json exists (schema validation runs automatically via PostToolUse hook).
+  Stop if `.service-approval/state/research.json` is missing.
+
+- [ ] Check for assessment artifacts (optional — from `/assess` phase):
   ```bash
-  test -f .service-approval/state/research.json && echo "OK" || echo "ERROR: run researcher first"
+  test -f .service-approval/state/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
+  test -f .service-approval/state/checkpoint-results.json && echo "Checkpoints: OK" || echo "Checkpoints: not found"
   ```
-  Stop if missing.
+  If present, load them — they provide pre-verified data that accelerates validation.
 
 ## MCP call logging
 
@@ -31,11 +37,13 @@ Log every MCP call to `.service-approval/state/mcp-calls.log` with format:
 
 Every `verification_note` must be specific to the item being verified. Do NOT copy-paste a
 generic note across items. Include:
-- The specific parameter, key, technique, or control ID that was checked
+- The specific parameter, key, capability, or claim that was checked
 - The MCP response detail that confirmed or denied it
 - Any caveats
 
 Blanket `verified: true` across all items with identical notes = insufficient verification.
+
+---
 
 ## Step 1: Verify API parameters
 
@@ -43,50 +51,55 @@ For each operation in `api_surface.operations[]` and each parameter in `.paramet
 - Call `awsknowledge` MCP: confirm the parameter exists in the live API schema for the operation
 - Set `verified: true/false`, `verification_source`, `verification_note`
 
-## Step 2: Verify condition keys
+## Step 2: Verify IAM condition keys
 
-For each control in `controls[]` where `category` is `Preventive` and `enforcement_point`
-references an IAM condition key:
-- Extract condition key names (pattern: `aws:Source*`, `<service>:*`)
-- Look up the key in the **IAM Service Authorization Reference**
-  (`https://docs.aws.amazon.com/service-authorization/latest/reference/reference.html`)
-  Use `awsknowledge` MCP to read the service-specific authorization reference page
-  (e.g., `list_<service>.html`) — this lists all supported condition keys, actions they
-  apply to, and their types.
-- Do NOT verify via the API reference — use only the Service Authorization Reference.
-- For global condition keys (`aws:SourceArn`, `aws:PrincipalOrgID`, etc.), confirm against
+For each condition key in `capabilities.iam.condition_keys[]`:
+- Extract condition key name and claimed `applies_to_actions[]`
+
+**If `sar-facts.json` exists** (from `/assess` phase):
+- Use `sar-facts.json` → `condition_keys[]` as the **primary verification source** for
+  service-specific condition keys. This is already extracted from the SAR page and is authoritative.
+- Cross-reference: if a condition key is in research.json but NOT in `sar-facts.json`, mark it
+  `verified: false` with note: "Condition key not found in SAR extraction (N keys extracted)."
+- For global condition keys (`aws:SourceArn`, `aws:PrincipalOrgID`, etc.), still verify against
   the global condition keys page in the Service Authorization Reference.
-- Flag keys not found as `verified: false`
+- Also use `sar-facts.json` → `wildcard_only_actions[]` to annotate which condition keys
+  apply only to wildcard actions.
 
-Each `verification_note` must include the key name, which actions it applies to, its type,
-and any caveats (e.g., "key exists but only applies to CreateX, not UpdateX").
+**If `sar-facts.json` does NOT exist**:
+- Look up the key in the **IAM Service Authorization Reference**
+  Use `awsknowledge` MCP to read the service-specific authorization reference page
+- For global condition keys, confirm against the global condition keys page.
+
+Set `verified: true/false`, `verification_source`, `verification_note` on each condition key.
 
 ## Step 2b: Verify SCP and RCP expressibility
 
-Run for every control in `controls[]` where `category` is `Preventive`. Results are used
-by the Generator. Run BEFORE Step 6.
+Run for every capability in `capabilities.organization_policies`. Results are used by the
+Map and Generator skills.
 
-**SCP expressibility** — for controls where `scope` is `Organisation` or `Account`:
+**SCP expressibility**:
 
-1. Identify the control intent from `description` and `parameters_controlled`
-2. Call `awsknowledge` MCP: fetch the service authorization reference for the service prefix.
-   - Look up each API action involved in this control
+1. Call `awsknowledge` MCP: fetch the service authorization reference for the service prefix.
+   - Look up each API action
    - Extract the "Condition keys" column — these are the ONLY condition keys that work in an SCP
-   - If no service-specific key covers the intent, check global keys
-3. Call `aws-documentation` MCP to verify SCP limitations:
+2. Call `aws-documentation` MCP to verify SCP limitations:
    ```
    URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html
    Extract: any service-specific SCP exemptions
    ```
-4. Mark `scp_expressible: false` if ANY of:
-   - The action is not in the service authorization reference
-   - No condition key in the action's "Condition keys" column matches the control intent
-   - The control targets service-linked roles (exempt from SCPs)
-   - The only enforcement path is a resource-based policy condition (use RCP instead)
-5. Set `scp_expressible: true/false` and `scp_gap_reason` — cite the specific condition key
-   found or explain why none exists.
+3. Set `scp_expressible: true/false` with specific reasons
 
-**RCP expressibility** — for controls where `scope` is `Resource`:
+**RCP expressibility**:
+
+**If `checkpoint-results.json` exists** (from `/assess` phase):
+- Read `checkpoints.rcp_support`. If `supported: false` and `definitive: true`:
+  - Set `rcp_expressible: false`
+  - Reason: "Service not in RCP supported list (verified by assessment checkpoint)"
+  - **Skip** the live docs fetch below — the checkpoint is authoritative.
+- If `supported: true`: still verify per-action exemptions via MCP.
+
+**If checkpoint data is NOT available or RCP is supported:**
 
 Step 1 — Fetch current RCP-supported services from live docs:
 ```
@@ -94,24 +107,83 @@ Call aws-documentation MCP:
   URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html
   Extract: table of supported services and their service prefixes
 ```
-Log the fetched list. This is authoritative — AWS adds services over time.
 
-Step 2 — For the target service, call `awsknowledge` MCP:
-- Query the service authorization reference for `<service-prefix>`
-- Look for "Resource control policies" column or RCP applicability notes
-
-Step 3 — Set `rcp_expressible`:
-- Service NOT in live docs list → `false`, reason: "Service not in current RCP supported list"
-- Service in list but action exempt → `false`, reason: cite the specific exemption
-- Service in list and action covered → `true`
+Step 2 — Set `rcp_expressible: true/false` with specific reason.
 
 **Declarative policy check:**
+
+**If `checkpoint-results.json` exists** and `checkpoints.declarative_policies` has
+`supported: false, definitive: true`:
+- Set `declarative_policy_expressible: false` immediately — skip the live docs fetch.
+
+**Otherwise:**
 ```
 Call aws-documentation MCP:
   URL: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_declarative.html
   Extract: which services and resource types have declarative policy support
 ```
 Set `declarative_policy_expressible: true/false`.
+
+## Step 2c: Verify ATT&CK attack surface (if present)
+
+Run only if `research.json` contains an `attack_surface` key (populated by the optional
+`research-attack-surface` sub-skill). If absent, skip this step entirely — the pipeline
+works without it.
+
+### 2c.1 Verify technique applicability
+
+For each technique in `attack_surface.applicable_techniques[]`:
+1. Check that every action in `api_surface_evidence[]` exists in `api_surface.operations[].operation`
+   - If an action is missing, set `verified: false` with note "Action {action} not found in API surface"
+2. Verify `nist_controls[]` and `ccmv4_objectives[]` against the crosswalk data file:
+   ```bash
+   python3 -c "
+   import json
+   xw = json.load(open('service-approval-plugin/data/attack-nist-ccm-crosswalk.json'))
+   xw_map = {m['attack_technique_id']: m for m in xw['mappings']}
+   # Check each technique's NIST/CCM mappings
+   "
+   ```
+   - If technique is in crosswalk: confirm `nist_controls` and `ccmv4_objectives` match
+   - If technique is NOT in crosswalk: mark `verified: false` with note "Technique not in crosswalk data"
+
+### 2c.2 Cross-reference with mitigations
+
+For each technique with `applicability: "HIGH"`:
+1. Check `stride_categories[]` — for each STRIDE category, verify that at least one
+   existing mitigation addresses a related threat
+2. If a HIGH technique has zero mitigation coverage, flag as an `attack_surface_gap`:
+   ```json
+   {
+     "technique_id": "T1078.004",
+     "technique_name": "Cloud Accounts",
+     "gap_type": "no_mitigation_coverage",
+     "recommendation": "Consider adding mitigation for IAM role assumption controls"
+   }
+   ```
+
+### 2c.3 Verify STRIDE bridge
+
+For each entry in `attack_surface.stride_to_attack_bridge[]`:
+- Confirm every `attack_techniques[]` entry exists in `applicable_techniques[].technique_id`
+- Remove bridge technique references that were filtered out (LOW applicability)
+
+Set `verified: true/false` and `verification_note` on each technique and bridge entry.
+
+Add to validated.json output:
+```json
+{
+  "attack_surface": {
+    "applicable_techniques": [...],
+    "stride_to_attack_bridge": [...],
+    "tactic_coverage_summary": {...},
+    "customer_stride_profile": {...},
+    "attack_surface_gaps": [...],
+    "verified_technique_count": 18,
+    "unverified_technique_count": 2
+  }
+}
+```
 
 **Backup policy check:**
 ```
@@ -131,128 +203,200 @@ Set `ai_optout_applicable: true/false`.
 Always `true` — applies to all IAM roles and users.
 Note which actions from `api_surface` should be scoped into the boundary.
 
-Add to each `controls[]` item:
+Add verification annotations to `capabilities.organization_policies`:
 ```json
 {
   "scp_expressible": true,
-  "scp_gap_reason": "",
+  "scp_verification_note": "...",
   "rcp_expressible": false,
-  "rcp_gap_reason": "Service not in current RCP supported list (fetched from live docs)",
+  "rcp_verification_note": "Service not in current RCP supported list",
   "declarative_policy_expressible": false,
   "backup_policy_applicable": false,
-  "ai_optout_applicable": false
+  "ai_optout_applicable": false,
+  "permission_boundary_applicable": true
 }
 ```
 
-## Step 3: Verify MITRE ATT&CK assignments
+## Step 3: Verify mitigation feasibility
 
-For each threat in `threats[]`:
-- Verify `mitre_tactic_id` is a valid MITRE ATT&CK for Cloud tactic (TA0001–TA0040)
-- Verify `mitre_attack.technique_id` exists under the stated tactic
-- Confirm the technique is applicable to cloud environments
-- Use the technique mapping table from research.json as a cross-reference
-- Set `mitre_verified: true/false`, `mitre_verification_note`
+For each mitigation in `existing_mitigations[]`:
+- Verify that `request_parameters[]` exist in the API surface:
+  - For each parameter path (e.g., `$.encryptionKeyArn`), confirm it appears in
+    `api_surface.operations[].parameters[]` for the relevant operation
+  - Set `parameter_verified: true/false` for each
+- Verify that `mitigation_goal` is achievable given the service capabilities:
+  - If goal references encryption: check `capabilities.encryption` supports the claimed mechanism
+  - If goal references network isolation: check `capabilities.network` supports VPC mode
+  - If goal references access control: check `capabilities.iam` has the needed condition keys
+  - If goal references logging: check `capabilities.logging` supports the claimed mechanism
+- Set `verified: true/false`, `feasibility_note` on each mitigation
+- Flag mitigations where request_parameters don't exist in the API as `verified: false`
 
-Valid cloud tactics: TA0001 Initial Access, TA0002 Execution, TA0003 Persistence,
-TA0004 Privilege Escalation, TA0005 Defense Evasion, TA0006 Credential Access,
-TA0007 Discovery, TA0009 Collection, TA0010 Exfiltration, TA0040 Impact.
+## Step 4: Verify capabilities
 
-## Step 4: Verify CCMv4 mappings
+For each capability sub-object in `capabilities{}`:
 
-For each entry in `ccmv4_mappings[]`:
-- Verify `control_id` exists in `controls[]` (exact match on `id` field)
-- Verify `ccmv4_control_id` is within the valid range for its domain using the domain
-  reference table from research.json Phase 3.1 — NEVER invent or guess control IDs
-- If matched: set `verified: true`, `verification_source: "CCMv4 domain reference — <domain> range"`
-  `verification_note: "<ccmv4_control_title>"`
-- If NOT matched: set `verified: false`,
-  `verification_note: "Control ID not found in CCMv4 domain reference"`
-- Do NOT use keyword mapping or inference as a verification source
+**IAM capabilities** (`capabilities.iam`):
+- Verify `resource_policies_supported` via MCP (does the service support resource-based policies?)
+- Verify `abac_support` level against condition key types
+- Verify `cross_account_access` mechanism
+
+**Encryption capabilities** (`capabilities.encryption`):
+- Verify KMS CMK support per resource type via `awsknowledge` MCP
+- Verify FIPS endpoint availability (use checkpoint if available)
+- Verify TLS enforcement
+
+**Network capabilities** (`capabilities.network`):
+- Verify VPC endpoint names via `awsknowledge` MCP
+- Verify endpoint policy support
+- Verify security group applicability
+
+**Logging capabilities** (`capabilities.logging`):
+- Verify CloudWatch namespace and metrics via `awsknowledge` MCP
+- Verify Config resource types (use checkpoint if available)
+- Verify CloudTrail data event support (use checkpoint if available)
+
+**Organization policy capabilities** (`capabilities.organization_policies`):
+- Already verified in Step 2b
+
+Set `verified: true/false` with specific `verification_note` on each capability claim.
 
 ## Step 5: Verify enrichment opportunities
 
-For each item in `enrichment_opportunities[]`:
-- Call `awsknowledge` MCP to confirm the enhancement is technically feasible
-- Set `verified: true/false` with `verification_source` and `verification_note`
-- Flag unconfirmable enhancements as `verified: false`
+If research.json contains enrichment-relevant data (e.g., condition keys that could strengthen
+mitigations), identify and verify enrichment opportunities:
+- For each mitigation, check if additional condition keys could strengthen enforcement
+- Call `awsknowledge` MCP to confirm each enhancement is technically feasible
+- Record as `enrichment_opportunities[]` with `verified: true/false`
 
-## Step 6: Verify AWS feature support per control
+## Step 5b: Verify assessment gap coverage (if assessment data exists)
 
-For each control in `controls[]`, confirm the enforcement mechanism is supported:
-- **Config rules**: use `awsknowledge` MCP to confirm a managed Config rule exists for this
-  resource type, or verify a custom rule is feasible
-- **Security Hub**: confirm Security Hub has a standard covering this resource type
-- **EventBridge**: confirm the service emits the relevant CloudTrail events
-- **CloudWatch Alarms**: use `awsknowledge` MCP to confirm available metrics for the service
-- **Access Analyzer**: confirm the resource type supports resource-based policies
+If `research.json` contains `assessment_gaps[]` (populated from `/assess` phase):
+- For each gap with `status` = `REQUIREMENT GAP` or `CUSTOMER ACTION REQUIRED`:
+  - Verify the gap description is accurate by cross-referencing with capabilities
+  - Check if any existing mitigation already addresses this gap
+  - Set `addressed_by_mitigation: true/false` with the mitigation ID if applicable
+  - Gaps without mitigation coverage will be addressed by the Map skill during control generation
 
-**Exclusion rules — do NOT verify controls that cannot apply to this mitigation:**
+## Step 5c: Reject unresolved placeholders
 
-| Enforcement Mechanism | Exclude when... |
-|---|---|
-| RCP | `rcp_expressible: false`, OR control is about tagging/network config/logging |
-| AI opt-out policy | Control is NOT about AI/ML model invocation or content processing |
-| Tag policy | Control is NOT about tagging |
-| Access Analyzer | Resource type doesn't support resource-based policies |
-| Config rules | No managed or custom Config rule is feasible (confirm via MCP) |
-| Permission boundary | Control is about resource-level config, not IAM role permissions |
+Scan the entire research.json for placeholder strings that should have been resolved upstream.
+These indicate merge or enrichment failures:
 
-## Step 7: Count and flag unverified items
+Placeholder scanning runs automatically via PostToolUse hook (validate_state.py Check S2).
 
-Count all items with `verified: false` across all arrays (controls, threats, CCMv4 mappings,
-API params, enrichments). Populate top-level `unverified_count` and `unverified_items[]`.
+For each placeholder found:
+- If it's `data_classification`: infer from encryption capabilities (CMK-capable → Confidential,
+  AWS-managed → Internal, no encryption → Internal — service-managed resource)
+- If it's any other field: flag as unverified item and set `verified: false`
 
-## Step 8: Write output
+## Step 6: Count and flag unverified items
+
+Count all items with `verified: false` across all sections (capabilities, API params, condition
+keys, mitigations, enrichments). Populate top-level `unverified_count` and `unverified_items[]`.
+
+## Step 7: Write output
+
+**CRITICAL — Preserve array structures:**
+The `api_surface.operations` field MUST remain as an array of operation objects — copy the full
+array from research.json and add verification annotations to individual parameters within each
+operation. Do NOT replace the array with a summary string like `"INHERITED_FROM_RESEARCH — ..."`.
+Downstream skills (Generate) iterate over `api_surface.operations[]` to build the parameter
+coverage matrix. A string value will break the pipeline.
 
 Write `.service-approval/state/validated.json` — same root structure as `research.json` with
-the following additions:
+verification annotations added throughout.
 
-For `controls[]` items, add:
+The output preserves the v3.0 schema with these additions:
+
+For `capabilities` sub-objects, add verification annotations:
 ```json
 {
   "verified": true,
-  "verification_source": "awsknowledge MCP — <service> service authorization reference",
-  "verification_note": "<specific note for this control>",
-  "scp_expressible": true,
-  "scp_gap_reason": "",
-  "rcp_expressible": false,
-  "rcp_gap_reason": "..."
+  "verification_source": "awsknowledge MCP — <service> documentation",
+  "verification_note": "<specific note>"
 }
 ```
 
-For `threats[]` items, add:
+For `api_surface.operations[].parameters[]`, add:
 ```json
 {
   "verified": true,
-  "verification_note": "<specific note>",
-  "mitre_verified": true,
-  "mitre_verification_note": "<technique confirmed for cloud tactic TA####>"
+  "verification_source": "awsknowledge MCP — <service> API reference",
+  "verification_note": "<specific note>"
 }
 ```
 
-For `ccmv4_mappings[]` items, add: `verified`, `verification_source`, `verification_note`.
-For `api_surface.operations[].parameters[]` items, add: `verified`, `verification_source`,
-`verification_note`.
-For `enrichment_opportunities[]` items, add: `verified`, `verification_source`,
-`verification_note`.
+For `existing_mitigations[]`, add:
+```json
+{
+  "verified": true,
+  "feasibility_note": "<specific note about whether this mitigation is achievable>",
+  "parameter_verification": {
+    "$.encryptionKeyArn": true,
+    "$.executionRoleArn": true
+  }
+}
+```
+
+For `capabilities.iam.condition_keys[]`, add:
+```json
+{
+  "verified": true,
+  "verification_source": "SAR extraction / awsknowledge MCP",
+  "verification_note": "<specific note>"
+}
+```
+
+For `capabilities.organization_policies`, add expressibility annotations (from Step 2b).
+
+For `enrichment_opportunities[]`, add:
+```json
+{
+  "verified": true,
+  "verification_source": "awsknowledge MCP",
+  "verification_note": "<specific note>"
+}
+```
+
+**CRITICAL — Root-level expressibility fields:**
+Copy `scp_expressible` and `rcp_expressible` from `capabilities.organization_policies` to the
+ROOT of validated.json as boolean fields. Downstream skills (Map, Generate) read these from the
+root — not from nested capabilities. If the organization_policies sub-object has these values,
+duplicate them at the root level.
+
+**CRITICAL — Terminology sanitization:**
+Before writing validated.json, sanitize ALL string values (including metadata fields) to replace
+MCP tool identifiers with user-facing names per CLAUDE.md terminology rules:
+- `mcp__awsknowledge__aws___*` → "AWS Documentation"
+- `mcp__aws-documentation__*` → "AWS Documentation"
+- `mcp__kb-search__search_*_kb` → "{KB Name} KB"
+- `gateway_aws-documentation-mcp___*` → "AWS Documentation"
+This applies to `verification_source`, `mcp_sources_used`, and any other string field.
 
 Top-level additions:
 ```json
 {
+  "schema_version": "3.0",
+  "scp_expressible": true,
+  "rcp_expressible": false,
   "unverified_count": 0,
-  "unverified_items": []
+  "unverified_items": [],
+  "enrichment_opportunities": []
 }
 ```
 
 Print summary:
 ```
-Validation complete:
-  - Controls verified: N/N
-  - API parameters verified: N/N
-  - Condition keys verified: N/N
-  - MITRE ATT&CK assignments verified: N/N
-  - CCMv4 mappings verified: N/N
-  - Enrichment opportunities verified: N/N
-  - UNVERIFIED items: N
+Validation complete (v3):
+  - API parameters verified:     N/N
+  - Condition keys verified:     N/N
+  - Mitigations verified:        N/N
+  - Capabilities verified:       N/N (iam, encryption, network, logging, org-policies)
+  - SCP expressible:             Yes/No
+  - RCP expressible:             Yes/No
+  - Enrichment opportunities:    N verified
+  - Assessment gaps:             N (N addressed by mitigations)
+  - UNVERIFIED items:            N
   Output: .service-approval/state/validated.json
 ```

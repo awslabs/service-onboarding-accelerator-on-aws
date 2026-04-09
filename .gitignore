@@ -6,17 +6,19 @@
 !.gitignore
 !.claude-plugin
 !.claude-plugin/**
-!.claude
-!.claude/skills
-!.claude/skills/**
-!.claude/rules
-!.claude/rules/**
+
+# Local files (generated or machine-specific)
+CLAUDE.md
+
+# Terraform provider binaries and local state (large, machine-specific)
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
 
 # Git worktrees
 .worktrees
-
-# Service approval runtime state
-.service-approval
 
 # OS / editor noise
 .DS_Store
