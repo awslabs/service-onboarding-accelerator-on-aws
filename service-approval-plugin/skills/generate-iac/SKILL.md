@@ -299,8 +299,8 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
    - **CRITICAL — boto3/CLI service name**: The boto3 client name and AWS CLI command name
      for the target service MUST match the official SDK service identifier. Before generating,
      verify with `aws <service-name> help` or check `botocore.loaders.Loader().list_available_services()`.
-     Common error: inserting extra hyphens (e.g., `bedrock-agent-core-control` vs correct
-     `bedrock-agentcore-control`). The SAME correct name must be used in ALL generated files:
+     Common error: inserting extra hyphens or using inconsistent suffixes across files.
+     The SAME correct name must be used in ALL generated files:
      CFN custom resource handler, Terraform `local-exec` provisioners, CDKTF provisioners,
      CDK `AwsCustomResource` SDK calls, SSM runbook steps, and Lambda remediators.
    - **Lambda Layer for new services**: When the target service's boto3 model is not yet
@@ -319,11 +319,92 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
      (d) **Parameter types** — whether a URI is S3, ECR, HTTPS, etc. Match the description.
      (e) **Dependent actions** — the custom resource Lambda role MUST include ALL actions needed
          by Create/Update/Delete calls, including: `TagResource`, `UntagResource`, sub-resource
-         operations triggered by parent creation (e.g., `CreateAgentRuntimeEndpoint` is
-         required by `CreateAgentRuntime`), and KMS permissions (`kms:GenerateDataKey`,
+         operations triggered by parent creation (e.g., a Create call may implicitly create
+         dependent sub-resources that require separate IAM permissions), and KMS permissions (`kms:GenerateDataKey`,
          `kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey`, `kms:CreateGrant`) on any KMS keys
          passed to the resource. Missing permissions produce `AccessDeniedException` at deploy
          time — the #1 cause of custom resource deployment failures.
+6. **Terraform `local-exec` and CDKTF provisioner CLI validation**: When using `null_resource`
+   provisioners with `aws` CLI commands (schema-gap pattern), the CLI parameter surface differs
+   from the SDK. Before generating, run `aws <service> <command> help` via MCP to verify:
+   (a) **Every CLI flag exists** — some SDK parameters (e.g., `tags`) are NOT accepted as CLI
+       flags. If `--tags` is rejected, use a separate `aws <service> tag-resource` call after
+       creation. Never assume SDK parameters map 1:1 to CLI flags.
+   (b) **Required parameters** — the CLI marks required params with `(required)` in help text.
+       Include ALL required params in the provisioner command. Some parameters are conditionally
+       required (e.g., a configuration object required alongside a type selector).
+   (c) **JSON array construction** — when passing lists (subnets, security groups) into JSON
+       structures via shell, use `jq` or proper bash array-to-JSON conversion. Do NOT embed
+       comma-delimited strings directly into JSON arrays — `"subnets":"sub-1,sub-2"` is wrong,
+       `"subnets":["sub-1","sub-2"]` is correct. Use:
+       ```hcl
+       IFS=',' read -ra ITEMS <<< "$SUBNET_IDS"
+       SUBNET_JSON=$(printf '"%s",' "${ITEMS[@]}" | sed 's/,$//')
+       ```
+       Or use `jq -c --arg` for safe construction.
+   (d) **Post-creation tagging** — if the Create API doesn't support inline tags, add a second
+       provisioner step: `aws <service> tag-resource --resource-arn "$ARN" --tags "$TAGS"`.
+       Check tag-resource exists for the service. If it doesn't, document the tagging gap.
+   (e) **Prefer `--cli-input-json` over positional flags** — for complex parameters (tagged
+       unions, nested JSON), use `--cli-input-json` with Terraform's `jsonencode()` in the
+       environment block. This avoids shell quoting issues with JSON in heredocs.
+   (f) **Verify CLI sub-command existence** — some SDK operations (`PutResourcePolicy`,
+       `TagResource`, `UntagResource`) may not have CLI equivalents. Check the service's
+       valid choices list. If a needed operation is missing, document it as a gap comment.
+   (g) **IAM propagation delay** — when a provisioner creates an IAM role then immediately
+       passes it to a service API, add a `time_sleep` resource (15s) between role creation
+       and the provisioner. Service APIs validate role trust policies synchronously and fail
+       if the role hasn't propagated. Add `hashicorp/time` provider to the module.
+   (h) **Identity-based KMS permissions** — KMS key policies (resource-based) grant the service
+       principal, but the service role also needs identity-based permissions for `kms:GenerateDataKey`,
+       `kms:Decrypt`, `kms:DescribeKey`. Add an `aws_iam_role_policy` for KMS access.
+   (i) **ECR permissions for container runtimes** — if the service runs container workloads,
+       execution roles need `ecr:GetAuthorizationToken` (on `*`), `ecr:BatchGetImage`, and
+       `ecr:GetDownloadUrlForLayer` (on the repository ARN). The service validates ECR access
+       at create time. Only add these if `validated.json` indicates container-based execution.
+   (j) **Enum values from CLI help** — the CLI help shows valid enum values for each parameter.
+       Use ONLY values listed there — SDK documentation may show different or additional values.
+       If only one value exists, hardcode it and document.
+
+   (k) **CFN custom resource Lambda handlers — parameter validation**: When generating CloudFormation
+       custom resource Lambda handlers that call service APIs (via boto3), only pass parameters the
+       API actually accepts. Common error: passing `tags` to `create_*()` when the service doesn't
+       accept tags on creation (tag-resource may be a separate API, or may not exist at all). Before
+       generating the handler, cross-reference the API parameters from `validated.json`
+       `api_surface.operations[]` and only include accepted parameters. If tagging is a separate API
+       call, make it a separate step after creation. If tag-resource doesn't exist, document the gap.
+
+   (l) **Cross-format enum consistency**: When the CLI only accepts specific valid enum values
+       for a parameter, ALL 4 IaC formats must enforce the same set: TF variable with `validation`,
+       CDK with runtime check, CDKTF variable with default, CFN with `AllowedValues`. Verify the
+       valid set via `aws <service> <command> help` and use it consistently — do not default to
+       values the API does not accept.
+
+   (m) **CFN custom resource delete handler resilience**: Delete handlers in CloudFormation custom
+       resource Lambdas MUST catch ALL exceptions and return SUCCESS. When a Create fails,
+       CloudFormation calls Delete during rollback — but the resource was never created, so the
+       delete call gets `ResourceNotFoundException` or `AccessDeniedException`. Catch both
+       specifically, plus a broad `except Exception: pass` fallback. A delete handler that only
+       catches `ResourceNotFoundException` will cause `ROLLBACK_FAILED` when permissions errors
+       occur on never-created resources, requiring manual stack cleanup.
+
+   (n) **API response key validation**: Different service APIs return response fields at different
+       nesting levels. Before generating custom resource handlers, check the API response structure
+       via `aws <service> <command> help` OUTPUT section. Common patterns:
+       - Some APIs wrap the response in a named object (e.g., `{"resource": {"id": "...", "arn": "..."}}`)
+       - Others return fields at the top level (e.g., `{"resourceId": "...", "resourceArn": "..."}`)
+       Assuming one pattern when the API uses the other causes a KeyError. Use defensive access:
+       `resp.get('<resource_key>', resp).get('id', '')` to handle both patterns.
+
+   (o) **API field validation via `--generate-cli-skeleton`**: Before generating any API call params
+       (in Lambda handlers, provisioners, or CLI commands), verify the exact accepted fields using
+       `aws <service> <command> --generate-cli-skeleton` or boto3 docs. Common errors:
+       - Configuration objects may accept fewer fields than documentation suggests — verify the
+         exact set of accepted sub-fields via the skeleton output.
+       - Nested configuration objects (e.g., `networkConfiguration`) may only accept a mode selector
+         at the top level, with no sub-object for detailed config in the current API version.
+       - Some Create APIs do not accept `tags` inline — tagging requires a separate
+         `tag-resource` call after creation. Check the skeleton for each Create operation.
 
 ---
 
