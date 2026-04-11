@@ -128,9 +128,10 @@ Only if `ai_optout_applicable: true`.
 - **Valid Guard 2.x syntax only**: Do NOT use `%size()` function — it is not standard CFN Guard
   2.x syntax. For collection size checks, use `some` clauses, `[N] EXISTS` checks, or iterate
   with `when` blocks. Example: check subnet count ≥ 2 with `Properties.Subnets[1] EXISTS`.
-- **JWT Authorizer Completeness**: When validating JWT authorizer controls, guard rules MUST
-  check ALL 4 fields: `DiscoveryUrl`, `AllowedAudience`, `AllowedClients`, `AllowedScopes`.
-  Missing `AllowedScopes` is a common omission — always include it.
+- **Authorizer field completeness**: When validating authorizer controls, guard rules MUST
+  check ALL accepted configuration fields. Verify the exact set of accepted fields via
+  `aws <service> <command> --generate-cli-skeleton` — do NOT assume fields exist based on
+  documentation alone. Only generate rules for fields the API actually accepts.
 
 ### CloudFormation Hooks Policy (`proactive/cfn-hooks-policy.json`)
 - Use `awsiac` MCP to confirm resource type supports CFN Hooks
@@ -140,7 +141,7 @@ Only if `ai_optout_applicable: true`.
 
 ### Checkov Config (`proactive/checkov-config.yaml`)
 - Check IDs mapping to controls in this cell
-- **Custom policy directory**: If any custom check IDs are referenced (e.g., `CKV_AWS_BEDROCK_*`),
+- **Custom policy directory**: If any custom check IDs are referenced (e.g., `CKV_AWS_<SERVICE>_*`),
   the `custom-policies-dir` MUST point to a directory that exists and contains the actual policy
   definitions. Create `proactive/custom-policies/` and write a `.py` or `.yaml` policy file for
   each custom check. A Checkov config referencing non-existent custom policies will fail at runtime.
@@ -151,9 +152,10 @@ Only if `ai_optout_applicable: true`.
 
 ### OPA Account Policies (`proactive/opa-policies/<ResourceType>.rego`)
 - One `.rego` file per resource type
-- **JWT Authorizer Completeness**: When validating JWT authorizer controls, OPA deny rules
-  MUST check ALL 4 fields: `discoveryUrl`, `allowedAudience`, `allowedClients`, `allowedScopes`.
-  Generate separate deny blocks for each missing field — do not skip `allowedScopes`.
+- **Authorizer field completeness**: When validating authorizer controls, OPA deny rules
+  MUST check ALL accepted configuration fields. Verify the exact set via
+  `aws <service> <command> --generate-cli-skeleton`. Generate separate deny blocks for
+  each required field — do not generate checks for fields the API does not accept.
 
 ---
 
@@ -162,6 +164,15 @@ Only if `ai_optout_applicable: true`.
 ### Permission Boundary (`preventive/permission-boundary.json`)
 - Limit role permissions to needed service actions
 - Use `awsknowledge` MCP for real action names
+
+**IAM action namespace validation (CRITICAL):** Before generating any IAM policy artifact
+(SCP, permission boundary, IAM policies, resource policies, VPCE policies), verify that
+every `Action` value uses a real IAM action prefix for the service. Common error: inventing
+action patterns (e.g., `<prefix>:Describe*`) when the service only supports `Get*` and
+`List*` for read operations. Check the service's IAM actions via `awsknowledge` MCP or
+the IAM Actions Reference. If the service prefix does not support a particular action verb,
+do not generate it. This applies to ALL policy files: `scp-policy.json`, `iam-policies.json`,
+`permission-boundary.json`, `resource-policy.json`, `vpce-policy.json`.
 
 ### IAM Policies and Trust Policies (`preventive/iam-policies.json`)
 - Generate standalone IAM policy and trust policy documents for ACC-PRV controls with `mechanism`

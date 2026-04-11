@@ -53,11 +53,11 @@ For each mitigation in `existing_mitigations[]`, build a rich index:
 
 ```json
 {
-  "id": "M-AgentRuntime.0",
+  "id": "M-<Resource>.0",
   "statement": "...",
   "mitigation_goal": "...",
   "request_parameters": ["$.encryptionKeyArn", "$.executionRoleArn"],
-  "resource_type": "AWS::BedrockAgentCore::AgentRuntime",
+  "resource_type": "AWS::<Service>::<Resource>",
   "verified": true,
   "verification_note": "..."
 }
@@ -149,18 +149,18 @@ Every control MUST include these fields:
 ```json
 {
   "id": "CTRL-ORG-PRV-001",
-  "name": "Enforce CMK encryption on AgentRuntime creation via SCP",
-  "description": "SCP denies bedrock-agentcore:CreateAgentRuntime unless encryptionKeyArn condition is present",
+  "name": "Enforce CMK encryption on <Resource> creation via SCP",
+  "description": "SCP denies <prefix>:Create<Resource> unless encryption condition key is present",
   "scope": "ORG",
   "category": "PRV",
   "mechanism": "SCP",
-  "mitigation_ids": ["M-AgentRuntime.0", "M-AgentRuntime.3"],
+  "mitigation_ids": ["M-<Resource>.0", "M-<Resource>.3"],
   "parameters_controlled": ["$.encryptionKeyArn"],
-  "condition_keys": ["bedrock-agentcore:encryptionKeyArn"],
-  "actions": ["bedrock-agentcore:CreateAgentRuntime", "bedrock-agentcore:UpdateAgentRuntime"],
-  "resource_types": ["AWS::BedrockAgentCore::AgentRuntime"],
+  "condition_keys": ["<prefix>:encryptionKeyArn"],
+  "actions": ["<prefix>:Create<Resource>", "<prefix>:Update<Resource>"],
+  "resource_types": ["AWS::<Service>::<Resource>"],
   "assessment_gap_ids": [],
-  "security_rationale": "The mitigation requires encryption key enforcement at creation time. An SCP is the strongest mechanism because it operates at the organization level, denying any CreateAgentRuntime call that lacks the encryptionKeyArn parameter regardless of the caller's IAM permissions. This ensures no runtime can be created without customer-managed encryption.",
+  "security_rationale": "The mitigation requires encryption key enforcement at creation time. An SCP is the strongest mechanism because it operates at the organization level, denying any Create call that lacks the encryption key parameter regardless of the caller's IAM permissions. This ensures no resource can be created without customer-managed encryption.",
   "attack_techniques": ["T1530", "T1486"],
   "framework_keywords": ["encryption", "key management", "data protection", "policy enforcement"]
 }
@@ -280,9 +280,9 @@ Write `.service-approval/state/map-controls-generated.json`:
       "mechanism": "SCP",
       "mitigation_ids": ["M-AgentRuntime.0"],
       "parameters_controlled": ["$.encryptionKeyArn"],
-      "condition_keys": ["bedrock-agentcore:encryptionKeyArn"],
-      "actions": ["bedrock-agentcore:CreateAgentRuntime"],
-      "resource_types": ["AWS::BedrockAgentCore::AgentRuntime"],
+      "condition_keys": ["<prefix>:encryptionKeyArn"],
+      "actions": ["<prefix>:Create<Resource>"],
+      "resource_types": ["AWS::<Service>::<Resource>"],
       "assessment_gap_ids": [],
       "security_rationale": "...",
       "framework_keywords": ["encryption", "key management"]

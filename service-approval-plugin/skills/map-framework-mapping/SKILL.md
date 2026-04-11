@@ -231,7 +231,7 @@ Write `.service-approval/state/map-framework-mapped.json`:
         {
           "control_id": "CTRL-ACC-PRV-001",
           "confidence": "High",
-          "rationale": "Permission boundary restricts bedrock-agentcore actions to approved set, directly implementing least-privilege access provisioning"
+          "rationale": "Permission boundary restricts service actions to approved set, directly implementing least-privilege access provisioning"
         }
       ]
     },
