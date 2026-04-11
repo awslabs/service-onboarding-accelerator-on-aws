@@ -96,10 +96,10 @@ where `status == "MAPPED"` — the identical list in every file header.
 Each custom Config rule entry:
 ```json
 {
-  "rule_name": "runtime-vpc-check",
+  "rule_name": "<resource>-<check-name>",
   "source_type": "CUSTOM_LAMBDA",
-  "resource_type": "AWS::BedrockAgentCore::Runtime",
-  "evaluation_logic": "Check if networkMode is VPC and subnets/securityGroups are configured",
+  "resource_type": "AWS::<Service>::<Resource>",
+  "evaluation_logic": "Check if <property> meets <requirement>",
   "control_ids": ["CTRL-ACC-DET-001"]
 }
 ```
@@ -155,8 +155,8 @@ Each handler MUST implement rule-specific logic — do NOT copy-paste identical 
 - **Boto3 client name consistency**: All generated Python artifacts (Config rule handlers, Lambda
   remediators, SSM runbooks with Lambda steps) MUST use the same boto3 client name for the
   target service. Before generating, verify the correct client name by checking the boto3
-  documentation or the service's API model. Common error: using `bedrock-agent-core` in one
-  handler and `bedrock-agentcore-control` in another. Pick the correct name and use it
+  documentation or the service's API model. Common error: using inconsistent hyphenation or
+  suffixes across handlers. Pick the correct name and use it
   consistently across ALL generated Python files. Add a comment at the top of each handler
   documenting the boto3 client: `# boto3 client: '<service-client-name>'`
 - **Deleted resources**: Always check `configurationItemStatus == "ResourceDeleted"` first → NOT_APPLICABLE
@@ -239,6 +239,16 @@ SSM Automation document for manual/scheduled remediation.
   `Create*` operations and NOT on `Update*` operations, the setting is immutable after creation.
   Do NOT generate a remediation step that attempts to update an immutable parameter — instead
   document it as requiring resource recreation or flag as manual intervention required.
+- **SSM `{{ }}` / CloudFormation `!Sub` conflict (CRITICAL)**: SSM Automation documents use
+  `{{ ParameterName }}` syntax for parameter references. CloudFormation `!Sub` also uses `${}` 
+  substitution. When an SSM document is deployed via CloudFormation, these two syntaxes conflict.
+  Rules:
+  - In **standalone SSM documents** (not deployed via CFN): use `{{ param }}` freely, never use `!Sub`
+  - In **CFN-deployed SSM documents**: use `!Sub` with `${param}` for CFN parameters AND escape
+    SSM parameters as `{{param}}` (no spaces) or use `Fn::Sub` with a mapping
+  - **NEVER mix `!Sub` with `{{ param }}`** in the same string — CloudFormation will try to
+    resolve `{{ }}` as a CFN reference and fail. The org-level runbook (`ssm-runbook-org.yaml`)
+    is standalone (deployed via SSM directly), so it must use `{{ }}` syntax only with NO `!Sub`.
 
 ### Step Functions Workflow (`remediation/stepfunctions-workflow.json`)
 Workflow: detect → notify → remediate → verify → close finding.
@@ -252,9 +262,9 @@ ARN, violation details, and other fields from the original event.
 ```json
 {
   "Type": "Task",
-  "Resource": "arn:aws:states:::aws-sdk:bedrock-agent-core:getMemory",
-  "Parameters": { "MemoryId.$": "$.resourceId" },
-  "ResultPath": "$.getMemoryResult",
+  "Resource": "arn:aws:states:::aws-sdk:<service>:<apiAction>",
+  "Parameters": { "ResourceId.$": "$.resourceId" },
+  "ResultPath": "$.describeResult",
   "Next": "CheckCompliance"
 }
 ```
