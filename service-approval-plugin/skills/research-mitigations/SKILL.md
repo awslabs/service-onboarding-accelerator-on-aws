@@ -200,6 +200,27 @@ Write `.service-approval/state/research-mitigations.json`:
 
 Output validation runs automatically via PostToolUse hook (validate_state.py Check S6).
 
+## MITRE ATT&CK Threat Overlay (optional)
+
+If `service-approval-plugin/data/attack-cloud-matrix.json` exists, enrich mitigations
+with MITRE ATT&CK technique mappings:
+
+1. Load the cloud matrix (Tactics: Initial Access → Impact, ~70 techniques)
+2. For each mitigation, match its `category` and `description` keywords against technique
+   names and descriptions
+3. Assign `mitre_technique_ids` (e.g., `["T1078", "T1190"]`) to each mitigation
+4. Add a `threat_overlay` section to the output:
+```json
+"threat_overlay": {
+  "techniques_mapped": 18,
+  "tactics_covered": ["Initial Access", "Execution", "Persistence", "Privilege Escalation"],
+  "technique_to_mitigation": {"T1078": ["MIT-001", "MIT-003"], ...}
+}
+```
+
+This is optional — if the matrix file is absent, skip silently. The threat overlay
+feeds into controls-catalog.md and the APPROVAL-REPORT.md threat coverage section.
+
 ## Print Summary
 
 ```
@@ -207,6 +228,7 @@ Research (mitigations) complete:
   Mitigations extracted:   {N}
   Assets identified:       {N}
   Assessment gaps:         {N}
+  MITRE techniques:        {N} (or "skipped — no matrix file")
   Input files parsed:      {N}
   Framework file:          {path or "none"}
   Output: .service-approval/state/research-mitigations.json

@@ -1,0 +1,28 @@
+{
+  "mcpServers": {
+    "aws-documentation": {
+      "type": "http",
+      "url": "https://mcp.awsdocs.amazon.com"
+    },
+    "awsknowledge": {
+      "type": "http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    },
+    "awsiac": {
+      "type": "http",
+      "url": "https://iac-mcp.global.api.aws"
+    },
+    "terraform": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.5.1"]
+    },
+    "iam": {
+      "command": "awslabs.iam-mcp-server",
+      "args": [],
+      "env": {
+        "AWS_PROFILE": "delegated-admin",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}

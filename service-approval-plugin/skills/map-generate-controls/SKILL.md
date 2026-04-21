@@ -278,7 +278,7 @@ Write `.service-approval/state/map-controls-generated.json`:
       "scope": "ORG",
       "category": "PRV",
       "mechanism": "SCP",
-      "mitigation_ids": ["M-AgentRuntime.0"],
+      "mitigation_ids": ["M-<Resource>.0"],
       "parameters_controlled": ["$.encryptionKeyArn"],
       "condition_keys": ["<prefix>:encryptionKeyArn"],
       "actions": ["<prefix>:Create<Resource>"],
