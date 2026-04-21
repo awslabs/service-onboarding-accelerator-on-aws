@@ -396,7 +396,22 @@ If `attack_coverage` is available, add after the Control Matrix Summary:
 
 ## Phase 6: Write framework-mapping.md
 
-Write `.service-approval/state/framework-mapping.md`:
+Write `.service-approval/state/framework-mapping.md`.
+
+**CRITICAL REQUIREMENT:** The framework-mapping.md MUST be organized so that EVERY individual
+control objective from the parsed framework has its own entry showing which service controls
+satisfy it. This is the primary deliverable for compliance reviewers — they need to look up
+any framework objective and immediately see which controls address it.
+
+Do NOT group controls by domain and then list objectives as a flat bullet list. Do NOT
+produce a document organized by service control categories. The document MUST be organized
+by framework objective.
+
+The document MUST be service-agnostic and framework-agnostic in its structure — it works for
+any AWS service and any compliance framework provided as input.
+Use the framework name, domain names, and objective IDs from `map-framework-parsed.json`.
+Use the service name from `map-controls-generated.json`. Never hardcode a specific framework
+or service name in the template logic.
 
 ```markdown
 # {Framework Name} Control Mapping — {service-name}
@@ -412,42 +427,87 @@ Write `.service-approval/state/framework-mapping.md`:
 
 ## Domain Coverage Summary
 
-| Domain | IDs in Domain | IDs Mapped | IDs N/A | Coverage Level | Notes |
+| Domain | Objectives in Domain | Mapped | N/A | Coverage % | Notes |
 |---|---|---|---|---|---|
-| {domain} | N | N | N | High/Medium/Low/None | {note} |
+| {domain} | N | N | N | N% | {note} |
 
-## Detailed Mappings by Domain
+---
 
-### {Domain Name} ({Prefix}-01 to {Prefix}-NN)
+## Objective-to-Controls Mapping
 
-#### {Objective-ID} — {Objective Title}
+For EVERY framework objective, list the service controls that satisfy it. This section is
+the core of the document. Each objective gets its own subsection regardless of whether it
+has mapped controls or is N/A.
 
-**Mapped Controls:**
+### {Domain Name}
 
-| Control ID | Control Title | Category | Scope | Confidence | Coverage | Rationale |
-|---|---|---|---|---|---|---|
-| {CTRL-xxx-NNN} | {title} | {category} | {scope} | {confidence} | {coverage} | {rationale} |
+#### {Objective-ID}: {Objective Title}
+
+**Status:** {MAPPED | N/A}
+**Coverage:** {FULL | PARTIAL | SUPPORTS | N/A}
+**Reason:** {1-sentence summary of why this coverage level was assigned, or why N/A}
+
+| Control ID | Control Name | Category | Confidence | Rationale |
+|---|---|---|---|---|
+| {CTRL-ID} | {name} | {PRV/PRO/DET/COR} | {High/Medium/Low} | {1-sentence specific rationale connecting this control's mechanism to this objective's requirement} |
+
+If status is N/A, the table is omitted and only the Reason line appears. Example:
+> **Status:** N/A
+> **Reason:** Physical datacenter security is managed by AWS under the shared responsibility model.
+
+[Repeat for EVERY objective in the domain, then repeat for EVERY domain]
 
 ---
 
 ## Unmapped Service Controls
 
-| Control ID | Control Title | Reason |
-|---|---|---|
-| {CTRL-xxx-NNN} | {title} | {reason} |
+Controls that were generated but do not map to any framework objective.
+
+| Control ID | Control Name | Category | Reason |
+|---|---|---|---|
+| {CTRL-ID} | {name} | {category} | {reason why no framework objective applies} |
+
+---
 
 ## Coverage Gaps
 
-| Domain | Gap Description | Recommendation |
-|---|---|---|
-| {domain} | {gap} | {recommendation} |
+Framework objectives where coverage is PARTIAL, SUPPORTS, or where no HIGH-confidence
+controls exist.
 
-## Mitigation Traceability
+| Objective ID | Domain | Gap Description | Recommendation |
+|---|---|---|---|
+| {obj-id} | {domain} | {what is missing} | {what to implement} |
 
-| Mitigation ID | Statement | Controls | Framework Objectives | Coverage |
+---
+
+## Threat-to-Framework Traceability
+
+Shows the full chain: Threat Mitigation → Service Controls → Framework Objectives.
+
+| Mitigation ID | Threat Description | Service Controls | Framework Objectives | Coverage |
 |---|---|---|---|---|
-| M-AgentRuntime.0 | {statement} | CTRL-ACC-PRV-001, ... | IAM-01, IAM-05 | FULL |
+| {MIT-ID} | {threat summary} | {CTRL-1, CTRL-2, ...} | {OBJ-1, OBJ-2, ...} | {FULL/PARTIAL/NONE} |
 ```
+
+**Assembly rules for this phase:**
+
+1. Iterate over `map-framework-mapped.json` `framework_mapping[]` array. Each entry has
+   `objective_id`, `domain`, `title`, `status`, `coverage`, `reason`, and `controls[]`.
+
+2. Group objectives by domain. Within each domain, sort by objective_id.
+
+3. For each objective, write the subsection header and controls table. The `controls[]` array
+   from `map-framework-mapped.json` contains `{control_id, confidence, rationale}`. Look up
+   the control's `name` and `category` from `map-controls-generated.json`.
+
+4. For the Unmapped Service Controls section, use `quality_gate_results.orphaned_controls`
+   from `map-framework-mapped.json`.
+
+5. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to
+   `framework_gap` type entries.
+
+6. For Threat-to-Framework Traceability, use `threat_mitigation_map` assembled in Phase 2
+   of this skill.
 
 ---
 
