@@ -134,6 +134,32 @@ CRITICAL RESEARCH RULES:
 - Limit to ~40 MCP tool calls per domain
 - TOOL FAILURE GUARD: If a tool call returns an error, treat the data as ABSENT
 
+### Assessment Depth Requirements
+
+Each domain research agent MUST produce these depth markers to achieve parity with
+the hosted solution (~140K char output vs the current ~29K):
+
+**IAM domain depth:**
+- Enumerate ALL permission-only actions (from SAR page `[permission only]` annotations)
+- Build condition key → applicable actions reverse index (which actions each CK applies to)
+- List ABAC support per resource type (not just "partial" — name each type + support level)
+- List ALL AWS managed policies with their purpose
+
+**LOGGING domain depth:**
+- Enumerate ALL CloudWatch metric names per namespace (not just "30+ metrics")
+- Document CloudTrail data event pagination (keep reading if truncated)
+- List ALL AWS Config resource types with their relationship details
+
+**INFRA domain depth:**
+- Enumerate ALL CloudFormation resource types from the CFN template reference
+- List ALL service quotas with numerical values + default vs adjustable
+- Document Console Private Access support
+
+**DATA domain depth:**
+- Per-resource encryption breakdown (not "supports KMS" — specify which resources + which key types)
+- FIPS endpoint URLs (actual URLs, not just "supported")
+- Compliance program list with in-scope/not-in-scope distinction
+
 ### Research Quality Enforcement
 
 These rules ensure research completeness and prevent wasted tool calls:

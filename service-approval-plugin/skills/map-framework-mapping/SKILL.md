@@ -279,6 +279,25 @@ Write `.service-approval/state/map-framework-mapped.json`:
 
 ---
 
+## Framework-Agnostic Design
+
+This skill works with ANY control framework, not just CCMv4. The framework objectives
+come from `map-framework-parsed.json` which is produced by the `map-parse-framework`
+sub-skill. Supported formats:
+- CCMv4 (Cloud Controls Matrix v4)
+- NIST 800-53 rev5
+- CIS Benchmarks
+- ISO 27001:2022
+- Custom frameworks (any Excel/JSON/Markdown with objective IDs + descriptions)
+
+The mapping logic uses the objective's `description` and `control_specification` text
+to match against control `rationale` and `description`. No framework-specific keywords
+are hardcoded — the same confidence scoring works across all frameworks.
+
+**Quality cap:** No control may map to more than 5 objectives. If a control matches >5,
+keep only the 5 highest-confidence matches. This prevents spray-mapping where generic
+controls (like tagging) map to every objective.
+
 ## Validate Output
 
 Quality gate validation runs automatically via PostToolUse hook (validate_state.py Check S12).

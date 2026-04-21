@@ -114,7 +114,7 @@ Handler template:
 ```python
 import json, boto3
 
-def handler(event, context):
+def lambda_handler(event, context):
     config_item = json.loads(event['invokingEvent'])['configurationItem']
     # Implement evaluation_logic specific to this rule
     compliance = 'COMPLIANT' if <rule-specific-condition> else 'NON_COMPLIANT'
@@ -134,18 +134,78 @@ def handler(event, context):
 
 Each handler MUST implement rule-specific logic — do NOT copy-paste identical handlers.
 
+**Smoke Test Events (REQUIRED for every handler):**
+
+Every Config handler MUST include a `SMOKE_TEST_EVENTS` module-level dict with `compliant`
+and `non_compliant` mock events. The smoke-deploy-controls script uses these for local unit
+testing without AWS credentials. Handlers without `SMOKE_TEST_EVENTS` will fail validation.
+
+```python
+SMOKE_TEST_EVENTS = {
+    "compliant": {
+        "invokingEvent": json.dumps({
+            "configurationItem": {
+                "resourceType": "<AWS::Service::Resource>",
+                "resourceId": "smoke-test-resource",
+                "configurationItemCaptureTime": "2026-01-01T00:00:00Z",
+                "configurationItemStatus": "OK",
+                "configuration": {<properties that make this COMPLIANT>},
+                "tags": {<required tags if checked>},
+            },
+            "messageType": "ConfigurationItemChangeNotification",
+        }),
+        "resultToken": "TESTMODE",
+    },
+    "non_compliant": {
+        "invokingEvent": json.dumps({
+            "configurationItem": {
+                "resourceType": "<AWS::Service::Resource>",
+                "resourceId": "smoke-test-resource",
+                "configurationItemCaptureTime": "2026-01-01T00:00:00Z",
+                "configurationItemStatus": "OK",
+                "configuration": {<properties that make this NON_COMPLIANT>},
+                "tags": {},
+            },
+            "messageType": "ConfigurationItemChangeNotification",
+        }),
+        "resultToken": "TESTMODE",
+    },
+}
+```
+
+The compliant event MUST include all properties the handler checks with passing values.
+The non_compliant event MUST omit or invalidate the primary property the handler evaluates.
+When `resultToken == "TESTMODE"`, the handler MUST skip the `put_evaluations` call (or the
+unit test mocks boto3 to intercept it).
+
+**CRITICAL — Self-contained evaluation for smoke test events**: Handlers that call external
+AWS APIs (kms:DescribeKey, lambda:GetCodeSigningConfig, accessanalyzer:CheckAccessNotGranted,
+lambda:GetFunction, lambda:ListFunctionUrlConfigs, etc.) MUST be able to determine compliance
+from the `configurationItem.configuration` dict alone when the event is a smoke test. The
+smoke test events include ALL data the handler needs in the `configuration` field. Do NOT
+call external APIs when the data is already in the configuration item. Structure the handler
+to extract everything from `configuration` first, and only call APIs as a fallback for
+periodic rules where the Config item doesn't have the needed data. The unit test runner
+mocks `boto3.client` to return empty/error responses — any handler that depends on external
+API calls for its primary check WILL fail the smoke test.
+
 **Config Rule Lambda Quality Rules:**
 - **Enum validation**: When checking a property against valid values (e.g., `exceptionLevel`
   in `{"ERROR", "WARN", "DEBUG"}`), unknown/invalid values MUST be NON_COMPLIANT, not COMPLIANT.
   Never write `elif value:` → COMPLIANT as a catch-all for unknown values.
-- **Cross-layer enum consistency**: The set of VALID enum values in detective handlers MUST
-  match the corresponding CFN Guard rules in `proactive/cfn-guard-rules.guard`. If a Guard
-  rule allows `["JWT", "CustomJWT", "IAM", "CUSTOM"]`, the detective handler must use the
-  SAME set — not a different representation like `{"IAM_AUTH", "CustomJWT"}`. Read the Guard
-  file before generating handlers to ensure alignment. If the API documentation uses different
-  enum names in different contexts (e.g., create-time vs. describe-time), use the describe/
-  GetConfiguration representation for detective (Config items) and the create-time
-  representation for proactive (Guard rules), but document the mapping.
+- **Cross-layer enum consistency (CRITICAL — #1 recurring failure)**: ALL detective handlers
+  MUST use the EXACT same enum values as proactive controls (Guard, OPA, Checkov). The
+  single source of truth for enum values is `validated.json`:
+  1. Find the parameter's `feasibility_note` in `existing_mitigations[]` — it lists valid values
+  2. Cross-reference with `api_surface.operations[].parameters[]` for the parameter definition
+  3. Use ONLY the values found in validated.json — do NOT invent alternatives
+  Example: if validated.json says `authorizerType (IAM_AUTH, CUSTOM_JWT_AUTHORIZER)`, then
+  ALL layers (Guard, OPA, Checkov, Config Lambda, Step Functions, SSM) MUST use exactly
+  `IAM_AUTH` and `CUSTOM_JWT_AUTHORIZER`. Common error: substituting `IAM` for `IAM_AUTH`
+  or `CustomJWT` for `CUSTOM_JWT_AUTHORIZER` — these invented values cause detective
+  handlers to mark compliant resources as NON_COMPLIANT and proactive rules to silently skip.
+  **Before writing ANY enum comparison, grep validated.json for the exact parameter name and
+  copy the values verbatim.**
 - **Config item nesting**: AWS Config configuration items may nest properties differently from
   the API request structure. Before generating a handler, verify the Config item schema by
   checking the AWS Config resource type documentation. For example, if the API uses
@@ -187,10 +247,16 @@ Each handler MUST implement rule-specific logic — do NOT copy-paste identical 
   `ResourceArn` parameters to `$.detail.resourceARN`, not `$.detail.resourceId`.
 - **Complete mutation coverage**: Generate rules for ALL mutation operations from the API surface,
   not just Create/Delete. Check `validated.json` `api_surface.operations[]` for every operation
-  starting with `Create`, `Update`, `Delete`, `Put`, `Associate`, `Disassociate`, `Attach`,
+  starting with `Create`, `Update`, `Delete`, `Put`, `Set`, `Associate`, `Disassociate`, `Attach`,
   `Detach`, `Tag`, `Untag`. Missing an Update* operation means configuration changes go
-  undetected. Cross-check the generated rule list against the full API surface to ensure no
-  mutation operation is missing.
+  undetected. **Encryption key changes are always security-critical** — any `Set*Key`, `Set*CMK`,
+  `Update*Encryption`, or `Put*KeyPolicy` operation MUST have an explicit EventBridge rule even
+  if it is low-volume. Cross-check the generated rule list against the full API surface to ensure
+  no mutation operation is missing. Also include `Start*PolicyGeneration`, `Start*ExtractionJob`,
+  and similar control-plane operations that trigger data processing. For any mutation operation
+  intentionally excluded from EventBridge rules (e.g., high-volume data-plane Batch* operations),
+  add an `"excluded_operations"` array in the eventbridge-rules.json `_metadata` with a
+  `reason` field for each (e.g., `"reason": "Data-plane operation monitored via CloudTrail data events"`).
 
 ### CloudWatch Alarms (`detective/cloudwatch-alarms.json`)
 - Use `awsknowledge` MCP to confirm available metrics
@@ -271,6 +337,19 @@ ARN, violation details, and other fields from the original event.
 
 Do NOT omit `ResultPath` — this is the #1 cause of broken Step Functions workflows where
 the remediation step cannot find the resource ARN because the describe step overwrote it.
+
+**CRITICAL — SDK service name casing:** Step Functions SDK integrations use camelCase service
+identifiers in the Resource ARN: `arn:aws:states:::aws-sdk:<serviceName>:<apiAction>`. The
+service name is derived from the AWS SDK service identifier with hyphens removed and camelCase
+applied. For example, `bedrock-agentcore` becomes `bedrockAgentCore` (NOT `bedrockagentcore`).
+Verify the correct SDK service ID via `awsknowledge` MCP. An incorrect service name causes
+a runtime error: "The service '<wrong>' is not supported by Step Functions."
+
+**CRITICAL — Remediation task required parameters:** SDK integration tasks for Update/Put
+operations MUST include ALL required parameters, not just the field being remediated. Cross-
+reference `validated.json` `api_surface.operations[]` for the target operation's full parameter
+list. Common error: passing only `ResourceId` + the remediation field to an Update API that
+also requires `Name` or other identifying parameters.
 
 **CRITICAL — Policy parameter serialization:** When a Step Functions Task state includes a
 `Policy` parameter that expects a JSON string (common in PutResourcePolicy-style API calls),

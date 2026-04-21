@@ -284,7 +284,17 @@ def check_condition_key_consistency(controls_dir: str, validated: dict) -> list[
     errors = []
     service_keys = set()
     for ck in validated.get("capabilities", {}).get("iam", {}).get("condition_keys", []):
-        key = ck.get("key", "")
+        # Support both object format ({"key": "lambda:VpcIds", ...}) and plain string format
+        if isinstance(ck, dict):
+            key = ck.get("key", "")
+        elif isinstance(ck, str):
+            key = ck
+        else:
+            sys.stderr.write(
+                f"WARN check_condition_key_consistency: unexpected condition_key type "
+                f"{type(ck).__name__} in validated.json — skipping entry: {ck!r}\n"
+            )
+            key = ""
         if key:
             service_keys.add(key)
 
