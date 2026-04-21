@@ -1,0 +1,21 @@
+{
+  "servers": {
+    "aws-documentation": {
+      "type": "http",
+      "url": "https://mcp.awsdocs.amazon.com"
+    },
+    "awsknowledge": {
+      "type": "http",
+      "url": "https://knowledge-mcp.global.api.aws"
+    },
+    "awsiac": {
+      "type": "http",
+      "url": "https://iac-mcp.global.api.aws"
+    },
+    "terraform": {
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.5.1"]
+    }
+  }
+}

@@ -49,16 +49,31 @@ def main():
         controls_dir, tier1_only=(not has_creds),
     )
 
-    all_errors = cross_errors + deploy_errors
+    # --- Pipeline integrity validation ---
+    # Detects shortcut scripts, missing MCP calls, templated verification
+    # notes, inverted SCP logic, placeholder ARNs, and verdict inconsistencies.
+    from validate_pipeline_integrity import validate_pipeline
+    from pathlib import Path
+    integrity_errors = validate_pipeline(Path(cwd))
+
+    all_errors = cross_errors + deploy_errors + integrity_errors
 
     if not all_errors:
         sys.exit(0)
 
-    strict = os.environ.get("VALIDATE_CROSS_STRICT", "0") == "1" or \
-             os.environ.get("VALIDATE_DEPLOYABLE_STRICT", "0") == "1"
+    # Strict-by-default: integrity failures always block.
+    # Set VALIDATE_STRICT=0 to fall back to warn-only for cross/deploy checks.
+    strict = os.environ.get("VALIDATE_STRICT", "1") != "0" or \
+             os.environ.get("VALIDATE_CROSS_STRICT", "0") == "1" or \
+             os.environ.get("VALIDATE_DEPLOYABLE_STRICT", "0") == "1" or \
+             bool(integrity_errors)
 
     if strict:
         # Block: send errors to stderr so Claude can auto-fix
+        if integrity_errors:
+            print(f"PIPELINE INTEGRITY FAILED ({len(integrity_errors)} errors):", file=sys.stderr)
+            for e in integrity_errors:
+                print(f"  {e}", file=sys.stderr)
         if cross_errors:
             print(f"CROSS-VALIDATION FAILED ({len(cross_errors)} errors):", file=sys.stderr)
             for e in cross_errors:

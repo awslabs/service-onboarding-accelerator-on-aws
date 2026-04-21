@@ -6,6 +6,10 @@
 !.gitignore
 !.claude-plugin
 !.claude-plugin/**
+!.github
+!.github/**
+!.vscode
+!.vscode/**
 
 # Local files (generated or machine-specific)
 CLAUDE.md
@@ -19,6 +23,24 @@ CLAUDE.md
 
 # Git worktrees
 .worktrees
+
+# Smoke test — local-only validation scripts and skills (not part of plugin distribution)
+scripts/smoke-*.py
+scripts/smoke-*.sh
+scripts/smoke-scan-inputs.sh
+service-approval-plugin/skills/smoke-test/
+service-approval-plugin/kiro/agents/smoke-*.md
+.service-approval/smoke-test-*.md
+.service-approval/controls/
+.service-approval/state/
+out/domains/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Node modules
+node_modules/
 
 # OS / editor noise
 .DS_Store

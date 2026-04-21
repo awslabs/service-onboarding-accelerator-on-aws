@@ -107,27 +107,46 @@ all required parameters and control ID annotations.
 
 These rules MUST be enforced in every template format — not just one:
 
-1. **JWT Authorizer Completeness**: Generate ALL 4 fields on JWT authorizer configuration:
-   `discoveryUrl`, `allowedAudience`, `allowedClients`, `allowedScopes`. Every format must
-   include all 4 (conditionally if some are optional). Missing `allowedScopes` is a common
-   omission in CloudFormation and CDKTF — check every format before finalizing.
+1. **Authorizer field completeness**: Generate ALL accepted fields on authorizer configuration.
+   Verify the exact set of accepted fields via `aws <service> <command> --generate-cli-skeleton`
+   or the SDK model — do NOT assume fields exist based on documentation alone. Only generate
+   variables/parameters for fields the API actually accepts. Common error: generating a field
+   the API silently ignores (wasted variable) or missing a field the API requires.
 
-2. **VPC Endpoint Condition on Network-Scoped IAM Policies**: When a resource has VPCE-based
+2. **Enum value accuracy in IaC templates**: When generating variables or parameters with
+   enum constraints (e.g., `AllowedValues` in CFN, `validation` in TF), use ONLY the exact
+   values from `validated.json` `existing_mitigations[].feasibility_note` or
+   `api_surface.operations[].parameters[]`. Common error: using `IAM` instead of `IAM_AUTH`
+   or `CustomJWT` instead of `CUSTOM_JWT_AUTHORIZER` for authorizer type enums. Copy values
+   verbatim from validated.json. This applies to CFN `AllowedValues`, TF variable `validation`
+   blocks, CDK runtime checks, and CDKTF variable defaults.
+
+3. **VPC Endpoint Condition on Network-Scoped IAM Policies**: When a resource has VPCE-based
    network controls, the IAM execution role policy SHOULD include `aws:SourceVpce` condition
    when a VPC endpoint ID is provided. This applies to Terraform modules and CDK constructs.
 
-3. **Control ID annotations**: Every resource property that implements a control MUST have
+4. **KMS key policy must grant all consuming services**: When a KMS CMK is used by multiple
+   AWS services (e.g., Lambda env vars + CloudWatch Logs + SQS DLQ), the key policy MUST
+   include a separate statement for EACH service principal. Common omission: creating a KMS
+   key for Lambda but only granting `lambda.amazonaws.com` — then the CloudWatch Log Group
+   creation fails with `AccessDeniedException`. Required grants:
+   - `logs.{region}.amazonaws.com` for CloudWatch Logs encryption (with `kms:EncryptionContext:aws:logs:arn` condition)
+   - `sqs.amazonaws.com` for SQS DLQ encryption (if DLQ uses the same key)
+   - Account root `arn:aws:iam::{account}:root` for key administration
+   This applies to ALL 4 IaC formats.
+
+5. **Control ID annotations**: Every resource property that implements a control MUST have
    an inline comment with the control ID (e.g., `# CTRL-ACC-PRV-001`).
 
-4. **No unused variables/parameters**: Every variable declared in a TF `variables.tf` or CFN
+5. **No unused variables/parameters**: Every variable declared in a TF `variables.tf` or CFN
    `Parameters` section MUST be referenced by at least one resource. After generating, scan
    for any variable not referenced in `main.tf` or any resource block — remove it. Common
    cause: a variable was planned for a resource that ended up using a different parameter name.
 
-5. **Cross-format parameter parity**: After generating all 4 formats, verify that the same set
-   of user-configurable parameters appears in each. If TF has `var.jwt_allowed_scopes` but CFN
-   is missing a `JwtAllowedScopes` parameter, add it. The parameter coverage matrix from Step 1
-   is the source of truth — every format must cover every parameter.
+6. **Cross-format parameter parity**: After generating all 4 formats, verify that the same set
+   of user-configurable parameters appears in each. The parameter coverage matrix from Step 1
+   is the source of truth — every format must cover every parameter. Only include parameters
+   that the API actually accepts (verified via SDK model).
 
 ---
 
@@ -189,6 +208,10 @@ For every parameter missing from the TF provider schema:
 - All variables: `description` explaining the security control
 - Sensitive variables: `sensitive = true`
 - Optional parameters: `default = ""` + `count` on dependent resources
+- **Root variables MUST have defaults**: Every variable in the root `variables.tf` MUST have a
+  `default` value (typically `""` for strings, `[]` for lists, `{}` for maps). Without defaults,
+  `terraform plan` requires `-var` flags for every variable, making dry-run validation impossible.
+  Child module variables inherit values from root module arguments and do NOT need defaults.
 - `local` values for computed ARNs
 - Destroy provisioners: access `self.triggers.*` NOT `var.*`, NOT `data.*`, NOT `local.*`.
   Store ALL values needed at destroy time in `triggers {}` — including `region` and `account_id`.
@@ -246,12 +269,16 @@ Use `aws-cdk-mcp-server` MCP for L2/L3 constructs.
 ### Tag PII Validation
 Runtime `throw new Error(...)` checks in constructor for PII patterns.
 
-### JWT Authorizer Completeness
-Generate ALL 4 fields: `discoveryUrl`, `allowedAudience`, `allowedClients`, `allowedScopes`.
-Set on `authorizerConfiguration.customJWTAuthorizer`.
+### Authorizer Field Completeness
+Generate ALL accepted authorizer configuration fields. Verify via `aws <service> <command>
+--generate-cli-skeleton` — only include fields the API actually accepts. Do NOT assume field
+names from documentation; some documented fields may not be accepted by the API yet.
 
-### VPC networkModeConfig
-When `networkMode=VPC`, MUST populate `networkModeConfig` with `subnets` and `securityGroups`.
+### VPC Network Configuration
+When a resource supports VPC mode, generate the VPC configuration properties that the API
+accepts. Verify accepted fields via the SDK model — some services accept a network mode
+selector at the top level but do NOT accept a nested configuration object for subnets and
+security groups in the current API version. Check before generating.
 
 ---
 
@@ -266,20 +293,57 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
      two string operands — a `CommaDelimitedList` resolves to a list, causing a CloudFormation
      validation error: "every Fn::Equals object requires a list of 2 string parameters." If
      you need list behavior, accept a comma-separated `String` and use `Fn::Split` where needed.
-   - **CRITICAL — Resource-level Condition must be a string**: The `Condition:` key on a CFN
-     resource accepts only a plain string (the name of a condition defined in the Conditions
-     section). Do NOT use intrinsic functions like `!Not [ConditionName]` — this causes
-     "Every Condition member must be a string" errors. Instead, define inverse conditions
-     in the Conditions section (e.g., `NeedsKmsKey: !Equals [!Ref KmsKeyArn, ""]`) and
-     reference them by name on resources.
+   - **CRITICAL — Resource-level Condition must be a PLAIN STRING (cfn-lint E3001)**: The
+     `Condition:` key on a CFN resource accepts ONLY a plain string — the name of a condition
+     defined in the Conditions section. **NEVER** use `!Not`, `!And`, `!Or`, `!If`, `!Equals`,
+     or ANY intrinsic function as the value of a resource-level `Condition:`. This is the #1
+     cfn-lint failure in generated templates. Example of what NOT to do:
+     ```yaml
+     # WRONG — causes E3001
+     MyRole:
+       Type: AWS::IAM::Role
+       Condition: !Not [HasRoleArn]
+     ```
+     Instead, define the inverse condition in the Conditions section and reference by name:
+     ```yaml
+     # CORRECT
+     Conditions:
+       HasRoleArn: !Not [!Equals [!Ref RoleArn, ""]]
+       NeedsRole: !Equals [!Ref RoleArn, ""]   # inverse condition
+     Resources:
+       MyRole:
+         Type: AWS::IAM::Role
+         Condition: NeedsRole                    # plain string only
+     ```
+     For every resource that should only be created when a parameter is empty/absent, define
+     a named inverse condition (e.g., `NeedsXyz`) alongside the positive `HasXyz` condition.
    - Define a `Condition` for each optional parameter: `HasXyz: !Not [!Equals [!Ref Xyz, ""]]`
    - Every resource property that uses the optional parameter MUST be wrapped in `!If [HasXyz, !Ref Xyz, !Ref "AWS::NoValue"]`
    - Parameters without Default+Condition will cause stack failures when empty strings are passed to APIs
    - **Common omission**: JWT fields, VPC fields, Permission Boundary ARN — check ALL optional parameters
-2. Cross-parameter validation: deployment warning comment
-3. Tag validation: required tag warning in Description
-4. Dependent actions: document in parameter Description
-5. **Custom Resource Lambda for non-registered CFN types**: When a CFN resource type is NOT
+   - **No unused conditions (cfn-lint W8001)**: Every condition defined in the `Conditions`
+     section MUST be referenced by at least one resource `Condition:` key or `!If` function.
+     After generating the template, scan for any condition not referenced — remove it. Common
+     cause: defining `HasOrgId` or `HasVpcEndpointId` for a planned resource that ended up
+     using a different gating mechanism.
+   - **No unused parameters (cfn-lint W2001)**: Every parameter in the `Parameters` section
+     MUST be referenced by at least one resource property, condition, or output. After generating,
+     scan for unreferenced parameters and remove them. Common cause: defining parameters for
+     conditions (OrgId, VpcEndpointId) that end up not being used by any resource.
+   - **No redundant DependsOn (cfn-lint W3005)**: Do not add explicit `DependsOn` when the
+     dependency is already established by a `!Ref`, `!GetAtt`, or `!Sub` reference. CloudFormation
+     infers the dependency automatically. Common cause: adding `DependsOn: LogGroup` to a Lambda
+     function that already references the log group via `!Ref LogGroup` in LoggingConfig.
+2. **No Parameter/Resource name collisions (cfn-lint E3007)**: Parameter names and Resource
+   logical IDs share the same namespace in CloudFormation. If a Parameter is named
+   `RuntimeResourcePolicy`, you CANNOT also have a Resource with logical ID
+   `RuntimeResourcePolicy` — this causes E3007 ("Resources and Parameters must not share
+   name") and E3004 (circular dependency). Use distinct names: e.g., Parameter
+   `RuntimeResourcePolicyDoc` vs Resource `RuntimeResourcePolicyResource`.
+3. Cross-parameter validation: deployment warning comment
+4. Tag validation: required tag warning in Description
+5. Dependent actions: document in parameter Description
+6. **Custom Resource Lambda for non-registered CFN types**: When a CFN resource type is NOT
    registered in the CloudFormation registry (checked via `awsiac` MCP), implement it as a
    `AWS::CloudFormation::CustomResource` backed by a `AWS::Lambda::Function`:
    - The Lambda handler MUST implement Create, Update, and Delete actions via SDK calls
@@ -310,8 +374,8 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
    - **CRITICAL — SDK model validation for custom resources**: Before generating the custom
      resource Lambda handler, read the SDK model (via `awsknowledge` or `terraform` MCP) to
      verify for EACH API call:
-     (a) **Request shape nesting** — the exact structure of each parameter (e.g.,
-         `agentRuntimeArtifact.containerConfiguration.containerUri`, NOT `agentRuntimeArtifact.containerUri`)
+     (a) **Request shape nesting** — the exact structure of each parameter (nested objects
+         may have intermediate keys, e.g., `artifact.configuration.uri` NOT `artifact.uri`)
      (b) **Enum values** — valid enum strings for each field (e.g., `AWS_IAM` not `IAM_AUTH`,
          `CUSTOM_JWT` not `CUSTOM_JWT_AUTHORIZER`). Use create-time enum names for IaC templates.
      (c) **Name constraints** — regex patterns for names, IDs, and ARNs. Add `AllowedPattern`
@@ -324,7 +388,7 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
          `kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey`, `kms:CreateGrant`) on any KMS keys
          passed to the resource. Missing permissions produce `AccessDeniedException` at deploy
          time — the #1 cause of custom resource deployment failures.
-6. **Terraform `local-exec` and CDKTF provisioner CLI validation**: When using `null_resource`
+7. **Terraform `local-exec` and CDKTF provisioner CLI validation**: When using `null_resource`
    provisioners with `aws` CLI commands (schema-gap pattern), the CLI parameter surface differs
    from the SDK. Before generating, run `aws <service> <command> help` via MCP to verify:
    (a) **Every CLI flag exists** — some SDK parameters (e.g., `tags`) are NOT accepted as CLI
@@ -465,6 +529,90 @@ When multiple parameters are related:
 - **CDKTF**: `check` block
 
 ---
+
+## Post-Generation Steps
+
+### 1. Generate lock files
+
+After writing CDK and CDKTF package.json files, run `npm install` in each directory to
+generate `package-lock.json`. The stop hook uses `npm ci` which requires a lock file.
+
+```bash
+cd .service-approval/controls/iac/cdk && npm install --silent && cd -
+cd .service-approval/controls/iac/cdktf && npm install --silent && cd -
+```
+
+### 2. Generate smoke-test parameter files
+
+The deploy test script (`scripts/smoke-deploy-test.sh`) is service-agnostic. It expects
+parameter files that provide minimal values for a standalone deploy+teardown cycle. The
+generate-iac skill MUST produce these alongside the templates.
+
+**Terraform: `iac/terraform/smoke-test.tfvars`**
+
+Provide values for ALL required variables. **CRITICAL**: Use the literal string `${ACCOUNT_ID}`
+(not a dummy like `123456789012`) for any ARN that references the deploying account — the
+deploy script substitutes it at runtime with `sed`. Rules:
+- Security features that need external prereqs (VPC, Signer profiles) MUST be optional
+  in the template (use `create_*` bool variables defaulting to `true`, but set to `false`
+  in the smoke-test.tfvars). This lets production use enforce them while smoke tests skip them.
+- Provide a dummy source directory or inline code (Lambda: `src/index.py` with a hello handler)
+- Use the account root ARN for KMS key administrators: `arn:aws:iam::${ACCOUNT_ID}:root`
+
+Example pattern:
+```hcl
+# Auto-generated smoke test values — deploy-and-teardown validation
+# ${ACCOUNT_ID} is replaced at runtime by smoke-deploy-test.sh
+function_name       = "smoke-test-validation"
+environment         = "smoke-test"
+owner               = "smoke-test-pipeline"
+cost_center         = "smoke-test"
+create_vpc_config   = false    # Skip VPC — no prereqs needed
+create_code_signing = false    # Skip Signer — no prereqs needed
+kms_key_administrators = ["arn:aws:iam::${ACCOUNT_ID}:root"]
+```
+
+**CloudFormation: `iac/cloudformation/smoke-test-params.json`**
+
+Standard CFN parameter override format. Same rules — skip prereqs, use placeholders.
+
+```json
+[
+  {"ParameterKey": "FunctionName", "ParameterValue": "smoke-test-validation"},
+  {"ParameterKey": "Environment", "ParameterValue": "smoke-test"},
+  {"ParameterKey": "KmsKeyAdminArn", "ParameterValue": "arn:aws:iam::${ACCOUNT_ID}:root"},
+  {"ParameterKey": "CreateVpcConfig", "ParameterValue": "false"},
+  {"ParameterKey": "CreateCodeSigning", "ParameterValue": "false"}
+]
+```
+
+### 3. Make security features toggleable
+
+For the Terraform module and CFN template, security features that require external
+resources MUST be controlled by boolean variables/parameters:
+
+| Feature | TF variable | CFN parameter | Default | Smoke test |
+|---------|-------------|---------------|---------|------------|
+| VPC attachment | `create_vpc_config` | `CreateVpcConfig` | `true` | `false` |
+| Code signing | `create_code_signing` | `CreateCodeSigning` | `true` | `false` |
+| Function URL | `create_function_url` | `CreateFunctionUrl` | `false` | `false` |
+
+When the toggle is `false`, the template must NOT create the dependent resources
+(security group, code signing config, function URL) or reference them in the main
+resource. Use `count`/`dynamic` blocks in Terraform and `Conditions` in CFN.
+
+Features that work standalone (KMS keys, log groups, DLQ, X-Ray, tags, execution role)
+should ALWAYS be created — they have no external prereqs.
+
+**Primary resource toggle**: For services where the main resource requires external
+artifacts (e.g., S3 code artifacts for AgentCore runtimes, container images for ECS),
+add a `create_primary_resource` toggle (default true, smoke-test false). When false,
+the template deploys only the supporting infrastructure (KMS, IAM, log group, VPC).
+This validates the security posture resources without needing a real artifact.
+
+| Feature | TF variable | CFN parameter | Default | Smoke test |
+|---------|-------------|---------------|---------|------------|
+| Primary resource | `create_primary_resource` | `CreatePrimaryResource` | `true` | `false` |
 
 ## Validate Generated Artifacts
 
