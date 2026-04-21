@@ -53,7 +53,7 @@ Each phase consumes the previous phase's output — the pipeline is a strict DAG
 Input Files ──► Assess ──► Research ──► Validate ──► Map ──► Generate ──► Test ──► Summarize
                   │           │            │          │         │           │          │
               sar-facts   research.json  validated  mapping  controls/  test-      APPROVAL-
-              checkpoints  (merged from  .json      results  (84 files) results    REPORT.md
+              checkpoints  (merged from  .json      results  (85 files) results    REPORT.md
               assessment    4 sub-skills)           .json                          ARTIFACT-
                                                                                   FLOW-MATRIX
 ```
@@ -68,15 +68,17 @@ and ATT&CK attack surface — then merges into `research.json` (schema v3.0).
 - ATT&CK technique coverage (17/21 techniques covered)
 - Coverage gap analysis
 
-**Phase 4 (Generate)** produces 84 deployable artifacts across 5 categories:
+**Phase 4 (Generate)** produces deployable artifacts across 5 categories. Exact file
+counts vary by service surface area (resource type count, API operation count, org-policy
+applicability). The ranges below reflect observed output across validated services:
 
 | Category | Files | Key Artifacts |
 |----------|-------|---------------|
-| Preventive | 8 | SCPs, resource policies, KMS key policy, permission boundary, VPC endpoint policies |
-| Proactive | 14 | CFN Guard rules, OPA policies (6), Checkov config + 5 custom policies, CFN hooks |
-| Detective | 20 | Config rules + 16 Lambda handlers, EventBridge rules, CloudWatch alarms |
-| Corrective | 5 | Lambda remediator + SAM template, SSM runbooks, Step Functions workflow |
-| IaC | 16 | CDK TypeScript, CloudFormation YAML, CDKTF, modular Terraform (3 modules + shared) |
+| Preventive | 9-12 | SCPs (split), resource policies, KMS key policy, permission boundary, VPC endpoint, RCP, tag policies |
+| Proactive | 12-15 | CFN Guard rules, OPA policies (per resource type), Checkov config + custom policies, CFN hooks |
+| Detective | 34-47 | Config rules + Lambda handlers (+ requirements.txt), EventBridge, CloudWatch, Access Analyzer, compensating controls |
+| Corrective | 6 | Lambda remediator + SAM template + deps, SSM runbooks (org + account), Step Functions workflow |
+| IaC | 17-31 | CDK TypeScript, CloudFormation YAML, CDKTF, modular Terraform (per-resource modules + shared + root) |
 
 A detailed per-artifact input/output matrix with dependency tracking is generated in
 `.service-approval/ARTIFACT-FLOW-MATRIX.md`.

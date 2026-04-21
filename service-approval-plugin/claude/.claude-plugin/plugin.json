@@ -12,7 +12,6 @@
   ],
   "mcpServers": {
     "aws-documentation": { "type": "http", "url": "https://mcp.awsdocs.amazon.com" },
-    "aws-cdk": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] },
     "awsknowledge": { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
     "awsiac": { "type": "http", "url": "https://iac-mcp.global.api.aws" }
   },
