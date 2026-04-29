@@ -58,9 +58,15 @@ for f in fw_mapped['framework_mapping']:
     for c in f.get('controls', []):
         ctrl_to_objs.setdefault(c['control_id'], []).append(f['objective_id'])
 
-# Enrich controls with framework_objectives
+# Enrich controls with framework_objectives. Posture + source fields (from Rule C1
+# in map-generate-controls) flow through unchanged — they're already on each control
+# and will be propagated verbatim into mapping-results.json.controls[]. Every downstream
+# generate sub-skill reads ctrl['posture'] to populate _metadata.posture in the
+# generated artifact, which CHECK-15 enforces at hook time.
 for ctrl in cg['controls']:
     ctrl['framework_objectives'] = sorted(set(ctrl_to_objs.get(ctrl['id'], [])))
+    # posture + source: carry forward if present; absence is tolerated for legacy state
+    # files generated before Phase C (CHECK-15 only fires when _metadata.posture exists).
 ```
 
 ---
@@ -204,6 +210,26 @@ Detect and classify ALL gap types:
 
 ```python
 coverage_gaps = []
+
+# 0. posture_gap: forward any (mitigation, posture) gaps produced by Rule C1's
+# feasibility filter in map-generate-controls. These are structural gaps — a mitigation
+# was intended to produce a preventative-request or reactive-corrective control but the
+# parameter's gateable_by / mutability precluded it.
+for g in cg.get('coverage_gaps', []):
+    coverage_gaps.append({
+        "type": "posture_gap",
+        "id": g.get('mitigation_id'),
+        "description": (
+            f"Posture {g.get('posture')!r} not feasible for mitigation "
+            f"{g.get('mitigation_id')}: {g.get('reason')}"
+        ),
+        "recommendation": (
+            "Either accept the posture gap (documented), or pick a compensating "
+            "mechanism at a different posture (e.g., reactive-detective)."
+        ),
+        "posture": g.get('posture'),
+        "reason": g.get('reason'),
+    })
 
 # 1. mitigation_gap: mitigations with NONE coverage
 for t in threat_mitigation_map:

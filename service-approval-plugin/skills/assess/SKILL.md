@@ -59,12 +59,18 @@ mkdir -p out/domains
 
 The Service Authorization Reference page is the definitive source for IAM actions, resource types, and condition keys.
 
-1. Look up the SAR slug from `input/sar-slugs.json` (428 services mapped).
+1. Look up the SAR slug from `input/sar-slugs.json` (regenerate with `python3 scripts/regenerate-sar-slugs.py` if the service is missing).
 2. Read the SAR page: `https://docs.aws.amazon.com/service-authorization/latest/reference/list_{slug}.html`
 3. **SAR pages are large** — if truncated (contains `start_index=N`), keep reading with increasing start_index. Safety cap: 50 reads.
 4. Extract these 4 categories:
    - **permission_only_actions** — Actions marked "[permission only]" with no API call
-   - **condition_keys** — Service-specific keys (format: `prefix:keyname`), excluding `aws:*` globals
+   - **condition_keys** — Service-specific keys (format: `prefix:keyname`), excluding `aws:*` globals.
+     Emit as an array of OBJECTS `{"key": "prefix:keyname", "applies_to_actions": ["CreateX", "UpdateX"]}`,
+     NOT as bare strings. Populate `applies_to_actions` from the SAR page's "Condition keys" column
+     joined to the Actions table — this is what downstream phases use for semantic SAR matching
+     (`compute_gateable_by.py`) and for `capabilities.iam.condition_keys[]` in research-capabilities.
+     Without `applies_to_actions`, validator CHECK-S7 fails in Phase 1 and every cold-start run has
+     to back-fill the field.
    - **resource_types** — Resource type names and ARN patterns
    - **wildcard_only_actions** — Actions that can ONLY use `"Resource": "*"` in IAM policies.
      Extraction rule: An action is wildcard-only if and only if its "Resource types" column
@@ -89,7 +95,10 @@ Write to `.service-approval/state/sar-facts.json`:
   "sar_url": "https://docs.aws.amazon.com/...",
   "total_actions": 42,
   "permission_only_actions": ["action1", "action2"],
-  "condition_keys": ["prefix:key1", "prefix:key2"],
+  "condition_keys": [
+    {"key": "prefix:key1", "applies_to_actions": ["CreateX", "UpdateX"]},
+    {"key": "prefix:key2", "applies_to_actions": ["DeleteX"]}
+  ],
   "resource_types": [
     {"name": "resource", "arn_pattern": "arn:aws:service:*:*:resource/*"}
   ],

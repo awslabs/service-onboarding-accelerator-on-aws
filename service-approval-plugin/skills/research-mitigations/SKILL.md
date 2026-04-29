@@ -57,11 +57,66 @@ for entity in data.get("entities", []):
 ```
 
 ### Markdown files (Mitigation Report)
-Extract mitigation IDs matching pattern `M-<Resource>.<N>`:
-- Parse mitigation statement (full text between ID and next ID or section)
-- Parse mitigation goal
-- Extract request parameters (JSON paths like `$.encryptionKeyArn`)
-- Associate with resource type from section headers
+
+Mitigation reports (e.g. `input/Amazon Bedrock (AgentCore Control) — Mitigation Report.md`)
+follow a consistent shape. Parse with the reference spec below — do NOT reinvent on
+each run.
+
+**Block delimiter:** each mitigation begins with a level-3 header of shape
+`### M-<Entity>.<N> — <title>`. Regex:
+
+```python
+BLOCK_RE = re.compile(r"^### M-(?P<entity>[A-Za-z]+)\.(?P<n>\d+) — (?P<title>.+)$", re.MULTILINE)
+```
+
+Split the document at each header match; each block runs until the next header or EOF.
+
+**Per-block table:** the first Markdown table inside each block has column 1 as a
+bolded label and column 2 as the value. Parse rows keyed by the bolded label:
+
+| Label (col 1)          | Output field           | Notes                                                |
+|------------------------|------------------------|------------------------------------------------------|
+| `**ID**`               | `id`                   | Prepend `M-` if absent (e.g. `Resource.0` → `M-Resource.0`) |
+| `**Statement**`        | `statement`            | Full cell text, preserve sentences.                 |
+| `**Mitigation Goal**`  | `mitigation_goal`      | Full cell text, preserve sentences.                 |
+| `**Resource Type**`    | `resource_type`        | CFN type string (e.g. `AWS::Bedrock::Agent`).       |
+| `**Request Parameters**` | `request_parameters[]` | Split on commas or Markdown list bullets; strip whitespace; JSON paths like `$.encryptionKeyArn`. |
+
+Emit each parsed block as an `existing_mitigations[]` entry with the fields above
+plus `source: "<report-basename>"` (e.g. `"source": "Amazon Bedrock (AgentCore Control) — Mitigation Report.md"`) so downstream runs can trace provenance.
+
+**Row parsing pseudocode:**
+
+```python
+ROW_RE = re.compile(r"^\|\s*\*\*(?P<label>[^*]+)\*\*\s*\|\s*(?P<value>.+?)\s*\|$", re.MULTILINE)
+label_map = {
+    "ID": "id",
+    "Statement": "statement",
+    "Mitigation Goal": "mitigation_goal",
+    "Resource Type": "resource_type",
+    "Request Parameters": "request_parameters",
+}
+row_fields = {label_map[m.group("label").strip()]: m.group("value").strip()
+              for m in ROW_RE.finditer(block)
+              if m.group("label").strip() in label_map}
+if "request_parameters" in row_fields:
+    row_fields["request_parameters"] = [
+        p.strip().lstrip("-* ").strip()
+        for p in re.split(r",|\n", row_fields["request_parameters"])
+        if p.strip()
+    ]
+```
+
+**Rationale:** the reports are hand-curated in this exact shape. Parsing via this
+spec takes ~20 lines of Python; re-inventing the parser has cost ~15 min of LLM
+time on every cold-start run (confirmed across iter-13 and iter-14 runs). If a
+new report deviates from this shape, prefer fixing the report over making the
+parser tolerant of drift — uniform input shape keeps every downstream step
+deterministic.
+
+If the input filename ends in `.md` but the shape diverges significantly, fall
+back to the previous bullet-point heuristic (mitigation IDs by pattern, statement
+= text between IDs) and log a warning to `mcp-calls.log` noting the deviation.
 
 ### XLSX files
 Note as framework source file — record path for the Map skill. Do NOT parse framework

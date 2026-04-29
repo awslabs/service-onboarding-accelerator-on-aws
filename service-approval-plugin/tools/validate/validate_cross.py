@@ -370,11 +370,12 @@ def check_iac_completeness(controls_dir: str) -> list[str]:
         "compliant-resource.cfn.yaml": "CloudFormation",
         "compliant-resource.cdktf.ts": "CDKTF",
     }
-    # Check both direct files and subdirectories (CDK/CFN may be in subdirs)
+    # Check both direct files and subdirectories (TF/CDK/CFN/CDKTF may be in subdirs)
     for filename, label in required.items():
         direct = os.path.join(iac_dir, filename)
         # Also check common subdirectory patterns
         subdir_paths = [
+            os.path.join(iac_dir, "terraform", filename),
             os.path.join(iac_dir, "cdk", filename),
             os.path.join(iac_dir, "cloudformation", filename),
             os.path.join(iac_dir, "cdktf", filename),

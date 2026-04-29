@@ -183,7 +183,26 @@ def check_iam_policies(controls_dir: Path) -> list[str]:
                 if isinstance(resources, str):
                     resources = [resources]
                 broad_actions = [a for a in actions if "*" in a or a.startswith("logs:")]
-                if broad_actions and resources == ["*"] and not condition:
+                # KMS key-admin carve-out: `kms:*` on `*` to account-root is the
+                # canonical AWS-recommended key-administrator statement. Resource `*`
+                # in a KMS key policy scopes to the enclosing key, not all resources.
+                # See https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html
+                principal = stmt.get("Principal") or {}
+                is_kms_key_policy = "kms-key-policy" in policy_file.name.lower()
+                is_root_admin = (
+                    is_kms_key_policy
+                    and broad_actions == ["kms:*"]
+                    and isinstance(principal, dict)
+                    and any(
+                        v == "*" or (isinstance(v, str) and v.endswith(":root"))
+                        or (isinstance(v, list) and all(
+                            isinstance(x, str) and (x == "*" or x.endswith(":root"))
+                            for x in v
+                        ))
+                        for v in principal.values()
+                    )
+                )
+                if broad_actions and resources == ["*"] and not condition and not is_root_admin:
                     errors.append(
                         f"P3 {rel} Statement[{i}]: Allow {broad_actions} on "
                         f"Resource '*' with no Condition — exfiltration path."
