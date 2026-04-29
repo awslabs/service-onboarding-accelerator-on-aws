@@ -69,6 +69,40 @@ _NETWORK_PERIMETER_KEYS = {
     "aws:SourceVpce",
 }
 
+# KMS service-owned condition keys — always valid inside KMS key policies
+# regardless of which downstream service consumes the key. AWS KMS evaluates these
+# on its own operations. See:
+# https://docs.aws.amazon.com/kms/latest/developerguide/policy-conditions.html
+_KMS_SERVICE_CONDITION_KEYS = {
+    "kms:BypassPolicyLockoutSafetyCheck",
+    "kms:CallerAccount",
+    "kms:CustomerMasterKeySpec",
+    "kms:CustomerMasterKeyUsage",
+    "kms:DataKeyPairSpec",
+    "kms:EncryptionAlgorithm",
+    "kms:EncryptionContextKeys",
+    "kms:ExpirationModel",
+    "kms:GrantConstraintType",
+    "kms:GrantIsForAWSResource",
+    "kms:GrantOperations",
+    "kms:GranteePrincipal",
+    "kms:KeyOrigin",
+    "kms:MacAlgorithm",
+    "kms:MessageType",
+    "kms:MultiRegion",
+    "kms:MultiRegionKeyType",
+    "kms:PrimaryRegion",
+    "kms:ReEncryptOnSameKey",
+    "kms:RequestAlias",
+    "kms:ResourceAliases",
+    "kms:RetiringPrincipal",
+    "kms:SigningAlgorithm",
+    "kms:ValidTo",
+    "kms:ViaService",
+    "kms:WrappingAlgorithm",
+    "kms:WrappingKeySpec",
+}
+
 
 # ================================================================
 # State file loading
@@ -113,8 +147,14 @@ def load_state_files(file_path: str) -> tuple:
 # Metadata extraction (handles both UPPERCASE and lowercase keys)
 # ================================================================
 
-def extract_metadata(data: dict) -> dict | None:
-    """Extract _metadata from JSON, normalizing keys to lowercase."""
+def extract_metadata(data) -> dict | None:
+    """Extract _metadata from JSON, normalizing keys to lowercase.
+
+    Accepts any loaded JSON value; returns None for non-dict top-level values
+    (e.g. CloudFormation parameter override files are JSON arrays).
+    """
+    if not isinstance(data, dict):
+        return None
     meta = data.get("_metadata")
     if not meta or not isinstance(meta, dict):
         return None
@@ -136,10 +176,23 @@ def _extract_metadata_controls(meta: dict) -> list[str]:
 # ================================================================
 
 def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[str]:
-    """Verify EventBridge source and eventSource match validated.json service."""
+    """Verify EventBridge source and eventSource match validated.json service.
+
+    EventBridge events carry the machine service identifier (e.g.
+    `aws.bedrock-agentcore`, `bedrock-agentcore.amazonaws.com`), not the
+    human-readable service name. Prefer `service_prefix` (populated from
+    sar-facts) and fall back to `service` only when it isn't available.
+    If `service` happens to be a human-readable name (e.g. "Amazon Bedrock
+    Agentcore"), the expected strings are nonsense — that's an upstream
+    bug, not an artifact issue. Skip rather than raise a false positive.
+    """
     errors = []
-    expected_service = validated.get("service", "")
+    expected_service = validated.get("service_prefix") or validated.get("service", "")
     if not expected_service:
+        return errors
+    # Machine identifiers are lowercase and contain no whitespace. Anything
+    # with a space or uppercase letter is a display name — skip the check.
+    if " " in expected_service or any(c.isupper() for c in expected_service):
         return errors
 
     expected_source = f"aws.{expected_service}"
@@ -242,10 +295,20 @@ def check_api_parameters_stepfunctions(file_path: str, data: dict, validated: di
 
 
 def check_api_parameters_ssm(file_path: str, data: dict, validated: dict) -> list[str]:
-    """Check SSM runbook executeAwsApi steps reference valid operations."""
+    """Check SSM runbook executeAwsApi steps reference valid operations.
+
+    Only enforces api_surface membership when the step's `Service:` matches
+    the assessed service. Cross-service calls (e.g., an ECS runbook invoking
+    `organizations:ListAccounts`) are out of scope for this validator — the
+    api_surface in validated.json is scoped to a single service.
+    """
     errors = []
     valid_ops = _extract_valid_operations(validated)
     if not valid_ops:
+        return errors
+
+    target_service = _normalize_service_identifier(validated.get("service", ""))
+    if not target_service:
         return errors
 
     # SSM runbooks can have steps with aws:executeAwsApi action
@@ -260,6 +323,11 @@ def check_api_parameters_ssm(file_path: str, data: dict, validated: dict) -> lis
         if action != "aws:executeAwsApi":
             continue
         inputs = step.get("inputs", {})
+        step_service = _normalize_service_identifier(inputs.get("Service", ""))
+        if step_service and step_service != target_service:
+            # Cross-service call — validator cannot verify without the other
+            # service's api_surface. Skip rather than raise a false positive.
+            continue
         api_action = inputs.get("Api", "")
         if api_action and api_action not in valid_ops:
             errors.append(
@@ -268,6 +336,18 @@ def check_api_parameters_ssm(file_path: str, data: dict, validated: dict) -> lis
             )
 
     return errors
+
+
+def _normalize_service_identifier(value: str) -> str:
+    """Normalise an AWS service identifier for case-insensitive comparison.
+
+    Accepts forms like `"ecs"`, `"ECS"`, `"Amazon Elastic Container Service"`.
+    Returns a lowercase stripped string; caller is responsible for any further
+    canonicalisation needed.
+    """
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower()
 
 
 # ================================================================
@@ -289,6 +369,12 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
     # Also include the service prefix for tag keys
     service = validated.get("service", "")
 
+    # KMS key policies may reference KMS service-owned condition keys
+    # (kms:ViaService, kms:EncryptionContext:*, kms:GrantOperations, etc.) regardless
+    # of which downstream service the CMK encrypts for. These keys are evaluated by
+    # AWS KMS on its own operations, not by the consuming service.
+    is_kms_key_policy = "kms-key-policy" in os.path.basename(file_path).lower()
+
     def _check_condition_block(condition: dict, context: str):
         if not isinstance(condition, dict):
             return
@@ -305,6 +391,13 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
                     continue
                 # Skip tag condition keys (service:ResourceTag/*, etc.)
                 if "Tag/" in key or "TagKeys" in key:
+                    continue
+                # Skip KMS service-owned keys when evaluating a KMS key policy
+                if is_kms_key_policy and (
+                    key_base in _KMS_SERVICE_CONDITION_KEYS
+                    or key_base == "kms:EncryptionContext"
+                    or key.startswith("kms:EncryptionContext:")
+                ):
                     continue
                 errors.append(
                     f"CHECK-3 condition_key: {context} uses condition key "
@@ -648,6 +741,445 @@ def check_comment_header_control_ids(file_path: str, mapping: dict) -> list[str]
     return errors
 
 
+# Body-scan regex — mirrors scripts/smoke-check-traceability.py so case-insensitive
+# snake_case rule names (e.g. `ctrl_res_pro_001`) are normalized and compared.
+_CTRL_BODY_PATTERN = re.compile(r"CTRL[-_](?:[A-Z]{2,3}[-_]){0,2}\d{3}", re.IGNORECASE)
+_BODY_SCAN_EXTS = {".json", ".yaml", ".yml", ".py", ".tf", ".ts", ".rego", ".guard", ".md"}
+_BODY_SCAN_MAX_BYTES = 65536
+
+
+def check_body_control_id_references(file_path: str, mapping: dict) -> list[str]:
+    """Verify every CTRL-* token in the full file body exists in mapping-results.json.
+
+    Complements check_comment_header_control_ids (which only scans the first 30 lines).
+    Catches drift in rule names, policy Sids, and inline comments that the header check
+    misses — e.g. `rule cluster_fargate_ephemeral_cmk_ctrl_res_pro_001 { ... }` where
+    the ID is embedded in the rule name rather than a `# CONTROLS:` line.
+    """
+    errors: list[str] = []
+    valid_ids = {c.get("id") for c in mapping.get("controls", []) if c.get("id")}
+    if not valid_ids:
+        return errors
+
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext not in _BODY_SCAN_EXTS:
+        return errors
+
+    try:
+        with open(file_path, "r", errors="ignore") as fh:
+            body = fh.read(_BODY_SCAN_MAX_BYTES)
+    except OSError:
+        return errors
+
+    # Normalize matches the same way smoke-check-traceability.py does so snake_case
+    # rule names match the canonical dash-uppercase IDs in mapping-results.json.
+    found_ids = {m.upper().replace("_", "-") for m in _CTRL_BODY_PATTERN.findall(body)}
+    orphans = sorted(found_ids - valid_ids)
+    for orphan in orphans:
+        errors.append(
+            f"CHECK-13 body_control_id_reference: '{orphan}' referenced in "
+            f"{os.path.basename(file_path)} but not in mapping-results.json controls[]"
+        )
+    return errors
+
+
+# ================================================================
+# Check 14a: SAR-driven artifacts — Condition keys must be SAR keys
+# ================================================================
+#
+# For SAR-driven artifact files (SCPs, RCPs, IAM policies, permission boundaries,
+# resource-based policies, VPCE policies, KMS key policies), every Condition block key
+# MUST exist in validated.json.capabilities.iam.condition_keys[] OR be a global AWS key
+# (case-insensitive for AWS docs inconsistencies like aws:PrincipalARN vs aws:PrincipalArn)
+# OR be a KMS service-owned key inside a KMS key policy file.
+#
+# In particular, API parameter paths (e.g., "$.networkConfiguration.awsvpcConfiguration")
+# are NEVER valid condition keys — AWS IAM silently ignores them.
+
+# Filename patterns that identify SAR-driven mechanism artifacts.
+# Used by CHECK-14a to enforce SAR condition keys only.
+_SAR_DRIVEN_BASENAME_PATTERNS = (
+    "scp",
+    "rcp",
+    "iam-policies",
+    "iam-policy",
+    "permission-boundary",
+    "resource-policy",
+    "vpce-policy",
+    "kms-key-policy",
+)
+
+# Filename patterns CHECK-15 accepts under posture `preventative-request`.
+# Superset of _SAR_DRIVEN_BASENAME_PATTERNS because tag-policy lives in
+# preventive/ under the same posture but is not SAR-driven.
+_PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
+    "tag-policy",
+)
+
+# Filename patterns CHECK-15 accepts under posture `reactive-detective`
+# when the artifact lives directly in `detective/` (outside
+# config-rule-lambdas/).
+_REACTIVE_DETECTIVE_BASENAMES = (
+    "config-rules.json",
+    "access-analyzer.json",
+    "eventbridge-rules.json",
+    "cloudwatch-alarms.json",
+)
+
+# Filename patterns CHECK-15 accepts under posture `preventative-proactive`
+# when the artifact legitimately lives in `detective/` (cross-cutting
+# documentation / gap remediation files).
+_PREV_PROACTIVE_CROSS_CUTTING_BASENAMES = (
+    "compensating-controls-documentation.json",
+)
+
+
+def _is_sar_driven_artifact(file_path: str) -> bool:
+    """Return True if file_path is a SAR-driven preventive artifact."""
+    norm = file_path.replace("\\", "/").lower()
+    if "/preventive/" not in norm and "preventive" not in os.path.basename(norm):
+        # Also match files that live directly in tmp paths with SAR basenames
+        # (so unit tests can exercise the check without creating /preventive/ dirs)
+        pass
+    basename = os.path.basename(norm)
+    for pat in _SAR_DRIVEN_BASENAME_PATTERNS:
+        if pat in basename:
+            return True
+    return False
+
+
+def _build_sar_key_allowlist(validated: dict) -> set[str]:
+    """Collect service-specific SAR condition keys plus their base forms (for tag subkeys)."""
+    keys: set[str] = set()
+    for ck in validated.get("capabilities", {}).get("iam", {}).get("condition_keys", []):
+        key = ck.get("key", "")
+        if not key:
+            continue
+        keys.add(key)
+        # Also add the key with ${TagKey}-style placeholder stripped
+        if "${" in key:
+            base = key.split("/")[0] if "/" in key else key.split(":")[-1]
+            keys.add(base)
+    return keys
+
+
+def check_sar_condition_keys_14a(
+    file_path: str, data: dict, validated: dict
+) -> list[str]:
+    """CHECK-14a — Every Condition key in a SAR-driven artifact must be a SAR key.
+
+    Scope: files whose basename matches _SAR_DRIVEN_BASENAME_PATTERNS.
+    Pass: key in validated.json condition_keys, or global AWS key (case-insensitive),
+          or (for kms-key-policy files) a KMS service-owned key.
+    Fail: API parameter paths ("$.foo.bar"), invented keys, obvious mismatches.
+    """
+    errors: list[str] = []
+    if not _is_sar_driven_artifact(file_path):
+        return errors
+    if not isinstance(data, dict):
+        return errors
+    service_keys = _build_sar_key_allowlist(validated)
+    global_keys_ci = {k.lower() for k in _GLOBAL_CONDITION_KEYS}
+    is_kms_key_policy = "kms-key-policy" in os.path.basename(file_path).lower()
+
+    def _key_is_valid(key: str) -> bool:
+        base = key.split("/")[0] if "/" in key else key
+        # Exact match on service-specific key
+        if key in service_keys or base in service_keys:
+            return True
+        # aws:RequestTag/* and aws:ResourceTag/* and aws:TagKeys — base prefix match
+        if base.lower() in global_keys_ci:
+            return True
+        # Case-insensitive global key match (aws:PrincipalARN vs aws:PrincipalArn)
+        if key.lower() in global_keys_ci:
+            return True
+        # Tag subkey patterns: service:ResourceTag/Xxx, aws:RequestTag/Xxx
+        if "Tag/" in key or "TagKeys" in key:
+            return True
+        # KMS service-owned keys inside a KMS key policy
+        if is_kms_key_policy:
+            if (
+                base in _KMS_SERVICE_CONDITION_KEYS
+                or base == "kms:EncryptionContext"
+                or key.startswith("kms:EncryptionContext:")
+            ):
+                return True
+        return False
+
+    statements = data.get("Statement", [])
+    if not isinstance(statements, list):
+        return errors
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            continue
+        sid = stmt.get("Sid", "unknown")
+        condition = stmt.get("Condition", {}) or {}
+        if not isinstance(condition, dict):
+            continue
+        for _operator, keys_dict in condition.items():
+            if not isinstance(keys_dict, dict):
+                continue
+            for key in keys_dict:
+                if not _key_is_valid(key):
+                    reason = (
+                        "looks like an API parameter path — parameter paths are NOT valid IAM condition keys"
+                        if key.startswith("$")
+                        else "not found in validated.json condition_keys"
+                    )
+                    errors.append(
+                        f"CHECK-14a sar_condition_key: {os.path.basename(file_path)} "
+                        f"Statement '{sid}' uses '{key}' — {reason}. "
+                        f"SAR-driven artifacts must only reference condition keys from "
+                        f"validated.json.capabilities.iam.condition_keys[]."
+                    )
+
+    return errors
+
+
+# ================================================================
+# Check 14b: API-driven artifacts — enum literals must match parameters[].enum
+# ================================================================
+#
+# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
+# remediation/ssm-runbook*, remediation/stepfunctions-workflow.json,
+# remediation/lambda-remediator/**, iac/**), any enum-style literal list must reference
+# values from validated.json.api_surface.operations[].parameters[].enum.
+#
+# Patterns detected (a reasonable subset — language-agnostic literal scan):
+#   cfn-guard / Checkov / OPA / CDK / TF:  `in [<...>]`, `AllowedValues: [<...>]`,
+#                                          `contains([<...>], var.x)`
+#   Python Config Lambda / Lambda remediator: `x in [<...>]`
+# Literals that are not candidate enum values (ARNs, identifier patterns with `:` or `/`,
+# MITRE-technique-looking IDs, path-looking strings) are ignored.
+
+_ENUM_LITERAL_LIST_PATTERN = re.compile(
+    r"\[\s*((?:\"[A-Z][A-Z0-9_]{1,63}\"|\'[A-Z][A-Z0-9_]{1,63}\')"
+    r"(?:\s*,\s*(?:\"[A-Z][A-Z0-9_]{1,63}\"|\'[A-Z][A-Z0-9_]{1,63}\'))*)\s*\]"
+)
+_STRING_LITERAL_PATTERN = re.compile(r"[\"']([A-Z][A-Z0-9_]{1,63})[\"']")
+_API_DRIVEN_PATH_FRAGMENTS = (
+    "/proactive/",
+    "/detective/config-rule-lambdas/",
+    "/remediation/ssm-runbook",
+    "/remediation/stepfunctions-workflow",
+    "/remediation/lambda-remediator/",
+    "/iac/",
+)
+_API_DRIVEN_BASENAME_PREFIXES = (
+    "proactive-",
+    "iac-cdk-",
+    "iac-",
+    "handler-",
+)
+_API_DRIVEN_EXTENSIONS = {".guard", ".rego", ".py", ".yaml", ".yml", ".ts", ".tf", ".json"}
+
+
+def _is_api_driven_artifact(file_path: str) -> bool:
+    """Return True if file_path is an API-driven mechanism artifact."""
+    norm = file_path.replace("\\", "/")
+    ext = os.path.splitext(norm)[1].lower()
+    if ext not in _API_DRIVEN_EXTENSIONS:
+        return False
+    # Path-based match — primary signal
+    for frag in _API_DRIVEN_PATH_FRAGMENTS:
+        if frag in norm:
+            return True
+    # Temp-file convention for unit tests: basenames beginning with these prefixes
+    base = os.path.basename(norm)
+    for prefix in _API_DRIVEN_BASENAME_PREFIXES:
+        if base.startswith(prefix):
+            return True
+    return False
+
+
+def _collect_parameter_enum_values(validated: dict) -> set[str]:
+    """Flatten every enum entry from every parameter across every operation."""
+    values: set[str] = set()
+    for op in validated.get("api_surface", {}).get("operations", []):
+        for p in op.get("parameters", []) or []:
+            for v in p.get("enum", []) or []:
+                if isinstance(v, str):
+                    values.add(v)
+    return values
+
+
+def check_api_driven_enum_literals_14b(
+    file_path: str, validated: dict
+) -> list[str]:
+    """CHECK-14b — Enum-style literal lists must reference parameters[].enum values.
+
+    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
+    remediation/ssm-runbook*, remediation/stepfunctions-workflow.json,
+    remediation/lambda-remediator/**, iac/**).
+    Each SCREAMING_SNAKE literal in an `in [...]` / `AllowedValues: [...]` / similar
+    enum-style list must appear in validated.json.api_surface.operations[].parameters[].enum.
+    """
+    errors: list[str] = []
+    if not _is_api_driven_artifact(file_path):
+        return errors
+    valid_values = _collect_parameter_enum_values(validated)
+    if not valid_values:
+        return errors
+
+    try:
+        with open(file_path, "r", errors="ignore") as fh:
+            body = fh.read(_BODY_SCAN_MAX_BYTES)
+    except OSError:
+        return errors
+
+    for list_match in _ENUM_LITERAL_LIST_PATTERN.finditer(body):
+        list_body = list_match.group(1)
+        literals = _STRING_LITERAL_PATTERN.findall(list_body)
+        if not literals:
+            continue
+        # An all-caps literal list is an enum candidate only when >=1 value is already in
+        # the parameter-enum space. Lists like resource-name allowlists (arbitrary strings)
+        # happen to be SCREAMING_SNAKE sometimes but contain 0 enum hits — skip those.
+        hits = [v for v in literals if v in valid_values]
+        misses = [v for v in literals if v not in valid_values]
+        if hits and misses:
+            errors.append(
+                f"CHECK-14b api_enum_mismatch: {os.path.basename(file_path)} "
+                f"uses enum literal list containing {misses!r} but these values are not "
+                f"in validated.json.api_surface.operations[].parameters[].enum. "
+                f"Copy enum values verbatim from validated.json — do not invent variants."
+            )
+
+    return errors
+
+
+# ================================================================
+# Check 15: Posture-mechanism consistency
+# ================================================================
+#
+# Every generated artifact with `_metadata.posture` must live in a directory that
+# matches its posture:
+#   preventative-request   → preventive/{scp,rcp,iam-policies,permission-boundary,
+#                             resource-policy,vpce-policy,kms-key-policy}*.json
+#   preventative-proactive → proactive/** or iac/**
+#   reactive-detective     → detective/config-rule-lambdas/** or detective/config-rules.json
+#                             or detective/access-analyzer.json
+#   reactive-corrective    → remediation/**
+#
+# Artifacts without _metadata.posture are not subject to this check (opt-in during
+# Phase C rollout).
+
+_VALID_POSTURES = {
+    "preventative-request",
+    "preventative-proactive",
+    "reactive-detective",
+    "reactive-corrective",
+}
+
+
+def _file_is_in_posture_family(file_path: str, posture: str) -> bool:
+    """Return True if file_path's directory matches posture's allowed family."""
+    norm = file_path.replace("\\", "/").lower()
+    base = os.path.basename(norm)
+    if posture == "preventative-request":
+        return "/preventive/" in norm and any(
+            pat in base for pat in _PREV_REQUEST_BASENAME_PATTERNS
+        )
+    if posture == "preventative-proactive":
+        if "/proactive/" in norm or "/iac/" in norm:
+            return True
+        if "/detective/" in norm and base in _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES:
+            return True
+        return False
+    if posture == "reactive-detective":
+        if "/detective/config-rule-lambdas/" in norm:
+            return True
+        if "/detective/" in norm and base in _REACTIVE_DETECTIVE_BASENAMES:
+            return True
+        return False
+    if posture == "reactive-corrective":
+        return "/remediation/" in norm
+    return False
+
+
+def check_posture_mechanism_consistency_15(
+    file_path: str, data: dict
+) -> list[str]:
+    """CHECK-15 — _metadata.posture must match the artifact's directory family."""
+    errors: list[str] = []
+    if not isinstance(data, dict):
+        return errors
+    meta = extract_metadata(data)
+    if not meta:
+        return errors
+    posture = meta.get("posture")
+    if not isinstance(posture, str) or not posture:
+        return errors
+    if posture not in _VALID_POSTURES:
+        # Unknown posture — upstream schema validator handles this; skip here.
+        return errors
+    if not _file_is_in_posture_family(file_path, posture):
+        errors.append(
+            f"CHECK-15 posture_mismatch: {os.path.basename(file_path)} "
+            f"declares _metadata.posture='{posture}' but lives outside the expected "
+            f"directory family. preventative-request→preventive/{{scp,rcp,iam-policies,"
+            f"permission-boundary,resource-policy,vpce-policy,kms-key-policy,tag-policy}}*.json; "
+            f"preventative-proactive→proactive/** or iac/** or "
+            f"detective/compensating-controls-documentation.json; "
+            f"reactive-detective→detective/config-rule-lambdas/** or one of "
+            f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
+            f"reactive-corrective→remediation/**."
+        )
+    return errors
+
+
+# ================================================================
+# Check 16: JS-style boolean / null tokens in generated Python files
+# ================================================================
+#
+# Generated Python files (Config rule handlers, Lambda remediators, etc.) are
+# Python source — not JSON — but generators sometimes mix up the two when
+# building in-file fixtures such as SMOKE_TEST_EVENTS. A bare `true` / `false`
+# / `null` in a Python dict literal raises `NameError` at module-import time,
+# failing Tier 1 silently long before the handler runs.
+#
+# This check scans Python files under `controls/` for `true` / `false` / `null`
+# tokens that appear OUTSIDE any string literal or comment. It uses Python's
+# own tokenizer so `"... true ..."` inside a string, `# true` in a comment, or
+# `true_flag = 1` as an identifier are all correctly ignored.
+
+_JS_LITERAL_NAMES = frozenset({"true", "false", "null"})
+
+
+def check_js_literals_in_python_16(file_path: str) -> list[str]:
+    """CHECK-16 — Python files must not contain bare `true`/`false`/`null`.
+
+    A bare JS-style literal in a Python .py file is almost always a generator
+    bug: the generator copied a JSON fixture into Python source without
+    translating the bool/null tokens. The file will raise `NameError` at
+    import time.
+    """
+    import tokenize
+
+    errors: list[str] = []
+    if not file_path.endswith(".py"):
+        return errors
+
+    try:
+        with open(file_path, "rb") as fh:
+            tokens = list(tokenize.tokenize(fh.readline))
+    except (OSError, tokenize.TokenizeError, SyntaxError):
+        # Syntax errors are caught separately; skip to avoid double-reporting.
+        return errors
+
+    for tok in tokens:
+        if tok.type != tokenize.NAME:
+            continue
+        if tok.string in _JS_LITERAL_NAMES:
+            errors.append(
+                f"CHECK-16 js_literal_in_python: {os.path.basename(file_path)} "
+                f"line {tok.start[0]} uses bare '{tok.string}' — Python uses "
+                f"True/False/None. This raises NameError at import time. "
+                f"If copying from JSON, translate the tokens before insertion."
+            )
+    return errors
+
+
 # ================================================================
 # Main dispatcher
 # ================================================================
@@ -726,23 +1258,42 @@ def validate_file(file_path: str) -> list[str]:
     if mapping and ext in (".yaml", ".yml", ".py", ".guard", ".rego"):
         errors.extend(check_comment_header_control_ids(file_path, mapping))
 
-    # Check 12: SCP size limit (5120 chars)
+    # Check 16: JS-style boolean/null literals in generated Python files
+    if ext == ".py":
+        errors.extend(check_js_literals_in_python_16(file_path))
+
+    # Check 13: Full-body CTRL-* references against mapping-results.json
+    # (complements check 11 which only scans the first 30 lines for # CONTROLS: headers)
+    if mapping and category in ("preventive", "detective", "remediation", "proactive", "iac"):
+        errors.extend(check_body_control_id_references(file_path, mapping))
+
+    # Check 12: SCP size limit (5120 bytes minified, excluding _metadata)
+    # AWS Organizations' 5120-character SCP limit applies to the policy body
+    # (Version + Statement) submitted via the API — not the pretty-printed
+    # file on disk and not our `_metadata` sidecar.
     if category == "preventive" and ext == ".json" and "scp" in basename.lower():
         try:
-            size = os.path.getsize(file_path)
+            with open(file_path) as fh:
+                parsed = json.load(fh)
+            policy_body = {k: v for k, v in parsed.items() if k != "_metadata"}
+            size = len(json.dumps(policy_body, separators=(",", ":")))
             if size > 5120:
                 errors.append(
-                    f"CHECK-12 scp_size: {basename} is {size} chars "
-                    f"(limit 5120) — split into multiple policies"
+                    f"CHECK-12 scp_size: {basename} minified policy body is "
+                    f"{size} bytes (limit 5120) — split into multiple policies"
                 )
-        except OSError:
+        except (OSError, ValueError):
             pass
 
     # Category-specific checks
     if category == "preventive" and data:
-        # Check 3: Condition keys
+        # Check 3: Condition keys (service-specific + global + KMS — existing)
         if validated:
             errors.extend(check_condition_keys(file_path, data, validated))
+        # Check 14a: SAR-driven — Condition keys must be SAR keys or globals (stricter
+        # than CHECK-3; catches API parameter paths used as condition keys).
+        if validated:
+            errors.extend(check_sar_condition_keys_14a(file_path, data, validated))
         # Check 6: Null-key denial
         errors.extend(check_null_key_denial(file_path, data))
 
@@ -774,6 +1325,26 @@ def validate_file(file_path: str) -> list[str]:
                     errors.extend(check_api_parameters_ssm(file_path, yaml_data, validated))
             except (ImportError, Exception):
                 pass
+
+    # Check 13: KMS consumer → key-policy grant parity (IaC only)
+    # Enforces generate-iac/SKILL.md Rule 4 at write time.
+    if category == "iac" and ext in (".yaml", ".yml", ".tf"):
+        try:
+            from validate_kms_consumers import validate_kms_consumers
+            errors.extend(validate_kms_consumers(file_path))
+        except ImportError:
+            pass
+
+    # Check 14b: API-driven — enum literals must match parameters[].enum.
+    # Applies to proactive/**, detective/config-rule-lambdas/**, remediation/ssm-runbook*,
+    # remediation/stepfunctions-workflow.json, remediation/lambda-remediator/**, iac/**.
+    if validated and _is_api_driven_artifact(file_path):
+        errors.extend(check_api_driven_enum_literals_14b(file_path, validated))
+
+    # Check 15: Posture-mechanism consistency.
+    # Applies to any generated control file with _metadata.posture populated.
+    if data:
+        errors.extend(check_posture_mechanism_consistency_15(file_path, data))
 
     return errors
 

@@ -124,6 +124,132 @@ Common data-plane patterns to look for:
 
 ---
 
+## Step 2.5: Botocore Enrichment Overlay
+
+Enrich operations and parameters from the boto3 service model. Botocore provides
+machine-readable enums, min/max, patterns, and mutability that are far more
+reliable than prose scraping. **SAR-driven inventory is still authoritative** —
+this step only fills in per-parameter detail on operations we already know about.
+
+**Preflight — verify the pinned boto3 version is installed:**
+
+```bash
+pip install -r service-approval-plugin/tools/research/requirements-research.txt
+python3 -c "import boto3; print(boto3.__version__)"
+# Expect a 1.40.x version. If missing, install before continuing.
+```
+
+### 2.5a: Fetch the botocore schema
+
+```bash
+python3 service-approval-plugin/tools/research/fetch_botocore_schema.py <service> \
+  -o .service-approval/state/botocore-schema.json
+```
+
+A pre-computed cache exists for common services at
+`service-approval-plugin/data/api-surface/<service>.json` (ECS, Lambda, S3).
+If the cache is present and matches the target service, prefer it over running
+the tool (saves ~5s). Always check the cache's boto3 version in `_metadata`.
+
+Log the MCP-equivalent call to `.service-approval/state/mcp-calls.log`:
+```
+[Step 2.5] [API-Surface] botocore fetch_botocore_schema.py — service=<name> — N ops, M params
+```
+
+### 2.5b: Overlay enum/min/max/pattern onto each operation
+
+For every operation in `api_surface.operations[]` built in Step 3:
+
+1. Look up the matching botocore operation by `operation` name.
+2. **If matched:** set `botocore_coverage: true` on the operation, and for every
+   parameter whose `path` matches a botocore path, merge these fields from
+   botocore onto the parameter record:
+   - `enum: list[str]` — allowed string values (only when botocore defines them)
+   - `min` / `max` — numeric bound or length bound
+   - `pattern` — regex
+   - `security_category` — `kms | network | iam | tag | log | auth | tls | policy | null`
+     (populated by the keyword classifier in `fetch_botocore_schema.py`)
+3. **If the operation is missing from botocore** (e.g., daemon ops, brand-new
+   service, permission-only actions): set `botocore_coverage: false`. Retain
+   whatever parameter data Step 3 already built from MCP. Do NOT drop the op.
+
+Rule: botocore is an **overlay**, never a replacement. If botocore has an
+operation SAR doesn't list, it's ignored. If SAR has an operation botocore
+doesn't list, it survives with `botocore_coverage: false`.
+
+### 2.5c: Compute mutability
+
+```bash
+python3 service-approval-plugin/tools/research/compute_mutability.py <service> \
+  -o .service-approval/state/botocore-mutability.json
+```
+
+For each parameter, merge `mutability: "create_only" | "mutable" | "unknown"`
+from the tool's output. `unknown` is the default when the tool can't find a
+matching Update-family operation — keep it, don't guess.
+
+### 2.5d: Compute gateable_by (SAR↔parameter cross-match)
+
+```bash
+python3 service-approval-plugin/tools/research/compute_gateable_by.py \
+  --schema .service-approval/state/botocore-schema.json \
+  --sar-facts .service-approval/state/sar-facts.json \
+  -o .service-approval/state/botocore-gateable.json
+```
+
+This cross-references parameter paths against SAR condition keys. For each
+parameter, merge:
+
+- `gateable_by: list[str]` — subset of `["sar", "api"]`. Always includes `"api"`
+  for any parameter that came from botocore. `"sar"` is added only when a SAR
+  condition key matches the parameter path with semantic confirmation.
+- `sar_condition_key: string | null` — the matched SAR key (e.g.,
+  `"ecs:auto-assign-public-ip"`), or `null` when no SAR match.
+
+**Invariant:** if `"sar"` is in `gateable_by`, `sar_condition_key` MUST be
+non-null. The validator enforces this.
+
+### 2.5e: Final parameter record shape
+
+After the overlay, a fully enriched parameter looks like:
+
+```json
+{
+  "path": "$.networkConfiguration.awsvpcConfiguration.assignPublicIp",
+  "type": "string",
+  "required": false,
+  "enum": ["ENABLED", "DISABLED"],
+  "description": "Whether the task's ENI receives a public IP.",
+  "mutability": "mutable",
+  "security_category": "network",
+  "gateable_by": ["api", "sar"],
+  "sar_condition_key": "ecs:auto-assign-public-ip"
+}
+```
+
+A parameter that came from MCP-only (botocore doesn't cover the op) looks like:
+
+```json
+{
+  "path": "$.something",
+  "type": "string",
+  "required": false,
+  "gateable_by": ["api"],
+  "sar_condition_key": null
+}
+```
+
+### 2.5f: Known limitation — sar-facts.json without applies_to_actions
+
+If the existing `sar-facts.json` stores `condition_keys` as strings (not objects
+with `applies_to_actions[]`), the cross-match falls back to string-suffix match
+without semantic confirmation. Known gap documented in
+`.service-approval/gap-report-botocore.md`. Phase C's rollout requires the
+assess skill to populate `applies_to_actions[]`; Phase B tolerates the
+string-only form.
+
+---
+
 ## Step 3: Build Operations List
 
 For EVERY API action (excluding permission-only actions), create an operation entry:
@@ -234,8 +360,26 @@ ignored and produce an empty API surface in research.json.
     "operations": [
       {
         "operation": "CreateAgentRuntime",
+        "botocore_coverage": true,
         "parameters": [
-          { "path": "$.agentRuntimeName", "type": "string", "required": true }
+          {
+            "path": "$.agentRuntimeName",
+            "type": "string",
+            "required": true,
+            "pattern": "^[a-zA-Z][a-zA-Z0-9_-]*$",
+            "mutability": "create_only",
+            "gateable_by": ["api"],
+            "sar_condition_key": null
+          },
+          {
+            "path": "$.encryptionKeyArn",
+            "type": "string",
+            "required": false,
+            "security_category": "kms",
+            "mutability": "mutable",
+            "gateable_by": ["api", "sar"],
+            "sar_condition_key": "bedrock:encryptionKeyArn"
+          }
         ]
       }
     ]
@@ -249,6 +393,14 @@ ignored and produce an empty API surface in research.json.
     "condition_key_cross_ref_pass": true,
     "missing_from_condition_keys": []
   },
+  "botocore_enrichment": {
+    "boto3_version": "1.40.x",
+    "operations_with_coverage": 78,
+    "operations_without_coverage": 2,
+    "parameters_total": 540,
+    "parameters_with_enum": 105,
+    "parameters_gateable_by_sar": 33
+  },
   "doc_sources": ["https://docs.aws.amazon.com/..."]
 }
 ```
@@ -261,12 +413,15 @@ Output validation runs automatically via PostToolUse hook (validate_state.py Che
 
 ```
 Research (API surface) complete:
-  SAR total actions:       {N}
-  Permission-only actions: {N}
-  Expected operations:     {N}
-  Captured operations:     {N}
-  Missing operations:      {N}
-  Condition key cross-ref: {PASS/FAIL}
-  Doc sources:             {N}
+  SAR total actions:            {N}
+  Permission-only actions:      {N}
+  Expected operations:          {N}
+  Captured operations:          {N}
+  Botocore coverage:            {N/M} ops ({pct}%)
+  Parameters w/ enum (botocore): {N}
+  Parameters gateable_by SAR:   {N}
+  Missing operations:           {N}
+  Condition key cross-ref:      {PASS/FAIL}
+  Doc sources:                  {N}
   Output: .service-approval/state/research-api-surface.json
 ```

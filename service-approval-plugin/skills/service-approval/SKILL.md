@@ -29,6 +29,62 @@ and a compliant resource template for any AWS service.
 | `--framework=<type>` | Control framework type (ccmv4, nist, cis, iso) — passed to Map phase | auto-detect |
 | `--framework-file=<path>` | Explicit path to framework file — passed to Map phase | auto-detect from input folder |
 
+## Agnosticism Guardrails (apply to every sub-skill)
+
+This pipeline is explicitly **AWS-service-agnostic** and **control-framework-agnostic**. Every
+skill, sub-skill, validator, and generated artifact MUST honor these rules. They are binding
+on all agents executing any phase of the pipeline.
+
+### Service agnosticism
+
+1. **No hardcoded service names in generic skills.** The service name (`Amazon ECS`,
+   `AWS Lambda`, `Amazon S3`, etc.) is ALWAYS a runtime argument passed via `--service=<name>`.
+   It never appears as a literal in skill files, validator code, or rule descriptions — only
+   in examples explicitly labeled as illustrative (e.g., "e.g. `ecs:Create*`"). Service
+   prefixes in rule bodies must come from `validated.json` / `sar-facts.json`, not assumption.
+
+2. **Service-specific data belongs in data files, not code.** Lookup tables (`sar-slugs.json`,
+   consumer specs, CFN prefixes) MUST live as JSON/YAML data files that any service can
+   extend. Code that iterates these files must emit a WARNING on an unknown key — never
+   silently skip.
+
+3. **Sub-skills must read service identifiers from state.** `validated.json` has `service`
+   and `capabilities.iam.service_prefix`. Sub-skills must read both from there, not infer
+   them. The SAR page is the ground truth for any service-specific fact.
+
+### Framework agnosticism
+
+1. **No hardcoded framework names or objective IDs in generic skills.** Framework domain
+   names (`CEK-03`, `IAM-04`, `AC-2`, `CIS 1.1`) appear ONLY in `map-parse-framework` and
+   `map-framework-mapping` skills, which dispatch on the `--framework=<type>` argument. Never
+   in `generate-*` skills, never in validators.
+
+2. **Customer framework is supplied at runtime.** Every pipeline run takes
+   `--framework-file=<path>` pointing at a customer-provided file (xlsx/json/md). No
+   framework ships bundled except as a schema/parser reference.
+
+### No service-specific helper scripts
+
+Agents executing any phase MUST NOT create service-specific helper scripts in `scripts/`,
+`.service-approval/state/`, or `service-approval-plugin/`. If a one-off computation is
+needed:
+- Keep it inline in the agent's task (Python `python3 -c "..."` or Bash)
+- Or write it under `/tmp/` for the duration of the run
+- Never commit or persist a file named `build-<service>-*.py`, `fix-<service>-*.sh`, or
+  similar. Durable tooling belongs in the plugin's own `tools/` tree and must be generic
+  across services.
+
+### Enforcement
+
+- Every generic skill in this pipeline MUST state its agnosticism in its own header if it
+  adds any consumer/service logic. If it cannot be generic (e.g., `map-parse-framework`
+  for CCMv4), it MUST be a dedicated sub-skill that dispatches on argument.
+- If an agent notices a rule, table, or validator check that would need rewriting to run
+  on a different AWS service or a different framework, flag it as a CONTRADICTS-AGNOSTICISM
+  finding and stop until resolved.
+
+---
+
 ## Prerequisites
 
 ### MCP Pre-flight Check

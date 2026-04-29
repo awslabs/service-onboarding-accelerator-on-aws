@@ -42,6 +42,31 @@ mkdir -p .service-approval/state
 touch .service-approval/state/mcp-calls.log
 ```
 
+**MCP refresh decision (REQUIRED — ask the user when a prior research.json exists)**:
+research-capabilities and research-api-surface call `awsknowledge` / `kb-search` /
+`aws-documentation` MCPs for every capability and API parameter. If a prior `research.json`
+exists, ask the user before re-running:
+
+```bash
+if [ -f .service-approval/state/research.json ]; then
+  mtime=$(stat -f "%Sm" -t "%Y-%m-%d" .service-approval/state/research.json 2>/dev/null \
+          || stat -c "%y" .service-approval/state/research.json | cut -d' ' -f1)
+  echo "Existing research.json dated $mtime"
+fi
+```
+
+> A prior `research.json` exists (dated {mtime}). Re-running all 3 sub-skills will re-call
+> every MCP for the target service (~20-40 calls).
+>
+>   (a) **Re-run all sub-skills** (recommended if AWS service has had recent releases,
+>       input files changed, or >7 days old)
+>   (b) **Reuse existing research.json** (faster; only safe if upstream SAR/inputs unchanged)
+>
+> Which? [a / b]
+
+If (b), skip to merge step and proceed to /validate with the existing research.json.
+Do not silently reuse. Log the decision to `mcp-calls.log`.
+
 ## Inputs
 
 Parse arguments:
