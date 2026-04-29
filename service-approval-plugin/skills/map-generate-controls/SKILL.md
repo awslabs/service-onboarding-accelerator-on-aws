@@ -119,6 +119,125 @@ different applicable condition keys.
 - **Availability controls** — backup, multi-AZ, lifecycle
 - **AI-specific controls** — guardrails, prompt validation (if applicable)
 
+### 2.2.1 Rule C1 — Posture × feasibility filter (REQUIRED)
+
+Before assigning mechanisms, classify each mitigation's **posture** and verify mechanism
+**feasibility** against the parameter's `gateable_by` and `mutability` fields in
+`validated.json.api_surface.operations[].parameters[]`. A critical mitigation produces
+controls at multiple postures (defense-in-depth) — one control per feasible posture.
+
+**Posture values:**
+- `preventative-request` — AWS IAM evaluates the condition at request time (SCP, RCP, IAM
+  policy, trust policy, permission boundary, KMS key policy, resource-based policy, VPCE
+  policy). Requires `"sar"` in the parameter's `gateable_by[]`.
+- `preventative-proactive` — IaC/CI pipeline evaluates the template before any AWS call
+  (CFN Guard, CFN Hooks, Checkov, OPA, Terraform `validation`, CDK runtime validation).
+  Requires `"api"` in `gateable_by[]`.
+- `reactive-detective` — AWS Config or Access Analyzer flags existing state (Config rule
+  Lambda, managed Config rule, Access Analyzer). Requires `"api"` in `gateable_by[]`.
+- `reactive-corrective` — remediation after a detective finding (SSM Automation, Step
+  Functions, Lambda remediator). Requires `"api"` in `gateable_by[]` AND
+  `mutability != "create_only"`.
+
+**Posture classification (three-pass derivation from `mitigation_goal`, theme nouns, and title/statement fallback):**
+
+Mitigation goals vary in style across sources. Some are verb-led
+("Enforce KMS encryption"); others are noun-phrase themes ("Encryption at
+Rest — CMK", "Network Perimeter — Approved Networks"). Run all three passes
+and take the union before falling back.
+
+```
+posture_set = []
+haystack_goal = mitigation.mitigation_goal
+
+# ── Pass 1 — Verb pass against mitigation_goal ──────────────────────────
+if haystack_goal matches /prevent|block|disallow|deny|mandate/:                posture_set += [preventative-proactive, preventative-request]
+if haystack_goal matches /enforce|require|ensure.*(?:at creation|configured|set)/:
+                                                                                posture_set += [preventative-proactive, preventative-request]
+if haystack_goal matches /encrypt|cmk|kms key|customer-managed key/:           posture_set += [preventative-proactive, preventative-request]
+if haystack_goal matches /protect|safeguard|guard against/:                    posture_set += [preventative-proactive, preventative-request]
+if haystack_goal matches /enable.*(?:logging|telemetry|monitoring)|configure.*(?:at creation|upfront)|ensure.*(?:available|enabled|active)/:
+                                                                                posture_set += [preventative-proactive]
+if haystack_goal matches /detect|monitor|audit|flag|observe|alert|visibility|anomaly|forensic/:
+                                                                                posture_set += [reactive-detective]
+if haystack_goal matches /remediat|rollback|restore|auto-repair|revert/:       posture_set += [reactive-corrective]
+if haystack_goal matches /\bcorrect\b.*(?:state|configuration|drift|violation)/
+   AND NOT                /correct (?:classification|tagging|labeling)/:       posture_set += [reactive-corrective]
+
+# ── Pass 2 — Noun-phrase themes against mitigation_goal ─────────────────
+# Noun-phrase goals like "Identity Perimeter" or "Encryption at Rest" have
+# no verb to match; their posture is implied by the theme.
+if haystack_goal matches /perimeter|boundary|allow.?list|deny.?list/:          posture_set += [preventative-proactive, preventative-request]
+if haystack_goal matches /at rest|in transit|encryption/:                      posture_set += [preventative-proactive, preventative-request]
+if haystack_goal matches /logging|telemetry|observability|audit trail/:        posture_set += [preventative-proactive, reactive-detective]
+if haystack_goal matches /tagging|governance/:                                 posture_set += [preventative-proactive]
+if haystack_goal matches /remediation|recovery|rollback/:                      posture_set += [reactive-corrective]
+
+# ── Pass 3 — Title + statement fallback (only if passes 1 & 2 empty) ────
+# Some mitigations compress the actionable signal into the title or the
+# statement text rather than the goal field. Re-run BOTH pass 1 and pass 2
+# regexes against (title + " " + statement) as a last resort.
+if posture_set is empty AND (mitigation.title or mitigation.statement):
+    haystack_fallback = (mitigation.title or "") + " " + (mitigation.statement or "")
+    <re-run pass 1 AND pass 2 patterns against haystack_fallback>
+
+# Critical mitigations get ALL FOUR postures where feasible (defense-in-depth)
+if criticality == "critical":
+    posture_set = [preventative-request, preventative-proactive, reactive-detective, reactive-corrective]
+
+# Final fallback when all three passes return empty
+if posture_set is empty:
+    posture_set = [preventative-proactive]
+    append to `classification_fallback_log` (emit in map-controls-generated.json):
+        {"mitigation_id": M.id, "reason": "no keyword match in goal/title/statement"}
+```
+
+**Over-generation is safe.** The feasibility filter (next section) drops
+postures that have no gateable parameter — so a noun-phrase match that
+fires multiple postures does not pollute the output. A mitigation goal
+like "Audit data at rest" legitimately warrants BOTH `reactive-detective`
+(from `audit`) and `preventative-proactive|request` (from `at rest`); the
+filter resolves which layer(s) are actually buildable.
+
+**Persist the fallback log.** Every entry appended to
+`classification_fallback_log[]` MUST be written into
+`map-controls-generated.json` as a top-level key (not just printed to
+stdout). Downstream consumers and validators rely on the JSON record to
+verify that the fallback only fires on genuinely ambiguous goals.
+
+**Feasibility filter per posture (per parameter path P in `mitigation.request_parameters`):**
+
+Look up P in `validated.json.api_surface.operations[].parameters[]` and read
+`gateable_by[]`, `sar_condition_key`, `enum`, `mutability`:
+
+| Posture | Feasibility requirement | Mechanism family |
+|---|---|---|
+| `preventative-request` | `"sar"` in `gateable_by` (requires `sar_condition_key`) | SCP, RCP, IAM identity policy, trust policy, permission boundary, resource-based policy, KMS key policy, VPCE policy |
+| `preventative-proactive` | `"api"` in `gateable_by` | CFN Guard, CFN Hook, Checkov, OPA, Terraform validation, CDK runtime validation |
+| `reactive-detective` | `"api"` in `gateable_by` | AWS Config rule (managed or custom Lambda), Access Analyzer |
+| `reactive-corrective` | `"api"` in `gateable_by` AND `mutability != "create_only"` | SSM Automation runbook, Step Functions workflow, Lambda remediator |
+
+**Emit one control per feasible posture.** For each posture in `posture_set`:
+- If feasibility holds, emit a control in `map-controls-generated.json.controls[]` with:
+  - `posture`: one of the four values above
+  - `mechanism`: selected from the mechanism family (canonical snake_case via the
+    mechanism→scope table in §2.3)
+  - `source`: derived from the parameter's `gateable_by` (`"sar"`, `"api"`, or `"both"`)
+- If feasibility FAILS, append to `map-controls-generated.json.coverage_gaps[]`:
+  ```json
+  {"mitigation_id": "M-X.0", "posture": "reactive-corrective",
+   "reason": "parameter is create_only — cannot remediate post-create"}
+  ```
+
+A single critical mitigation can produce up to 4 controls (one per posture). A
+low-priority non-critical mitigation typically produces 1-2.
+
+**Downstream contract:** The `posture` field is propagated through `map-assemble` into
+`mapping-results.json.controls[].posture`, then baked into each generated control file's
+`_metadata.posture`. Validator CHECK-15 enforces posture ↔ directory consistency at
+write time — a `reactive-detective` control that lands in `preventive/scp-policy.json`
+will fail the hook.
+
 ### 2.3 Control Matrix — Category x Scope
 
 Assign each control a primary **category** (X-axis) and a **scope level** (Y-axis):
@@ -140,6 +259,38 @@ Assign each control a primary **category** (X-axis) and a **scope level** (Y-axi
 | Account | ACC | Applied within a single AWS account | IAM policies, permission boundaries, Config rules |
 | Resource | RES | Applied directly to an individual resource | Resource-based policies, KMS key policies |
 
+**Deterministic mechanism → scope mapping (REQUIRED for stability across runs):**
+
+To prevent iteration-to-iteration drift, every control's `scope` MUST be derived from
+its `mechanism` using this table. Do NOT choose scope by thematic heading (e.g., "Resource
+× Proactive" in generate-preventive) — the mechanism alone determines scope.
+
+| Mechanism | Scope | Rationale |
+|-----------|-------|-----------|
+| SCP (Service Control Policy) | ORG | Attached at the Organization / OU level |
+| RCP (Resource Control Policy) | ORG | Organization policy type |
+| Tag policy | ORG | Organizations-native |
+| Config org rule / conformance pack (org) | ORG | Deployed via Organizations |
+| CloudFormation Guard rule | ACC | Enforced at account's CFN deploy (or per-account Hook) |
+| CloudFormation Hook | ACC | Registered per-account |
+| OPA / Rego policy | ACC | Evaluated per-account at CI / deploy |
+| Checkov custom policy | ACC | Evaluated per-account at CI / deploy |
+| IAM identity-based policy (user/role) | ACC | Principals live at the account level |
+| IAM permission boundary | ACC | Attached to an account-level principal |
+| AWS Config rule (account) | ACC | Deployed per-account |
+| EventBridge rule (default bus) | ACC | Default event bus is account-scoped |
+| CloudWatch alarm / metric filter | ACC | Per-account resources |
+| SSM runbook / automation document | ACC | Document is account-scoped |
+| Lambda remediator | ACC | Function lives in an account |
+| Step Functions workflow | ACC | State machine lives in an account |
+| Resource-based policy (S3 bucket policy, SNS topic policy, Lambda resource policy, SQS queue policy) | RES | Attached to a specific resource ARN |
+| KMS key policy | RES | Attached to a specific key |
+| VPC endpoint policy | RES | Attached to a specific endpoint |
+
+If a new mechanism is proposed that is not in this table, map-generate-controls MUST add a
+row explicitly — never infer scope ad-hoc. This makes control ID prefixes stable across
+runs, which is required for downstream generate skills to produce consistent artifact IDs.
+
 Each control MUST have exactly one category AND one scope level.
 
 ### 2.4 Control output schema
@@ -151,6 +302,8 @@ Every control MUST include these fields:
   "id": "CTRL-ORG-PRV-001",
   "name": "Enforce CMK encryption on <Resource> creation via SCP",
   "description": "SCP denies <prefix>:Create<Resource> unless encryption condition key is present",
+  "posture": "preventative-request",
+  "source": "sar",
   "scope": "ORG",
   "category": "PRV",
   "mechanism": "SCP",
@@ -167,7 +320,22 @@ Every control MUST include these fields:
 ```
 
 **Field requirements:**
-- `id`: Format `CTRL-{SCOPE}-{CATEGORY}-{NNN}` (e.g., CTRL-ORG-PRV-001)
+- `id`: Format MUST match the regex `^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\d{3}$`
+  — literal `CTRL-` prefix, scope token, category token, three-digit sequence.
+  Example: `CTRL-ORG-PRV-001`, `CTRL-ACC-DET-012`, `CTRL-RES-PRO-003`.
+  **Do NOT** use service-prefixed variants (`S3-RES-PRO-01`, `ATH-ORG-PRV-01`,
+  `LAMBDA-ACC-DET-03`). The service identity lives in `_metadata.service` and
+  `validated.service` — duplicating it inside the control ID creates drift that
+  fails `validate_state.py` CHECK-S11 and `validate_controls.py` CHECK-13 body
+  scans. Service-agnostic uniformity lets every downstream check be a literal
+  string match rather than "strip prefix, then compare". Validator CHECK-S11
+  enforces this regex enum; non-conforming IDs fail state validation.
+- `posture`: One of `preventative-request`, `preventative-proactive`, `reactive-detective`,
+  `reactive-corrective`. Derived from the classification in §2.2.1. Propagated downstream
+  to `mapping-results.json.controls[].posture` by map-assemble, then to each generated
+  artifact's `_metadata.posture` so CHECK-15 can enforce posture ↔ directory consistency.
+- `source`: One of `sar`, `api`, `both` — derived from the parameter's `gateable_by[]`.
+  Indicates which data source authoritatively drives the mechanism's contents.
 - `scope`: Abbreviated code: `ORG`, `ACC`, `RES`
 - `category`: Abbreviated code: `PRV`, `PRO`, `DET`, `COR`
 - `mechanism`: AWS enforcement mechanism (SCP, CloudFormation Hook, AWS Config Rule, VPC Endpoint Policy, IAM Permission Boundary, Resource Policy, IAM Trust Policy, IaC Template, CloudTrail, CloudWatch Alarm, CloudWatch Logs, Kinesis Data Streams, SSM Automation, Lambda Remediation, EventBridge + Step Functions, Tag Policy, OPA Policy, CloudFormation Guard, Compensating Control Documentation)
@@ -275,6 +443,8 @@ Write `.service-approval/state/map-controls-generated.json`:
       "id": "CTRL-ORG-PRV-001",
       "name": "...",
       "description": "...",
+      "posture": "preventative-request",
+      "source": "sar",
       "scope": "ORG",
       "category": "PRV",
       "mechanism": "SCP",
@@ -305,9 +475,20 @@ Write `.service-approval/state/map-controls-generated.json`:
     "covered": 10,
     "uncovered": 3,
     "uncovered_ids": ["GAP-3", "GAP-7", "GAP-11"]
-  }
+  },
+  "coverage_gaps": [
+    {
+      "mitigation_id": "M-<Resource>.2",
+      "posture": "reactive-corrective",
+      "reason": "Parameter $.encryptionKey is create_only — cannot remediate post-create"
+    }
+  ]
 }
 ```
+
+The `coverage_gaps[]` array is produced by Rule C1's feasibility filter — one entry per
+(mitigation, posture) pair where no feasible mechanism exists. `map-assemble` forwards
+these into `mapping-results.json.coverage_gaps[]`.
 
 ---
 

@@ -270,7 +270,12 @@ Write `.service-approval/state/map-framework-mapped.json`:
 **Schema rules:**
 - `framework_mapping` MUST include ALL objectives (mapped + N/A) — every one from map-framework-parsed.json
 - Each entry MUST have: `objective_id`, `domain`, `title`, `status`, `coverage`, `reason`, `controls`
-- `status` MUST be "MAPPED" or "N/A"
+- `status` MUST be EXACTLY `"MAPPED"` or `"N/A"` — case-sensitive, no substitutes.
+  Do NOT use `"UNMAPPED"`, `"NOT_APPLICABLE"`, `"n/a"`, or any other variant. Downstream
+  validators (`validate_state.py` CHECK-S13 at line 892; `validate_pipeline_integrity.py`
+  at line 263) count `status == "N/A"` verbatim for summary metrics and rationale-completeness
+  checks; other tokens silently bypass those checks. `validate_state.py` also enum-validates
+  `status` at CHECK-S13 — unknown values now fail fast.
 - `controls[]` MUST be array of `{control_id, confidence, rationale}` objects
 - `rationale` is REQUIRED on every control mapping
 - `framework_coverage_summary` MUST be populated with per-domain breakdown

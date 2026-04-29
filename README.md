@@ -194,7 +194,7 @@ service-approval-plugin/
     validate/                       ← validation scripts (controls, cross, deployable, state)
     kb-search-mcp/                  ← Bedrock KB search MCP server
     post-process/                   ← deterministic output post-processing
-  data/sar-slugs.json               ← SAR URL slug mapping (428 services)
+  data/sar-slugs.json               ← SAR URL slug mapping (467 services)
   kiro/                             ← Kiro IDE agent config
   github/                           ← GitHub Copilot config
   amazonq/                          ← Amazon Q Developer config

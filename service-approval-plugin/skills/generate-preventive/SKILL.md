@@ -50,16 +50,99 @@ Every generated artifact MUST include these comment lines at the top:
 ```
 # SCOPE: <org|account|resource>
 # LAYER: <proactive|preventive>
+# POSTURE: <preventative-request|preventative-proactive>
 # CONTROLS: <comma-separated control IDs>
 # FRAMEWORK: <framework-name> — <FULL sorted union of ALL MAPPED objective IDs>
 # MITIGATIONS: <comma-separated mitigation IDs>
 # GENERATED: service-approval v3.0.0
 # SERVICE: <service-name>
 ```
-For JSON files, add as a `"_metadata"` key. For HCL/TypeScript, use comment blocks.
+For JSON files, add as a `"_metadata"` key AND set `_metadata.posture` to the exact
+posture value from `mapping-results.json.controls[].posture` for the control this
+artifact implements. For HCL/TypeScript, use comment blocks.
 
-The `FRAMEWORK` list MUST be the FULL sorted union from ALL `framework_mapping[]` entries
-where `status == "MAPPED"` — the identical list in every file header.
+**CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
+directory family:
+- `preventative-request` → `preventive/{scp,rcp,iam-policies,permission-boundary,resource-policy,vpce-policy,kms-key-policy}*.json`
+- `preventative-proactive` → `proactive/**` or `iac/**`
+
+An SCP tagged with `posture: "reactive-detective"` would fail the hook — the upstream
+`map-generate-controls` Rule C1 filter should never have produced it. If the hook
+fires, trace back to the control's posture in `mapping-results.json` and fix the root
+cause (either the posture classification or the mechanism selection).
+
+The `FRAMEWORK` line MUST be copied VERBATIM from
+`mapping-results.json.framework_header_canonical` — `scripts/map-assemble.py` precomputes
+this sorted-union string once so every artifact emits the identical header. Do NOT re-derive
+the list from `_metadata.controls[]` or from per-control `framework_objectives[]` — that
+produces per-artifact subsets and fails CHECK-X1 (`validate_cross.py:120`), which asserts
+every artifact shares one framework header. Read `framework_header_canonical`, paste it
+after `# FRAMEWORK: ` (and into `_metadata.framework` for JSON files), done.
+
+---
+
+## Rule C2 — SAR-driven mechanism contents (REQUIRED)
+
+All mechanisms in this skill that operate at **AWS IAM request-time evaluation** are
+SAR-driven. That includes: SCPs, RCPs, IAM identity-based policies, IAM trust policies,
+permission boundaries, resource-based policies, VPCE policies, KMS key policies.
+
+For every such artifact:
+
+1. **Every Condition-block key MUST come from `validated.json.capabilities.iam.condition_keys[]`**,
+   the AWS global key set (e.g., `aws:PrincipalARN`, `aws:SourceAccount`, `aws:RequestTag/*`),
+   or — for KMS key policy files only — the KMS service-owned key set
+   (`kms:ViaService`, `kms:EncryptionContext:*`, `kms:GrantOperations`, etc.).
+2. **API parameter paths are NEVER valid condition keys.** A literal like
+   `"$.networkConfiguration.awsvpcConfiguration.assignPublicIp"` in a Condition block
+   is silently ignored by AWS IAM — the intended guardrail does not fire. Instead, find
+   the SAR condition key that gates the parameter (look up the parameter in
+   `validated.json.api_surface.operations[].parameters[]` and read its `sar_condition_key`
+   field, populated by Phase B enrichment).
+3. **Every Action in the statement MUST come from `validated.json.api_surface.operations[].operation`**
+   OR `capabilities.iam.permission_only_actions[]` (this was already required; restated
+   here for completeness — SAR-driven mechanisms are grounded in both the action list
+   AND the condition-key list).
+
+Validator CHECK-14a enforces rule 1 at hook time. A condition-block key that is not a
+SAR/global/KMS key fails the hook with a remediation message. The #1 failure mode this
+prevents is an agent treating an API parameter as if it were a condition key — a class
+of silent-ignore bug that was endemic before Phase B enrichment.
+
+### Zero-service-condition-keys branch
+
+Some services (examples: DataSync, Athena, Step Functions in some configurations)
+publish NO service-specific condition keys — only the global tag keys
+(`aws:RequestTag/${TagKey}`, `aws:ResourceTag/${TagKey}`, `aws:TagKeys`,
+`aws:PrincipalTag/${TagKey}`) apply. You can tell deterministically by inspecting
+`validated.json.capabilities.iam.condition_keys[]`: if every entry's `key` starts
+with `aws:`, the service has zero service-specific keys.
+
+In that branch, SCPs and permission boundaries can ONLY gate tag-based controls
+(creation-time tagging, tag-mandated resource categories) — they CANNOT gate
+service-specific properties like encryption mode, network mode, result location,
+workgroup enforcement flags, etc. Do NOT fabricate a service-specific condition
+key to make an SCP statement work. CHECK-14a rejects invented keys, and even if
+it didn't, AWS IAM would silently ignore the condition and the guardrail would
+be a no-op.
+
+Instead, route non-tag gating to mechanisms that can see the property values
+directly:
+
+- **Preventative-proactive** → CloudFormation Guard rules (`proactive/cfn-guard-rules.guard`)
+  and Checkov custom policies (`proactive/custom-policies/`). These evaluate
+  template bodies before deploy and have full visibility into every property.
+- **Reactive-detective** → AWS Config Rules with Lambda handlers
+  (`detective/config-rule-lambdas/**/handler.py`). These evaluate deployed
+  resources via the Config configuration item.
+- **Reactive-corrective** → SSM Automation runbooks (`remediation/ssm-runbook.yaml`)
+  or Step Functions workflows (`remediation/stepfunctions-workflow.json`) invoked
+  by EventBridge on the relevant AWS API events.
+
+The `map-generate-controls` Rule C1 feasibility filter already routes around
+SCP/IAM infeasibility at control-selection time — this rule ensures the
+generate-preventive skill doesn't produce SCP artifacts whose statements would
+be silently ignored at runtime.
 
 ---
 
@@ -108,7 +191,11 @@ If false, write `_metadata.scp_gap` note and skip.
   `"Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": ["Owner", "Purpose"]}}`.
 - Use `"NotAction"` only for region-restriction controls
 - Use `"Principal": "*"` only in resource-based policies, NOT in SCPs
-- Track cumulative character count; split at 5120 chars
+- Track the **minified policy body size** (Version + Statement, excluding
+  `_metadata`); split across multiple files at 5120 bytes. AWS Organizations'
+  SCP limit applies to the minified JSON submitted to the API, not the
+  pretty-printed file. Compute before writing:
+  `len(json.dumps({k:v for k,v in policy.items() if k!='_metadata'}, separators=(',',':')))`
 - **MANDATORY BreakGlass exclusion**: `"ArnNotLike": {"aws:PrincipalARN": ["arn:*:iam::*:role/BreakGlassRole"]}`
   in EVERY Deny statement. Only exception: `DenyProhibitedTagKeys` (PII patterns).
 - **AND-logic awareness**: Conditions in one block use AND. If exceptions should be
@@ -126,7 +213,9 @@ Format:
 { "_metadata": { ... }, "Version": "2012-10-17", "Statement": [ ... ] }
 ```
 
-SCP validation (JSON syntax and 5120-char size limit) runs automatically via PostToolUse hook (validate_controls.py Checks 7, 12).
+SCP validation (JSON syntax and 5120-byte minified policy body limit, excluding
+`_metadata`) runs automatically via PostToolUse hook (validate_controls.py
+Checks 7, 12).
 
 **SCP simulation metadata (REQUIRED for every SCP):** Each SCP JSON MUST include a
 `_simulation_tests` field in the `_metadata` object. This tells the smoke-deploy-controls
@@ -163,6 +252,49 @@ Only if `ai_optout_applicable: true`.
 
 ## Account × Proactive
 
+### Rule C3 — API-driven mechanism contents (REQUIRED for every artifact below)
+
+CFN Guard rules, CFN Hooks, Checkov policies, OPA/Rego rules, Terraform variable
+`validation` blocks, and CDK runtime validation are **API-driven** mechanisms — they
+evaluate IaC/template contents before any AWS API call. Their contents MUST be grounded
+in `validated.json.api_surface.operations[].parameters[]`:
+
+1. **Every property path referenced by a rule MUST correspond to a parameter in
+   `api_surface.operations[].parameters[]`.** Do not invent property paths; copy the
+   `path` field verbatim (strip the `$.` prefix if the target DSL uses dotted notation).
+
+   **CFN Guard caveat — API path ≠ CFN property path.** When the rule targets a
+   CloudFormation resource, the API `path` from `parameters[]` is NOT authoritative for
+   the rule. The CFN template schema is a separate surface: AWS can (and does) expose
+   the same setting at a different resource type and under a different property name
+   than the underlying API operation. Example: Fargate ephemeral-storage KMS appears in
+   the RunTask API, but the CFN schema places it at
+   `AWS::ECS::Cluster.Properties.Configuration.ManagedStorageConfiguration.FargateEphemeralStorageKmsKeyId`
+   — `AWS::ECS::TaskDefinition.EphemeralStorage` only accepts `SizeInGiB`. Before
+   asserting `<Path>.<Prop> exists` in a Guard rule, verify the property is actually
+   declared on that resource type in the CFN Template Reference
+   (https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/AWS_{cfn_prefix}.html)
+   or via `awsiac` MCP. An assertion on a non-existent property is doubly broken: the
+   rule can never pass a real template, AND a "compliant" template written to satisfy
+   the rule fails cfn-lint E3002 (additional properties not allowed).
+2. **Every enum-literal list (`in [...]`, `AllowedValues: [...]`, `validation {...}`,
+   `contains([...], var.x)`) MUST use exact values from `parameters[].enum`.** Do NOT
+   re-scrape AWS API reference docs at generate time — the enum values in
+   `validated.json` are the single source of truth. Copy them verbatim. Common failure:
+   substituting `IAM` for `IAM_AUTH`, `CustomJWT` for `CUSTOM_JWT_AUTHORIZER`, or
+   inventing camelCase/PascalCase variants — all cause the rule to silently not fire.
+3. **Every min/max/pattern constraint (TF `validation`, CFN `MinValue`/`MaxValue`/
+   `AllowedPattern`) MUST come from `parameters[].min` / `parameters[].max` /
+   `parameters[].pattern`.**
+
+Validator CHECK-14b enforces rule 2 at hook time by scanning the artifact body for
+enum-style literal lists and verifying every uppercase-literal value exists in
+`parameters[].enum`. A literal value that is not in any parameter's enum fails the
+hook. The check is scoped to API-driven files only — `preventive/` SCP-style files are
+not evaluated by CHECK-14b (they are evaluated by CHECK-14a).
+
+---
+
 ### CloudFormation Guard Rules (`proactive/cfn-guard-rules.guard`)
 
 **Cross-validation constraint**: Every Guard rule MUST pass when evaluated against the
@@ -176,29 +308,103 @@ Both must be fixed together — trace to the source of the discrepancy.
 
 - Use `awsiac` MCP for valid cfn-guard syntax per resource type
 - **Every rule MUST have a control ID**: rule name includes control ID.
-  Example: `rule enforce_encryption_ctrl_acc_pro_001 { ... }`
+  Example: `rule enforce_encryption_ctrl_acc_pro_001 { ... }` (format example — NOT a literal ID).
   Do NOT generate "bonus" rules that are not mapped to any CTRL-* control. If a check is
   needed but has no control, either assign it to an existing control or omit it. Unmapped
   rules create audit confusion — every rule must trace back to the controls catalog.
+- **Mapping-driven ID lookup (REQUIRED — do not invent IDs)**: Before writing ANY artifact,
+  load `.service-approval/state/mapping-results.json` and find the control whose `mechanism`
+  matches the artifact type you are generating. Use the EXACT `id` field from that control,
+  verbatim:
+  - Rule/policy names (Guard, OPA, Checkov): lowercase the ID, convert hyphens to underscores
+    (e.g., `CTRL-ACC-PRO-001` → `ctrl_acc_pro_001`)
+  - JSON/YAML `_metadata.controls`, CFN headers, comments: uppercase form verbatim (`CTRL-ACC-PRO-001`)
+  - The ID prefix (`ACC`/`ORG`/`RES`) is determined by mapping's mechanism→scope table — do
+    NOT override based on a section heading in this skill.
+  - If no control in mapping-results.json has a matching mechanism, do NOT generate the artifact.
+    Pattern-matching an ID from a previous service's run is a bug.
+- **One artifact per mechanism per control**: Each mapped control represents a distinct
+  enforcement mechanism. If mapping has N controls whose `mechanism` field differs
+  (e.g., one KMS Key Policy, one IAM Trust Policy, one VPC Endpoint Policy, one S3 Bucket
+  Policy), generate N separate artifacts — do NOT collapse them into a single file just
+  because they share a category/scope prefix. Collapsing loses the control-to-file
+  traceability the smoke-test validator enforces.
 - **Valid Guard 2.x syntax only**: Do NOT use `%size()` function — it is not standard CFN Guard
   2.x syntax. For collection size checks, use `some` clauses, `[N] EXISTS` checks, or iterate
   with `when` blocks. Example: check subnet count ≥ 2 with `Properties.Subnets[1] EXISTS`.
+- **Block-level resource filtering — use `Resources.*[ Type == "X" ]`, NEVER `Resources[this] when this.Type`**:
+  To iterate all Resources of a given type, use the block-level filter
+  `Resources.*[ Type == "AWS::X::Y" ] { ... }`. The token `[this]` paired with
+  `when this.Type == "..."` is NOT a valid selector in cfn-guard 3.x — it hard-errors
+  with `Parser Error ... fragment [this] when this.Type` (exit 5). If the rule already
+  has a `when Resources[*].Type == "AWS::X::Y"` guard at the rule level, the block body
+  should assert on Properties without re-filtering by Type. Ref:
+  https://docs.aws.amazon.com/cfn-guard/latest/ug/writing-rules.html
+- **Relational ops on intrinsic values crash cfn-guard**: cfn-guard cannot compare
+  an intrinsic-function value (`!Ref`, `!GetAtt`, `!Sub`, `!ImportValue`,
+  `!FindInMap`, `!Join`) against ANY scalar literal — it hard-errors with
+  `ComparisonError: PathAwareValues are not comparable map, <type>` (exit 19). This
+  applies to **every** relational operator, not just string equality:
+  - String: `!=` / `==` — error `[map, String]`
+  - Numeric: `>` / `<` / `>=` / `<=` / `!=` / `==` — error `[map, int]`
+  - Boolean: `!=` / `==` — error `[map, Bool]`
+
+  Compliant templates routinely wire KMS ARNs, role ARNs, log-group names, and
+  numeric thresholds through intrinsics (parameter overrides, stack outputs,
+  SSM parameter lookups), so any relational comparison becomes a silent
+  timebomb: it fails only when the template is parameterized, which is exactly
+  the production case. Reachability-masked bugs (rules inside a `when` path the
+  compliant template never triggers) compound the problem.
+  - Scalar present and non-null → `Properties.X exists`
+  - Collection present with ≥1 element → `Properties.X !empty` (collection-only —
+    it cannot test an empty string)
+  - Enum-style membership on a string or number → `Properties.X in [...]`
+    (only when X is a literal in the compliant template — confirm by reading
+    the template before writing the rule)
+  - Only use `!= ""` / `!= null` / `> 0` / `< N` when the value is a **literal
+    in every compliant template** for this service. When in doubt, use `exists`
+    and push the threshold check to Checkov / OPA / Config Rule, which accept
+    intrinsics as opaque refs.
+
+  Ref: https://docs.aws.amazon.com/cfn-guard/latest/ug/writing-rules.html
+  (`exists`, `empty`, operator semantics).
+- **Array iteration `[*] in [...]` must be guarded by `!empty`**: cfn-guard 3.x raises
+  `RequiredPropertyError` (exit 19) when evaluating `Properties.X[*] in [...]` against an
+  empty array. This produces a FALSE-POSITIVE FAIL on compliant templates where the array
+  is legitimately empty (e.g., `Capabilities.Add: []`). Wrap the iteration in a
+  `when ... !empty` clause:
+  ```
+  # WRONG — FAILS when Add is []:
+  rule r { AWS::ECS::TaskDefinition {
+      Properties.ContainerDefinitions[*].LinuxParameters.Capabilities.Add[*] in ["OK"]
+  }}
+  # CORRECT — skips the iteration when the array is empty:
+  rule r { AWS::ECS::TaskDefinition {
+      Properties.ContainerDefinitions[*].LinuxParameters.Capabilities {
+          when Add !empty { Add[*] in ["OK"] }
+      }
+  }}
+  ```
+  The rule correctly treats "array is absent or empty" as "nothing to violate" rather than
+  an iteration error.
 - **Authorizer field completeness**: When validating authorizer controls, guard rules MUST
   check ALL accepted configuration fields. Verify the exact set of accepted fields via
   `aws <service> <command> --generate-cli-skeleton` — do NOT assume fields exist based on
   documentation alone. Only generate rules for fields the API actually accepts.
-- **Enum value accuracy (CRITICAL — #1 recurring failure)**: Guard rules, OPA policies, and
-  Checkov custom policies MUST use the EXACT enum values from `validated.json`. Before
-  generating ANY enum comparison, perform this mandatory lookup:
-  1. Find the parameter in `validated.json` `api_surface.operations[].parameters[]`
-  2. Read the `feasibility_note` for the relevant mitigation — it often lists valid enum values
-  3. Read the `enrichment_opportunities[]` and `condition_keys[]` for enforcement guidance
-  4. Use ONLY the values found — do NOT invent camelCase or SCREAMING_SNAKE_CASE transforms
-  Example: if validated.json says `authorizerType (IAM_AUTH, CUSTOM_JWT_AUTHORIZER)`, use
-  exactly `IAM_AUTH` and `CUSTOM_JWT_AUTHORIZER` — do NOT substitute `IAM`, `CustomJWT`,
-  or any other variant. Incorrect enum values in `when` clauses cause Guard rules to be
-  silently skipped. In OPA `deny` rules, they cause false negatives. In Checkov, they cause
-  the check to never trigger. ALL THREE proactive layers become ineffective.
+- **Enum value accuracy**: Guard rules, OPA policies, and Checkov custom policies MUST use
+  the EXACT enum values for each parameter. Before writing any enum comparison:
+  1. Find the parameter in `validated.json` `api_surface.operations[].parameters[]` and use
+     the values in `parameters[].enum`.
+  2. Also consult the relevant mitigation's `feasibility_note` and the parameter's
+     `enrichment_opportunities[]` / `condition_keys[]` — these sometimes list acceptable
+     values the raw enum does not.
+  3. Use the values verbatim — do NOT invent camelCase or SCREAMING_SNAKE_CASE transforms
+     (e.g., `IAM_AUTH` ≠ `IAM`, `awsvpc` ≠ `AWSVPC`). A wrong enum silently neutralises the
+     rule (Guard skips, OPA passes false, Checkov never triggers).
+
+  CHECK-14b enforces SCREAMING_SNAKE `[...]` list-form membership at hook time. Equality-form
+  (`== "..."` / `!= "..."`), pure-miss lists, and camelCase values are NOT hook-checked —
+  they remain your responsibility.
 
 ### CloudFormation Hooks Policy (`proactive/cfn-hooks-policy.json`)
 - Use `awsiac` MCP to confirm resource type supports CFN Hooks
@@ -229,8 +435,25 @@ Both must be fixed together — trace to the source of the discrepancy.
 ## Account × Preventive
 
 ### Permission Boundary (`preventive/permission-boundary.json`)
+
+**Generate ONLY if `mapping-results.json` contains at least one control with
+`mechanism == "IAM Permission Boundary"`.** If no such control exists, SKIP
+this file entirely — do NOT emit a placeholder and do NOT invent a control ID
+(e.g., `CTRL-ACC-PRV-BOUNDARY`). The resulting artifact must reference ONLY
+control IDs present in mapping-results.
+
 - Limit role permissions to needed service actions
 - Use `awsknowledge` MCP for real action names
+- **Globally-scoped IAM actions MUST be in their own Statement with `Resource: "*"`**:
+  Some IAM actions (notably `ecr:GetAuthorizationToken`, `sts:GetCallerIdentity`,
+  `sts:AssumeRole` against account-wide scope, `cloudtrail:DescribeTrails` when
+  service-wide) do NOT accept resource-level permissions and must be granted
+  `Resource: "*"`. Grouping them in a Statement whose `Resource` lists ARNs
+  (e.g., `arn:aws:ecr:{region}:{account}:repository/*`) produces a boundary that
+  silently denies them because AWS evaluates per-action resource compatibility.
+  Split such actions into their own Allow Statement with `Resource: "*"` and
+  document the reason in a `Sid`. Verify against the SAR page: actions whose
+  Resource types column is empty are global-only and cannot be scoped.
 
 **IAM action validation (CRITICAL):** Before generating any IAM policy artifact (SCP,
 permission boundary, IAM policies, resource policies, VPCE policies), verify that every
@@ -245,27 +468,102 @@ do not generate it. This applies to ALL policy files: `scp-policy.json`, `iam-po
 `permission-boundary.json`, `resource-policy.json`, `vpce-policy.json`.
 
 ### IAM Policies and Trust Policies (`preventive/iam-policies.json`)
+
+**Generate ONLY if `mapping-results.json` contains at least one control with
+`mechanism ∈ {"IAM Policy", "IAM Trust Policy"}`.** If no such control exists,
+SKIP this file entirely — do NOT emit a placeholder and do NOT invent a control
+ID (e.g., `CTRL-ACC-PRV-EXEC-ROLE`). The `controls` field of `_metadata` must
+reference ONLY IDs present in mapping-results.
+
 - Generate standalone IAM policy and trust policy documents for ACC-PRV controls with `mechanism`
   of "IAM Policy" or "IAM Trust Policy"
 - Each control gets a named policy document in the JSON file
 - Trust policies: include `Condition` block for confused deputy protection
 - IAM policies: scope to specific resource ARN patterns, not `*`
-- **Do NOT skip these controls** — they are distinct from the permission boundary and implement
-  specific scoped access patterns (execution role policies, trust relationships). Controls with
-  IAM Policy/Trust Policy mechanism that have no standalone artifact are a generation gap.
+- **Do NOT skip IAM Policy / Trust Policy controls that ARE in mapping-results**
+  — they are distinct from the permission boundary and implement specific scoped
+  access patterns (execution role policies, trust relationships). A mapped
+  IAM-Policy-mechanism control with no standalone artifact is a generation gap.
+  (This directive catches mapper omissions of mapped controls; it does NOT
+  sanction inventing control IDs when mapping is empty — see the gate above.)
 
 ---
 
 ## Resource × Proactive
 
-Append resource-specific CFN Guard rules to `proactive/cfn-guard-rules.guard` with
-a comment header separating them from account-level rules.
+**Scope is determined by mapping-results.json, NOT by this heading.** CloudFormation Guard
+rules map to scope=ACC by default per the map-generate-controls mechanism→scope table (they
+run at the account's CFN deploy or as account-scoped Hooks, not attached to an individual
+resource ARN). A RES-PRO control exists only if the mechanism is genuinely resource-attached
+(rare for Guard — more typical for mechanisms like resource-based policies that also enforce
+at create time).
+
+Before generating any artifact in this section, look up the control in
+`mapping-results.json`. If its `scope` is `ACC`, emit the rule under the Account × Proactive
+section instead — do NOT force-write a `CTRL-RES-PRO-*` ID just because this section is
+titled "Resource × Proactive".
+
+If resource-scoped proactive controls DO exist in mapping, append them to
+`proactive/cfn-guard-rules.guard` with a comment header separating them from account-level
+rules and use the control's exact mapping ID for the rule name.
 
 ---
 
 ## Resource × Preventive
 
 ### Resource Policy (`preventive/resource-policy.json`)
+
+**Inclusion is data-driven, not a hardcoded service list.** Three branches based
+on `validated.json.capabilities.iam.resource_policies_supported` AND
+`mapping-results.json`:
+
+**Branch 1 — Service supports RBP AND mapping has a control:**
+Generate the full policy. Required when
+`resource_policies_supported: true` AND `mapping-results.json` contains at least
+one control with `mechanism ∈ {"Resource Policy", "Resource-Based Policy"}`.
+
+**Branch 2 — Service supports RBP but no control is mapped:**
+SKIP the file entirely. Do NOT emit a placeholder; do NOT invent a control ID
+(e.g., `CTRL-RES-PRV-RESPOL`). The mapping is the authoritative source of what
+to generate.
+
+**Branch 3 — Service does NOT support RBP:**
+When `resource_policies_supported: false`, emit a NOT_APPLICABLE stub so that
+(a) CHECK-X2 control-coverage passes for any RBP-intended control that couldn't
+be rendered, (b) CHECK-X1 framework-header consistency is satisfied, and (c)
+reviewers see the absence is intentional rather than a generation miss:
+
+```json
+{
+  "_metadata": {
+    "status": "NOT_APPLICABLE",
+    "reason": "Service does not expose resource-based policies (validated.json.capabilities.iam.resource_policies_supported: false)",
+    "posture": "preventative-request",
+    "controls": [],
+    "framework": "<copy from mapping-results.framework_header_canonical>",
+    "mitigations": [],
+    "generated": "service-approval v3.0.0",
+    "service": "<service-name>"
+  },
+  "Statement": []
+}
+```
+
+The stub keeps the framework header consistent across artifacts without
+fabricating policy content that AWS IAM would silently ignore. Do NOT use this
+stub as a shortcut when Branch 1 applies — only when RBP is genuinely
+unsupported.
+
+**Determine support from validated.json, NOT a hardcoded service list.** RBP
+support changes over time (e.g., DynamoDB gained resource-based policies in
+late 2024; Lambda gained function URL resource policies earlier; EventBridge
+gained bus resource policies). Read
+`validated.json.capabilities.iam.resource_policies_supported` — that flag is
+populated by Phase 0 Assess from the AWS documentation and Phase 2 Validate
+from MCP verification.
+
+**When generating (Branch 1):**
+
 - Use `awsknowledge` MCP for real ARN patterns and action names
 - **MANDATORY confused deputy protection on resource-based policies**: EVERY resource-based
   policy Statement (policies attached TO a resource like Runtime or Gateway) MUST include
@@ -277,10 +575,23 @@ a comment header separating them from account-level rules.
   `aws:SourceAccount`/`aws:SourceArn` (confused deputy conditions do not apply to endpoint policies).
 
 ### KMS Key Policy (`preventive/kms-key-policy.json`)
-- Only if encryption controls exist — include `kms:ViaService` condition
+
+**Generate ONLY if `mapping-results.json` contains at least one control with
+`mechanism == "KMS Key Policy"`.** If no such control exists, SKIP this file
+entirely — do NOT emit a placeholder and do NOT invent a control ID (e.g.,
+`CTRL-RES-PRV-KMS`). "Encryption capability exists in validated.json" is not a
+sufficient trigger; mapping decides whether a KMS key policy is in scope.
+
+- Include `kms:ViaService` condition keyed to the caller service
 
 ### RCP (`preventive/rcp-policy.json`)
-Only if `rcp_expressible: true`. If false, write `_metadata.rcp_gap` and skip.
+
+**Generate ONLY if `mapping-results.json` contains at least one control with
+`mechanism == "RCP"` AND `rcp_expressible: true` in validated.json.** If no
+mapped RCP control exists, SKIP this file entirely — do NOT emit a placeholder
+and do NOT invent a control ID (e.g., `CTRL-RES-PRV-RCP`). Only when a control
+is mapped to RCP but the service is not RCP-expressible (`rcp_expressible:
+false`) do you write `_metadata.rcp_gap` and skip the policy body.
 - **Gap placeholder metadata**: Even gap/skip files MUST include complete `_metadata` with ALL
   required fields (scope, layer, controls, framework, mitigations, generated, service). The
   `controls` field can be `[]` for gaps, but `framework` and `mitigations` MUST be populated

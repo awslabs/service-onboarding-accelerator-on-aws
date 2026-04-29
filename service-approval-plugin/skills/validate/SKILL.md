@@ -24,6 +24,45 @@ Produce `.service-approval/state/validated.json`.
   ```
   If present, load them — they provide pre-verified data that accelerates validation.
 
+- [ ] **Decide on MCP refresh (REQUIRED — ask the user).** Validate is the MCP-verification
+  step: every condition key, parameter, capability, and mitigation feasibility claim gets
+  confirmed against live AWS docs via `awsknowledge` and other MCP servers. The answers flow
+  into every downstream artifact (mapping-results.json → generated controls → deployed
+  resources), so stale MCP data silently propagates.
+
+  Before Step 1, check whether a prior `validated.json` exists:
+
+  ```bash
+  if [ -f .service-approval/state/validated.json ]; then
+    mtime=$(stat -f "%Sm" -t "%Y-%m-%d" .service-approval/state/validated.json 2>/dev/null \
+            || stat -c "%y" .service-approval/state/validated.json | cut -d' ' -f1)
+    echo "Existing validated.json dated $mtime"
+  fi
+  ```
+
+  If it exists, ask the user verbatim:
+
+  > A prior `validated.json` exists (dated {mtime}). This file contains MCP-verified facts
+  > about the service — every downstream artifact (controls, mappings, IaC) depends on it
+  > being accurate.
+  >
+  > Do you want to:
+  >   (a) **Re-verify via MCP** (recommended) — slower, catches AWS service changes and
+  >       new docs since {mtime}. Required if >7 days old, if research.json changed
+  >       materially, or if you are unsure.
+  >   (b) **Reuse existing validated.json** — faster, only acceptable when upstream
+  >       research/SAR data is unchanged from the run that produced it.
+  >
+  > Which? [a / b]
+
+  - If the user picks (a) or this is the first run, proceed with full MCP verification
+    (Steps 1–6 below).
+  - If the user picks (b), skip the per-item MCP calls, write a passthrough validated.json
+    preserving existing verification notes, and log `[Validator] MCP skipped — user opted
+    to reuse validated.json dated {mtime}` to `mcp-calls.log`.
+  - Never silently reuse validated.json without asking. MCP staleness is the single biggest
+    driver of downstream artifact drift.
+
 ## MCP call logging
 
 Log every MCP call to `.service-approval/state/mcp-calls.log` with format:
