@@ -41,6 +41,50 @@ def _find_state_dir(file_path: str) -> str:
 
 
 # ================================================================
+# Botocore ↔ IAM action-name alias loader (CHECK-S9 helper)
+# ================================================================
+
+_BOTOCORE_IAM_ALIAS_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "data",
+    "botocore-iam-alias.json",
+)
+
+
+def _load_botocore_iam_aliases(service: str) -> tuple[dict[str, str], dict[str, str]]:
+    """Load botocore↔IAM name aliases for the given service.
+
+    Returns (forward, reverse) where forward maps botocore op name → SAR IAM
+    action name, and reverse maps SAR → botocore. Service match is
+    case-insensitive against the `service` field in the alias file.
+
+    Missing file or parse error returns empty dicts (CHECK-S9 falls back to
+    the pre-alias strict comparison). Not a safety error because the alias
+    list is data-driven: absence just means we rely on set equality.
+    """
+    service_lower = (service or "").strip().lower()
+    try:
+        with open(_BOTOCORE_IAM_ALIAS_PATH) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}, {}
+
+    forward: dict[str, str] = {}
+    reverse: dict[str, str] = {}
+    for entry in data.get("aliases", []):
+        if not isinstance(entry, dict):
+            continue
+        if (entry.get("service") or "").strip().lower() != service_lower:
+            continue
+        bc = entry.get("botocore_operation")
+        sar = entry.get("sar_iam_action")
+        if bc and sar:
+            forward[bc] = sar
+            reverse[sar] = bc
+    return forward, reverse
+
+
+# ================================================================
 # Check S1: No duplicate assets (same cfn_type)
 # ================================================================
 
@@ -127,6 +171,11 @@ _REQUIRED_RESEARCH_API = ["api_surface"]
 _REQUIRED_FW_PARSED = ["framework", "framework_objectives"]
 _REQUIRED_CTRL_GEN = ["controls", "control_summary"]
 _REQUIRED_FW_MAPPED = ["framework_mapping", "framework_coverage_summary"]
+
+# Control-ID canonical format — service-agnostic.
+# Skill map-generate-controls/SKILL.md mandates this shape. Service identity
+# lives in _metadata.service / validated.service, not in the ID.
+_CONTROL_ID_RE = re.compile(r"^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\d{3}$")
 
 
 def check_required_fields(data: dict, file_name: str) -> list[str]:
@@ -310,6 +359,226 @@ def check_research_api_surface(data: dict) -> list[str]:
         if "parameters" not in op:
             errors.append(f"CHECK-S8 operations[{i}]: missing parameters array")
 
+    # Phase B botocore-enrichment schema (additive; no error when fields absent)
+    errors.extend(check_botocore_enrichment_schema(ops, check_id="CHECK-S8"))
+
+    # CHECK-17: botocore_enrichment counter must match actual per-parameter
+    # field population. The Phase B overlay step computes a running total
+    # that downstream consumers trust; a counter/overlay mismatch means the
+    # overlay was truncated or the counter was hand-inflated.
+    errors.extend(check_botocore_enrichment_counter_17(data))
+
+    return errors
+
+
+# ================================================================
+# Check 17: botocore_enrichment counter ↔ population consistency
+# ================================================================
+#
+# research-api-surface.json MAY carry a top-level `botocore_enrichment`
+# block with aggregate counters (enriched_operations, enriched_params).
+# Those counters are advisory — the authoritative truth is the per-
+# operation / per-parameter fields themselves. CHECK-17 asserts the
+# counters (if present) equal the populated-field counts. A mismatch
+# means the overlay terminated early or the counter was authored by an
+# LLM without auditing the actual write — either way, downstream code
+# (Phase 3 Rule C1, Phase 4 CHECK-14a/14b) will silently miss parameters
+# the counter claims are enriched.
+
+_ENRICHMENT_FIELDS = ("security_category", "mutability", "gateable_by")
+
+
+def check_botocore_enrichment_counter_17(data: dict) -> list[str]:
+    """CHECK-17 — counter/population consistency for botocore_enrichment.
+
+    The `botocore_enrichment` block (if present) carries advisory counters.
+    We verify them against two population measures:
+
+      - `enriched_operations` MUST equal the number of operations with
+        `botocore_coverage: true` (exact match; this count is unambiguous).
+      - `enriched_params` MUST fall inside the inclusive range
+        [params-with-security_category, params-with-any-enrichment-field].
+        The lower bound is the strictest reading (only security-relevant
+        params that received a category); the upper bound is the broadest
+        (every parameter the overlay touched). A counter outside this band
+        indicates the overlay was truncated or the counter was authored
+        separately from the actual write.
+    """
+    errors: list[str] = []
+    be = data.get("botocore_enrichment")
+    if not isinstance(be, dict):
+        return errors
+
+    ops = data.get("api_surface", {}).get("operations", [])
+    if not isinstance(ops, list):
+        return errors
+
+    # Operation-level check (exact).
+    actual_ops = sum(
+        1 for op in ops if isinstance(op, dict) and op.get("botocore_coverage") is True
+    )
+    claimed_ops = be.get("enriched_operations")
+    if isinstance(claimed_ops, int) and claimed_ops != actual_ops:
+        errors.append(
+            f"CHECK-17 enriched_operations mismatch: counter claims "
+            f"{claimed_ops} but only {actual_ops} operations have "
+            f"botocore_coverage=true"
+        )
+
+    # Parameter-level check (range).
+    with_any = 0
+    with_security = 0
+    for op in ops:
+        if not isinstance(op, dict):
+            continue
+        for p in op.get("parameters", []) or []:
+            if not isinstance(p, dict):
+                continue
+            if any(p.get(k) is not None for k in _ENRICHMENT_FIELDS):
+                with_any += 1
+            if p.get("security_category") is not None:
+                with_security += 1
+
+    claimed_params = be.get("enriched_params")
+    if isinstance(claimed_params, int):
+        if claimed_params < with_security or claimed_params > with_any:
+            errors.append(
+                f"CHECK-17 enriched_params out of range: counter claims "
+                f"{claimed_params} but valid range is "
+                f"[{with_security}, {with_any}] "
+                f"(params with security_category ≤ counter ≤ params with any "
+                f"enrichment field). Overlay may have terminated early or "
+                f"counter was authored separately from the per-parameter writes."
+            )
+
+    return errors
+
+
+# ================================================================
+# Check botocore enrichment schema (Phase B)
+# ================================================================
+#
+# Schema additions (all optional; forward-compat — absence is not an error):
+#   api_surface.operations[].botocore_coverage: bool
+#   api_surface.operations[].parameters[].enum: list[str]      (non-empty if present)
+#   api_surface.operations[].parameters[].min: number
+#   api_surface.operations[].parameters[].max: number
+#   api_surface.operations[].parameters[].pattern: string
+#   api_surface.operations[].parameters[].mutability: "create_only" | "mutable" | "unknown"
+#   api_surface.operations[].parameters[].security_category:
+#       "kms" | "network" | "iam" | "tag" | "log" | "auth" | "tls" | "policy" | null
+#   api_surface.operations[].parameters[].gateable_by: subset of ["sar", "api"]
+#   api_surface.operations[].parameters[].sar_condition_key: string | null
+#                             (non-null when gateable_by contains "sar")
+
+_VALID_GATEABLE_BY = {"sar", "api"}
+_VALID_MUTABILITY = {"create_only", "mutable", "unknown"}
+_VALID_SECURITY_CATEGORIES = {
+    "kms", "network", "iam", "tag", "log", "auth", "tls", "policy"
+}
+
+
+def check_botocore_enrichment_schema(
+    ops: list, check_id: str = "CHECK-BE"
+) -> list[str]:
+    """Validate the Phase B botocore-overlay fields on api_surface.operations[].
+
+    Additive / forward-compatible: if a field is absent, no error. Only flags
+    malformed presence. Unknown extra fields are ignored.
+    """
+    errors: list[str] = []
+    if not isinstance(ops, list):
+        return errors
+    for i, op in enumerate(ops):
+        if not isinstance(op, dict):
+            continue
+        op_label = op.get("operation", f"<op-{i}>")
+
+        # botocore_coverage must be bool if present
+        if "botocore_coverage" in op and not isinstance(op["botocore_coverage"], bool):
+            errors.append(
+                f"{check_id} operations[{i}] ({op_label}): "
+                f"botocore_coverage must be bool, got {type(op['botocore_coverage']).__name__}"
+            )
+
+        params = op.get("parameters", [])
+        if not isinstance(params, list):
+            continue
+        for j, p in enumerate(params):
+            if not isinstance(p, dict):
+                continue
+            p_label = p.get("path", f"<param-{j}>")
+            prefix = f"{check_id} operations[{i}] ({op_label}) parameters[{j}] ({p_label})"
+
+            # enum — when present, must be a non-empty list of strings
+            if "enum" in p:
+                enum = p["enum"]
+                if not isinstance(enum, list) or len(enum) == 0:
+                    errors.append(f"{prefix}: enum must be a non-empty list, got {enum!r}")
+                elif not all(isinstance(v, str) for v in enum):
+                    errors.append(f"{prefix}: enum entries must all be strings")
+
+            # min / max — when present, must be numeric
+            for bound in ("min", "max"):
+                if bound in p and not isinstance(p[bound], (int, float)):
+                    errors.append(
+                        f"{prefix}: {bound} must be numeric, "
+                        f"got {type(p[bound]).__name__}"
+                    )
+
+            # pattern — when present, must be a string
+            if "pattern" in p and not isinstance(p["pattern"], str):
+                errors.append(
+                    f"{prefix}: pattern must be a string, "
+                    f"got {type(p['pattern']).__name__}"
+                )
+
+            # mutability — when present, must be one of the valid labels
+            if "mutability" in p and p["mutability"] not in _VALID_MUTABILITY:
+                errors.append(
+                    f"{prefix}: mutability must be one of "
+                    f"{sorted(_VALID_MUTABILITY)}, got {p['mutability']!r}"
+                )
+
+            # security_category — null or one of the valid labels
+            if "security_category" in p:
+                sc = p["security_category"]
+                if sc is not None and sc not in _VALID_SECURITY_CATEGORIES:
+                    errors.append(
+                        f"{prefix}: security_category must be one of "
+                        f"{sorted(_VALID_SECURITY_CATEGORIES)} or null, got {sc!r}"
+                    )
+
+            # gateable_by — must be a subset of {"sar", "api"}
+            if "gateable_by" in p:
+                gb = p["gateable_by"]
+                if not isinstance(gb, list):
+                    errors.append(f"{prefix}: gateable_by must be a list, got {type(gb).__name__}")
+                else:
+                    bad = [v for v in gb if v not in _VALID_GATEABLE_BY]
+                    if bad:
+                        errors.append(
+                            f"{prefix}: gateable_by entries must be subset of "
+                            f"{sorted(_VALID_GATEABLE_BY)}, got extras {bad!r}"
+                        )
+                    # If "sar" is claimed, sar_condition_key must be non-null
+                    if "sar" in gb:
+                        sck = p.get("sar_condition_key")
+                        if sck is None or (isinstance(sck, str) and not sck.strip()):
+                            errors.append(
+                                f"{prefix}: gateable_by includes 'sar' but "
+                                f"sar_condition_key is missing/null"
+                            )
+
+            # sar_condition_key — when present and non-null, must be a string
+            if "sar_condition_key" in p:
+                sck = p["sar_condition_key"]
+                if sck is not None and not isinstance(sck, str):
+                    errors.append(
+                        f"{prefix}: sar_condition_key must be string or null, "
+                        f"got {type(sck).__name__}"
+                    )
+
     return errors
 
 
@@ -372,6 +641,9 @@ def check_research_merged(data: dict) -> list[str]:
     if not isinstance(ops, list) or len(ops) == 0:
         errors.append("CHECK-S9 api_surface.operations: must be non-empty")
 
+    # Phase B botocore-enrichment schema (additive; no error when fields absent)
+    errors.extend(check_botocore_enrichment_schema(ops, check_id="CHECK-S9"))
+
     # Cross-reference: condition_keys applies_to_actions
     op_names = set()
     for op in (ops if isinstance(ops, list) else []):
@@ -380,6 +652,24 @@ def check_research_merged(data: dict) -> list[str]:
             op_names.add(name)
     poa = set(caps.get("iam", {}).get("permission_only_actions", []))
     all_known = op_names | poa
+
+    # Extend all_known with SAR-name ↔ botocore-name aliases. Some services
+    # publish different operation names in boto3 vs the Service Authorization
+    # Reference (e.g., Athena's StopQueryExecution ↔ athena:CancelQueryExecution).
+    # Without this bridge, condition_keys[].applies_to_actions using the SAR
+    # spelling produces a false-positive CRITICAL.
+    alias_forward, alias_reverse = _load_botocore_iam_aliases(data.get("service", ""))
+    # For every botocore op in op_names that has a SAR alias, add the SAR name.
+    # Same for the reverse direction so either spelling satisfies the check.
+    for botocore_name in list(op_names):
+        sar_name = alias_forward.get(botocore_name)
+        if sar_name:
+            all_known.add(sar_name)
+    for sar_name in list(poa):
+        botocore_name = alias_reverse.get(sar_name)
+        if botocore_name:
+            all_known.add(botocore_name)
+
     if all_known and isinstance(ck, list):
         missing_actions = set()
         for ck_obj in ck:
@@ -515,15 +805,25 @@ def check_controls_generated(data: dict, state_dir: str) -> list[str]:
         if not c.get("framework_keywords"):
             errors.append(f"CHECK-S11 {cid}: missing framework_keywords")
 
-        # ID format: CTRL-SCOPE-CAT-NNN
-        parts = cid.split("-")
-        if len(parts) != 4 or parts[0] != "CTRL":
-            errors.append(f"CHECK-S11 {cid}: invalid format, must be CTRL-SCOPE-CAT-NNN")
-        elif parts[1] != c.get("scope") or parts[2] != c.get("category"):
+        # ID format: strict regex enum. Skill map-generate-controls/SKILL.md
+        # canonicalizes on `CTRL-<SCOPE>-<CAT>-NNN`. Service-prefixed variants
+        # (S3-, ATH-, LAMBDA-, etc.) fail downstream body-scan validators and
+        # create drift. Enforce the literal format here.
+        if not _CONTROL_ID_RE.match(cid):
             errors.append(
-                f"CHECK-S11 {cid}: ID scope/category mismatch "
-                f"(ID says {parts[1]}-{parts[2]}, fields say {c.get('scope')}-{c.get('category')})"
+                f"CHECK-S11 {cid}: invalid format, must match "
+                f"^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{{3}}$ "
+                f"(e.g. CTRL-ORG-PRV-001). Service-prefixed IDs like "
+                f"'S3-RES-PRO-01' or 'ATH-ORG-PRV-01' are rejected — service "
+                f"identity lives in _metadata.service, not in the control ID."
             )
+        else:
+            parts = cid.split("-")
+            if parts[1] != c.get("scope") or parts[2] != c.get("category"):
+                errors.append(
+                    f"CHECK-S11 {cid}: ID scope/category mismatch "
+                    f"(ID says {parts[1]}-{parts[2]}, fields say {c.get('scope')}-{c.get('category')})"
+                )
 
     # Mitigation coverage: every mitigation should have at least one control
     vj = _load_json(os.path.join(state_dir, "validated.json"))
@@ -732,6 +1032,16 @@ def check_mapping_results(data: dict) -> list[str]:
             continue
         if "status" not in f:
             errors.append(f"CHECK-S13 framework_mapping[{i}] ({f.get('objective_id', '?')}): missing status")
+        else:
+            # Enum validation — skill mandates exactly "MAPPED" or "N/A".
+            # Other tokens (UNMAPPED, NOT_APPLICABLE, n/a, ...) silently bypass
+            # downstream rationale / summary checks.
+            s = f.get("status")
+            if s not in ("MAPPED", "N/A"):
+                errors.append(
+                    f"CHECK-S13 framework_mapping[{i}] ({f.get('objective_id', '?')}): "
+                    f"invalid status {s!r} — must be exactly 'MAPPED' or 'N/A'"
+                )
 
     # Quality gates re-check on assembled data
     # Rule 1: Confidence-coverage consistency

@@ -293,14 +293,19 @@ def _check_tsc(controls_dir: str, subdir: str, check_code: str) -> list[str]:
     if not os.path.isfile(os.path.join(ts_dir, "tsconfig.json")):
         return [f"{check_code}: {subdir}/ missing tsconfig.json"]
 
-    # Install deps if needed
+    # Install deps if needed. `npm ci` requires a lockfile; fall back to `npm install`
+    # if the generator didn't emit one (generating lockfiles at skill time introduces
+    # non-determinism and network dependency, so they are validator-created on demand).
     if not os.path.isdir(os.path.join(ts_dir, "node_modules")):
-        rc, _, stderr = _run(
-            ["npm", "ci", "--no-audit", "--no-fund"],
-            cwd=ts_dir, timeout=120,
+        has_lock = os.path.isfile(os.path.join(ts_dir, "package-lock.json")) or \
+            os.path.isfile(os.path.join(ts_dir, "npm-shrinkwrap.json"))
+        install_cmd = (
+            ["npm", "ci", "--no-audit", "--no-fund"] if has_lock
+            else ["npm", "install", "--no-audit", "--no-fund"]
         )
+        rc, _, stderr = _run(install_cmd, cwd=ts_dir, timeout=180)
         if rc != 0:
-            return [f"{check_code}: npm ci failed in {subdir}/ — {stderr[:200]}"]
+            return [f"{check_code}: {install_cmd[1]} failed in {subdir}/ — {stderr[:200]}"]
 
     rc, stdout, stderr = _run(
         ["npx", "--yes", "tsc", "--noEmit", "--pretty", "false"],

@@ -49,16 +49,93 @@ Every generated artifact MUST include these comment lines at the top:
 ```
 # SCOPE: <org|account|resource>
 # LAYER: <detective|remediation>
+# POSTURE: <reactive-detective|reactive-corrective>
 # CONTROLS: <comma-separated control IDs>
 # FRAMEWORK: <framework-name> — <FULL sorted union of ALL MAPPED objective IDs>
 # MITIGATIONS: <comma-separated mitigation IDs>
 # GENERATED: service-approval v3.0.0
 # SERVICE: <service-name>
 ```
-For JSON files, add as `"_metadata"` key. For Python, use comment block at top.
+For JSON files, add as `"_metadata"` key AND set `_metadata.posture` to the exact
+posture value from `mapping-results.json.controls[].posture` for the control this
+artifact implements. For Python, use comment block at top.
 
-The `FRAMEWORK` list MUST be the FULL sorted union from ALL `framework_mapping[]` entries
-where `status == "MAPPED"` — the identical list in every file header.
+**CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
+directory family:
+- `reactive-detective` → `detective/config-rule-lambdas/**`, `detective/config-rules.json`,
+  or `detective/access-analyzer.json`
+- `reactive-corrective` → `remediation/ssm-runbook*.yaml`,
+  `remediation/stepfunctions-workflow.json`, or `remediation/lambda-remediator/**`
+
+A Config rule Lambda tagged with `posture: "preventative-request"` would fail the hook —
+Rule C1 in map-generate-controls should never have produced it. If the hook fires, fix
+the posture classification in `map-controls-generated.json`, not the artifact.
+
+---
+
+## Rule C3 — API-driven mechanism contents (applies to ALL sections below except EventBridge)
+
+Config rule Lambdas, SSM Automation runbooks, Step Functions SDK workflows, Lambda
+remediators, managed Config rules, and Access Analyzer configs are all **API-driven** —
+they read or act on AWS resource state as exposed by the service's API surface. Their
+contents MUST be grounded in `validated.json.api_surface.operations[].parameters[]`:
+
+1. **Every property path the handler reads (e.g., `configurationItem.configuration.<...>`)
+   MUST map to a parameter path in `api_surface.operations[].parameters[]`.** AWS Config
+   configuration items mirror the API request/response shape; a handler that checks a
+   property not in the API surface is reading a path that doesn't exist at runtime.
+2. **Every enum-literal list in Python `if x in [...]`, Step Functions `Choice` conditions,
+   SSM `AllowedValues`, and Lambda remediator enum comparisons MUST use values from
+   `parameters[].enum`.** Do NOT re-scrape AWS docs; the enum values in `validated.json`
+   are the single source of truth for this service run. Copy verbatim — substituting
+   `IAM` for `IAM_AUTH` or `CustomJWT` for `CUSTOM_JWT_AUTHORIZER` causes detective
+   handlers to mark compliant resources NON_COMPLIANT.
+3. **Every API parameter passed by a Lambda remediator, SSM `aws:executeAwsApi` step, or
+   Step Functions SDK task MUST appear in `api_surface.operations[].parameters[]`** for
+   the target operation. Cross-reference the op's `parameters[].path` for the exact
+   parameter name.
+
+Validator CHECK-14b enforces rule 2 at hook time. An enum-literal value not in any
+parameter's enum fails the hook. The check is scoped to `detective/config-rule-lambdas/**`,
+`remediation/ssm-runbook*`, `remediation/stepfunctions-workflow.json`, and
+`remediation/lambda-remediator/**`.
+
+---
+
+## Rule C4 — EventBridge hybrid (SAR + API sources)
+
+EventBridge rules are a **hybrid** mechanism — they need data from BOTH sources:
+
+- **From SAR** (`validated.json.capabilities.iam.actions[]` + service prefix):
+  - `source`: `aws.<service-prefix>`
+  - `detail.eventSource`: `<service-prefix>.amazonaws.com`
+  - `detail.eventName`: one of the IAM actions (e.g., `CreateCluster`, `UpdateService`)
+- **From API Reference** (`api_surface.operations[].parameters[]`):
+  - `detail.requestParameters.<path>`: sub-field schema for filtering on request
+    parameter values. The parameter path (e.g., `detail.requestParameters.launchType`)
+    MUST come from `parameters[].path`. Enum filter values (e.g., matching on
+    `launchType == "EC2"`) MUST come from `parameters[].enum`.
+  - `detail.responseElements.<path>`: for filtering on response fields (e.g., ARN
+    patterns), the path MUST come from the operation's response shape documented in
+    `api_surface.operations[].response_parameters[]` (if present) or the service's
+    CloudTrail event documentation.
+
+**Both sources are required.** An EventBridge rule that cites only `eventName` without
+filtering on any parameter is a coarse-grained rule — acceptable for broad monitoring,
+but for security-critical mutation tracking, pair `eventName` with a `requestParameters`
+filter whose parameter path + enum values come from the API source.
+
+The existing "Service prefix accuracy" rule in the EventBridge Rules section below is
+the SAR-source half of this rule. The new half is the API-driven detail.requestParameters
+filter schema.
+
+The `FRAMEWORK` line MUST be copied VERBATIM from
+`mapping-results.json.framework_header_canonical` — `scripts/map-assemble.py` precomputes
+this sorted-union string once so every artifact emits the identical header. Do NOT re-derive
+the list from `_metadata.controls[]` or from per-control `framework_objectives[]` — that
+produces per-artifact subsets and fails CHECK-X1 (`validate_cross.py:120`), which asserts
+every artifact shares one framework header. Read `framework_header_canonical`, paste it
+after `# FRAMEWORK: ` (and into `_metadata.framework` for JSON files), done.
 
 ---
 
@@ -110,26 +187,47 @@ For EVERY `CUSTOM_LAMBDA` rule, generate:
 - `detective/config-rule-lambdas/<rule-name>/handler.py`
 - `detective/config-rule-lambdas/<rule-name>/requirements.txt`
 
+**Handler directory name MUST equal the `rule_name` field byte-for-byte**:
+`validate_cross.py` CHECK-X8 asserts that every `CUSTOM_LAMBDA` rule's
+`rule_name` has a matching directory under `detective/config-rule-lambdas/`
+with exactly that name. Pick ONE convention (prefer hyphens: `ctrl-acc-det-001-...`)
+and apply it identically to:
+- the `rule_name` field in `config-rules.json`
+- the handler subdirectory name
+- the rule's Sid/name inside the Lambda source
+Mixing hyphens and underscores between the config entry and the directory
+silently decouples the rule from its handler at deploy time.
+
 Handler template:
 ```python
 import json, boto3
 
-def lambda_handler(event, context):
-    config_item = json.loads(event['invokingEvent'])['configurationItem']
+def _evaluate(config_item: dict) -> tuple[str, str]:
+    if config_item.get("configurationItemStatus") == "ResourceDeleted":
+        return "NOT_APPLICABLE", ""
     # Implement evaluation_logic specific to this rule
     compliance = 'COMPLIANT' if <rule-specific-condition> else 'NON_COMPLIANT'
     annotation = '<explanation of why non-compliant>' if compliance == 'NON_COMPLIANT' else ''
-    config = boto3.client('config')
-    config.put_evaluations(
+    return compliance, annotation
+
+def lambda_handler(event, context):
+    config_item = json.loads(event['invokingEvent'])['configurationItem']
+    compliance, annotation = _evaluate(config_item)
+    # TESTMODE: smoke-deploy-controls.py passes resultToken="TESTMODE" and reads
+    # result["ComplianceType"] from the return value — skip put_evaluations.
+    if event.get('resultToken') == 'TESTMODE':
+        return {"ComplianceType": compliance, "Annotation": annotation[:256]}
+    boto3.client('config').put_evaluations(
         Evaluations=[{
             'ComplianceResourceType': config_item['resourceType'],
             'ComplianceResourceId': config_item['resourceId'],
             'ComplianceType': compliance,
-            'Annotation': annotation,
+            'Annotation': annotation[:256],
             'OrderingTimestamp': config_item['configurationItemCaptureTime']
         }],
         ResultToken=event['resultToken']
     )
+    return {"ComplianceType": compliance}
 ```
 
 Each handler MUST implement rule-specific logic — do NOT copy-paste identical handlers.
@@ -190,6 +288,31 @@ mocks `boto3.client` to return empty/error responses — any handler that depend
 API calls for its primary check WILL fail the smoke test.
 
 **Config Rule Lambda Quality Rules:**
+- **Python dict literals MUST use Python values, not JSON tokens**: The SMOKE_TEST_EVENTS
+  module-level dict is Python source code. Inside any `{...}` used as a Python dict
+  literal, use `None`/`True`/`False` — NOT `null`/`true`/`false`. JSON-syntax tokens
+  are valid ONLY inside the string argument to `json.dumps(...)` or inside a quoted
+  `invokingEvent` string. Example:
+    `"configuration": {"encrypted": True}` — correct (Python bool)
+    `"configuration": {"encrypted": true}` — wrong (NameError: name 'true' is not defined
+    at module load; the smoke-test harness fails to import the handler).
+  Serialization handles the conversion: `json.dumps({"encrypted": True})` → `'{"encrypted": true}'`.
+- **non_compliant SMOKE_TEST_EVENTS must be self-consistent**: The `non_compliant` fixture
+  MUST NOT contain any attribute, tag, or configuration value that the handler evaluates
+  as a compliance-positive OVERRIDE. If the handler has a fallback check (e.g., "else if
+  tags contain FlowLogsEnabled=true, return COMPLIANT"), the non_compliant event must
+  omit or invert every such override — otherwise the fixture silently flips the test
+  result. This is a STRONGER form of the earlier rule "the non_compliant event MUST
+  omit or invalidate the primary property": the non_compliant event must omit or invert
+  BOTH the primary property AND every compliance-override the handler recognizes.
+- **Return value contract (REQUIRED)**: `lambda_handler` MUST return a dict shaped
+  `{"ComplianceType": "<COMPLIANT|NON_COMPLIANT|NOT_APPLICABLE>"}` (optionally with
+  `"Annotation"`) in BOTH the TESTMODE branch and after the `put_evaluations` call.
+  The smoke-test harness (`scripts/smoke-deploy-controls.py`) reads
+  `result["ComplianceType"]` when `resultToken == "TESTMODE"`. Do NOT use keys like
+  `compliance`, `status`, or `result` — only `ComplianceType` (capital C, capital T).
+  AWS Config itself discards the Lambda return value; the return exists solely so
+  the smoke-test harness can unit-test handlers without mocking boto3.
 - **Enum validation**: When checking a property against valid values (e.g., `exceptionLevel`
   in `{"ERROR", "WARN", "DEBUG"}`), unknown/invalid values MUST be NON_COMPLIANT, not COMPLIANT.
   Never write `elif value:` → COMPLIANT as a catch-all for unknown values.
@@ -234,6 +357,23 @@ API calls for its primary check WILL fail the smoke test.
 ### EventBridge Rules (`detective/eventbridge-rules.json`)
 - One rule per critical API operation (Create, Update, Delete, PutResourcePolicy)
 - Target: SNS topic for notifications + optional Lambda for enrichment
+- **Top-level schema (REQUIRED for smoke-test deploy)**:
+  ```json
+  {
+    "_metadata": {...},
+    "rules": [
+      {
+        "rule_name": "ctrl-acc-det-NNN-description",
+        "EventPattern": {"source": ["aws.<prefix>"], "detail": {...}},
+        "control_ids": ["CTRL-ACC-DET-NNN"]
+      }
+    ]
+  }
+  ```
+  The top-level key MUST be lowercase `rules` (not `Rules`). The Tier 2 deploy script
+  (`scripts/smoke-deploy-controls.py` `deploy_eventbridge_rules`) iterates the lowercase
+  `rules` array. Each rule object uses `EventPattern` (PascalCase) for the pattern payload
+  since that is the AWS API field name inside a PutRule request.
 - **Service prefix accuracy (CRITICAL)**: The EventBridge `source` field MUST use the EXACT
   service prefix from `validated.json` (e.g., the `service` field or
   `capabilities.logging.cloudtrail.event_source`). The format is `aws.<service-prefix>`.
@@ -298,6 +438,16 @@ This passes cfn-lint validation while preserving traceability metadata for cross
 
 ### SSM Runbook (`remediation/ssm-runbook.yaml`)
 SSM Automation document for manual/scheduled remediation.
+
+- **Top-level schema (REQUIRED)**: `ssm-runbook.yaml` MUST be a **bare SSM automation
+  document**, NOT a CloudFormation template that wraps an `AWS::SSM::Document` resource.
+  The file MUST start with `schemaVersion: "0.3"` and have top-level keys `description`,
+  `assumeRole`, `parameters`, `mainSteps`. Do NOT start with `AWSTemplateFormatVersion`
+  or include a top-level `Resources:` block. CFN wrapping of an SSM document belongs
+  ONLY in `controls/iac/cloudformation/compliant-resource.cfn.yaml` (IaC), never in
+  this remediation file. The Tier 2 deploy script passes this file's contents directly
+  to `ssm:CreateDocument` — a CFN wrapper causes `mainSteps` to be absent at top level
+  and the API rejects the document.
 - **API parameter cross-reference (CRITICAL)**: Every parameter in SSM `aws:executeAwsApi` steps
   MUST match the exact parameter name from `validated.json` `api_surface.operations[]`. Read the
   validated API surface for each operation before generating runbook steps.
@@ -306,15 +456,17 @@ SSM Automation document for manual/scheduled remediation.
   Do NOT generate a remediation step that attempts to update an immutable parameter — instead
   document it as requiring resource recreation or flag as manual intervention required.
 - **SSM `{{ }}` / CloudFormation `!Sub` conflict (CRITICAL)**: SSM Automation documents use
-  `{{ ParameterName }}` syntax for parameter references. CloudFormation `!Sub` also uses `${}` 
+  `{{ ParameterName }}` syntax for parameter references. CloudFormation `!Sub` also uses `${}`
   substitution. When an SSM document is deployed via CloudFormation, these two syntaxes conflict.
   Rules:
-  - In **standalone SSM documents** (not deployed via CFN): use `{{ param }}` freely, never use `!Sub`
-  - In **CFN-deployed SSM documents**: use `!Sub` with `${param}` for CFN parameters AND escape
-    SSM parameters as `{{param}}` (no spaces) or use `Fn::Sub` with a mapping
+  - **`remediation/ssm-runbook.yaml` and `remediation/ssm-runbook-org.yaml` are BOTH standalone
+    documents** (deployed via `ssm:CreateDocument` at Tier 2, not via CFN). Use `{{ param }}`
+    freely. Do NOT use `!Sub` or `${}` in these files.
+  - **CFN-deployed SSM documents** (if ever embedded in `iac/cloudformation/*.cfn.yaml`):
+    use `!Sub` with `${param}` for CFN parameters AND escape SSM parameters as `{{param}}`
+    (no spaces) or use `Fn::Sub` with a mapping
   - **NEVER mix `!Sub` with `{{ param }}`** in the same string — CloudFormation will try to
-    resolve `{{ }}` as a CFN reference and fail. The org-level runbook (`ssm-runbook-org.yaml`)
-    is standalone (deployed via SSM directly), so it must use `{{ }}` syntax only with NO `!Sub`.
+    resolve `{{ }}` as a CFN reference and fail.
 
 ### Step Functions Workflow (`remediation/stepfunctions-workflow.json`)
 Workflow: detect → notify → remediate → verify → close finding.

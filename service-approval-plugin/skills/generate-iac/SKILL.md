@@ -55,6 +55,7 @@ Every generated file MUST include:
 ```
 # SCOPE: resource
 # LAYER: proactive
+# POSTURE: preventative-proactive
 # CONTROLS: <all control IDs>
 # FRAMEWORK: <framework-name> — <FULL sorted union of ALL MAPPED objective IDs>
 # MITIGATIONS: <all mitigation IDs>
@@ -62,8 +63,172 @@ Every generated file MUST include:
 # SERVICE: <service-name>
 ```
 
-The `FRAMEWORK` list MUST be the FULL sorted union from ALL `framework_mapping[]` entries
-where `status == "MAPPED"` — the identical list in EVERY file, including per-module TF files.
+For JSON/YAML files, set `_metadata.posture` to `"preventative-proactive"` (IaC templates
+implement preventative-proactive controls — they validate before any AWS call). For TF
+`.tf` files, CDK `.ts` files, and the CFN `.yaml`, include the `# POSTURE:` comment in
+the header block. CHECK-15 will verify `_metadata.posture == "preventative-proactive"`
+for files under `iac/**`.
+
+The `FRAMEWORK` line MUST be copied VERBATIM from
+`mapping-results.json.framework_header_canonical` — `scripts/map-assemble.py` precomputes
+this sorted-union string once so every artifact emits the identical header. Do NOT re-derive
+the list from `_metadata.controls[]` or from per-control `framework_objectives[]`. The
+identical string goes in EVERY IaC artifact including per-module TF files. CHECK-X1
+(`validate_cross.py:120`) asserts header identity across artifacts — differing headers
+fail the hook.
+
+---
+
+## Cross-generator consistency (MANDATORY)
+
+The compliant IaC templates this skill writes MUST pass every rule in the
+sibling `proactive/cfn-guard-rules.guard` file produced by `generate-preventive`.
+Tier 1 runs cfn-guard against the CFN template using these rules; if the
+compliant template fails its own guard rules it is self-inconsistent and
+Tier 1 FAILs.
+
+Before finalising any IaC template:
+
+1. **Read the generated guard rules.** Open `proactive/cfn-guard-rules.guard`
+   and enumerate every assertion. Three shapes matter:
+   - `<Path>.<Prop> exists` — the template MUST set `<Prop>` on `<Path>`.
+   - `<Path>.<Prop> == "<literal>"` or `<Path>.<Prop> in ["<a>","<b>"]` — the
+     template MUST set `<Prop>` to a value the rule accepts.
+   - `<Path>.<Prop> !empty` — the template MUST set `<Prop>` to a non-empty value.
+2. **Reflect each assertion in every IaC format.** The CFN template is the
+   format cfn-guard scores, but Terraform, CDK TypeScript, and CDKTF MUST
+   mirror the same properties on the same resources (different syntax, same
+   semantics). Do NOT write a CFN template that passes the rules and a TF
+   module that omits the properties.
+3. **Common gotcha — chained properties.** When a rule asserts
+   `Parent.Child.Grandchild exists`, every intermediate key must be present
+   in the template. Example: if the rule is
+   `AWS::ECS::Cluster.Properties.Configuration.ManagedStorageConfiguration.FargateEphemeralStorageKmsKeyId exists`,
+   every intermediate key (`Configuration`, `ManagedStorageConfiguration`,
+   `FargateEphemeralStorageKmsKeyId`) must appear in the Cluster's Properties.
+4. **Verify the guard rule's property path against the CFN schema before
+   mirroring it.** The guard rule is not authoritative about where a property
+   lives in the CFN schema — the generator that wrote it may have copied the
+   API `path` from `validated.json`, which does not always match CFN. Before
+   adding a property to the compliant template to satisfy a rule, confirm the
+   resource type actually supports that property at
+   https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/AWS_{cfn_prefix}.html
+   or via `awsiac` MCP. If the CFN schema rejects the property (cfn-lint
+   E3002), the guard rule is wrong, not the template — fix the rule in
+   `proactive/cfn-guard-rules.guard` to target the correct resource type and
+   path, then mirror that into every IaC format.
+5. **When a rule is too strict for a reasonable default**, treat the rule as
+   authoritative (after step 4 confirms the path): adjust the template to
+   satisfy it, or split the control into "always" vs "conditional" rules in
+   `generate-preventive`. Never leave the template failing its own rules
+   "because the default is reasonable".
+
+This cross-check is inherent in Tier 1 smoke validation — but do it at
+write time, not after the fact. If you discover a mismatch during Tier 1,
+fix the template (or fix the rule, if the rule is wrong), and re-run.
+
+### Per-resource-type property names may differ within one service
+
+CFN property names are defined per RESOURCE TYPE, not per service. A single
+AWS service can use different property names for the "same" concept on
+different resource types. Do NOT assume uniform naming across a service's
+resources.
+
+Concrete case surfaced in iter-14 Bedrock Agentcore coverage:
+- `AWS::BedrockAgentCore::Memory.EncryptionKeyArn` — KMS key for memory store
+- `AWS::BedrockAgentCore::Gateway.KmsKeyArn` — KMS key for gateway
+
+Both properties encrypt with a customer-managed KMS key, but the property
+names differ. Other examples across AWS: `KmsKeyId` vs `KmsKeyArn` vs
+`KMSMasterKeyId` vs `EncryptionKeyArn` appear across S3, DynamoDB, SQS,
+SNS, KMS, Lambda, and various analytics services.
+
+**Before writing any cfn-guard rule or CFN/TF/CDK property assignment**,
+look up the exact property name for **each** resource type in the CFN
+Template Reference page (or `awsiac` MCP). When a single rule targets
+multiple resource types (e.g., "require CMK on all service resources"),
+split it into per-type blocks:
+
+```
+rule cmk_required_memory {
+    AWS::BedrockAgentCore::Memory {
+        Properties.EncryptionKeyArn exists
+    }
+}
+
+rule cmk_required_gateway {
+    AWS::BedrockAgentCore::Gateway {
+        Properties.KmsKeyArn exists
+    }
+}
+```
+
+NOT a single rule using one property name for both — the guard rule will
+false-pass one resource type while false-failing the other.
+
+Mirror the same per-resource-type awareness in Terraform modules, CDK
+constructs, and CDKTF.
+
+### maxItems=1 array constraint
+
+**This rule applies ONLY when the authoritative CFN registry schema explicitly
+declares `"maxItems": 1` on the target field.** Do NOT apply it based on
+intuition about the service's "tenancy model" or "single-tenant-per-resource"
+feel. Service topology does not imply the constraint — look up the schema.
+
+Authoritative check (replaces the Template Reference page for this specific
+question):
+
+```
+curl -sS "https://schema.cloudformation.<region>.amazonaws.com/aws-<service>-<resource>.json" | \
+  jq '.. | objects | select(has("maxItems")) | {prop: input_filename, max: .maxItems}'
+```
+
+Or via `awsiac` MCP with explicit inspection of the target property.
+
+When `maxItems == 1` IS declared, the CFN schema rejects any array with more
+than one element — multi-AZ / multi-zone / multi-instance posture MUST be
+expressed by creating multiple resources of that type, NOT by adding multiple
+entries to the single-item array.
+
+**Confirmed maxItems=1 cases** (verified against live CFN registry schemas):
+- `AWS::DataSync::Agent.SubnetArns` and `.SecurityGroupArns` — multi-AZ requires
+  multiple Agent resources.
+
+**Counter-examples** (look like they might fit but don't):
+- `AWS::Transfer::Server.EndpointDetails.SubnetIds` — no `maxItems` declared.
+  Multi-AZ is expressed as a single Server with ≥2 SubnetIds. Do NOT split into
+  multiple Server resources.
+
+When in doubt, check the schema before applying the rule. An incorrect
+application produces broken multi-resource templates for services that just
+want array entries.
+
+For these cases, the sibling cfn-guard rule MUST assert resource count, not
+array cardinality:
+
+```
+# WRONG — fails on every template, because maxItems=1
+rule multi_az when Resources.*[ Type == "AWS::DataSync::Agent" ] !empty {
+    Resources.*[ Type == "AWS::DataSync::Agent" ] {
+        Properties.SubnetArns[1] exists   # unreachable
+    }
+}
+
+# RIGHT — asserts two Agent resources instead
+rule multi_az {
+    let agents = Resources.*[ Type == "AWS::DataSync::Agent" ]
+    %agents !empty
+    # Each Agent is pinned to one subnet/AZ by schema; multi-AZ ⇒ 2+ Agents
+    # (enforce count via a guard-level check in the consuming pipeline, or
+    # document the per-resource expectation here and pair with an OPA rule)
+}
+```
+
+Add a comment in the template near each such resource noting the
+`maxItems=1` constraint and why the template emits multiple resources.
+This prevents a future edit from collapsing them into "one resource with
+two subnets" and silently breaking deploy.
 
 ---
 
@@ -113,13 +278,20 @@ These rules MUST be enforced in every template format — not just one:
    variables/parameters for fields the API actually accepts. Common error: generating a field
    the API silently ignores (wasted variable) or missing a field the API requires.
 
-2. **Enum value accuracy in IaC templates**: When generating variables or parameters with
-   enum constraints (e.g., `AllowedValues` in CFN, `validation` in TF), use ONLY the exact
-   values from `validated.json` `existing_mitigations[].feasibility_note` or
-   `api_surface.operations[].parameters[]`. Common error: using `IAM` instead of `IAM_AUTH`
-   or `CustomJWT` instead of `CUSTOM_JWT_AUTHORIZER` for authorizer type enums. Copy values
-   verbatim from validated.json. This applies to CFN `AllowedValues`, TF variable `validation`
-   blocks, CDK runtime checks, and CDKTF variable defaults.
+2. **Enum value accuracy in IaC templates (Rule C3 — API-driven)**: When generating
+   variables or parameters with enum constraints (CFN `AllowedValues`, TF variable
+   `validation` blocks, CDK runtime checks, CDKTF variable defaults), use ONLY the exact
+   values from `validated.json.api_surface.operations[].parameters[].enum`. This field
+   is the single source of truth for the current service run — do NOT re-scrape AWS
+   docs. Copy values verbatim. Common error: using `IAM` instead of `IAM_AUTH` or
+   `CustomJWT` instead of `CUSTOM_JWT_AUTHORIZER` for authorizer type enums. Any
+   enum-style literal list (`in [...]`, `AllowedValues: [...]`, `contains([...], var.x)`,
+   `validation { condition = contains([...], var.x) }`) must match `parameters[].enum`
+   exactly. Validator CHECK-14b enforces this at hook time across all 4 IaC formats —
+   an enum-literal value not in any parameter's enum fails the hook.
+
+   Min/max/pattern constraints come from the SAME source: `parameters[].min`,
+   `parameters[].max`, `parameters[].pattern`. Do not invent bounds.
 
 3. **VPC Endpoint Condition on Network-Scoped IAM Policies**: When a resource has VPCE-based
    network controls, the IAM execution role policy SHOULD include `aws:SourceVpce` condition
@@ -135,18 +307,70 @@ These rules MUST be enforced in every template format — not just one:
    - Account root `arn:aws:iam::{account}:root` for key administration
    This applies to ALL 4 IaC formats.
 
+   **MANDATORY pre-write verification (applies to ALL 4 formats)**: Before finalizing any
+   template that defines a KMS key, enumerate every resource in the template that references
+   the key by `kms_key_id` / `KmsKeyId` / encryption-key ARN / `kmsMasterKeyId`. For each
+   consumer, the key policy MUST contain a Statement with the matching service principal,
+   the actions the service needs, AND the conditions AWS requires. Principal alone is not
+   enough — AWS rejects calls that lack the correct action or encryption-context condition
+   (e.g., Fargate `UpdateCluster` returns `InvalidParameterException: Insufficient key
+   permissions provided to Fargate service principal` if the actions or conditions are
+   wrong, even when the principal is `fargate.amazonaws.com`).
+
+   | Consumer | Service principal | Required actions | Required conditions |
+   |---|---|---|---|
+   | `aws_cloudwatch_log_group` / `AWS::Logs::LogGroup` | `logs.{region}.amazonaws.com` | `kms:Encrypt`, `kms:Decrypt`, `kms:ReEncrypt*`, `kms:GenerateDataKey*`, `kms:DescribeKey` | `ArnLike kms:EncryptionContext:aws:logs:arn = arn:aws:logs:{region}:{account}:log-group:*` |
+   | `aws_sqs_queue` / `AWS::SQS::Queue` | `sqs.amazonaws.com` | `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey*` | `StringEquals aws:SourceAccount = {account}` |
+   | `aws_sns_topic` / `AWS::SNS::Topic` | `sns.amazonaws.com` | `kms:Encrypt`, `kms:Decrypt`, `kms:GenerateDataKey*` | `StringEquals aws:SourceAccount = {account}` |
+   | `aws_lambda_function` env vars | `lambda.amazonaws.com` | `kms:Decrypt` | `StringEquals aws:SourceAccount = {account}` |
+   | `aws_ecs_cluster` ECS service use (managed storage) | `ecs.amazonaws.com` | `kms:Decrypt`, `kms:Encrypt`, `kms:DescribeKey`, `kms:GenerateDataKey`, `kms:CreateGrant` | `StringEquals aws:SourceAccount = {account}` |
+   | `aws_ecs_cluster` Fargate ephemeral storage (stmt 1) | `fargate.amazonaws.com` | `kms:GenerateDataKeyWithoutPlaintext` | `StringEquals kms:EncryptionContext:aws:ecs:clusterAccount = {account} AND aws:ecs:clusterName = {cluster_name}` |
+   | `aws_ecs_cluster` Fargate ephemeral storage (stmt 2) | `fargate.amazonaws.com` | `kms:CreateGrant` | `StringEquals` (both encryption-context keys above) AND `ForAllValues:StringEquals kms:GrantOperations = ["Decrypt"]` |
+   | `aws_ecs_cluster` Fargate operator (stmt 3) | account root (`arn:aws:iam::{account}:root`) | `kms:DescribeKey` | none |
+
+   Ref for Fargate ephemeral storage policy:
+   https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-create-storage-key.html
+
+   Build the grant list BEFORE writing the KMS resource; verify after writing by scanning the
+   template for every consumer reference. If any consumer lacks a grant OR grants the wrong
+   actions/conditions, the template is invalid — regenerate. Deterministic post-check:
+   `service-approval-plugin/tools/validate/validate_kms_consumers.py` (checks principal +
+   required actions + required condition keys for each consumer).
+
 5. **Control ID annotations**: Every resource property that implements a control MUST have
    an inline comment with the control ID (e.g., `# CTRL-ACC-PRV-001`).
 
-5. **No unused variables/parameters**: Every variable declared in a TF `variables.tf` or CFN
+6. **No unused variables/parameters**: Every variable declared in a TF `variables.tf` or CFN
    `Parameters` section MUST be referenced by at least one resource. After generating, scan
    for any variable not referenced in `main.tf` or any resource block — remove it. Common
    cause: a variable was planned for a resource that ended up using a different parameter name.
 
-6. **Cross-format parameter parity**: After generating all 4 formats, verify that the same set
+7. **Cross-format parameter parity**: After generating all 4 formats, verify that the same set
    of user-configurable parameters appears in each. The parameter coverage matrix from Step 1
    is the source of truth — every format must cover every parameter. Only include parameters
    that the API actually accepts (verified via SDK model).
+
+8. **Launch-type / runtime constraints**: Some resource types have properties that AWS rejects
+   based on a sibling property's value — for example, Fargate ECS task definitions reject
+   `LinuxParameters.Capabilities.Add` and `Privileged`. Before emitting any resource whose
+   behavior depends on a launch type, runtime mode, compatibility flag, or similar selector,
+   check `service-approval-plugin/data/launch-type-constraints.json` for forbidden properties.
+   The check flow:
+   - Look up the resource's CFN type (e.g., `AWS::ECS::TaskDefinition`) in the data file
+   - If present, read the `match_property` and `match_value` (e.g., `RequiresCompatibilities` contains `FARGATE`)
+   - If the template matches, omit every property listed under `forbidden_properties`
+   - If the data file has no entry for the type, proceed — unknown resource types are
+     not blocked, but deploy-time errors for that resource should be logged as a new
+     entry for this data file
+
+   Current entries (as of this skill version):
+   - `ecs_fargate`: `AWS::ECS::TaskDefinition` with `RequiresCompatibilities: FARGATE`
+     cannot set `ContainerDefinitions[*].LinuxParameters.Capabilities.Add` or
+     `ContainerDefinitions[*].Privileged`. Fargate rejects both at `RegisterTaskDefinition`
+     with `ClientException`.
+
+   New services or new launch-type surprises should be added to the data file, not inlined
+   here, so the skill stays service-agnostic.
 
 ---
 
@@ -208,6 +432,46 @@ For every parameter missing from the TF provider schema:
 - All variables: `description` explaining the security control
 - Sensitive variables: `sensitive = true`
 - Optional parameters: `default = ""` + `count` on dependent resources
+- **HCL block syntax**: A block that contains multiple arguments MUST place each on its
+  own line. Terraform has two valid forms:
+  ```
+  # VALID — single-argument single-line:
+  variable "x" { type = string }
+  # VALID — multi-line (any number of arguments):
+  variable "y" {
+    type    = string
+    default = ""
+  }
+  ```
+  These are INVALID and reject at `terraform init`:
+  ```
+  # INVALID — space-separated, >1 argument on one line:
+  variable "bad1" { type = string  default = "" }
+  # INVALID — semicolon as separator (HCL uses newlines, never ;):
+  variable "bad2" { type = string; default = "" }
+  ```
+  The error is `Invalid single-argument block definition` (for spaces) or `Invalid character`
+  (for `;`). This applies to `variable`, `output`, `resource`, `module`, `locals` — every
+  HCL block. When in doubt, use the multi-line form.
+- **`count` / `for_each` MUST NOT reference known-after-apply values**: Terraform evaluates
+  `count` and `for_each` at plan time, so the expression MUST resolve without running any
+  resource. If a module gates a resource on whether an upstream resource exists, pair it
+  with a STATIC boolean variable — never compare an ARN string:
+    # WRONG — aws_kms_key.x.arn is known-after-apply at plan time:
+    count = var.kms_key_arn != "" ? 1 : 0
+    # CORRECT — static boolean the root flips in tfvars:
+    variable "enable_feature" {
+      type    = bool
+      default = false
+    }
+    resource "null_resource" "x" {
+      count = var.enable_feature ? 1 : 0
+    }
+  Terraform aborts `plan` with `Error: Invalid count argument ... the count value depends
+  on resource attributes that cannot be determined until apply` whenever `count`/`for_each`
+  references a variable that the root module wires to `aws_*.foo.arn`, `aws_iam_role.x.arn`,
+  or any other resource output. The static-boolean pattern is also cleaner for destroy —
+  flipping `enable_feature` to `false` produces a clean destruction plan.
 - **Root variables MUST have defaults**: Every variable in the root `variables.tf` MUST have a
   `default` value (typically `""` for strings, `[]` for lists, `{}` for maps). Without defaults,
   `terraform plan` requires `-var` flags for every variable, making dry-run validation impossible.
@@ -251,7 +515,15 @@ resource "aws_<service>_<resource>" "this" {
 
 ---
 
-## Step 4: CDK TypeScript (`iac/compliant-resource.cdk.ts`)
+## Step 4: CDK TypeScript (`iac/cdk/compliant-resource.cdk.ts`)
+
+**File layout requirements (REQUIRED for smoke-test validation)**:
+- Source file MUST live at `iac/cdk/compliant-resource.cdk.ts` — NOT at `iac/compliant-resource.cdk.ts`
+- The `cdk/` directory MUST also contain:
+  - `package.json` with `aws-cdk-lib` and `constructs` as dependencies
+  - `tsconfig.json` with `"include": ["*.ts"]` (or `["**/*.ts"]` if deeper nesting is needed) — NEVER `"../**/*.ts"` because that pulls sibling `iac/cdktf/` files into the CDK compile with the wrong peer-dep set
+  - `tsconfig.json` `"exclude": ["node_modules"]`
+- The validator `validate_deployable.py` runs `npm install` (or `npm ci` if a lockfile exists) inside `iac/cdk/` and then `npx tsc --noEmit`. Missing the file in the correct location, or pulling in sibling CDKTF sources, causes TS2307 module-resolution errors.
 
 **MANDATORY:** Call `awsknowledge` MCP to check for native CFN resource type. If it exists,
 prefer `CfnResource` over `AwsCustomResource`.
@@ -472,7 +744,15 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
 
 ---
 
-## Step 6: CDK for Terraform (`iac/compliant-resource.cdktf.ts`)
+## Step 6: CDK for Terraform (`iac/cdktf/compliant-resource.cdktf.ts`)
+
+**File layout requirements (REQUIRED for smoke-test validation)**:
+- Source file MUST live at `iac/cdktf/compliant-resource.cdktf.ts` — NOT at `iac/compliant-resource.cdktf.ts`
+- The `cdktf/` directory MUST also contain:
+  - `package.json` with `cdktf` and the provider packages (e.g., `@cdktf/provider-aws`) as dependencies
+  - `tsconfig.json` with `"include": ["*.ts"]` scoped to the local dir — NEVER `"../**/*.ts"`
+  - `"exclude": ["node_modules"]`
+- Validator runs `npm install` then `npx tsc --noEmit` inside `iac/cdktf/`.
 
 Use `aws-documentation` MCP for CDKTF provider bindings.
 
@@ -622,10 +902,10 @@ IaC validation runs automatically via Stop hook (validate_cross.py Checks X6, X7
 
 ```
 Generate (IaC) complete:
-  Terraform modules:  {N} modules + root module
-  CDK TypeScript:     compliant-resource.cdk.ts ({N} construct classes)
-  CloudFormation:     compliant-resource.cfn.yaml
-  CDK for Terraform:  compliant-resource.cdktf.ts
+  Terraform:          iac/terraform/main.tf + {N} modules
+  CDK TypeScript:     iac/cdk/compliant-resource.cdk.ts (+ package.json, tsconfig.json)
+  CloudFormation:     iac/cloudformation/compliant-resource.cfn.yaml
+  CDK for Terraform:  iac/cdktf/compliant-resource.cdktf.ts (+ package.json, tsconfig.json)
   Parameter coverage: {N}/{N} parameters across all templates
   Known gaps:         {N} documented
   Output: .service-approval/controls/iac/
