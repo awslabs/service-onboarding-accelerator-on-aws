@@ -14,6 +14,7 @@ Discover the target AWS service's security capabilities across 5 domains using M
 and any available assessment artifacts.
 
 **Output:** `.service-approval/state/research-capabilities.json`
+**Schema:** `service-approval-plugin/schemas/research-capabilities.schema.json` — encodes `phase: "research-capabilities"` const, `condition_keys[]` object form `{key, applies_to_actions[]}` (iter-14 Class F13 — strings-only arrays rejected), the 5 required capability sub-objects (iam / encryption / network / logging / organization_policies), and `abac_support` enum `{full, partial, none}`.
 
 This is one of 3 focused research sub-skills. The orchestrator merges outputs from all 3
 into the final `research.json`.
@@ -168,6 +169,20 @@ Build a structured `capabilities{}` object from collected MCP data.
   to only 1-2 specific actions (e.g., token exchange). Always trust the SAR over prose.
 - If sar-facts.json exists, cross-reference: every action in applies_to_actions must
   appear in sar-facts.json's action list. Actions not in the SAR = fabricated mapping.
+
+**Empty-binding fallback for resource-scoped tag keys:**
+- Some SAR pages define tag-based condition keys (e.g., `s3:BucketTag/${TagKey}`,
+  `<service>:ResourceTag/${TagKey}` variants) in the Condition Keys section but do NOT
+  bind them in the Actions table's Condition-keys column. This leaves sar-facts with an
+  empty `applies_to_actions[]`, which the schema rejects.
+- When `sar-facts.condition_keys[k].applies_to_actions` is empty AND the key name matches
+  `^<service>:.*Tag/\$\{?TagKey\}?$` (i.e., is a resource-tag key on a specific resource
+  type), derive the binding from sar-facts.actions: list every action whose name contains
+  the resource-type fragment in the key name (e.g., `BucketTag` → actions with "Bucket"
+  in the name). Record `source: "sar_tag_keys_fallback"` on the condition_key entry so
+  downstream validators can distinguish derived bindings from SAR-verbatim ones.
+- Do NOT use this fallback for non-tag keys — it only holds for resource-tag conditions
+  where the SAR's omission is a documentation limitation, not an actual constraint.
 
 **CRITICAL — permission_only_actions:**
 - These are actions evaluated by IAM but with NO API call and NO CloudTrail event
@@ -324,7 +339,7 @@ Write `.service-approval/state/research-capabilities.json`:
 
 ## Output Verification
 
-Output validation runs automatically via PostToolUse hook (validate_state.py Check S7).
+Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on `condition_keys` being strings or missing the `key` field (iter-14 Class F13), phase-const mismatch, and missing capability sub-objects. `validate_state.py::check_research_capabilities` retains two conditional checks the schema cannot express: (1) every `condition_key` MUST have a non-empty `applies_to_actions[]` (schema allows empty to match pre-iter-14 archives), and (2) CloudTrail `data_events.supported=true` ⇒ `resource_types[]` non-empty.
 
 ## Print Summary
 

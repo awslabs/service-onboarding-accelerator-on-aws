@@ -14,6 +14,7 @@ Parse customer-provided input files to extract existing mitigations, build an in
 inventory, and collect assessment gaps from the CAF assessment phase.
 
 **Output:** `.service-approval/state/research-mitigations.json`
+**Schema:** `service-approval-plugin/schemas/research-mitigations.schema.json` — encodes `phase: "research-mitigations"` const, mitigation `id` pattern `^M-.+`, assessment-gap `id` pattern `^GAP-`, `assets_partial[].cfn_type` pattern `^AWS::`, and per-mitigation required fields (`id`, `mitigation_goal`, `statement`). `resource_type` is allowed on mitigations but assets MUST use `cfn_type` (see Step 3 and "Quality rules" below).
 
 This is one of 3 focused research sub-skills. The orchestrator merges outputs from all 3
 into the final `research.json`.
@@ -253,7 +254,7 @@ Write `.service-approval/state/research-mitigations.json`:
 
 ## Output Verification
 
-Output validation runs automatically via PostToolUse hook (validate_state.py Check S6).
+Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on phase-const mismatch, missing `id` / `mitigation_goal` / `statement` on any mitigation, `assets_partial[].cfn_type` not matching `^AWS::`, or any assessment-gap `id` not matching `^GAP-`. `validate_state.py::check_research_mitigations` delegates entirely to the schema — no additional hand-rolled checks remain.
 
 ## MITRE ATT&CK Threat Overlay (optional)
 

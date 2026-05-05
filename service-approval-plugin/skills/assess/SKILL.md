@@ -65,12 +65,43 @@ The Service Authorization Reference page is the definitive source for IAM action
 4. Extract these 4 categories:
    - **permission_only_actions** — Actions marked "[permission only]" with no API call
    - **condition_keys** — Service-specific keys (format: `prefix:keyname`), excluding `aws:*` globals.
-     Emit as an array of OBJECTS `{"key": "prefix:keyname", "applies_to_actions": ["CreateX", "UpdateX"]}`,
+     Emit as an array of OBJECTS `{"key": "prefix:keyname", "type": "String", "applies_to_actions": ["CreateX", "UpdateX"]}`,
      NOT as bare strings. Populate `applies_to_actions` from the SAR page's "Condition keys" column
      joined to the Actions table — this is what downstream phases use for semantic SAR matching
      (`compute_gateable_by.py`) and for `capabilities.iam.condition_keys[]` in research-capabilities.
      Without `applies_to_actions`, validator CHECK-S7 fails in Phase 1 and every cold-start run has
      to back-fill the field.
+
+     **Type field (REQUIRED).** Every condition_keys entry MUST include a `type` field
+     extracted verbatim from the SAR page's Condition Keys table "Type" column. Valid values
+     include: `String`, `Bool`, `Date`, `Numeric`, `ARN`, `IPAddress`, `ArrayOfString`,
+     `ArrayOfARN` (and a few others — copy verbatim from the SAR row, don't normalize or
+     abbreviate). The `type` enables downstream `generate-preventive` to detect multi-value
+     keys (`ArrayOf*`) that require `ForAnyValue:`/`ForAllValues:` qualifiers in IAM
+     conditions — without qualifier, IAM AccessAnalyzer rejects the policy at deploy time
+     with "The request context key X has multiple values." The schema at
+     `schemas/sar-facts.schema.json` already permits `type` (optional field on conditionKey
+     $defs) — this extraction is the upstream half of that contract.
+
+     **Placeholder form.** The SAR Actions table renders object-tag placeholders as `<key>`
+     literals (e.g., `s3:ExistingObjectTag/<key>`, `s3:RequestObjectTag/<key>`). Normalize
+     to `${key}` form during extraction because the `sar-facts.schema.json` condition-key
+     pattern rejects `<`/`>` characters but accepts `${}`, and downstream Phase 1 consumers
+     expect the `${}` placeholder form. Deterministic substitution: replace `/<([^>]+)>`
+     with `/${\1}` in key names before emission.
+
+     **Resource-tag empty-binding fallback.** Some SAR pages define tag-based condition keys
+     (e.g., `<service>:BucketTag/${TagKey}`, `<service>:ResourceTag/${TagKey}`) in the
+     Condition Keys section but do NOT bind them in the Actions table's Condition-keys
+     column. This would leave `applies_to_actions: []`, which the schema rejects. When the
+     key name matches `^<service>:.*Tag/\$\{?TagKey\}?$` (resource-tag key) AND the Actions
+     table binding is absent, derive applies_to_actions by listing every action whose name
+     contains the resource-type fragment from the key (e.g., `BucketTag` → actions with
+     "Bucket" in the name). Record `source: "sar_tag_keys_fallback"` on the derived entry so
+     downstream validators can distinguish derived bindings from SAR-verbatim ones. Do NOT
+     use this fallback for non-tag keys — it only holds for resource-tag conditions where
+     the SAR's omission is a documentation limitation, not an actual constraint. This mirrors
+     the rule in `research-capabilities/SKILL.md` for consistency across Phase 0 / Phase 1.
    - **resource_types** — Resource type names and ARN patterns
    - **wildcard_only_actions** — Actions that can ONLY use `"Resource": "*"` in IAM policies.
      Extraction rule: An action is wildcard-only if and only if its "Resource types" column
