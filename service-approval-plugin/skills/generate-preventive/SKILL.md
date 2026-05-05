@@ -104,6 +104,30 @@ For every such artifact:
    here for completeness — SAR-driven mechanisms are grounded in both the action list
    AND the condition-key list).
 
+4. **Action-name verification (HARD RULE).** Every IAM `Action` string in every policy
+   artifact (SCP, resource policy, IAM policy, permission boundary, KMS key policy,
+   VPCE policy) MUST appear verbatim (case-sensitive) in one of:
+   - `sar-facts.json` action list or `permission_only_actions[]`
+   - `research-api-surface.json.api_surface.operations[].operation`
+   - `validated.json.api_surface.operations[].operation` (post-verification authoritative)
+
+   Do NOT generate action names by analogy or extrapolation. If a mitigation statement
+   references an action in English prose (e.g., "prevent memory searches"), look up the
+   actual SAR action that implements the concept — do not translate the English verb
+   into an action suffix. If the service does not implement an action the control
+   requires, document it as a compensating control in
+   `compensating-controls-documentation.json` rather than inventing an action name.
+
+   Example of the failure mode (real iter-18 AgentCore regression):
+   - WRONG: `bedrock-agentcore:SearchMemoryRecords` — invented by the LLM; does not
+     exist in SAR or botocore. IAM AccessAnalyzer rejects with "The action X does
+     not exist."
+   - RIGHT: `bedrock-agentcore:RetrieveMemoryRecords` — the actual SAR action.
+
+   IAM AccessAnalyzer at Tier 2 validates every action against the live service-prefix
+   registry. Fabricated actions pass JSON-syntax checks but fail deploy-time policy
+   validation.
+
 Validator CHECK-14a enforces rule 1 at hook time. A condition-block key that is not a
 SAR/global/KMS key fails the hook with a remediation message. The #1 failure mode this
 prevents is an agent treating an API parameter as if it were a condition key — a class
@@ -175,9 +199,41 @@ If false, write `_metadata.scp_gap` note and skip.
 - **No custom placeholders in policy documents**: SCPs are IAM policies. Custom placeholders
   like `${trusted:account-id}` or `${ORGANIZATION_ID}` cause `MalformedPolicyDocument` errors.
   IAM policy variables like `${aws:PrincipalAccount}` work in real SCPs evaluated by Organizations
-  but fail when the policy is tested as a standalone IAM managed policy (which the smoke test does).
+  but fail when the policy is tested as a standalone IAM managed policy (which a downstream policy tester typically does).
   Use literal placeholder values like `123456789012` with a `_metadata._deployment_notes` field
   explaining what values to substitute at deployment time.
+
+- **ARN region and account placeholders (HARD RULE)**: In ARN region and account
+  segments, NEVER use shell-style placeholders like `${AWS_REGION}`, `${AWS_ACCOUNT_ID}`,
+  `${ACCOUNT_ID}`, `${REGION}`. IAM AccessAnalyzer treats them as literal values and
+  rejects the policy at deploy time with "The Region X is not valid for this resource"
+  or "The account X is not valid." Valid forms:
+  - **Any region / any account**: use `*` wildcard.
+  - **Scoped via IAM policy variables**: `${aws:RequestedRegion}` (region),
+    `${aws:PrincipalAccount}` / `${aws:ResourceAccount}` (account).
+  - **Literal substitution**: `us-east-1` and `123456789012` with
+    `_metadata._deployment_notes` explaining the substitution.
+
+  Examples:
+
+  ```text
+  WRONG:
+    "Resource": "arn:aws:<service>:${AWS_REGION}:${AWS_ACCOUNT_ID}:<type>/*"
+
+  RIGHT (any region, any account):
+    "Resource": "arn:aws:<service>:*:*:<type>/*"
+
+  RIGHT (scoped via IAM policy variables):
+    "Resource": "arn:aws:<service>:${aws:RequestedRegion}:${aws:PrincipalAccount}:<type>/*"
+
+  RIGHT (literal substitution with deployment note):
+    "Resource": "arn:aws:<service>:us-east-1:123456789012:<type>/*"
+    "_metadata": {"_deployment_notes": "Replace us-east-1 and 123456789012 with your account's region and ID."}
+  ```
+
+  The shell-style `${AWS_REGION}` pattern is a harness-substitution convention only —
+  it belongs in `_deployment_notes` prose (instructional text), never in Resource ARN
+  values, Condition key values, or any string IAM parses as policy content.
 - **MANDATORY — Include ALL applicable actions per condition key**: When a condition key
   applies to multiple actions (e.g., both `Create*` and `Update*`), the SCP statement MUST
   include ALL actions from the condition key's `applies_to_actions[]` in validated.json.
@@ -218,8 +274,8 @@ SCP validation (JSON syntax and 5120-byte minified policy body limit, excluding
 Checks 7, 12).
 
 **SCP simulation metadata (REQUIRED for every SCP):** Each SCP JSON MUST include a
-`_simulation_tests` field in the `_metadata` object. This tells the smoke-deploy-controls
-script what actions to simulate as denied and what actions should remain allowed.
+`_simulation_tests` field in the `_metadata` object. This tells a downstream test
+harness what actions to simulate as denied and what actions should remain allowed.
 
 ```json
 {
@@ -242,8 +298,9 @@ script what actions to simulate as denied and what actions should remain allowed
 
 The `should_deny` list includes actions + context values that the SCP should block.
 The `should_allow` list includes actions + context values that should pass.
-The smoke test creates a test role, attaches the SCP as an IAM policy, and uses
-`simulate_principal_policy` to verify the deny/allow behavior matches.
+A test harness exercising SCPs typically creates an ephemeral test role, attaches
+the SCP as an IAM policy, and calls `iam:SimulatePrincipalPolicy` to verify the
+deny/allow behavior matches the test vectors in `_simulation_tests`.
 
 ### AI Opt-out Policy (`preventive/ai-optout-policy.json`)
 Only if `ai_optout_applicable: true`.
@@ -298,7 +355,7 @@ not evaluated by CHECK-14b (they are evaluated by CHECK-14a).
 ### CloudFormation Guard Rules (`proactive/cfn-guard-rules.guard`)
 
 **Cross-validation constraint**: Every Guard rule MUST pass when evaluated against the
-compliant CloudFormation template generated by generate-iac. The smoke test runs:
+compliant CloudFormation template generated by generate-iac. The consistency check is:
 ```
 cfn-guard validate --rules proactive/CTRL-*.guard --data iac/cloudformation/*.cfn.yaml
 ```
@@ -328,7 +385,7 @@ Both must be fixed together — trace to the source of the discrepancy.
   (e.g., one KMS Key Policy, one IAM Trust Policy, one VPC Endpoint Policy, one S3 Bucket
   Policy), generate N separate artifacts — do NOT collapse them into a single file just
   because they share a category/scope prefix. Collapsing loses the control-to-file
-  traceability the smoke-test validator enforces.
+  traceability the control-to-file validator enforces (see `validate_controls.py` CHECK-13).
 - **Valid Guard 2.x syntax only**: Do NOT use `%size()` function — it is not standard CFN Guard
   2.x syntax. For collection size checks, use `some` clauses, `[N] EXISTS` checks, or iterate
   with `when` blocks. Example: check subnet count ≥ 2 with `Properties.Subnets[1] EXISTS`.
@@ -429,6 +486,88 @@ Both must be fixed together — trace to the source of the discrepancy.
   MUST check ALL accepted configuration fields. Verify the exact set via
   `aws <service> <command> --generate-cli-skeleton`. Generate separate deny blocks for
   each required field — do not generate checks for fields the API does not accept.
+
+### Access-log exemption tag contract (S3)
+
+The `CTRL-ACC-PRO-002` rule (require `aws_s3_bucket_logging` companion on every
+`aws_s3_bucket`) MUST provide an exemption for log-target buckets. Log sink buckets
+cannot log to themselves — the companion requirement would force a recursion. The
+canonical exemption is a tag with key `"bucket-role"` and value `"log-target"`,
+checked by a predicate named `is_log_target(tags)`:
+
+```rego
+deny contains msg if {
+    some rc in input.resource_changes
+    rc.type == "aws_s3_bucket"
+    not has_logging
+    not is_log_target(rc.change.after.tags)
+    msg := sprintf("CTRL-ACC-PRO-002: aws_s3_bucket %v requires logging (aws_s3_bucket_logging) unless tagged bucket-role=log-target", [rc.address])
+}
+
+is_log_target(tags) if {
+    tags["bucket-role"] == "log-target"
+}
+```
+
+`generate-iac` emits this exact tag on any generated access-log sink bucket (see
+`generate-iac/SKILL.md` "Logging target buckets (S3)"). If you change the tag key,
+the tag value, or the predicate name here, update `generate-iac/SKILL.md` in lockstep —
+both skills must agree.
+
+### Plan-time unknown attributes (Terraform after_unknown)
+
+When an OPA rego deny rule checks a Terraform resource attribute value that may
+reference a sibling resource being created in the same plan (e.g.,
+`kms_master_key_id = aws_kms_key.bucket.arn` where the KMS key is net-new), the rule
+MUST accept both forms Terraform emits:
+
+1. **Known at plan time** — attribute value present in `change.after`.
+2. **Known after apply** — attribute value absent from `change.after`, recorded in
+   `change.after_unknown` as `true`. This happens whenever an attribute references a
+   sibling resource being created in the same plan — typically: KMS keys, SNS topics,
+   CloudWatch log groups, IAM roles, security groups, VPC endpoints, S3 buckets.
+
+Without the `after_unknown` branch, the rego incorrectly denies every fresh
+`terraform plan` where the referenced resource is created inline. The rule is
+service-agnostic: apply the two-branch pattern to ANY rego rule that checks a
+cross-resource reference attribute.
+
+Helper pattern (pass the whole `rc.change`, not just `rc.change.after`, so both
+branches are reachable):
+
+```rego
+# Example: CTRL-ACC-PRO-001 SSE-KMS rule
+deny contains msg if {
+    some rc in input.resource_changes
+    rc.type == "aws_s3_bucket_server_side_encryption_configuration"
+    not has_kms(rc.change)
+    msg := sprintf("CTRL-...: %v must use aws:kms with a CMK", [rc.address])
+}
+
+# Branch 1: concrete kms_master_key_id in `after`
+has_kms(change) if {
+    some rule in change.after.rule
+    some sse in rule.apply_server_side_encryption_by_default
+    sse.sse_algorithm in {"aws:kms", "aws:kms:dsse"}
+    sse.kms_master_key_id != ""
+}
+
+# Branch 2: plan-time-unknown marker in `after_unknown`
+has_kms(change) if {
+    some rule in change.after.rule
+    some sse in rule.apply_server_side_encryption_by_default
+    sse.sse_algorithm in {"aws:kms", "aws:kms:dsse"}
+    some unknown_rule in change.after_unknown.rule
+    some unknown_sse in unknown_rule.apply_server_side_encryption_by_default
+    unknown_sse.kms_master_key_id == true
+}
+```
+
+Helper signatures MUST take `rc.change` (not `rc.change.after`) when they cover
+attributes that could be cross-referenced. Existing rego rules using the old
+`has_X(after)` signature continue to work for attributes never referenced across
+resources; update signatures when migrating a rule to support cross-referenced
+attributes.
 
 ---
 
@@ -620,6 +759,53 @@ For each `enrichment_opportunity` in `validated.json` with `verified: true`:
 ## Validate Generated Artifacts
 
 Artifact validation runs automatically via PostToolUse hook (validate_controls.py) and Stop hook (validate_cross.py Check X9).
+
+## Completion checklist (REQUIRED — run before returning)
+
+Before declaring the run complete, iterate this checklist. Each mandatory artifact
+is in one of three terminal states:
+- **EMITTED** — file written to disk, references the expected control IDs via header comment
+- **N/A** — explicit gate evaluated false per the skill rule (document which gate)
+- **SKIPPED-ERROR** — run aborted before this artifact could be generated (STOP and report)
+
+Check every row. Do NOT return success if any row is SKIPPED-ERROR or if a row is
+both expected (mapping-results has a matching control) and not EMITTED.
+
+| Artifact | Gate (emit only if…) | Expected when |
+|---|---|---|
+| `preventive/scp-policy.json` | control has `mechanism == "SCP"` | always for SAR-eligible services |
+| `preventive/scp-provisioning.json` | control has `mechanism == "SCP"` with provisioning-time intent | platform services with admin/delegation controls |
+| `preventive/rcp-policy.json` | `rcp_expressible: true` AND RCP-mechanism control | rare, service-dependent |
+| `preventive/declarative-policy.json` | `declarative_policy_expressible: true` | only EC2/VPC/EBS today |
+| `preventive/ai-optout-policy.json` | `ai_optout_applicable: true` | Bedrock/Comprehend/etc. |
+| `preventive/backup-policy.json` | `backup_policy_applicable: true` | service has AWS Backup integration |
+| `preventive/permission-boundary.json` | control has `mechanism == "IAM Permission Boundary"` | any service with Acc×Preventive |
+| `preventive/iam-policies.json` | control has `mechanism == "IAM Policy"` (trust policy, etc.) | SLR/trust-policy controls |
+| `preventive/resource-policy.json` | control has `mechanism == "Resource Policy"` on primary service | services with RBP |
+| `preventive/vpce-policy.json` | control has `mechanism == "VPCE Policy"` | services with VPC endpoints + endpoint-policy support |
+| `preventive/kms-key-policy.json` | control has `mechanism == "KMS Key Policy"` | services with CMK consumption |
+| `proactive/tag-policy.json` | any control requires tag enforcement | always (most services) |
+| `proactive/cfn-guard-rules.guard` | any resource-scope control exists | always for SAR-eligible services |
+| `proactive/cfn-hooks-policy.json` | any provisioning-time check uses CFN Hooks | always for SAR-eligible services |
+| `proactive/checkov-config.yaml` + custom-policies/ | account-scope static-analysis controls | always for SAR-eligible services |
+| `proactive/opa-policies/<ResourceType>.rego` | per resource type with account-scope OPA controls | one per distinct resource type in validated.assets[] |
+| `proactive/opa-policies/org-policy.rego` | any org-wide OPA rule needed | platform services, tag-rule enforcement |
+| `preventive/compensating-controls-documentation.json` | any control has no feasible mechanism (RCP/declarative/etc. gate = false) | rare, document-only |
+
+Before returning, emit a concise report:
+
+```
+Preventive completion: N EMITTED, K N/A (gated), 0 SKIPPED-ERROR
+  Emitted: scp-policy.json, permission-boundary.json, kms-key-policy.json, ...
+  N/A (gate false):
+    - declarative-policy.json (declarative_policy_expressible=false)
+    - ai-optout-policy.json (ai_optout_applicable=false)
+    - rcp-policy.json (rcp_expressible=false)
+```
+
+If K SKIPPED-ERROR > 0, do NOT claim success — report the missing artifacts and
+the reason (context exhaustion, subagent timeout, upstream data missing, etc.)
+so the orchestrator can retry or adjust.
 
 ## Print Summary
 

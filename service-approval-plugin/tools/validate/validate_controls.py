@@ -741,8 +741,9 @@ def check_comment_header_control_ids(file_path: str, mapping: dict) -> list[str]
     return errors
 
 
-# Body-scan regex — mirrors scripts/smoke-check-traceability.py so case-insensitive
-# snake_case rule names (e.g. `ctrl_res_pro_001`) are normalized and compared.
+# Body-scan regex — case-insensitive so snake_case rule names
+# (e.g., `ctrl_res_pro_001`) are caught and normalized to canonical
+# dash-uppercase form for comparison against mapping-results.json.
 _CTRL_BODY_PATTERN = re.compile(r"CTRL[-_](?:[A-Z]{2,3}[-_]){0,2}\d{3}", re.IGNORECASE)
 _BODY_SCAN_EXTS = {".json", ".yaml", ".yml", ".py", ".tf", ".ts", ".rego", ".guard", ".md"}
 _BODY_SCAN_MAX_BYTES = 65536
@@ -771,8 +772,9 @@ def check_body_control_id_references(file_path: str, mapping: dict) -> list[str]
     except OSError:
         return errors
 
-    # Normalize matches the same way smoke-check-traceability.py does so snake_case
-    # rule names match the canonical dash-uppercase IDs in mapping-results.json.
+    # Normalize found tokens: uppercase + replace `_` with `-` so
+    # `ctrl_res_pro_001` matches the canonical `CTRL-RES-PRO-001`
+    # ids in mapping-results.json.
     found_ids = {m.upper().replace("_", "-") for m in _CTRL_BODY_PATTERN.findall(body)}
     orphans = sorted(found_ids - valid_ids)
     for orphan in orphans:

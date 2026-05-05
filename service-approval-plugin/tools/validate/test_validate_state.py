@@ -171,49 +171,89 @@ def test_check_s9_alias_also_works_reverse_direction() -> None:
     assert critical == []
 
 
+def test_check_s9_accepts_wildcard_star_as_applies_to_actions() -> None:
+    """SAR uses the literal '*' string as shorthand for 'applies to every
+    action' (e.g., DynamoDB's aws:ResourceTag/${TagKey}). CHECK-S9 must
+    pass '*' through as a universal match, not flag it as missing from
+    operations/permission_only_actions. Regression for iter-18/10 signal
+    F-G2 surfaced during DynamoDB Phase 1 regression."""
+    data = _minimal_research(
+        service="dynamodb",
+        ops=[{"operation": "GetItem", "parameters": []}],
+        ck=[{"key": "aws:ResourceTag/${TagKey}", "applies_to_actions": ["*"]}],
+    )
+    errors = check_research_merged(data)
+    critical = [e for e in errors if "CHECK-S9 CRITICAL" in e]
+    assert critical == [], (
+        "CHECK-S9 must treat '*' as a wildcard pass-through, not flag it as "
+        f"a missing action. Got: {critical}"
+    )
+
+
 # ------------------------------------------------------------------
 # CHECK-S11 — Control-ID format enum (iter-14 Class C)
 # ------------------------------------------------------------------
 
 
-from validate_state import check_controls_generated, _CONTROL_ID_RE  # noqa: E402
+from validate_state import check_controls_generated  # noqa: E402
+from _schemas import schema_errors  # noqa: E402
 
 
 def _minimal_control(cid: str, scope: str = "ORG", category: str = "PRV") -> dict:
-    """Build a control dict that passes every CHECK-S11 rule EXCEPT the
-    ID-format check. Use this to isolate ID-format behaviour per-test."""
+    """Build a control dict that passes every schema constraint EXCEPT the
+    ID-format pattern. Used to isolate ID-format behaviour per-test."""
     return {
         "id": cid,
+        "name": "test",
         "scope": scope,
         "category": category,
         "mechanism": "SCP",
+        "description": "test",
+        "actions": ["test:Action"],
         "mitigation_ids": ["M-Example.0"],
         "security_rationale": "Illustrative rationale.",
         "framework_keywords": ["encryption", "access-control"],
+        "parameters_controlled": ["$.name"],
+        "condition_keys": [],
+        "resource_types": [],
     }
 
 
 def _ctrl_gen_doc(controls: list[dict]) -> dict:
     return {
         "schema_version": "1.0",
+        "service": "test",
         "controls": controls,
         "control_summary": {"total_controls": len(controls)},
     }
 
 
-def test_control_id_regex_accepts_canonical_format() -> None:
+def _id_format_errors(doc: dict) -> list[str]:
+    """Return only schema errors that fire on the controls[*].id pattern."""
+    return [
+        e for e in schema_errors(doc, "map-controls-generated")
+        if "controls." in e and ".id:" in e and "does not match" in e
+    ]
+
+
+def test_schema_id_pattern_accepts_canonical_format() -> None:
+    """Schema pattern on controls[].id accepts canonical CTRL-<SCOPE>-<CAT>-NNN."""
     for cid in ["CTRL-ORG-PRV-001", "CTRL-ACC-DET-012", "CTRL-RES-PRO-099", "CTRL-ORG-COR-123"]:
-        assert _CONTROL_ID_RE.match(cid), f"expected match: {cid}"
+        doc = _ctrl_gen_doc([_minimal_control(cid, scope=cid.split("-")[1], category=cid.split("-")[2])])
+        assert _id_format_errors(doc) == [], f"expected accept: {cid}"
 
 
-def test_control_id_regex_rejects_service_prefixed_ids() -> None:
-    """Service-prefixed IDs (iter-14 LLM drift) must fail the regex."""
+def test_schema_id_pattern_rejects_service_prefixed_ids() -> None:
+    """Service-prefixed IDs (iter-14 LLM drift) fail the schema pattern."""
     for cid in ["S3-RES-PRO-01", "ATH-ORG-PRV-01", "LAMBDA-ACC-DET-03", "AGC-ORG-PRV-01"]:
-        assert not _CONTROL_ID_RE.match(cid), f"expected reject: {cid}"
+        # Use scope/category consistent with the id suffix so we test the
+        # pattern in isolation, not the mismatch rule.
+        doc = _ctrl_gen_doc([_minimal_control(cid, scope="RES", category="PRO")])
+        assert len(_id_format_errors(doc)) == 1, f"expected reject: {cid}"
 
 
-def test_control_id_regex_rejects_malformed() -> None:
-    """Other malformed shapes must also fail."""
+def test_schema_id_pattern_rejects_malformed() -> None:
+    """Other malformed shapes fail the schema pattern."""
     for cid in [
         "CTRL-org-prv-001",         # lowercase scope/category
         "CTRL-ORG-PRV-01",          # two-digit sequence
@@ -224,25 +264,25 @@ def test_control_id_regex_rejects_malformed() -> None:
         "CTRL_ORG_PRV_001",         # underscore separator
         "CTRL-ORG-PRV-001-extra",   # trailing content
     ]:
-        assert not _CONTROL_ID_RE.match(cid), f"expected reject: {cid}"
+        doc = _ctrl_gen_doc([_minimal_control(cid)])
+        assert _id_format_errors(doc), f"expected reject: {cid}"
 
 
-def test_check_s11_flags_service_prefixed_id(tmp_path) -> None:
-    """CHECK-S11 must reject a service-prefixed control ID with a message
-    that names the regex and points to _metadata.service."""
+def test_check_s11_rejects_service_prefixed_id(tmp_path) -> None:
+    """check_controls_generated surfaces the schema pattern violation.
+    We assert on the structured path `controls.0.id` so the test is
+    decoupled from any specific error-message string format."""
     doc = _ctrl_gen_doc([_minimal_control("S3-RES-PRO-01", scope="RES", category="PRO")])
     errors = check_controls_generated(doc, str(tmp_path))
-    id_errors = [e for e in errors if "invalid format" in e]
-    assert len(id_errors) == 1
-    assert "S3-RES-PRO-01" in id_errors[0]
-    assert "^CTRL-" in id_errors[0]  # regex cited for the reader
-    assert "_metadata.service" in id_errors[0]  # rationale cited
+    # Look for a schema error on controls.0.id.
+    path_errors = [e for e in errors if "controls.0.id" in e]
+    assert len(path_errors) >= 1, f"no controls.0.id error emitted; errors={errors}"
 
 
 def test_check_s11_accepts_canonical_id(tmp_path) -> None:
     doc = _ctrl_gen_doc([_minimal_control("CTRL-ORG-PRV-001")])
     errors = check_controls_generated(doc, str(tmp_path))
-    id_errors = [e for e in errors if "invalid format" in e]
+    id_errors = [e for e in errors if "controls.0.id" in e]
     assert id_errors == []
 
 
@@ -253,3 +293,60 @@ def test_check_s11_still_catches_scope_category_mismatch(tmp_path) -> None:
     errors = check_controls_generated(doc, str(tmp_path))
     mismatch = [e for e in errors if "scope/category mismatch" in e]
     assert len(mismatch) == 1
+
+
+# ------------------------------------------------------------------
+# map-framework-mapped confidence enum (MR-8 review: PascalCase-only)
+# ------------------------------------------------------------------
+
+
+def _minimal_mapped_doc(confidence: str) -> dict:
+    """Build a minimal map-framework-mapped.json that passes every schema
+    constraint except (potentially) the confidence enum."""
+    return {
+        "schema_version": "1.0",
+        "service": "test",
+        "framework_mapping": [
+            {
+                "objective_id": "TEST-01",
+                "domain": "TEST",
+                "title": "Test objective",
+                "status": "MAPPED",
+                "coverage": "FULL",
+                "reason": "test",
+                "controls": [
+                    {
+                        "control_id": "CTRL-ORG-PRV-001",
+                        "confidence": confidence,
+                        "rationale": "test rationale",
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_confidence_accepts_pascal_case() -> None:
+    """The tightened enum must still accept all three PascalCase values —
+    every iter-14..18 archive uses these."""
+    for value in ["High", "Medium", "Low"]:
+        doc = _minimal_mapped_doc(value)
+        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
+        assert errs == [], f"PascalCase {value!r} must validate; got: {errs}"
+
+
+def test_confidence_rejects_lowercase() -> None:
+    """Lowercase was previously tolerated (foot-gun per reviewer). Must now
+    fail the enum so downstream consumers can rely on exact string match."""
+    for value in ["high", "medium", "low"]:
+        doc = _minimal_mapped_doc(value)
+        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
+        assert len(errs) == 1, f"lowercase {value!r} must be rejected; got: {errs}"
+
+
+def test_confidence_rejects_other_variants() -> None:
+    """Other casings and synonyms must also fail — the enum is a closed set."""
+    for value in ["HIGH", "MED", "None", ""]:
+        doc = _minimal_mapped_doc(value)
+        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
+        assert len(errs) == 1, f"variant {value!r} must be rejected; got: {errs}"

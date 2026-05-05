@@ -389,6 +389,12 @@ def check_t1_cfnlint(controls_dir: str, venv_bin: str) -> list[str]:
     cfn_dir = os.path.join(controls_dir, "iac", "cloudformation")
     if os.path.isdir(cfn_dir):
         for f in sorted(os.listdir(cfn_dir)):
+            # Skip CloudFormation parameter files — they're the consumer of a
+            # template, not a template themselves. Shape is a JSON list of
+            # {ParameterKey, ParameterValue} objects; cfn-lint rejects them
+            # because they have no Resources block.
+            if f.endswith(("-params.json", "-parameters.json")):
+                continue
             if f.endswith((".yaml", ".yml", ".json")):
                 templates.append(os.path.join(cfn_dir, f))
 
@@ -540,6 +546,9 @@ def check_t2_cfn_validate(controls_dir: str, profile: Optional[str]) -> list[str
     cfn_dir = os.path.join(controls_dir, "iac", "cloudformation")
     if os.path.isdir(cfn_dir):
         for f in sorted(os.listdir(cfn_dir)):
+            # Skip parameter files (see note in t1_cfnlint above)
+            if f.endswith(("-params.json", "-parameters.json")):
+                continue
             if f.endswith((".yaml", ".yml", ".json")):
                 templates.append(os.path.join(cfn_dir, f))
 
