@@ -372,6 +372,47 @@ These rules MUST be enforced in every template format — not just one:
    New services or new launch-type surprises should be added to the data file, not inlined
    here, so the skill stays service-agnostic.
 
+9. **Tag naming canonical form (dual case)**: The root module's tag map MUST emit BOTH
+   PascalCase and lowercase-hyphenated keys for the four operational tags because downstream
+   enforcement mechanisms split on casing:
+   - PascalCase (`Owner`, `CostCenter`, `Environment`, `DataClassification`) — required by
+     AWS Config managed rules (`required-tags`), Security Hub standards, and the OPA
+     `org-policy.rego` emitted by `generate-preventive` (which enforces
+     `required_tags := {"Owner", "CostCenter", "Environment", "DataClassification"}`).
+   - lowercase-hyphenated (`owner`, `cost-center`, `environment`, `data-classification`) —
+     common in AWS CLI samples, CDK construct defaults, and customer CI/CD tagging conventions.
+
+   **Terraform** (`main.tf` root `locals`):
+   ```hcl
+   locals {
+     common_tags = {
+       # PascalCase — AWS Config / Security Hub / org-policy.rego
+       "Owner"              = var.owner
+       "CostCenter"         = var.cost_center
+       "Environment"        = var.environment
+       "DataClassification" = var.data_classification
+       # lowercase-hyphenated — AWS CLI / customer CI/CD convention
+       "owner"               = var.owner
+       "cost-center"         = var.cost_center
+       "environment"         = var.environment
+       "data-classification" = var.data_classification
+     }
+   }
+   ```
+
+   **CDK TypeScript**: apply `Tags.of(resource).add("Owner", ownerParam)` and
+   `Tags.of(resource).add("owner", ownerParam)` in pairs for all four keys. Same for
+   CloudFormation (Tags list with both entries per key) and CDKTF (same locals pattern).
+
+   This dual emission is intentional (not a noise leak): canonicalizing on one form would
+   either break AWS Config managed rules (lowercase-only) or break customer CI/CD tagging
+   scripts (PascalCase-only). Adding a tag is cheap — no quota impact. Do NOT extend this
+   pattern to service-specific tags (`bucket-role`, `purpose`, `data-residency`); only the
+   four canonical operational tags need dual casing.
+
+   If `generate-preventive` changes the PascalCase required-tag set, update this rule in
+   lockstep — both skills must agree on the canonical key list.
+
 ---
 
 ## Step 3: Modular Terraform (`iac/modules/`)
@@ -512,6 +553,32 @@ resource "aws_<service>_<resource>" "this" {
   tags               = var.tags                     # CTRL-ORG-PRO-001
 }
 ```
+
+### Logging target buckets (S3)
+
+When the generated Terraform module creates an S3 bucket whose purpose is to receive
+access logs from another bucket (e.g., `aws_s3_bucket.access_logs` inside an S3 bucket
+module), tag it with `"bucket-role" = "log-target"`:
+
+```hcl
+resource "aws_s3_bucket" "access_logs" {
+  bucket_prefix = "compliant-s3-logs-"
+  tags = merge(var.common_tags, {
+    purpose       = "s3-access-logs"
+    "bucket-role" = "log-target"
+  })
+}
+```
+
+This tag is an EXEMPTION marker the OPA `CTRL-ACC-PRO-002` rule emitted by
+`generate-preventive` respects (via its `is_log_target(tags)` predicate). Without this
+tag, the compliant Terraform plan fails its own rego because every `aws_s3_bucket` would
+be required to have an `aws_s3_bucket_logging` companion — which the log sink cannot
+satisfy without recursion (it cannot log to itself).
+
+The exemption tag name MUST match the rego rule exactly — if `generate-preventive`
+changes the tag key or value, update this rule in lockstep. See
+`generate-preventive/SKILL.md` "Access-log exemption tag contract" for the paired rule.
 
 ---
 

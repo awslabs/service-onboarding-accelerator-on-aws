@@ -17,6 +17,7 @@ re-deriving the reasoning chain.
 
 **Input:** `.service-approval/state/validated.json`
 **Output:** `.service-approval/state/map-controls-generated.json`
+**Schema:** `service-approval-plugin/schemas/map-controls-generated.schema.json` — encodes shape, id pattern `^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\d{3}$`, scope/category enums, `mitigation_ids[]` pattern `^M-.+`, per-control required fields.
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
 
@@ -494,7 +495,7 @@ these into `mapping-results.json.coverage_gaps[]`.
 
 ## Validate Output
 
-Output validation runs automatically via PostToolUse hook (validate_state.py Check S11).
+Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on shape / id-pattern / scope-category enum / required-field drift. `validate_state.py::check_controls_generated` adds the cross-file and cross-field checks the schema cannot express: duplicate control IDs, scope/category mismatch between id and fields, mitigation coverage against `validated.json`, and `control_summary.total_controls` vs actual length.
 
 ## Print Summary
 

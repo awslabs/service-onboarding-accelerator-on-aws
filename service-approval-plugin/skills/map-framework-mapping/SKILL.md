@@ -18,6 +18,7 @@ sub-skill in the map pipeline. It produces quality-gated framework mappings with
 - `.service-approval/state/map-controls-generated.json` — controls with rich metadata
 
 **Output:** `.service-approval/state/map-framework-mapped.json`
+**Schema:** `service-approval-plugin/schemas/map-framework-mapped.schema.json` — encodes status enum strictly `MAPPED` or `N/A` (iter-14 Class F15-revised), coverage enum, `control_id` pattern matching map-controls-generated, and per-mapping required fields. See also the "Schema rules" section below.
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
 
@@ -277,6 +278,10 @@ Write `.service-approval/state/map-framework-mapped.json`:
   checks; other tokens silently bypass those checks. `validate_state.py` also enum-validates
   `status` at CHECK-S13 — unknown values now fail fast.
 - `controls[]` MUST be array of `{control_id, confidence, rationale}` objects
+- `confidence` MUST be EXACTLY one of `"High"`, `"Medium"`, `"Low"` — PascalCase, case-sensitive.
+  Do NOT emit `"high"`, `"medium"`, `"low"` or any other variant; the schema's enum is tightened
+  to PascalCase only (MR-8 review). Every iter-14 through iter-18 archive uses PascalCase
+  exclusively, so this rule documents what the skill has always produced.
 - `rationale` is REQUIRED on every control mapping
 - `framework_coverage_summary` MUST be populated with per-domain breakdown
 - `quality_gate_results` MUST report PASS/FAIL for each rule
@@ -305,7 +310,7 @@ controls (like tagging) map to every objective.
 
 ## Validate Output
 
-Quality gate validation runs automatically via PostToolUse hook (validate_state.py Check S12).
+Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on status / coverage / control_id drift per the enum details at "Schema rules". `validate_state.py::check_framework_mapped` retains the 7 quality-gate rules (Rule 1 confidence-coverage consistency, Rule 2 domain spray, Rule 3 ≤15 objectives per control, Rule 5 rationale required, Rule 6 ≤5 High per objective, Rule 7 orphaned controls) plus cross-file lookups against map-controls-generated and map-framework-parsed.
 
 ## Print Summary
 

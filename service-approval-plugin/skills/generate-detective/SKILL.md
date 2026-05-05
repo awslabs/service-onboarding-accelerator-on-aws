@@ -350,6 +350,53 @@ API calls for its primary check WILL fail the smoke test.
   (e.g., `ec2:DescribeSubnets` for AZ validation), the Config rule Lambda execution role MUST
   include those permissions. Add them to the `config-rules.json` execution role policy or
   document them as a deployment prerequisite.
+- **Allow-list handlers MUST fail closed (REQUIRED for security)**: When a handler uses an
+  environment variable to carry an allow-list (approved Lambda ARNs, approved VPC IDs,
+  approved KMS key ARNs, approved account IDs, etc.) and the env var is empty or unset,
+  the handler MUST return `NON_COMPLIANT`, NOT `COMPLIANT`. An empty allow-list means
+  "nothing is approved" — every resource evaluates non-compliant. Defaulting to
+  `COMPLIANT` is fail-open and silently bypasses the control in misconfigured deployments
+  (env var typo, deploy-time variable not set, etc.).
+
+  Two-part pattern:
+
+  1. **Inline override for smoke-test fixtures** — check an `_Approved*` field on the
+     Config configuration item BEFORE the env var. This lets SMOKE_TEST_EVENTS declare
+     the allow-list without mutating process env.
+
+  2. **Env-var fallback + fail-closed** — if the inline override is absent, read the
+     env var. If the resulting list is empty, return NON_COMPLIANT with an Annotation
+     explaining why.
+
+  ```python
+  def _approved_list(ci: dict) -> list[str]:
+      # (1) Inline override — smoke-test fixtures carry `_ApprovedLambdaArns` on the
+      # Config configuration item; check this BEFORE the env var so tests don't need
+      # to mutate process env.
+      inline = ci.get("configuration", {}).get("_ApprovedLambdaArns")
+      if isinstance(inline, list):
+          return [s for s in inline if s]
+      # (2) Env-var fallback
+      raw = os.environ.get("APPROVED_LAMBDA_ARNS", "")
+      return [s.strip() for s in raw.split(",") if s.strip()]
+
+  def lambda_handler(event, context):
+      ...
+      approved = _approved_list(configuration_item)
+      if not approved:
+          return {
+              "ComplianceType": "NON_COMPLIANT",
+              "Annotation": "APPROVED_LAMBDA_ARNS is empty or unset; failing closed (nothing is approved until an allow-list is configured).",
+          }
+      ...
+  ```
+
+  Do NOT generate `if not approved: return {"ComplianceType": "COMPLIANT"}`. That
+  pattern silently passes every resource when the allow-list is misconfigured. No
+  current validator catches fail-open allow-lists (handlers are opaque Python) — the
+  rule lives only here. Verified observation: iter-17 Athena detective sub-agent
+  invented this pattern ad-hoc; codifying prevents future runs from regressing to
+  fail-open.
 
 ### Config Conformance Pack (`detective/config-conformance-pack.yaml`)
 - Bundle all account-level Config rules into a conformance pack
@@ -547,6 +594,7 @@ Generate: `detective/compensating-controls-documentation.json`
   "_metadata": {
     "scope": "ORG/ACC",
     "layer": "detective",
+    "posture": "preventative-proactive",
     "controls": "<comma-separated control IDs>",
     "framework": "<FULL sorted union of ALL MAPPED objective IDs>",
     "generated": "service-approval v3.0.0",
@@ -563,6 +611,18 @@ Generate: `detective/compensating-controls-documentation.json`
   }
 }
 ```
+
+**Posture note — filename-scoped exception to the general rule.** The `posture` field
+on this file is ALWAYS `preventative-proactive`, regardless of the posture on the
+underlying controls it documents. Compensating-controls documentation is proactive
+documentation about *why* a capability is missing — not a detective control itself.
+This is the single filename-scoped exception to the general "copy posture from
+`mapping-results.json.controls[].posture`" rule stated earlier (see the posture
+consistency section near the top of this skill). Enforced by
+`validate_controls.py::check_posture_mechanism_consistency_15` via
+`_PREV_PROACTIVE_CROSS_CUTTING_BASENAMES = ("compensating-controls-documentation.json",)`
+and `test_validate_controls.py:591-598`. Copying `reactive-detective` or
+`reactive-corrective` from the underlying control fails CHECK-15 at hook time.
 
 Filter controls from mapping-results where `mechanism` contains "Documentation" or
 "Compensating". Every such control MUST appear in this file's `_metadata.controls` list

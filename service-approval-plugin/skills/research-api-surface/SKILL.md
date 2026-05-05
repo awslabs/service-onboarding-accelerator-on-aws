@@ -14,6 +14,7 @@ Retrieve the COMPLETE API reference for the target AWS service. Every operation 
 Service Authorization Reference must be captured — both control-plane AND data-plane.
 
 **Output:** `.service-approval/state/research-api-surface.json`
+**Schema:** `service-approval-plugin/schemas/research-api-surface.schema.json` — encodes `phase: "research-api-surface"` const, `api_surface.operations[]` inlined (no `_ref` pointers), parameter `path` pattern `^\$\..*`, `gateable_by[]` subset of `{sar, api}`, `mutability` and `security_category` enums.
 
 This is one of 3 focused research sub-skills. The orchestrator merges outputs from all 3
 into the final `research.json`.
@@ -287,10 +288,39 @@ cross-reference validation and condition key completeness checks.
 **Completeness rule:**
 After building the operations list, compare against the authoritative action list from Step 1.
 
-Missing actions fall into 3 categories:
+Missing actions fall into 4 categories:
 1. **Permission-only actions** — go in the capabilities `permission_only_actions[]` list (NOT here)
 2. **API operations you missed** — add them with parameters from the API reference
 3. **Actions with no documentation** — add with `"parameters": []` and a note
+4. **SAR-only virtual IAM actions** — see rule below
+
+### SAR-only virtual IAM actions
+
+Some services emit IAM actions in the SAR Actions table that have no corresponding
+standalone boto3/API operation. They're evaluated by IAM as authorization-layer
+sub-actions on top of an underlying data-plane call, not as standalone APIs.
+
+Verified example (DynamoDB): `PartiQLDelete`, `PartiQLInsert`, `PartiQLSelect`,
+`PartiQLUpdate`, `ConditionCheckItem` — IAM evaluates these during
+`ExecuteStatement` / `BatchExecuteStatement` / `TransactWriteItems`, but there's no
+standalone boto3 method for them.
+
+These are DIFFERENT from `permission_only_actions`: permission-only actions (like
+`TagResource` on services where tagging has its own API variant) are a separate
+bucket with CloudTrail semantics. SAR-only virtual actions evaluate inside another
+data-plane call — no independent API, no independent CloudTrail event.
+
+When you encounter a SAR action that is NOT in boto3 AND is NOT in the
+permission-only list, emit it in `api_surface.operations[]` with:
+- `operation`: the SAR action name verbatim (case-sensitive)
+- `parameters: []` (no standalone API accepts them)
+- `source: "sar_only_virtual"` marker
+- Optional `note`: a single line naming the underlying data-plane call (e.g.,
+  `"Evaluated during ExecuteStatement/BatchExecuteStatement"`).
+
+Downstream skills use the `source` field to distinguish real ops from virtual ones
+(e.g., `generate-iac` skips parameter generation for virtual ops; `map-generate-controls`
+maps them to IAM controls like any other action).
 
 ---
 
@@ -407,7 +437,7 @@ ignored and produce an empty API surface in research.json.
 
 ## Output Verification
 
-Output validation runs automatically via PostToolUse hook (validate_state.py Check S8).
+Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on phase-const mismatch, operations not inlined under `api_surface.operations[]`, invalid parameter paths, or wrong enum values. `validate_state.py::check_research_api_surface` keeps the checks the schema cannot express: CHECK-17 (botocore_enrichment counter vs per-parameter population), the additive Phase B overlay schema, the `completeness.missing_from_condition_keys` CRITICAL flag, and the cross-field invariant that `gateable_by` containing `"sar"` requires `sar_condition_key != null` (JSON Schema 2020-12 cannot express this conditional).
 
 ## Print Summary
 
