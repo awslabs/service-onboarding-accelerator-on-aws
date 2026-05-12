@@ -3,7 +3,7 @@
 
 Updates both:
   - input/sar-slugs.json
-  - service-approval-plugin/data/sar-slugs.json
+  - data/sar-slugs.json
 
 Usage:
     python3 scripts/regenerate-sar-slugs.py [--check]
@@ -20,6 +20,7 @@ import sys
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
+from urllib.parse import urlparse
 
 SAR_LANDING_URL = (
     "https://docs.aws.amazon.com/service-authorization/latest/reference/"
@@ -74,8 +75,12 @@ class SarLinkParser(HTMLParser):
 
 
 def fetch_sar_landing(url: str = SAR_LANDING_URL) -> str:
+    # Refuse non-https schemes (file://, ftp://, etc.) — Bandit B310.
+    scheme = urlparse(url).scheme.lower()
+    if scheme != "https":
+        raise ValueError(f"refusing to fetch non-https URL (scheme={scheme!r})")
     req = urllib.request.Request(url, headers={"User-Agent": "service-onboarding-sar-slugs/1.0"})
-    with urllib.request.urlopen(req, timeout=30) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310  # noqa: S310 - scheme validated above
         return resp.read().decode("utf-8", errors="replace")
 
 
