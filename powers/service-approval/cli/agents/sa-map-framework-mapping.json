@@ -1,0 +1,35 @@
+{
+  "name": "sa-map-framework-mapping",
+  "description": "Map controls to framework objectives with per-objective analysis, confidence scoring, and quality gates",
+  "prompt": "Follow the instructions in `skills/map-framework-mapping/SKILL.md`.\n\nRead the skill file, consume `map-framework-parsed.json` and `map-controls-generated.json`,\nand write `.service-approval/state/map-framework-mapped.json`.\n\nQuality cap: no control may map to more than 5 objectives.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

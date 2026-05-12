@@ -10,6 +10,14 @@
 !.github/**
 !.vscode
 !.vscode/**
+!.agents
+!.agents/**
+!.gitlab-ci.yml
+!.githooks
+!.githooks/**
+
+# .kiro/ is generated from powers/service-approval/ by install.sh --sync —
+# never commit it. The source of truth is powers/.
 
 # Local files (generated or machine-specific)
 CLAUDE.md
