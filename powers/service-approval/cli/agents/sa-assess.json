@@ -1,0 +1,35 @@
+{
+  "name": "sa-assess",
+  "description": "Run 5-domain CAF security assessment: SAR extraction, checkpoint verification, domain research, synthesis",
+  "prompt": "Follow the instructions in `skills/assess/SKILL.md`.\n\nRead the skill file, execute all steps for the specified AWS service, and write outputs to:\n- `.service-approval/state/sar-facts.json`\n- `.service-approval/state/checkpoint-results.json`\n- `.service-approval/state/assessment-summary.md`\n- `out/domains/{DOMAIN}-research.md` (5 files)",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

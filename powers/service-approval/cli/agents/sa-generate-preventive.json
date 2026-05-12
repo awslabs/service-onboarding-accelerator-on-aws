@@ -1,0 +1,35 @@
+{
+  "name": "sa-generate-preventive",
+  "description": "Generate preventive and proactive security controls (SCPs, IAM, CFN Guard, OPA, Checkov)",
+  "prompt": "Follow the instructions in `skills/generate-preventive/SKILL.md`.\n\nRead the skill file, consume `.service-approval/state/mapping-results.json` and `.service-approval/state/validated.json`, and write outputs to `.service-approval/controls/preventive/` and `.service-approval/controls/proactive/`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

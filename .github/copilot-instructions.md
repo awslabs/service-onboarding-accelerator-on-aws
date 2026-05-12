@@ -12,7 +12,7 @@ Flags can also be expressed in natural language:
 - "generate controls for s3 using the dev aws profile"
 
 ## What it does
-Read the skill at `service-approval-plugin/skills/service-approval/SKILL.md` and follow it step by step.
+Read the skill at `skills/service-approval/SKILL.md` and follow it step by step.
 Run agents sequentially: researcher → validator → generator → tester → summarizer.
 All state is written to `.service-approval/` in the current working directory.
 
@@ -39,7 +39,7 @@ not Ask mode.
 ## Hard rules — no shortcuts
 1. Never write a one-shot generator script that hardcodes state or controls. Run the
    5-phase pipeline (research, validate, map, generate, test, summarize) as described
-   in `service-approval-plugin/skills/service-approval/SKILL.md`.
+   in `skills/service-approval/SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP
    (`awsknowledge`, `aws-documentation`, `awsiac`). Hardcoded values from training data
    are banned.

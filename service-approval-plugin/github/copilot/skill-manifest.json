@@ -1,7 +1,0 @@
-{
-  "displayName": "Service Approval",
-  "command": "service-approval",
-  "description": "Generate AWS security controls (proactive, preventive, detective, remediation) and compliant IaC templates for any AWS service",
-  "entrypoint": "../../skills/service-approval/SKILL.md",
-  "version": "1.0.0"
-}
