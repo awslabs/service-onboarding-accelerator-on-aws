@@ -45,6 +45,36 @@ Phase 5: Test                → test-results.json (dry-run or full deployment)
 Phase 6: Summarize           → APPROVAL-REPORT.md, ARTIFACT-FLOW-MATRIX.md
 ```
 
+### Key Features
+
+The pipeline runs as 19 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, Gemini CLI, GitHub Copilot, and any other agentskills.io-compatible client.
+
+<!-- SKILLS-TABLE-START -->
+| Skill | Description |
+|-------|-------------|
+| [`assess`](skills/assess/SKILL.md) | Run a 5-domain CAF security posture assessment for an AWS service. Produces (1) assessment-summary.md — CAF-structured findings with GAPS tables, (2) sar-facts.json — extracted SAR data, (3) checkpoint-results.json — factual checkpoint verification. These feed into the research, validate, and generate phases. |
+| [`generate-detective`](skills/generate-detective/SKILL.md) | Generate detective and corrective security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json. |
+| [`generate-iac`](skills/generate-iac/SKILL.md) | Generate compliant IaC templates in all 4 formats — modular Terraform, CDK TypeScript, CloudFormation YAML, and CDK for Terraform. Uses parameter coverage matrix from mapping-results.json and API surface from validated.json. |
+| [`generate-preventive`](skills/generate-preventive/SKILL.md) | Generate preventive and proactive security control artifacts — SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA policies, and CloudFormation Guard rules. Reads from mapping-results.json and validated.json. |
+| [`generate`](skills/generate/SKILL.md) | Generate all security control artifacts and compliant IaC templates from mapping-results.json and validated.json. Split into 3 focused sub-skills for better accuracy; this skill orchestrates them. |
+| [`map-assemble`](skills/map-assemble/SKILL.md) | Deterministic assembly of map sub-skill outputs into final mapping-results.json, controls-catalog.md, and framework-mapping.md. Builds traceability, identifies coverage gaps, and runs comprehensive validation. No LLM reasoning required — pure data assembly. |
+| [`map-framework-mapping`](skills/map-framework-mapping/SKILL.md) | Map generated controls to framework objectives with per-objective analysis, confidence scoring, and strict quality gates. Produces map-framework-mapped.json consumed by map-assemble. The hardest sub-skill — requires careful per-objective reasoning, not batch keyword matching. |
+| [`map-generate-controls`](skills/map-generate-controls/SKILL.md) | Generate security controls from mitigations x capabilities, organized by Category x Scope matrix. Produces map-controls-generated.json with rich metadata for downstream framework mapping. Consumes validated.json. |
+| [`map-parse-framework`](skills/map-parse-framework/SKILL.md) | Parse a customer-provided control framework file (xlsx/json/md) into normalized framework_objectives[]. Produces map-framework-parsed.json consumed by map-assemble. Supports CCMv4, NIST 800-53, CIS Benchmarks, ISO 27001. |
+| [`map`](skills/map/SKILL.md) | Map verified service capabilities against customer-provided control framework and threat model. Produces mapping-results.json, controls-catalog.md, and framework-mapping.md. Supports pluggable frameworks: CCMv4, NIST 800-53, CIS Benchmarks, ISO 27001, etc. Split into 4 focused sub-skills for better accuracy; this skill orchestrates them. |
+| [`research-api-surface`](skills/research-api-surface/SKILL.md) | Discover the complete API surface for an AWS service — all operations (control-plane AND data-plane), parameters, and cross-reference validation against SAR condition keys. Produces research-api-surface.json consumed by the research merge step. |
+| [`research-attack-surface`](skills/research-attack-surface/SKILL.md) | Identify applicable MITRE ATT&CK Cloud techniques for the target service based on API surface analysis and customer STRIDE-based threat model. Produces research-attack-surface.json consumed by the research merge step. |
+| [`research-capabilities`](skills/research-capabilities/SKILL.md) | Discover AWS service security capabilities (IAM, encryption, network, logging, org-policies) using MCP servers and assessment artifacts. Produces research-capabilities.json consumed by the research merge step. |
+| [`research-mitigations`](skills/research-mitigations/SKILL.md) | Parse input files to extract existing mitigations, build initial asset inventory, and collect assessment gaps. Produces research-mitigations.json consumed by the research merge step. |
+| [`research`](skills/research/SKILL.md) | AWS service capability discovery producing research.json with structured capabilities, API surface, and existing mitigations. Uses MCP servers for AWS documentation, service authorization, and best practices. Downstream skills (Validate, Map) consume this output. Split into 3 focused sub-skills for better accuracy; this skill orchestrates and merges. |
+| [`service-approval`](skills/service-approval/SKILL.md) | Orchestrate all 7 service-approval agents (Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service |
+| [`summarize`](skills/summarize/SKILL.md) | Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, test evidence, and verdic |
+| [`test`](skills/test/SKILL.md) | Deploy compliant resource template and validate zero Config rule findings. Requires AWS credentials. |
+| [`validate`](skills/validate/SKILL.md) | Verify research.json v3.0 findings via MCP — confirm capabilities, API parameters, condition keys, SCP/RCP expressibility, and mitigation feasibility. Produce validated.json. |
+<!-- SKILLS-TABLE-END -->
+
+Run `python3 tools/sync-ide-configs.py` or `./install.sh --sync` if you add a new skill — the hook regenerates this table from `SKILL.md` frontmatter.
+
 ### Artifact flow
 
 Each phase consumes the previous phase's output — the pipeline is a strict DAG:
@@ -87,45 +117,55 @@ A detailed per-artifact input/output matrix with dependency tracking is generate
 
 ## Installation & usage
 
-### Claude Code
-
-Install the plugin:
+One install script detects every installed client and wires it up. Clone and run:
 
 ```bash
-claude plugin install ./service-approval-plugin
+git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
+cd service-onboarding
+./install.sh        # macOS / Linux
+# or Windows PowerShell:
+.\install.ps1
 ```
 
-Then invoke from any project with an `input/` folder containing your service documentation:
+Update with `git pull`. To make every `git pull` auto-sync .kiro/ and regenerate per-client manifests, run once:
 
+```bash
+make enable-auto-sync
 ```
-/service-approval ./input --service=<name> [flags]
-```
+
+See [`docs/INSTALL.md`](docs/INSTALL.md) for per-client notes. Windows needs Developer Mode ON for symlink installs (one-time toggle).
+
+### Prerequisites per client
+
+| Client | Prerequisite | Why |
+|--------|--------------|-----|
+| Claude Code / Copilot / Cursor / Codex | none beyond the client itself | auto-discover from repo files |
+| Gemini CLI | `gemini` on PATH | `./install.sh` runs `gemini extensions link` |
+| Kiro CLI / IDE | `kiro-cli` or Kiro.app | installer wires both |
+| Any client using `aws-documentation` / `awsiac` MCP | [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH | MCP servers run via `uvx awslabs.*@latest` |
+| Any client using `terraform` MCP | Docker Desktop running | stdio MCP runs in a container |
+
+### Testing and troubleshooting
+
+- **Kiro IDE + CLI 2.0**: [`docs/TESTING-KIRO.md`](docs/TESTING-KIRO.md) — step-by-step install verification, MCP errors, hook-fire checks, keyword activation
+- **All clients**: [`docs/INSTALL.md`](docs/INSTALL.md) — per-client install flow + common errors
+
+Invocation after install:
+
+| Client | How to invoke |
+|--------|---------------|
+| Claude Code | `/service-approval ./input --service=s3` |
+| Gemini CLI | `/service-approval ./input --service=s3` |
+| GitHub Copilot (Agent mode) | `@service-approval ./input --service=s3` |
+| Kiro (CLI or IDE) | "run service approval for s3" (keyword match) |
+| Cursor / Codex | Ask the agent to run service-approval from `AGENTS.md` |
+| Amazon Q | Say "run service approval for s3" |
 
 Examples:
 ```
 /service-approval ./input --service=bedrock-agentcore
 /service-approval ./input --service=s3 --env=delegated-admin
 /service-approval ./input --service=kms --dry-run
-```
-
-### Kiro IDE
-
-```bash
-cp -r service-approval-plugin/kiro ~/.kiro/agents/service-approval
-cp service-approval-plugin/kiro/steering/service-approval.md ~/.kiro/steering/
-```
-
-### GitHub Copilot
-
-```bash
-cp service-approval-plugin/github/copilot-instructions.md .github/copilot-instructions.md
-cp service-approval-plugin/github/copilot/skill-manifest.json .github/copilot/skill-manifest.json
-```
-
-### Amazon Q Developer
-
-```bash
-cp service-approval-plugin/amazonq/instructions.md .amazonq/instructions.md
 ```
 
 ---
@@ -163,10 +203,10 @@ The plugin includes automatic validation hooks that run at session end:
 Run manually:
 ```bash
 # Tier 1 only
-python3 service-approval-plugin/tools/validate/validate_deployable.py --tier1-only .service-approval/controls/
+python3 tools/validate/validate_deployable.py --tier1-only .service-approval/controls/
 
 # Tier 1 + Tier 2
-python3 service-approval-plugin/tools/validate/validate_deployable.py --profile delegated-admin .service-approval/controls/
+python3 tools/validate/validate_deployable.py --profile delegated-admin .service-approval/controls/
 ```
 
 ---
@@ -174,34 +214,56 @@ python3 service-approval-plugin/tools/validate/validate_deployable.py --profile 
 ## Repository layout
 
 ```
-input/                              ← input files (mitigation reports, frameworks, sar-slugs.json)
-service-approval-plugin/
-  plugin.json                       ← plugin manifest
-  .mcp.json                         ← MCP server config (awsknowledge, terraform, kb-search)
-  hooks/hooks.json                  ← validation hooks (PostToolUse, Stop)
-  skills/
-    service-approval/SKILL.md       ← orchestrator
-    assess/SKILL.md                 ← Phase 0: CAF security assessment
-    research*/SKILL.md              ← Phase 1: 3 parallel research sub-skills
-    validate/SKILL.md               ← Phase 2: MCP-based verification
-    map*/SKILL.md                   ← Phase 3: 4 map sub-skills
-    generate*/SKILL.md              ← Phase 4: 3 parallel generate sub-skills
-    test/SKILL.md                   ← Phase 5: deployment validation
-    summarize/SKILL.md              ← Phase 6: final report
-  rules/
-    service-approval-safety.md      ← safety guardrails
-  tools/
-    validate/                       ← validation scripts (controls, cross, deployable, state)
-    kb-search-mcp/                  ← Bedrock KB search MCP server
-    post-process/                   ← deterministic output post-processing
-  data/sar-slugs.json               ← SAR URL slug mapping (467 services)
-  kiro/                             ← Kiro IDE agent config
-  github/                           ← GitHub Copilot config
-  amazonq/                          ← Amazon Q Developer config
-  gemini/                           ← Gemini config
-  cloudparty/                       ← CloudParty facilitation
-  docs/README.md                    ← plugin quick-start reference
+.
+├── manifest.yaml                  ← single source of truth (metadata + MCP servers)
+├── install.sh / install.ps1       ← cross-client installer with --sync / --update
+├── Makefile                       ← make install / sync / update / check / verify
+├── AGENTS.md                      ← Codex + Cursor entry point
+├── .githooks/post-merge           ← enable via `make enable-auto-sync`
+├── .gitlab-ci.yml                 ← pytest + sync-drift + install-check + schema-validity
+│
+├── skills/                        ← 19 Agent Skills (agentskills.io format, shared across clients)
+├── tools/
+│   ├── validate/                  ← validators + hooks (hook_stop.py, hook_post_tool_use.py)
+│   ├── kb-search-mcp/             ← Bedrock KB MCP server
+│   ├── post-process/              ← deterministic output post-processing
+│   ├── sync-ide-configs.py        ← regenerates per-client manifests from manifest.yaml
+│   └── generate-kiro-agents.py    ← emits IDE .md + CLI 2.0 .json from agents-src/*.yaml
+├── schemas/                       ← 11 JSON Schemas for pipeline state files
+├── data/                          ← SAR slugs, ATT&CK matrix, KMS consumers
+├── rules/                         ← safety rules
+├── commands/                      ← Claude Code /service-approval slash command
+├── hooks/                         ← Claude Code PostToolUse + Stop hooks
+├── schemas/                       ← JSON schemas for state files
+├── plugin-docs/                   ← plugin quick-start reference
+│
+├── .claude-plugin/                ← Claude Code plugin manifest (generated)
+├── .agents/skills -> ../skills    ← agentskills.io cross-tool alias
+├── .mcp.json                      ← Claude Code workspace MCP (generated)
+├── .vscode/mcp.json               ← VS Code Copilot MCP (generated)
+├── .amazonq/instructions.md       ← Amazon Q (minimal)
+├── .github/                       ← Copilot: agents, prompts, hooks, plugin bundle
+│
+├── powers/service-approval/       ← Kiro Power (IDE + CLI 2.0 dual-format from agents-src/)
+│   ├── POWER.md                   ← frontmatter (generated) + body
+│   ├── mcp.json                   ← Kiro MCP (generated)
+│   ├── steering/                  ← always-on + phase-specific steering
+│   ├── agents-src/sa-*.yaml       ← SOURCE OF TRUTH for agents
+│   ├── ide/agents/*.md            ← generated: Kiro IDE format
+│   ├── ide/hooks/*.kiro.hook      ← generated: Kiro IDE hook format
+│   └── cli/agents/sa-*.json       ← generated: Kiro CLI 2.0 format with embedded hooks
+│
+├── gemini-extension/              ← Gemini CLI extension
+│   ├── gemini-extension.json      ← manifest (generated)
+│   ├── GEMINI.md                  ← context file
+│   ├── commands/*.toml            ← slash commands
+│   └── hooks/hooks.json           ← AfterAgent → tools/validate/hook_stop.py
+│
+└── service-approval-plugin/
+    └── cloudparty/                ← separate product — Cloud Party facilitator runbook
 ```
+
+**Update propagation:** every client config is regenerated by `tools/sync-ide-configs.py` from `manifest.yaml`. Edit the manifest, run `./install.sh --sync`, and all 4 client manifests + 4 MCP configs update in lockstep. CI blocks drift via `.gitlab-ci.yml`.
 
 ---
 

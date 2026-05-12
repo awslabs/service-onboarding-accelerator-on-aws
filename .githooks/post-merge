@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Auto-sync service-approval installation after a successful git pull / merge.
+#
+# Enable: git config core.hooksPath .githooks
+# Disable: git config --unset core.hooksPath
+#
+# This runs install.sh --sync silently. It re-copies Kiro IDE files to
+# .kiro/ and regenerates per-client manifests from manifest.yaml. Exit
+# code is always 0 — we don't want to block legitimate merges on a
+# plugin-sync failure.
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+if [ -x "$REPO_ROOT/install.sh" ]; then
+  "$REPO_ROOT/install.sh" --sync --quiet 2>/dev/null || \
+    echo "  [warn] service-approval: install.sh --sync failed (run manually to diagnose)" >&2
+fi
+
+exit 0

@@ -1,0 +1,65 @@
+# Service Approval — CI pipeline
+#
+# Three gates that must pass on every MR before merge:
+#   1. Unit tests — 205+ Python tests in tools/validate/
+#   2. Sync drift — tools/sync-ide-configs.py --check must show no drift
+#   3. Install check — install.sh --check must complete without errors
+#
+# Headless service-approval runs (actually generating controls) are out of
+# scope here; add a scheduled job if you want that.
+
+stages:
+  - verify
+
+default:
+  image: python:3.12-slim
+  before_script:
+    - pip install --quiet pyyaml jsonschema pytest
+
+unit-tests:
+  stage: verify
+  script:
+    - python3 -m pytest tools/validate/ -q
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == "main"
+
+sync-drift:
+  stage: verify
+  script:
+    - python3 tools/sync-ide-configs.py --check
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == "main"
+  allow_failure: false
+
+install-check:
+  stage: verify
+  image: bash:5.2
+  before_script: []  # override default
+  script:
+    - bash install.sh --check
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == "main"
+
+schema-validity:
+  stage: verify
+  script:
+    - |
+      python3 -c "
+      import json, jsonschema
+      from pathlib import Path
+      failed = 0
+      for p in Path('schemas').glob('*.schema.json'):
+          try:
+              jsonschema.Draft202012Validator.check_schema(json.load(p.open()))
+              print(f'OK  {p.name}')
+          except Exception as e:
+              print(f'FAIL {p.name}: {e}')
+              failed += 1
+      exit(failed)
+      "
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == "main"

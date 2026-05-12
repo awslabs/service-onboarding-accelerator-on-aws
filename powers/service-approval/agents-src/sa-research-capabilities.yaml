@@ -1,0 +1,14 @@
+name: sa-research-capabilities
+description: "Research IAM, encryption, network, logging, and org-policy capabilities for an AWS service"
+skill: research-capabilities
+phase: 1
+parallel_group: research
+optional: false
+mcp_servers:
+  - aws-documentation
+  - awsknowledge
+  - awsiac
+body: |
+  Follow the instructions in `skills/research-capabilities/SKILL.md`.
+
+  Read the skill file, execute all steps, and write the output to `.service-approval/state/research-capabilities.json`.

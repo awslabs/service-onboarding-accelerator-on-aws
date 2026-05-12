@@ -1,0 +1,20 @@
+---
+title: Pipeline integrity check at end of session
+trigger: Agent Stop
+---
+
+# Pipeline integrity check
+
+Run `python3 tools/validate/hook_stop.py` when the agent signals completion.
+This script wraps `validate_pipeline_integrity.py` and enforces the 7 hard
+rules:
+
+1. No one-shot generator scripts — every phase runs through its SKILL.md
+2. Every claim MCP-verified (no training-data values)
+3. mcp-calls.log has >=10 entries
+4. validated.json notes unique (>=50% uniqueness)
+5. IaC parameterized — no 123456789012 or placeholder ARNs
+6. SCPs have >=1 Deny; StringEquals/StringNotEquals target same key
+7. Verdict matches integrity — no false APPROVED
+
+Exit code 2 forces the verdict to REQUIRES REMEDIATION and blocks the Stop.

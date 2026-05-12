@@ -1,0 +1,36 @@
+{
+  "name": "service-approval",
+  "version": "1.0.0",
+  "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a 7-phase pipeline (Assess, Research, Validate, Map, Generate, Test, Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.",
+  "author": {
+    "name": "GFS PACE",
+    "email": "fsi-pace@amazon.com"
+  },
+  "repository": "https://gitlab.aws.dev/lightninglane/service-onboarding",
+  "keywords": [
+    "aws",
+    "security",
+    "controls",
+    "compliance",
+    "ccmv4",
+    "nist-800-53",
+    "cis",
+    "iso-27001",
+    "scp",
+    "rcp",
+    "config-rules",
+    "cfn-guard",
+    "checkov",
+    "opa",
+    "terraform",
+    "cloudformation",
+    "cdk",
+    "cdktf",
+    "mitre-attack",
+    "preventive-controls",
+    "detective-controls",
+    "proactive-controls",
+    "corrective-controls"
+  ],
+  "license": "MIT"
+}

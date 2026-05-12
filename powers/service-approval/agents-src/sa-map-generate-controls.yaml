@@ -1,0 +1,15 @@
+name: sa-map-generate-controls
+description: "Generate security controls from mitigations x capabilities organized by Category x Scope matrix"
+skill: map-generate-controls
+phase: 3
+parallel_group: map-early
+optional: false
+mcp_servers:
+  - aws-documentation
+  - awsknowledge
+  - awsiac
+body: |
+  Follow the instructions in `skills/map-generate-controls/SKILL.md`.
+
+  Read the skill file, consume `.service-approval/state/validated.json`, and write
+  `.service-approval/state/map-controls-generated.json`.
