@@ -1,17 +1,17 @@
 ---
 name: generate-detective
-description: Generate detective and corrective security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json.
+description: Generate detective and responsive security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json.
 disable-model-invocation: false
 argument-hint: '[--service=<name>] [--include-unverified]'
 ---
 
-# Service Approval — Generator: Detective & Corrective Controls
+# Service Approval — Generator: Detective & Responsive Controls
 
-Generate all detective and corrective security control artifacts from the Controls Matrix.
-This covers Organisation×Detective, Organisation×Corrective, Account×Detective,
-Account×Corrective, Resource×Detective, and Resource×Corrective cells.
+Generate all detective and responsive security control artifacts from the Controls Matrix.
+This covers Organisation×Detective, Organisation×Responsive, Account×Detective,
+Account×Responsive, Resource×Detective, and Resource×Responsive cells.
 
-**Output:** `.service-approval/controls/detective/` and `.service-approval/controls/remediation/`
+**Output:** `.service-approval/controls/detective/` and `.service-approval/controls/responsive/`
 
 This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
@@ -23,10 +23,10 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
 test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR"
 mkdir -p .service-approval/controls/detective/config-rule-lambdas
-mkdir -p .service-approval/controls/remediation/lambda-remediator
+mkdir -p .service-approval/controls/responsive/lambda-remediator
 ```
 
-Load detective and corrective controls:
+Load detective and responsive controls:
 ```bash
 python3 -c "
 import json
@@ -34,7 +34,7 @@ mr = json.load(open('.service-approval/state/mapping-results.json'))
 det = [c for c in mr['controls'] if c['category'] == 'DET']
 cor = [c for c in mr['controls'] if c['category'] == 'COR']
 print(f'Detective controls: {len(det)}')
-print(f'Corrective controls: {len(cor)}')
+print(f'Responsive controls: {len(cor)}')
 "
 ```
 
@@ -45,7 +45,7 @@ Unless `--include-unverified` is set, skip controls where `verified: false`.
 Every generated artifact MUST include these comment lines at the top:
 ```
 # SCOPE: <org|account|resource>
-# LAYER: <detective|remediation>
+# LAYER: <detective|responsive>
 # POSTURE: <reactive-detective|reactive-corrective>
 # CONTROLS: <comma-separated control IDs>
 # FRAMEWORK: <framework-name> — <FULL sorted union of ALL MAPPED objective IDs>
@@ -61,8 +61,8 @@ artifact implements. For Python, use comment block at top.
 directory family:
 - `reactive-detective` → `detective/config-rule-lambdas/**`, `detective/config-rules.json`,
   or `detective/access-analyzer.json`
-- `reactive-corrective` → `remediation/ssm-runbook*.yaml`,
-  `remediation/stepfunctions-workflow.json`, or `remediation/lambda-remediator/**`
+- `reactive-corrective` → `responsive/ssm-runbook*.yaml`,
+  `responsive/stepfunctions-workflow.json`, or `responsive/lambda-remediator/**`
 
 A Config rule Lambda tagged with `posture: "preventative-request"` would fail the hook —
 Rule C1 in map-generate-controls should never have produced it. If the hook fires, fix
@@ -94,8 +94,8 @@ contents MUST be grounded in `validated.json.api_surface.operations[].parameters
 
 Validator CHECK-14b enforces rule 2 at hook time. An enum-literal value not in any
 parameter's enum fails the hook. The check is scoped to `detective/config-rule-lambdas/**`,
-`remediation/ssm-runbook*`, `remediation/stepfunctions-workflow.json`, and
-`remediation/lambda-remediator/**`.
+`responsive/ssm-runbook*`, `responsive/stepfunctions-workflow.json`, and
+`responsive/lambda-remediator/**`.
 
 ---
 
@@ -152,10 +152,10 @@ after `# FRAMEWORK: ` (and into `_metadata.framework` for JSON files), done.
 
 ---
 
-## Organisation × Corrective
+## Organisation × Responsive
 
-### Org SSM Runbook (`remediation/ssm-runbook-org.yaml`)
-- SSM Automation document for org-level corrective actions
+### Org SSM Runbook (`responsive/ssm-runbook-org.yaml`)
+- SSM Automation document for org-level responsive actions
 - Triggered by Config Org Rule non-compliance events
 
 ---
@@ -457,12 +457,12 @@ API calls for its primary check WILL fail the smoke test.
 
 ---
 
-## Account × Corrective
+## Account × Responsive
 
-### Lambda Remediator (`remediation/lambda-remediator/handler.py`)
+### Lambda Remediator (`responsive/lambda-remediator/handler.py`)
 Python Lambda: receive EventBridge event → parse resource ARN + violation → remediate → log.
 
-### Lambda CFN Template (`remediation/lambda-remediator/template.yaml`)
+### Lambda CFN Template (`responsive/lambda-remediator/template.yaml`)
 Lambda + least-privilege IAM role + EventBridge trigger.
 
 **CRITICAL — SAM template metadata:** Do NOT use `_metadata` as a top-level key in
@@ -472,7 +472,7 @@ place pipeline metadata under the standard `Metadata` key:
 Metadata:
   ServiceApproval:
     scope: account
-    layer: remediation
+    layer: responsive
     controls: "CTRL-ACC-COR-001,CTRL-ACC-COR-002"
     framework: "BCR-01,BCR-03,..."
     generated: "service-approval v3.0.0"
@@ -480,7 +480,7 @@ Metadata:
 ```
 This passes cfn-lint validation while preserving traceability metadata for cross-validation.
 
-### SSM Runbook (`remediation/ssm-runbook.yaml`)
+### SSM Runbook (`responsive/ssm-runbook.yaml`)
 SSM Automation document for manual/scheduled remediation.
 
 - **Top-level schema (REQUIRED)**: `ssm-runbook.yaml` MUST be a **bare SSM automation
@@ -503,7 +503,7 @@ SSM Automation document for manual/scheduled remediation.
   `{{ ParameterName }}` syntax for parameter references. CloudFormation `!Sub` also uses `${}`
   substitution. When an SSM document is deployed via CloudFormation, these two syntaxes conflict.
   Rules:
-  - **`remediation/ssm-runbook.yaml` and `remediation/ssm-runbook-org.yaml` are BOTH standalone
+  - **`responsive/ssm-runbook.yaml` and `responsive/ssm-runbook-org.yaml` are BOTH standalone
     documents** (deployed via `ssm:CreateDocument` at Tier 2, not via CFN). Use `{{ param }}`
     freely. Do NOT use `!Sub` or `${}` in these files.
   - **CFN-deployed SSM documents** (if ever embedded in `iac/cloudformation/*.cfn.yaml`):
@@ -512,7 +512,7 @@ SSM Automation document for manual/scheduled remediation.
   - **NEVER mix `!Sub` with `{{ param }}`** in the same string — CloudFormation will try to
     resolve `{{ }}` as a CFN reference and fail.
 
-### Step Functions Workflow (`remediation/stepfunctions-workflow.json`)
+### Step Functions Workflow (`responsive/stepfunctions-workflow.json`)
 Workflow: detect → notify → remediate → verify → close finding.
 
 **CRITICAL — ResultPath on SDK integration tasks:** Every Task state that calls an AWS SDK
@@ -571,9 +571,9 @@ Generate corresponding Lambda handlers for any custom rules.
 
 ---
 
-## Resource × Corrective
+## Resource × Responsive
 
-Extend `remediation/stepfunctions-workflow.json` with resource-level remediation steps.
+Extend `responsive/stepfunctions-workflow.json` with resource-level remediation steps.
 
 ---
 
@@ -643,14 +643,14 @@ Artifact validation runs automatically via PostToolUse hook (validate_controls.p
 ## Print Summary
 
 ```
-Generate (detective/corrective) complete:
+Generate (detective/responsive) complete:
   Org×Detective:    config-org-rules, conformance-pack, cloudtrail-org-config
-  Org×Corrective:   ssm-runbook-org
+  Org×Responsive:   ssm-runbook-org
   Acc×Detective:    config-rules ({N} managed, {N} custom), eventbridge-rules, cloudwatch-alarms [, access-analyzer]
-  Acc×Corrective:   lambda-remediator, ssm-runbook, stepfunctions-workflow
+  Acc×Responsive:   lambda-remediator, ssm-runbook, stepfunctions-workflow
   Res×Detective:    resource-level config rules
-  Res×Corrective:   resource-level remediation steps
+  Res×Responsive:   resource-level remediation steps
   Compensating:     compensating-controls-documentation ({N} gap documentations)
   Lambda handlers:  {N} custom rule handlers generated
-  Output: .service-approval/controls/detective/, .service-approval/controls/remediation/
+  Output: .service-approval/controls/detective/, .service-approval/controls/responsive/
 ```

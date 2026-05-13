@@ -1,0 +1,59 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Service Approval — Intake Template
+# ─────────────────────────────────────────────────────────────────────────────
+# Copy this file, fill it in for your service, and pass it to the pipeline:
+#
+#   service-approval --from-intake=intakes/my-service.yaml
+#
+# Only `service.name` is required. Everything else has sensible defaults.
+# IaC output formats are NOT configured here — they are auto-detected in
+# Phase 0 (Assess) based on actual provider support for your service.
+# ─────────────────────────────────────────────────────────────────────────────
+
+service:
+  # (required) AWS service identifier — lowercase, hyphenated
+  # Examples: s3, kms, lambda, bedrock-agentcore-control, ecs, dynamodb
+  name: ""
+
+input:
+  # Path to folder containing input files (.md, .json, .xlsx, .pdf, .docx)
+  # Set to null for MCP-only mode (pipeline researches everything from scratch)
+  folder: null
+
+  # What types of input are you providing?
+  threat_model: false       # Custom threat model in the input folder?
+  mitigation_report: false  # Existing mitigation report?
+
+  # Control framework to map against
+  # Options: ccmv4 | nist | cis | iso
+  # If a framework file is in the input folder, this is auto-detected
+  framework: "ccmv4"
+
+  # Explicit path to framework file (optional — auto-detected from folder if null)
+  framework_file: null
+
+testing:
+  # Deploy generated controls to a live AWS account for validation?
+  enabled: false
+
+  # AWS CLI profile name (required if testing.enabled is true)
+  aws_profile: null
+
+  # Target region for test deployment
+  region: "us-east-1"
+
+  # Dry run — lint only, no actual deployment
+  dry_run: false
+
+options:
+  # Include MITRE ATT&CK threat mapping (adds ~15 min)
+  include_attack_surface: true
+
+  # Generate ARTIFACT-FLOW-MATRIX.md (per-artifact dependency graph)
+  include_artifact_matrix: true
+
+  # Include unverified findings in generation (not recommended)
+  include_unverified: false
+
+  # Delete existing .service-approval/ state before run
+  clean: false

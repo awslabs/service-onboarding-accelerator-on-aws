@@ -69,91 +69,101 @@ aws sts get-caller-identity --profile {env}
 Display account ID and alias. Confirm with user before proceeding.
 If account alias contains: prod, prd, production, live → ask for explicit double confirmation.
 
-### Step 2: Deploy compliant resource
+### Step 2: Deploy + verify + teardown via smoke-deploy-test.sh
+
+DO NOT invoke `aws cloudformation deploy` directly — the script handles the full
+deploy/verify/teardown cycle AND substitutes `${ACCOUNT_ID}` placeholders in
+`smoke-test-params.json` (line 161 of the script). Invoking raw `aws deploy`
+bypasses the substitution and fails with "ARN in the specified key policy is invalid."
 
 ```bash
-STACK_NAME="service-approval-test-$(date +%s)"
-aws cloudformation deploy \
-  --template-file .service-approval/controls/iac/compliant-resource.cfn.yaml \
-  --stack-name "$STACK_NAME" \
-  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
-  --profile {env}
+AWS_PROFILE="{env}" bash scripts/smoke-deploy-test.sh --cloudformation
 ```
 
-Capture deployed resource ARNs from stack outputs:
+The script:
+1. Verifies AWS identity and refuses production-alias accounts.
+2. Resolves `${ACCOUNT_ID}` in `smoke-test-params.json` → a temp file.
+3. `aws cloudformation deploy` with `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM`.
+4. Verifies stack outputs inline (ExecutionRoleArn, FunctionArn, KmsKeyArn,
+   LogGroupArn — see script lines 218-222). No separate wait-and-poll step.
+5. `aws cloudformation delete-stack` + `wait stack-delete-complete`.
+
+Capture the stack name and outputs from the script's stdout for Step 4b.
+Exit code 0 = PASS, 1 = deploy failed, 2 = teardown failed (resources may remain).
+
+### Step 3: Detective-stack deploy (SKIP for now)
+
+Deploying the generated Config rules is handled by
+`python3 scripts/smoke-deploy-controls.py --tier 2` as a separate smoke-test
+step, not by this skill. The `/test` skill focuses on compliant-resource
+deployability + coverage verification. If you need end-to-end Config-rule
+evaluation, run `smoke-deploy-controls.py --tier 2` after Step 2 succeeds.
+
+### Step 4: Evaluate results
+
+Script exit code from Step 2:
+- 0 → deploy + teardown PASSED
+- 1 → deploy FAILED (check script stdout for `describe-stack-events` output)
+- 2 → teardown FAILED (resources may remain; follow cleanup instructions)
+
+### Step 4b: Coverage Verification
+
+**Single source of truth for "control has deployed artifact" is
+`scripts/smoke-check-traceability.py`.** That script already indexes every
+control ID by scanning BOTH filenames AND file contents (first 64KB of each
+`.json`, `.yaml`, `.py`, `.tf`, `.ts`, `.rego`, `.guard`, `.md`), which
+correctly handles multi-control artifacts like `opa-policies/function.rego`,
+`cloudwatch-alarms.json`, `scp-policy.json`, `iam-policies.json` where
+`_metadata.controls[]` lists several IDs in one file.
+
+Do NOT re-implement filename-only `_has_deployed_artifact(control_id)` in this
+skill. That heuristic produces false negatives when one artifact covers
+multiple controls — the symptom is a deflated "framework coverage %" in
+`test-results.json`.
+
+**Procedure:**
+
 ```bash
-aws cloudformation describe-stack-resources \
-  --stack-name "$STACK_NAME" \
-  --profile {env} \
-  --query 'StackResources[*].PhysicalResourceId' \
-  --output json
+# Run the traceability script; it prints control-to-file indexing stats
+# AND writes a machine-readable index JSON used below.
+python3 scripts/smoke-check-traceability.py > /tmp/traceability.txt
 ```
 
-### Step 3: Deploy detective controls
+Parse `scripts/smoke-check-traceability.py`'s output for:
+- `file_control_ids` — the set of control IDs found in ANY file (filename or content).
+- `missing_ids` — control IDs in mapping-results with NO deployed artifact.
 
-```bash
-aws cloudformation deploy \
-  --template-file .service-approval/controls/remediation/lambda-remediator/template.yaml \
-  --stack-name "${STACK_NAME}-detective" \
-  --capabilities CAPABILITY_IAM \
-  --profile {env}
-```
-
-### Step 4: Wait for Config evaluations to stabilize
-
-Wait 60 seconds for initial evaluations to complete. Then poll every 60 seconds up to `--timeout` minutes.
-
-```bash
-sleep 60
-aws configservice get-compliance-details-by-resource \
-  --resource-type "<cfn-resource-type>" \
-  --resource-id "<resource-id>" \
-  --profile {env} \
-  --query 'EvaluationResults[*].{RuleName:EvaluationResultIdentifier.EvaluationResultQualifier.ConfigRuleName,ComplianceType:ComplianceType}' \
-  --output json
-```
-
-Filter evaluations: only count those where the resource matches a deployed resource ARN.
-Record `filtered_ambient` count (evaluations on other resources, ignored).
-
-### Step 5: Evaluate results
-
-- `config_compliance.non_compliant_rules` is empty: PASS
-- All Config rules COMPLIANT: PASS
-- No CloudWatch alarms in ALARM state: PASS
-
-### Step 5b: Coverage Verification
-
-Read `.service-approval/state/mapping-results.json` and verify:
+Then compute the three coverage figures from `mapping-results.json`:
 
 **Mitigation coverage:**
 - For every entry in `threat_mitigation_map[]`:
-  - Verify at least one control from `controls[]` has a deployed artifact
-  - If `coverage == "NONE"`, flag as uncovered
-- Calculate `mitigation_coverage`: covered / total mitigations
+  - `has_artifact = any(cid in file_control_ids for cid in threat.control_ids)`
+  - If `coverage == "NONE"` OR no controls have artifacts, flag uncovered.
+- `mitigation_coverage = covered / total`.
 
 **Framework coverage:**
 - For every entry in `framework_mapping[]` where `status == "MAPPED"`:
-  - Verify at least one mapped control has a deployed artifact
-  - If no deployed artifact exists for any mapped control, flag the objective
-- Calculate `framework_coverage`: objectives with deployed artifacts / total mapped objectives
+  - `has_artifact = any(c.control_id in file_control_ids for c in objective.controls)`
+  - If no mapped control has an artifact, flag the objective.
+- `framework_coverage = objectives_with_artifacts / total_mapped`.
 
 **Assessment gap coverage (if mapping-results.json references assessment gaps):**
-- For controls linked to `assessment_gap_ids[]`, verify deployed artifacts exist
-- Flag any assessment gap without a deployed control artifact
+- For controls linked to `assessment_gap_ids[]`, verify presence in `file_control_ids`.
+- Flag any assessment gap without at least one deployed control artifact.
 
-### Step 6: Teardown (unless --keep)
+Rationale: `smoke-check-traceability.py` is the single authoritative indexer.
+Duplicating its logic here leads to silent coverage drift when one skill
+evolves and the other doesn't.
 
-```bash
-aws cloudformation delete-stack --stack-name "${STACK_NAME}-detective" --profile {env}
-aws cloudformation delete-stack --stack-name "$STACK_NAME" --profile {env}
-# Wait for deletion
-aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --profile {env}
-```
+### Step 5: Teardown (covered by Step 2)
 
-If teardown fails, record failed resource ARNs in `test-results.json` under `teardown_failed`.
+`smoke-deploy-test.sh` performs `aws cloudformation delete-stack` +
+`wait stack-delete-complete` as part of its normal run. No separate teardown
+step is required. If the script exited with code 2, teardown failed — record
+the stack name (captured from Step 2 stdout) in `test-results.json` under
+`teardown_failed` so operators can finish cleanup manually.
 
-### Step 7: Write test-results.json
+### Step 6: Write test-results.json
 
 Write `.service-approval/state/test-results.json`:
 ```json

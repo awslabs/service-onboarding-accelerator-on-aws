@@ -90,7 +90,7 @@
         "category": {
           "type": "string",
           "enum": ["PRO", "PRV", "DET", "COR"],
-          "description": "PRO=proactive (pre-deploy), PRV=preventive (request-time), DET=detective (post-deploy), COR=corrective (remediation)."
+          "description": "PRO=proactive (pre-deploy), PRV=preventive (request-time), DET=detective (post-deploy), COR=responsive (remediation)."
         },
         "posture": {
           "type": "string",

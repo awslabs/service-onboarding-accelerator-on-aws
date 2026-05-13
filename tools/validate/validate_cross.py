@@ -333,7 +333,6 @@ def check_condition_key_consistency(controls_dir: str, validated: dict) -> list[
 
         _extract_keys(data)
 
-    service = validated.get("service", "")
     for key, files in all_keys_used.items():
         # Skip global AWS keys
         if any(key.startswith(p) for p in global_prefixes):

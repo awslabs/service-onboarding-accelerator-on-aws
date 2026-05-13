@@ -1,7 +1,7 @@
 # Service Approval — Agents Guide
 
-This repo generates AWS security controls for any AWS service via a 7-phase pipeline
-(Assess, Research, Validate, Map, Generate, Test, Summarize). It runs on any
+This repo generates AWS security controls for any AWS service via an 8-phase pipeline
+(Intake, Assess, Research, Validate, Map, Generate, Test, Summarize). It runs on any
 [Agent Skills](https://agentskills.io)-compatible client: Claude Code, Gemini CLI,
 GitHub Copilot, Kiro, Cursor, Codex, and others.
 
@@ -44,7 +44,7 @@ Phase 0 Assess      → sar-facts.json, checkpoint-results.json
 Phase 1 Research    → research.json (4 parallel sub-skills merged)
 Phase 2 Validate    → validated.json
 Phase 3 Map         → mapping-results.json + framework-mapping.md
-Phase 4 Generate    → controls/ (proactive, preventive, detective, corrective, IaC)
+Phase 4 Generate    → controls/ (proactive, preventive, detective, responsive, IaC)
 Phase 5 Test        → test-results.json (optional, needs AWS profile)
 Phase 6 Summarize   → APPROVAL-REPORT.md
 ```

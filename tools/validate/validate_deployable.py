@@ -419,7 +419,7 @@ def check_t1_cfnlint(controls_dir: str, venv_bin: str) -> list[str]:
                 templates.append(os.path.join(cfn_dir, f))
 
     sam_template = os.path.join(
-        controls_dir, "remediation", "lambda-remediator", "template.yaml"
+        controls_dir, "responsive", "lambda-remediator", "template.yaml"
     )
     if os.path.isfile(sam_template):
         templates.append(sam_template)
@@ -573,7 +573,7 @@ def check_t2_cfn_validate(controls_dir: str, profile: Optional[str]) -> list[str
                 templates.append(os.path.join(cfn_dir, f))
 
     sam_template = os.path.join(
-        controls_dir, "remediation", "lambda-remediator", "template.yaml"
+        controls_dir, "responsive", "lambda-remediator", "template.yaml"
     )
     if os.path.isfile(sam_template):
         templates.append(sam_template)

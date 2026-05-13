@@ -1,22 +1,53 @@
 ---
 name: research-attack-surface
-description: Identify applicable MITRE ATT&CK Cloud techniques for the target service based on API surface analysis and customer STRIDE-based threat model. Produces research-attack-surface.json consumed by the research merge step.
+description: Identify applicable threat techniques for the target service based on API surface analysis and customer threat model input (MITRE ATT&CK, STRIDE, or custom). Produces research-attack-surface.json consumed by the research merge step.
 disable-model-invocation: false
 argument-hint: '[--service=<name>]'
 ---
 
-# Service Approval — Research: ATT&CK Attack Surface
+# Service Approval — Research: Threat Attack Surface
 
-Identify which MITRE ATT&CK Cloud techniques are applicable to the target AWS service.
-Uses the service's API surface, capabilities, and (when available) customer STRIDE-based
-threat model to produce a prioritized list of attack techniques.
+Identify which threat techniques are applicable to the target AWS service. Supports
+multiple threat model formats:
 
-**Input:** SAR facts, customer threat model (optional), reference data
+- **MITRE ATT&CK** (xlsx, json) — maps to ATT&CK Cloud techniques and tactics
+- **STRIDE** (md, docx) — maps customer STRIDE categories to techniques
+- **Custom threat catalogs** (xlsx, json, md) — any structured threat list with IDs and categories
+
+Uses the service's API surface, capabilities, and customer-provided threat model to
+produce a prioritized list of applicable threat techniques.
+
+**Input:** SAR facts, customer threat model (from input folder), reference data
 **Output:** `.service-approval/state/research-attack-surface.json`
 
 This is one of 4 focused research sub-skills. Each writes to a separate intermediate
 state file. This sub-skill is **optional** — the pipeline works without it, but when
 present it enriches controls with threat-based traceability.
+
+---
+
+## Threat Model Detection
+
+Scan the input folder for threat model files. Detection rules:
+
+| File Pattern | Threat Model Type | Processing |
+|---|---|---|
+| `*MITRE*`, `*ATT&CK*`, `*attack*` (xlsx/json) | MITRE ATT&CK | Parse enterprise/cloud matrix techniques |
+| `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
+| `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
+| Mitigation report with STRIDE keywords | STRIDE (implicit) | Extract from mitigation context |
+
+If multiple threat model files are found, merge them — MITRE ATT&CK provides technique IDs,
+STRIDE provides category alignment, custom catalogs provide organization-specific threats.
+
+Record the detected threat model in the output:
+```json
+{
+  "attack_matrix_version": "<version from file or 'custom'>",
+  "attack_matrix_source": "<filename>",
+  "threat_model_type": "<mitre_attack|stride|custom|hybrid>"
+}
+```
 
 ---
 
@@ -26,11 +57,11 @@ present it enriches controls with threat-based traceability.
 mkdir -p .service-approval/state
 ```
 
-Load reference data:
+Load reference data (used for MITRE ATT&CK mapping — skip if custom-only):
 ```bash
-test -f data/attack-cloud-matrix.json && echo "attack-matrix: OK" || echo "ERROR"
-test -f data/stride-to-attack-bridge.json && echo "stride-bridge: OK" || echo "ERROR"
-test -f data/attack-nist-ccm-crosswalk.json && echo "crosswalk: OK" || echo "ERROR"
+test -f data/attack-cloud-matrix.json && echo "attack-matrix: OK" || echo "WARN: no ATT&CK reference (custom mode)"
+test -f data/stride-to-attack-bridge.json && echo "stride-bridge: OK" || echo "WARN: no STRIDE bridge"
+test -f data/attack-nist-ccm-crosswalk.json && echo "crosswalk: OK" || echo "WARN: no crosswalk"
 ```
 
 If SAR facts exist from Phase 0, load them:
@@ -40,9 +71,9 @@ test -f .service-approval/state/sar-facts.json && echo "sar-facts: OK" || echo "
 
 ---
 
-## Step 1: Parse Customer STRIDE Threat Model (if provided)
+## Step 1: Parse Customer Threat Model (if provided)
 
-Scan input files for STRIDE threat model content. Look for:
+Scan input files for threat model content. Look for:
 - Files with "threat" in the filename
 - Files containing STRIDE categories (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)
 - Mitigation reports that reference threat categories

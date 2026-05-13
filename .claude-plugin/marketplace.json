@@ -1,7 +1,7 @@
 {
   "name": "service-approval",
   "metadata": {
-    "description": "AWS service security controls generator — proactive, preventive, detective, remediation",
+    "description": "AWS service security controls generator — proactive, preventive, detective, responsive",
     "version": "1.0.0"
   },
   "owner": {

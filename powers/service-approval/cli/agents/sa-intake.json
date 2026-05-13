@@ -1,0 +1,31 @@
+{
+  "name": "sa-intake",
+  "description": "Precursor intake phase: collect service name, input type, framework, and testing preferences; produce intake-manifest.json for downstream phases",
+  "prompt": "Follow the instructions in `skills/intake/SKILL.md`.\n\nRead the skill file, execute all steps, and write outputs to:\n- `.service-approval/state/intake-manifest.json`\n\nThe intake manifest is consumed by every downstream phase \u2014 Phase 0 (Assess)\nreads `service` and `inputs.input_folder`; Phase 1 (Research) reads\n`output.include_attack_surface`; Phase 3 (Map) reads `inputs.framework_type`\nand `inputs.framework_file`; Phase 5 (Test) reads `testing.*`; Phase 6\n(Summarize) reads the full manifest for report metadata.\n\nIaC format selection is NOT part of intake \u2014 it is discovered in Phase 0\n(Assess) Step 2b and recorded in `state/iac-support.json`.",
+  "mcpServers": [],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 # Service Approval Plugin
 
-Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a 7-phase pipeline (Assess → Research → Validate → Map → Generate → Test → Summarize) and maps everything to your control framework (CCMv4, NIST 800-53, CIS, ISO 27001).
+Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates an 8-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize) and maps everything to your control framework (CCMv4, NIST 800-53, CIS, ISO 27001).
 
 ## What it produces
 
@@ -39,7 +39,7 @@ Phase 3: Map (4 sub-skills)
   3d: map-assemble           → mapping-results.json, controls-catalog.md, framework-mapping.md
 Phase 4: Generate (3 parallel sub-skills)
   4a: generate-preventive    → controls/preventive/, controls/proactive/
-  4b: generate-detective     → controls/detective/, controls/remediation/
+  4b: generate-detective     → controls/detective/, controls/responsive/
   4c: generate-iac           → controls/iac/ (4 formats + TF modules)
 Phase 5: Test                → test-results.json (dry-run or full deployment)
 Phase 6: Summarize           → APPROVAL-REPORT.md, ARTIFACT-FLOW-MATRIX.md
@@ -53,7 +53,7 @@ The pipeline runs as 19 discrete skills under [`skills/`](skills/). Each one is 
 | Skill | Description |
 |-------|-------------|
 | [`assess`](skills/assess/SKILL.md) | Run a 5-domain CAF security posture assessment for an AWS service. Produces (1) assessment-summary.md — CAF-structured findings with GAPS tables, (2) sar-facts.json — extracted SAR data, (3) checkpoint-results.json — factual checkpoint verification. These feed into the research, validate, and generate phases. |
-| [`generate-detective`](skills/generate-detective/SKILL.md) | Generate detective and corrective security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json. |
+| [`generate-detective`](skills/generate-detective/SKILL.md) | Generate detective and responsive security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json. |
 | [`generate-iac`](skills/generate-iac/SKILL.md) | Generate compliant IaC templates in all 4 formats — modular Terraform, CDK TypeScript, CloudFormation YAML, and CDK for Terraform. Uses parameter coverage matrix from mapping-results.json and API surface from validated.json. |
 | [`generate-preventive`](skills/generate-preventive/SKILL.md) | Generate preventive and proactive security control artifacts — SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA policies, and CloudFormation Guard rules. Reads from mapping-results.json and validated.json. |
 | [`generate`](skills/generate/SKILL.md) | Generate all security control artifacts and compliant IaC templates from mapping-results.json and validated.json. Split into 3 focused sub-skills for better accuracy; this skill orchestrates them. |
@@ -67,7 +67,7 @@ The pipeline runs as 19 discrete skills under [`skills/`](skills/). Each one is 
 | [`research-capabilities`](skills/research-capabilities/SKILL.md) | Discover AWS service security capabilities (IAM, encryption, network, logging, org-policies) using MCP servers and assessment artifacts. Produces research-capabilities.json consumed by the research merge step. |
 | [`research-mitigations`](skills/research-mitigations/SKILL.md) | Parse input files to extract existing mitigations, build initial asset inventory, and collect assessment gaps. Produces research-mitigations.json consumed by the research merge step. |
 | [`research`](skills/research/SKILL.md) | AWS service capability discovery producing research.json with structured capabilities, API surface, and existing mitigations. Uses MCP servers for AWS documentation, service authorization, and best practices. Downstream skills (Validate, Map) consume this output. Split into 3 focused sub-skills for better accuracy; this skill orchestrates and merges. |
-| [`service-approval`](skills/service-approval/SKILL.md) | Orchestrate all 7 service-approval agents (Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service |
+| [`service-approval`](skills/service-approval/SKILL.md) | Orchestrate all 8 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service |
 | [`summarize`](skills/summarize/SKILL.md) | Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, test evidence, and verdic |
 | [`test`](skills/test/SKILL.md) | Deploy compliant resource template and validate zero Config rule findings. Requires AWS credentials. |
 | [`validate`](skills/validate/SKILL.md) | Verify research.json v3.0 findings via MCP — confirm capabilities, API parameters, condition keys, SCP/RCP expressibility, and mitigation feasibility. Produce validated.json. |
@@ -107,7 +107,7 @@ applicability). The ranges below reflect observed output across validated servic
 | Preventive | 9-12 | SCPs (split), resource policies, KMS key policy, permission boundary, VPC endpoint, RCP, tag policies |
 | Proactive | 12-15 | CFN Guard rules, OPA policies (per resource type), Checkov config + custom policies, CFN hooks |
 | Detective | 34-47 | Config rules + Lambda handlers (+ requirements.txt), EventBridge, CloudWatch, Access Analyzer, compensating controls |
-| Corrective | 6 | Lambda remediator + SAM template + deps, SSM runbooks (org + account), Step Functions workflow |
+| Responsive | 6 | Lambda remediator + SAM template + deps, SSM runbooks (org + account), Step Functions workflow |
 | IaC | 17-31 | CDK TypeScript, CloudFormation YAML, CDKTF, modular Terraform (per-resource modules + shared + root) |
 
 A detailed per-artifact input/output matrix with dependency tracking is generated in
@@ -253,14 +253,11 @@ python3 tools/validate/validate_deployable.py --profile delegated-admin .service
 │   ├── ide/hooks/*.kiro.hook      ← generated: Kiro IDE hook format
 │   └── cli/agents/sa-*.json       ← generated: Kiro CLI 2.0 format with embedded hooks
 │
-├── gemini-extension/              ← Gemini CLI extension
-│   ├── gemini-extension.json      ← manifest (generated)
-│   ├── GEMINI.md                  ← context file
-│   ├── commands/*.toml            ← slash commands
-│   └── hooks/hooks.json           ← AfterAgent → tools/validate/hook_stop.py
-│
-└── service-approval-plugin/
-    └── cloudparty/                ← separate product — Cloud Party facilitator runbook
+└── gemini-extension/              ← Gemini CLI extension
+    ├── gemini-extension.json      ← manifest (generated)
+    ├── GEMINI.md                  ← context file
+    ├── commands/*.toml            ← slash commands
+    └── hooks/hooks.json           ← AfterAgent → tools/validate/hook_stop.py
 ```
 
 **Update propagation:** every client config is regenerated by `tools/sync-ide-configs.py` from `manifest.yaml`. Edit the manifest, run `./install.sh --sync`, and all 4 client manifests + 4 MCP configs update in lockstep. CI blocks drift via `.gitlab-ci.yml`.

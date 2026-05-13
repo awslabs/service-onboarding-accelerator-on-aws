@@ -1,7 +1,7 @@
 ---
 name: service-approval
 displayName: AWS Service Security Controls Generator
-description: Generate AWS security controls and compliant IaC for any AWS service. Runs a 7-phase pipeline (Assess, Research, Validate, Map, Generate, Test, Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
+description: Generate AWS security controls and compliant IaC for any AWS service. Runs an 8-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
 keywords:
 - aws
 - security
@@ -25,7 +25,7 @@ keywords:
 - preventive-controls
 - detective-controls
 - proactive-controls
-- corrective-controls
+- responsive-controls
 author: GFS PACE
 version: 1.0.0
 ---
@@ -34,10 +34,10 @@ version: 1.0.0
 
 ## Overview
 
-This Power drives a 7-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to a control framework (CCMv4, NIST 800-53, CIS, ISO), and produces a full set of deployable artifacts.
+This Power drives an 8-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to a control framework (CCMv4, NIST 800-53, CIS, ISO), and produces a full set of deployable artifacts.
 
 **Key capabilities:**
-- **7-phase pipeline** — Assess → Research → Validate → Map → Generate → Test → Summarize, with 19 sub-skills
+- **8-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize, with 20 sub-skills
 - **Parallel execution** — 4 research sub-skills, 3 generate sub-skills run concurrently via Kiro's `/spawn` command
 - **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge`, `aws-documentation`, and `awsiac` MCPs. Hardcoded values from training data are banned.
 - **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks, CDK/CDKTF/Terraform/CloudFormation templates
@@ -59,7 +59,7 @@ Triggered by keyword match. Say any of:
 - "run service approval for <service-name>"
 - "generate AWS security controls for <service-name>"
 - "service approval ./input --service=<name>"
-- "run the 7-phase pipeline on <service-name>"
+- "run the 8-phase pipeline on <service-name>"
 
 Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"*.
 
@@ -77,11 +77,12 @@ Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"
 ## Pipeline
 
 ```
-Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json
+Phase Intake         → state/intake-manifest.json (service name, input type, testing prefs)
+Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json, state/iac-support.json
 Phase 1 Research     → state/research.json (4 parallel sub-skills merged)
 Phase 2 Validate     → state/validated.json
 Phase 3 Map          → state/mapping-results.json + framework-mapping.md
-Phase 4 Generate     → controls/ (preventive, proactive, detective, corrective, iac)
+Phase 4 Generate     → controls/ (preventive, proactive, detective, responsive, iac)
 Phase 5 Test         → state/test-results.json (needs --env)
 Phase 6 Summarize    → APPROVAL-REPORT.md
 ```

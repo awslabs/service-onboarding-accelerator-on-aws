@@ -156,8 +156,8 @@ directly:
 - **Reactive-detective** → AWS Config Rules with Lambda handlers
   (`detective/config-rule-lambdas/**/handler.py`). These evaluate deployed
   resources via the Config configuration item.
-- **Reactive-corrective** → SSM Automation runbooks (`remediation/ssm-runbook.yaml`)
-  or Step Functions workflows (`remediation/stepfunctions-workflow.json`) invoked
+- **Reactive-corrective** → SSM Automation runbooks (`responsive/ssm-runbook.yaml`)
+  or Step Functions workflows (`responsive/stepfunctions-workflow.json`) invoked
   by EventBridge on the relevant AWS API events.
 
 The `map-generate-controls` Rule C1 feasibility filter already routes around
@@ -241,7 +241,7 @@ If false, write `_metadata.scp_gap` note and skip.
   operations MUST also deny `UntagResource` for those tag keys using `aws:TagKeys` condition.
   Without this, mandatory tags can be removed after resource creation. Add a separate Deny
   statement: `"Action": "<prefix>:UntagResource"` with
-  `"Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": ["Owner", "Purpose"]}}`.
+  `"Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": ["Owner", "CostCenter", "Environment", "DataClassification"]}}`.
 - Use `"NotAction"` only for region-restriction controls
 - Use `"Principal": "*"` only in resource-based policies, NOT in SCPs
 - Track the **minified policy body size** (Version + Statement, excluding
@@ -386,6 +386,41 @@ Both must be fixed together — trace to the source of the discrepancy.
 - **Valid Guard 2.x syntax only**: Do NOT use `%size()` function — it is not standard CFN Guard
   2.x syntax. For collection size checks, use `some` clauses, `[N] EXISTS` checks, or iterate
   with `when` blocks. Example: check subnet count ≥ 2 with `Properties.Subnets[1] EXISTS`.
+- **Unique `let` variable names per resource type**: Each `let foo = Resources.*[ Type == ... ]`
+  block MUST use a UNIQUE variable name across the whole .guard file. cfn-guard
+  does NOT overwrite a previously declared `let` — redeclaring the same name
+  parses but produces unpredictable rule dispatch across resource types. For a
+  service with N CFN resource types, emit N uniquely-named variables:
+
+  ```
+  let {service}_{type_slug_1}_resources = Resources.*[ Type == 'AWS::{Service}::{Type1}' ]
+  let {service}_{type_slug_2}_resources = Resources.*[ Type == 'AWS::{Service}::{Type2}' ]
+  ...
+  let {service}_{type_slug_N}_resources = Resources.*[ Type == 'AWS::{Service}::{TypeN}' ]
+  ```
+
+  Placeholders:
+  - `{service}` — `sar-facts.json.cfn_prefix`, lowercased. Never hardcode.
+  - `{Service}` — the CFN namespace (PascalCase, e.g. `Lambda`, `S3`, `BedrockAgentCore`).
+  - `{TypeN}` — each CFN resource-type suffix the target service exposes,
+    as listed in its CFN Template Reference page. Enumerate ALL exposed
+    types; do not curate.
+  - `{type_slug_N}` — the CFN type suffix, lowercased with non-alphanum
+    replaced by `_`.
+
+  The count and names of resource types come entirely from the target
+  service's CFN model — this SKILL must never assume a fixed set. For a
+  service with 1 CFN type, emit 1 variable; for 10, emit 10.
+- **Rule bodies MUST contain at least one enforceable clause** — not just
+  a placeholder comment like `# Check parameters: ...`. cfn-guard rejects
+  comment-only rule bodies inside a `when ... { <resource_ref> { ... } }` block
+  with a parse error (`Parser Error ... fragment %<var> !empty { ... }`). If a
+  control's security intent cannot be expressed as a concrete property-level
+  check (common for tag-array membership and complex conditional logic), DO
+  NOT emit an empty-body Guard rule. Route the control to OPA/Rego (which can
+  express richer set-membership logic) or to CFN Hooks (which run arbitrary
+  lambda code) instead. Leaving a placeholder comment produces a broken .guard
+  file that fails `cfn-guard parse-tree` at smoke-test time.
 - **Block-level resource filtering — use `Resources.*[ Type == "X" ]`, NEVER `Resources[this] when this.Type`**:
   To iterate all Resources of a given type, use the block-level filter
   `Resources.*[ Type == "AWS::X::Y" ] { ... }`. The token `[this]` paired with

@@ -13,13 +13,13 @@ and compliant resource templates for a specified AWS service.
 Read the skill file at `skills/service-approval/SKILL.md` and follow
 it step by step. That file is the authoritative source for the pipeline — do not skip steps.
 
-## Pipeline (7 phases, 19 sub-skills)
+## Pipeline (8 phases, 19 sub-skills)
 
 - **Phase 0 — Assess:** 5-domain CAF security assessment
 - **Phase 1 — Research:** mitigations, capabilities, API surface, optional MITRE ATT&CK
 - **Phase 2 — Validate:** cross-reference all research claims via MCP
 - **Phase 3 — Map:** parse framework, generate controls, map to objectives, assemble
-- **Phase 4 — Generate:** preventive, proactive, detective, remediation, IaC (4 formats)
+- **Phase 4 — Generate:** preventive, proactive, detective, responsive, IaC (4 formats)
 - **Phase 5 — Test:** optional, needs `--env` and AWS creds
 - **Phase 6 — Summarize:** APPROVAL-REPORT.md
 
