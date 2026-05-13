@@ -56,7 +56,7 @@ Each agent in `agents/sa-*.json` declares:
 │   ├── preventive/                 (SCPs, RCPs, resource policies)
 │   ├── proactive/                  (CFN Guard, OPA, Checkov, CFN Hooks)
 │   ├── detective/                  (Config rules + Lambda handlers, EventBridge)
-│   ├── corrective/                 (Lambda remediators, SSM runbooks)
+│   ├── responsive/                 (Lambda remediators, SSM runbooks)
 │   └── iac/                        (CDK, CloudFormation, CDKTF, modular Terraform)
 ├── APPROVAL-REPORT.md
 └── ARTIFACT-FLOW-MATRIX.md

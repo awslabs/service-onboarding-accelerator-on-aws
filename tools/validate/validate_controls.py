@@ -366,9 +366,6 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
     if not service_keys:
         return errors
 
-    # Also include the service prefix for tag keys
-    service = validated.get("service", "")
-
     # KMS key policies may reference KMS service-owned condition keys
     # (kms:ViaService, kms:EncryptionContext:*, kms:GrantOperations, etc.) regardless
     # of which downstream service the CMK encrypts for. These keys are evaluated by
@@ -943,8 +940,8 @@ def check_sar_condition_keys_14a(
 # ================================================================
 #
 # For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-# remediation/ssm-runbook*, remediation/stepfunctions-workflow.json,
-# remediation/lambda-remediator/**, iac/**), any enum-style literal list must reference
+# responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
+# responsive/lambda-remediator/**, iac/**), any enum-style literal list must reference
 # values from validated.json.api_surface.operations[].parameters[].enum.
 #
 # Patterns detected (a reasonable subset — language-agnostic literal scan):
@@ -962,9 +959,9 @@ _STRING_LITERAL_PATTERN = re.compile(r"[\"']([A-Z][A-Z0-9_]{1,63})[\"']")
 _API_DRIVEN_PATH_FRAGMENTS = (
     "/proactive/",
     "/detective/config-rule-lambdas/",
-    "/remediation/ssm-runbook",
-    "/remediation/stepfunctions-workflow",
-    "/remediation/lambda-remediator/",
+    "/responsive/ssm-runbook",
+    "/responsive/stepfunctions-workflow",
+    "/responsive/lambda-remediator/",
     "/iac/",
 )
 _API_DRIVEN_BASENAME_PREFIXES = (
@@ -1011,8 +1008,8 @@ def check_api_driven_enum_literals_14b(
     """CHECK-14b — Enum-style literal lists must reference parameters[].enum values.
 
     Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-    remediation/ssm-runbook*, remediation/stepfunctions-workflow.json,
-    remediation/lambda-remediator/**, iac/**).
+    responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
+    responsive/lambda-remediator/**, iac/**).
     Each SCREAMING_SNAKE literal in an `in [...]` / `AllowedValues: [...]` / similar
     enum-style list must appear in validated.json.api_surface.operations[].parameters[].enum.
     """
@@ -1061,7 +1058,7 @@ def check_api_driven_enum_literals_14b(
 #   preventative-proactive → proactive/** or iac/**
 #   reactive-detective     → detective/config-rule-lambdas/** or detective/config-rules.json
 #                             or detective/access-analyzer.json
-#   reactive-corrective    → remediation/**
+#   reactive-corrective    → responsive/**
 #
 # Artifacts without _metadata.posture are not subject to this check (opt-in during
 # Phase C rollout).
@@ -1095,7 +1092,7 @@ def _file_is_in_posture_family(file_path: str, posture: str) -> bool:
             return True
         return False
     if posture == "reactive-corrective":
-        return "/remediation/" in norm
+        return "/responsive/" in norm
     return False
 
 
@@ -1125,7 +1122,7 @@ def check_posture_mechanism_consistency_15(
             f"detective/compensating-controls-documentation.json; "
             f"reactive-detective→detective/config-rule-lambdas/** or one of "
             f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
-            f"reactive-corrective→remediation/**."
+            f"reactive-corrective→responsive/**."
         )
     return errors
 
@@ -1199,12 +1196,12 @@ def _categorize_file(file_path: str) -> str:
         if "config-rules" in os.path.basename(norm).lower():
             return "config_rules"
         return "detective"
-    if "/controls/remediation/" in norm:
+    if "/controls/responsive/" in norm:
         if "stepfunctions" in os.path.basename(norm).lower():
             return "stepfunctions"
         if "ssm-runbook" in os.path.basename(norm).lower():
             return "ssm_runbook"
-        return "remediation"
+        return "responsive"
     if "/controls/proactive/" in norm:
         return "proactive"
     if "/controls/iac/" in norm:
@@ -1245,7 +1242,7 @@ def validate_file(file_path: str) -> list[str]:
     category = _categorize_file(file_path)
 
     # Check 5: StringEquals wildcards (any IAM policy file)
-    if data and category in ("preventive", "detective", "remediation"):
+    if data and category in ("preventive", "detective", "responsive"):
         errors.extend(check_string_equals_wildcards(file_path, data))
 
     # Check 9: Control ID consistency (any file with _metadata)
@@ -1266,7 +1263,7 @@ def validate_file(file_path: str) -> list[str]:
 
     # Check 13: Full-body CTRL-* references against mapping-results.json
     # (complements check 11 which only scans the first 30 lines for # CONTROLS: headers)
-    if mapping and category in ("preventive", "detective", "remediation", "proactive", "iac"):
+    if mapping and category in ("preventive", "detective", "responsive", "proactive", "iac"):
         errors.extend(check_body_control_id_references(file_path, mapping))
 
     # Check 12: SCP size limit (5120 bytes minified, excluding _metadata)
@@ -1338,8 +1335,8 @@ def validate_file(file_path: str) -> list[str]:
             pass
 
     # Check 14b: API-driven — enum literals must match parameters[].enum.
-    # Applies to proactive/**, detective/config-rule-lambdas/**, remediation/ssm-runbook*,
-    # remediation/stepfunctions-workflow.json, remediation/lambda-remediator/**, iac/**.
+    # Applies to proactive/**, detective/config-rule-lambdas/**, responsive/ssm-runbook*,
+    # responsive/stepfunctions-workflow.json, responsive/lambda-remediator/**, iac/**.
     if validated and _is_api_driven_artifact(file_path):
         errors.extend(check_api_driven_enum_literals_14b(file_path, validated))
 

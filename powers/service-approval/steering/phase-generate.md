@@ -15,7 +15,7 @@ Use `/spawn` to run all three concurrently. Each writes to a disjoint subtree of
 
 ```
 /spawn sa-generate-preventive    → controls/preventive/, controls/proactive/
-/spawn sa-generate-detective     → controls/detective/, controls/remediation/
+/spawn sa-generate-detective     → controls/detective/, controls/responsive/
 /spawn sa-generate-iac           → controls/iac/{cdk,cloudformation,cdktf,terraform}/
 ```
 
@@ -60,7 +60,7 @@ Exact counts vary by service surface area. Observed ranges:
 | Preventive | 9–12 | SCPs (split at 5120 bytes), resource policies, KMS key policy, permission boundary |
 | Proactive | 12–15 | CFN Guard, OPA, Checkov, CFN Hooks |
 | Detective | 34–47 | Config rules + Lambda handlers (+requirements.txt each), EventBridge rules |
-| Corrective | 6 | Lambda remediator + SAM template + deps, SSM runbooks |
+| Responsive | 6 | Lambda remediator + SAM template + deps, SSM runbooks |
 | IaC | 17–31 | 4 formats + Terraform modules (per-resource modules + shared + root) |
 
 ## PostToolUse hook behavior

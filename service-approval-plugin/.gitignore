@@ -1,7 +1,0 @@
-.service-approval/state/
-.service-approval/controls/
-.service-approval/APPROVAL-REPORT.md
-.service-approval-test-inputs/
-node_modules/
-.DS_Store
-input/

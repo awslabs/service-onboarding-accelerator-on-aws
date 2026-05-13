@@ -247,7 +247,7 @@ Assign each control a primary **category** (X-axis) and a **scope level** (Y-axi
 | Proactive | PRO | Prevents non-compliant resources from being created | CFN Guard, SCP deny, Config proactive rules, OPA |
 | Preventive | PRV | Blocks unauthorized actions at runtime | IAM policies, resource policies, SCPs, VPC SGs, KMS key policies |
 | Detective | DET | Identifies non-compliant or suspicious state after the fact | Config rules, CloudTrail analysis, CloudWatch alarms |
-| Corrective | COR | Automatically remediates non-compliant state | SSM runbooks, Lambda remediation, EventBridge workflows |
+| Corrective | COR | Automatically remediates non-compliant state (Responsive controls) | SSM runbooks, Lambda remediation, EventBridge workflows |
 
 **Scope Levels (Y-axis):**
 
@@ -354,16 +354,16 @@ Every control MUST include these fields:
 - `framework_keywords`: 4-8 keywords for framework objective matching. Include BOTH domain keywords
   (encryption, access, network) AND mechanism keywords (deny, monitor, audit, enforce, restrict).
 
-### 2.5 Corrective control generation
+### 2.5 Responsive control generation
 
-For every detective control, evaluate whether a corrective control is appropriate. Generate
-corrective controls for at minimum:
+For every detective control, evaluate whether a responsive control is appropriate. Generate
+responsive controls for at minimum:
 - **Encryption drift**: auto-remediate resources created without CMK encryption
 - **Authentication drift**: alert + optional auto-remediate gateways with AuthorizerType=NONE
 - **Tag compliance**: auto-tag resources missing mandatory tags
 - **VPC configuration drift**: alert on resources created without VPC networking
 
-Link each corrective control to the same mitigation IDs as its corresponding detective control.
+Link each responsive control to the same mitigation IDs as its corresponding detective control.
 Use mechanism types: `SSM Automation`, `Lambda Remediation`, `EventBridge + Step Functions`.
 
 ### 2.6 Assessment gap coverage

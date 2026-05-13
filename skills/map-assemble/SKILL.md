@@ -70,78 +70,61 @@ for ctrl in cg['controls']:
 
 ## Phase 2: Build Threat-Mitigation-Control Map
 
-For each mitigation in `validated.json`, build full traceability:
+**Canonical implementation:** `scripts/map-assemble.py` →
+`build_threat_mitigation_map(mitigations, controls)`. Call the script
+rather than reimplementing the logic inline — prior inline pseudocode in
+this SKILL drifted from the script (emitted `controls` instead of
+`control_ids`, omitted the `layers` sub-object) and caused a downstream
+schema mismatch in the `/test` skill's coverage step.
 
-```python
-vj = json.load(open('.service-approval/state/validated.json'))
-controls = cg['controls']
+### Emitted shape (one entry per mitigation)
 
-# Index controls by mitigation_id
-mit_to_ctrls = {}
-for ctrl in controls:
-    for mid in ctrl.get('mitigation_ids', []):
-        mit_to_ctrls.setdefault(mid, []).append(ctrl['id'])
-
-threat_mitigation_map = []
-for mit in vj.get('existing_mitigations', []):
-    mid = mit['id']
-    ctrl_ids = mit_to_ctrls.get(mid, [])
-
-    # Derive framework objectives from mapped controls
-    fw_objs = set()
-    for cid in ctrl_ids:
-        fw_objs.update(ctrl_to_objs.get(cid, []))
-
-    # Determine coverage and residual gaps
-    has_preventive = False
-    has_detective = False
-    params = set(mit.get('request_parameters', []))
-    controlled_params = set()
-
-    if not ctrl_ids:
-        coverage = "NONE"
-    else:
-        # Check if both preventive AND detective layers exist
-        categories = set()
-        for ctrl in controls:
-            if ctrl['id'] in ctrl_ids:
-                categories.add(ctrl['category'])
-        has_preventive = 'PRV' in categories or 'PRO' in categories
-        has_detective = 'DET' in categories or 'COR' in categories
-        # Check parameter coverage
-        for ctrl in controls:
-            if ctrl['id'] in ctrl_ids:
-                controlled_params.update(ctrl.get('parameters_controlled', []))
-        params_covered = params.issubset(controlled_params) if params else True
-        if has_preventive and has_detective and params_covered:
-            coverage = "FULL"
-        else:
-            coverage = "PARTIAL"
-
-    # Identify residual gaps
-    residual_gaps = []
-    if coverage == "NONE":
-        residual_gaps.append("No controls address this mitigation")
-    else:
-        if not has_preventive:
-            residual_gaps.append("No preventive layer — only detective controls")
-        if not has_detective:
-            residual_gaps.append("No detective layer — only preventive controls")
-        uncovered_params = params - controlled_params if params else set()
-        if uncovered_params:
-            residual_gaps.append(f"Parameters not controlled: {sorted(uncovered_params)}")
-
-    threat_mitigation_map.append({
-        "mitigation_id": mid,
-        "statement": mit.get('statement', ''),
-        "mitigation_goal": mit.get('mitigation_goal', ''),
-        "resource_type": mit.get('resource_type', ''),
-        "controls": sorted(ctrl_ids),
-        "framework_objectives": sorted(fw_objs),
-        "coverage": coverage,
-        "residual_gaps": residual_gaps
-    })
+```json
+{
+  "mitigation_id": "<M-*>",
+  "statement": "<mitigation statement from validated.json>",
+  "resource_type": "<service-specific resource/asset name>",
+  "coverage": "FULL | PARTIAL | NONE",
+  "control_ids": ["<CTRL-*>", "..."],
+  "framework_objectives": ["<framework-objective-id>", "..."],
+  "layers": {
+    "preventive": ["<CTRL-*-PRV-*>"],
+    "proactive":  ["<CTRL-*-PRO-*>"],
+    "detective":  ["<CTRL-*-DET-*>"],
+    "responsive": ["<CTRL-*-COR-*>"]
+  },
+  "residual_gaps": ["<gap-description>", "..."]
+}
 ```
+
+### Coverage rule
+
+See `build_threat_mitigation_map` in `scripts/map-assemble.py` for the
+exact implementation. Summary:
+
+- `FULL` — mitigation has both a preventive/proactive AND a detective
+  control.
+- `PARTIAL` — mitigation has some controls, but not both layers.
+- `NONE` — no controls reference this mitigation (`mitigation_ids[]`
+  lookup is empty).
+
+### Residual gaps
+
+Emitted for every missing layer (preventive, detective, responsive). The
+exact strings live in the script — do NOT hand-author them in downstream
+skills; read them from the emitted `residual_gaps` array.
+
+### Consumers
+
+Consumers of `threat_mitigation_map[]` entries:
+- `skills/test/SKILL.md` — mitigation coverage calculation reads
+  `entry.control_ids` (NOT `entry.controls`).
+- `skills/summarize/SKILL.md` — APPROVAL-REPORT coverage matrix reads
+  `entry.coverage`, `entry.layers`, and `entry.residual_gaps`.
+- Framework mapping UI — reads `entry.framework_objectives`.
+
+When changing the schema, update `scripts/map-assemble.py` first, then
+this shape spec, then consumers — in that order.
 
 ---
 
@@ -362,9 +345,18 @@ Write `.service-approval/state/controls-catalog.md`:
 **Resources:** {resource-list}
 **Mitigations Addressed:** {count}
 
+## Control Categories
+
+| Category | Purpose |
+|----------|---------|
+| **Preventive** | Designed to prevent an event from occurring |
+| **Proactive** | Designed to prevent the creation of noncompliant resources |
+| **Detective** | Designed to detect, log, and alert after an event has occurred |
+| **Responsive** | Designed to drive remediation of adverse events or deviations from your security baseline |
+
 ## Control Matrix Summary
 
-|  | Proactive | Preventive | Detective | Corrective | Total |
+|  | Proactive | Preventive | Detective | Responsive | Total |
 |---|---|---|---|---|---|
 | **Organisation** | N | N | N | N | N |
 | **Account** | N | N | N | N | N |
@@ -390,13 +382,31 @@ Write `.service-approval/state/controls-catalog.md`:
 
 ### Preventive
 ### Detective
-### Corrective
+### Responsive
 
 ## Account-Level Controls
+
+### Proactive
+### Preventive
+### Detective
+### Responsive
+
 ## Resource-Level Controls
+
+### Proactive
+### Preventive
+### Detective
+### Responsive
 ```
 
 Each control entry MUST include a `Mitigations:` line referencing the mitigation IDs it addresses.
+
+**Responsive Controls** MUST be generated for every mitigation that has detective controls.
+The responsive control completes the detect-respond loop. Typical responsive mechanisms:
+- **Lambda + EventBridge** — auto-tag, notify, or remediate on detection
+- **SSM Automation runbook** — manual or scheduled remediation workflow
+- **Step Functions workflow** — multi-step orchestration (detect → notify → remediate → verify)
+- **Systems Manager OpsItems** — create operational items for manual follow-up
 
 If `attack_coverage` is available, add after the Control Matrix Summary:
 
@@ -436,6 +446,28 @@ Use the framework name, domain names, and objective IDs from `map-framework-pars
 Use the service name from `map-controls-generated.json`. Never hardcode a specific framework
 or service name in the template logic.
 
+### Naming Requirements (CRITICAL)
+
+1. **Objective names are REQUIRED.** Every framework objective MUST include its full title
+   from `map-framework-parsed.json`, not just the ID. Format: `{Objective-ID}: {Full Title}`.
+   A table row or section header with only an ID (e.g., "AIS-01") is incomplete — always
+   write `AIS-01: Application and Interface Security Policy`.
+
+2. **Control names are REQUIRED.** Every control reference MUST include its full name from
+   `map-controls-generated.json`, not just the ID. Format: `{CTRL-ID} — {Control Name}`.
+   A table cell with only "CTRL-005" is incomplete — always write
+   `CTRL-005 — Enforce IAM authorizer for Gateways`.
+
+3. **Status values — use "Not Applicable" not "Not Mapped".** When a framework objective
+   cannot be addressed by AWS service-level technical controls (e.g., organizational
+   processes, HR policies, physical security, change management), the status MUST be
+   `Not Applicable` with a reason explaining WHY it's not applicable to service-level
+   controls. The value "Not Mapped" is BANNED — it implies the mapping was incomplete
+   rather than intentionally excluded. Valid statuses:
+   - `MAPPED` — one or more service controls address this objective
+   - `Not Applicable` — this objective is about non-technical controls (organizational,
+     physical, HR, process) that cannot be enforced at the AWS service level
+
 ```markdown
 # {Framework Name} Control Mapping — {service-name}
 
@@ -445,12 +477,12 @@ or service name in the template logic.
 **Total Service Controls:** {count}
 **Framework Objectives Total:** {total}
 **Objectives Mapped:** {mapped}
-**Objectives N/A:** {na}
+**Objectives Not Applicable:** {na}
 **Domains Covered:** {domains_covered} / {total_domains}
 
 ## Domain Coverage Summary
 
-| Domain | Objectives in Domain | Mapped | N/A | Coverage % | Notes |
+| Domain | Objectives in Domain | Mapped | Not Applicable | Coverage % | Notes |
 |---|---|---|---|---|---|
 | {domain} | N | N | N | N% | {note} |
 
@@ -460,25 +492,36 @@ or service name in the template logic.
 
 For EVERY framework objective, list the service controls that satisfy it. This section is
 the core of the document. Each objective gets its own subsection regardless of whether it
-has mapped controls or is N/A.
+has mapped controls or is Not Applicable.
 
 ### {Domain Name}
 
-#### {Objective-ID}: {Objective Title}
+#### {Objective-ID}: {Objective Full Title}
 
-**Status:** {MAPPED | N/A}
+**Status:** {MAPPED | Not Applicable}
 **Coverage:** {FULL | PARTIAL | SUPPORTS | N/A}
-**Reason:** {1-sentence summary of why this coverage level was assigned, or why N/A}
+**Reason:** {1-sentence summary of why this coverage level was assigned, or why Not Applicable}
 
 | Control ID | Control Name | Category | Confidence | Rationale |
 |---|---|---|---|---|
-| {CTRL-ID} | {name} | {PRV/PRO/DET/COR} | {High/Medium/Low} | {1-sentence specific rationale connecting this control's mechanism to this objective's requirement} |
+| {CTRL-ID} | {Full control name} | {Preventive/Proactive/Detective/Responsive} | {High/Medium/Low} | {1-sentence specific rationale connecting this control's mechanism to this objective's requirement} |
 
-If status is N/A, the table is omitted and only the Reason line appears. Example:
-> **Status:** N/A
-> **Reason:** Physical datacenter security is managed by AWS under the shared responsibility model.
+If status is Not Applicable, the table is omitted and only the Reason line appears. Example:
+> **Status:** Not Applicable
+> **Reason:** This objective addresses organizational change management processes which cannot be enforced at the AWS service level.
 
 [Repeat for EVERY objective in the domain, then repeat for EVERY domain]
+
+---
+
+## Not Applicable Objectives
+
+Framework objectives that are not addressable via AWS service-level technical controls.
+Each entry MUST explain WHY it is not applicable.
+
+| Objective ID | Objective Title | Domain | Reason Not Applicable |
+|---|---|---|---|
+| {obj-id} | {Full objective title} | {domain} | {why this is a non-technical/organizational control} |
 
 ---
 
@@ -488,7 +531,7 @@ Controls that were generated but do not map to any framework objective.
 
 | Control ID | Control Name | Category | Reason |
 |---|---|---|---|
-| {CTRL-ID} | {name} | {category} | {reason why no framework objective applies} |
+| {CTRL-ID} | {Full control name} | {category} | {reason why no framework objective applies} |
 
 ---
 
@@ -497,9 +540,9 @@ Controls that were generated but do not map to any framework objective.
 Framework objectives where coverage is PARTIAL, SUPPORTS, or where no HIGH-confidence
 controls exist.
 
-| Objective ID | Domain | Gap Description | Recommendation |
-|---|---|---|---|
-| {obj-id} | {domain} | {what is missing} | {what to implement} |
+| Objective ID | Objective Title | Domain | Gap Description | Recommendation |
+|---|---|---|---|---|
+| {obj-id} | {Full title} | {domain} | {what is missing} | {what to implement} |
 
 ---
 
@@ -509,7 +552,7 @@ Shows the full chain: Threat Mitigation → Service Controls → Framework Objec
 
 | Mitigation ID | Threat Description | Service Controls | Framework Objectives | Coverage |
 |---|---|---|---|---|
-| {MIT-ID} | {threat summary} | {CTRL-1, CTRL-2, ...} | {OBJ-1, OBJ-2, ...} | {FULL/PARTIAL/NONE} |
+| {MIT-ID} | {threat summary} | {CTRL-ID — Name, ...} | {OBJ-ID: Title, ...} | {FULL/PARTIAL/NONE} |
 ```
 
 **Assembly rules for this phase:**
@@ -519,18 +562,26 @@ Shows the full chain: Threat Mitigation → Service Controls → Framework Objec
 
 2. Group objectives by domain. Within each domain, sort by objective_id.
 
-3. For each objective, write the subsection header and controls table. The `controls[]` array
-   from `map-framework-mapped.json` contains `{control_id, confidence, rationale}`. Look up
-   the control's `name` and `category` from `map-controls-generated.json`.
+3. For each objective, write the subsection header INCLUDING the full title from
+   `map-framework-parsed.json`. The header format is `#### {ID}: {Title}`.
 
-4. For the Unmapped Service Controls section, use `quality_gate_results.orphaned_controls`
+4. For each control in the objective's controls table, look up the control's `name` and
+   `category` from `map-controls-generated.json`. Write the full name, not just the ID.
+
+5. For objectives with `status: "NOT_MAPPED"` or `status: "N/A"`, write status as
+   "Not Applicable" and include the reason from `map-framework-mapped.json`.
+
+6. For the Not Applicable Objectives section, collect all objectives where status is NOT
+   "MAPPED" and list them with their full titles and reasons.
+
+7. For the Unmapped Service Controls section, use `quality_gate_results.orphaned_controls`
    from `map-framework-mapped.json`.
 
-5. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to
+8. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to
    `framework_gap` type entries.
 
-6. For Threat-to-Framework Traceability, use `threat_mitigation_map` assembled in Phase 2
-   of this skill.
+9. For Threat-to-Framework Traceability, use `threat_mitigation_map` assembled in Phase 2
+   of this skill. Include full control names and objective titles.
 
 ---
 
@@ -551,7 +602,7 @@ Map (Assemble) complete:
     - map-framework-mapped.json ({N} mappings)
   Outputs:
     - mapping-results.json (final state)
-    - controls-catalog.md (matrix: {O} org, {A} acc, {R} res x {P} pro, {V} prv, {D} det, {C} cor)
+    - controls-catalog.md (matrix: {O} org, {A} acc, {R} res x {P} pro, {V} prv, {D} det, {R} res)
     - framework-mapping.md ({mapped} mapped, {na} N/A)
   Traceability:
     - Mitigations: {N}/{total} ({pct}%)

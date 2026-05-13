@@ -15,9 +15,9 @@ Current coverage:
              AWS key (case-insensitive) or a KMS service-owned key inside a
              KMS key policy.
 - CHECK-14b: API-driven artifacts (proactive/**,
-             detective/config-rule-lambdas/**, remediation/ssm-runbook*,
-             remediation/stepfunctions-workflow.json,
-             remediation/lambda-remediator/**, iac/**) — any enum-style
+             detective/config-rule-lambdas/**, responsive/ssm-runbook*,
+             responsive/stepfunctions-workflow.json,
+             responsive/lambda-remediator/**, iac/**) — any enum-style
              literal list must reference values from
              validated.json.api_surface.operations[].parameters[].enum.
 - CHECK-15:  posture-mechanism consistency — a generated artifact's
@@ -495,7 +495,7 @@ def test_15_preventative_request_config_lambda_fails() -> None:
 
 def test_15_reactive_corrective_ssm_passes() -> None:
     data = {"_metadata": {"posture": "reactive-corrective"}}
-    target = "/tmp/fake-controls/remediation/ssm-runbook.yaml"
+    target = "/tmp/fake-controls/responsive/ssm-runbook.yaml"
     errors = check_posture_mechanism_consistency_15(target, data)
     assert errors == []
 
