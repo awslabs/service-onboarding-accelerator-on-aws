@@ -50,10 +50,11 @@ Read `mapping-results.json` `threat_mitigation_map[]`. Build a table:
 
 | Mitigation ID | Statement | Resource Type | Controls | Framework Objectives | Coverage |
 
-Where "Statement" = `statement` field (or `mitigation_goal` if `statement` is absent).
+Where "Statement" = `statement` field.
+Where "Controls" = `control_ids[]` from the mitigation entry (joined, comma-separated).
 Where "Framework Objectives" = `framework_objectives[]` from the mitigation entry. If this field
-is absent, derive it: for each control in the mitigation's `controls[]`, look up that control in
-`controls[]` and collect its `framework_objectives[]`. Deduplicate and sort.
+is absent, derive it: for each control id in the mitigation's `control_ids[]`, look up that control
+in the top-level `controls[]` and collect its `framework_objectives[]`. Deduplicate and sort.
 
 This shows end-to-end traceability from customer mitigations through controls to framework objectives.
 
@@ -108,23 +109,47 @@ Use the framework name dynamically: "CCMv4 Coverage Matrix", "NIST 800-53 Covera
 [Full table from Step 3 — all customer mitigations with control and framework mappings]
 Include coverage summary: N/N mitigations fully covered, N partially covered, N uncovered.
 
-### ATT&CK Threat Coverage
+### Threat Model Coverage
 **Include this section only if `mapping-results.json` contains `attack_coverage`.**
 
-Build a tactic heat map showing control coverage against ATT&CK Cloud techniques:
+This section renders threat model coverage regardless of which threat model was used as input
+(MITRE ATT&CK, custom STRIDE model, organizational threat catalog, etc.). The section title
+and content adapt based on the `attack_coverage` data:
+
+- Read `attack_coverage.attack_matrix_version` for the threat model version
+- Read `attack_coverage.attack_matrix_source` for the source file name (if present)
+- Use the threat model name from the source file or default to "Threat Model"
+
+**Section title:** Use the threat model name dynamically:
+- If source contains "MITRE" or "ATT&CK" → "MITRE ATT&CK Threat Coverage (v{version})"
+- If source contains "STRIDE" → "STRIDE Threat Coverage"
+- Otherwise → "Threat Model Coverage ({source_filename})"
+
+Build a tactic/category heat map showing control coverage:
 
 ```
-| Tactic | Techniques | Covered | Coverage |
-|--------|-----------|---------|----------|
+| Tactic / Category | Techniques | Covered | Coverage |
+|-------------------|-----------|---------|----------|
 | Initial Access (TA0001) | 3 | 2 | ██████░░ 67% |
 | Execution (TA0002) | 2 | 2 | ████████ 100% |
 | Persistence (TA0003) | 3 | 1 | ██░░░░░░ 33% |
-[repeat for each tactic with applicable techniques]
+[repeat for each tactic/category with applicable techniques]
 ```
 
-Include a "Threat Gaps" sub-section listing uncovered HIGH-applicability techniques:
-- Technique ID, name, and which STRIDE categories it maps to
+Include a "Threat Gaps" sub-section listing uncovered HIGH-applicability techniques/threats:
+- Technique/threat ID, name, and which categories it maps to
 - Recommended control type to address the gap
+- Priority (based on applicability: HIGH = immediate, MEDIUM = short-term)
+
+**If `customer_stride_profile` exists in `research-attack-surface.json`**, also include a
+STRIDE coverage summary showing which STRIDE categories have controls addressing them:
+
+```
+| STRIDE Category | Mitigations Referenced | Techniques Mapped | Controls Covering |
+|-----------------|----------------------|-------------------|-------------------|
+| Spoofing | M-AgentRuntime.0, ... | T1078.004, T1199 | CTRL-005, CTRL-006 |
+[repeat for each STRIDE category]
+```
 
 ### Control Inventory
 [Per-layer table from Step 4, organized by Controls Matrix cell]
@@ -151,6 +176,6 @@ Report written: .service-approval/APPROVAL-REPORT.md
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed
-ATT&CK techniques: {covered} / {total} covered (if attack_coverage present)
+ATT&CK techniques: {covered} / {total} covered (if attack_coverage present, adapt label to threat model name)
 Total control artifacts: N
 ```

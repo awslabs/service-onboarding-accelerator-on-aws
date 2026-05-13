@@ -155,7 +155,7 @@ Create an `./input/` folder with a minimal AWS service input (at least `sar-slug
 run service approval for s3 --dry-run
 ```
 
-The agent should run all 7 phases. Watch for:
+The agent should run all 8 phases. Watch for:
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
 - Phase 4 (Generate) spawns 3 parallel

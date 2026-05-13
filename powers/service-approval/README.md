@@ -1,6 +1,6 @@
 # Service Approval — Kiro Power
 
-Kiro CLI 2.0 Power that generates AWS security controls for any AWS service via a 7-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to a control framework (CCMv4, NIST 800-53, CIS, ISO).
+Kiro CLI 2.0 Power that generates AWS security controls for any AWS service via an 8-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to a control framework (CCMv4, NIST 800-53, CIS, ISO).
 
 ## Install
 
@@ -39,7 +39,7 @@ Full parameter reference is in [`POWER.md`](POWER.md).
 ## What this Power does
 
 1. Reads customer inputs (`./input/` folder with .md, .json, .xlsx, .pdf, .docx)
-2. Runs a 7-phase pipeline (Assess, Research, Validate, Map, Generate, Test, Summarize)
+2. Runs an 8-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize)
 3. Writes state and artifacts to `.service-approval/` in the working directory
 4. Produces `APPROVAL-REPORT.md` with a framework-coverage matrix and a verdict
 

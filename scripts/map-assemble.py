@@ -79,7 +79,7 @@ def build_threat_mitigation_map(
         if not has_detective:
             residual.append("No detective control")
         if not any(c["category"] == "COR" for c in associated_ctrls):
-            residual.append("No corrective control")
+            residual.append("No responsive control")
 
         # Union of framework_objectives from every control associated with this
         # mitigation (controls were enriched in build_reverse_index).
@@ -108,7 +108,7 @@ def build_threat_mitigation_map(
                 "detective": sorted(
                     {c["id"] for c in associated_ctrls if c["category"] == "DET"}
                 ),
-                "corrective": sorted(
+                "responsive": sorted(
                     {c["id"] for c in associated_ctrls if c["category"] == "COR"}
                 ),
             },
@@ -294,7 +294,7 @@ CATEGORY_LABELS = {
     "PRO": "Proactive",
     "PRV": "Preventive",
     "DET": "Detective",
-    "COR": "Corrective",
+    "COR": "Responsive",
 }
 
 
@@ -309,7 +309,7 @@ def write_controls_catalog(controls: list[dict], path: Path) -> None:
     lines.append("## Control Matrix Summary\n")
     lines.append("")
     lines.append(
-        "| Scope | Proactive | Preventive | Detective | Corrective | Total |"
+        "| Scope | Proactive | Preventive | Detective | Responsive | Total |"
     )
     lines.append("|-------|-----------|------------|-----------|------------|-------|")
 
@@ -551,7 +551,7 @@ def write_framework_mapping(
     lines.append("## Mitigation Traceability\n")
     lines.append("")
     lines.append(
-        "| Mitigation ID | Resource Type | Coverage | Preventive | Detective | Corrective |"
+        "| Mitigation ID | Resource Type | Coverage | Preventive | Detective | Responsive |"
     )
     lines.append(
         "|---------------|---------------|----------|------------|-----------|------------|"
@@ -559,7 +559,7 @@ def write_framework_mapping(
     for t in threat_mitigation_map:
         prev = len(t["layers"]["preventive"]) + len(t["layers"]["proactive"])
         det = len(t["layers"]["detective"])
-        cor = len(t["layers"]["corrective"])
+        cor = len(t["layers"]["responsive"])
         lines.append(
             f"| {t['mitigation_id']} | {t['resource_type']} | {t['coverage']} | {prev} | {det} | {cor} |"
         )

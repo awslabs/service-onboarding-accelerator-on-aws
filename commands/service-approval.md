@@ -5,7 +5,7 @@ argument-hint: "[./input-folder] [--service=<name>] [--env=<profile>] [--framewo
 
 # Service Approval — Orchestrator
 
-Invokes the full 7-phase pipeline defined at `skills/service-approval/SKILL.md`.
+Invokes the full 8-phase pipeline defined at `skills/service-approval/SKILL.md`.
 
 ## Parse arguments
 
@@ -46,5 +46,5 @@ If no service name can be determined, stop and ask the user for it.
 After the pipeline completes, summarize:
 - Final verdict (APPROVED / APPROVED with exceptions / REQUIRES REMEDIATION)
 - Path to `.service-approval/APPROVAL-REPORT.md`
-- Artifact count per category (preventive, proactive, detective, corrective, IaC)
+- Artifact count per category (preventive, proactive, detective, responsive, IaC)
 - Any phases that failed or were skipped, and why

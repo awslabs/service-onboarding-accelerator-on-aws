@@ -369,46 +369,47 @@ These rules MUST be enforced in every template format — not just one:
    New services or new launch-type surprises should be added to the data file, not inlined
    here, so the skill stays service-agnostic.
 
-9. **Tag naming canonical form (dual case)**: The root module's tag map MUST emit BOTH
-   PascalCase and lowercase-hyphenated keys for the four operational tags because downstream
-   enforcement mechanisms split on casing:
-   - PascalCase (`Owner`, `CostCenter`, `Environment`, `DataClassification`) — required by
-     AWS Config managed rules (`required-tags`), Security Hub standards, and the OPA
-     `org-policy.rego` emitted by `generate-preventive` (which enforces
-     `required_tags := {"Owner", "CostCenter", "Environment", "DataClassification"}`).
-   - lowercase-hyphenated (`owner`, `cost-center`, `environment`, `data-classification`) —
-     common in AWS CLI samples, CDK construct defaults, and customer CI/CD tagging conventions.
+9. **Tag naming canonical form — SINGLE case (PascalCase)**: Emit each operational tag
+   EXACTLY ONCE using the PascalCase form: `Owner`, `CostCenter`, `Environment`,
+   `DataClassification`.
+
+   **Why single-case, not dual:** IAM treats tag keys as **case-insensitive** (e.g.,
+   `Owner` and `owner` collide). Applying both forms on an `AWS::IAM::Role`,
+   `AWS::IAM::Policy`, or any IAM resource fails at CreateRole/CreatePolicy with
+   `InvalidInput: Duplicate tag keys found. Please note that Tag keys are case insensitive.`
+   This blocks the stack mid-deploy and has to be rolled back. Because most compliant
+   templates include at least one IAM role (the Lambda/EC2/etc. execution role), any
+   dual-case pattern will fail the smoke-deploy-test step on the IAM resource.
+
+   Lambda, S3, KMS, SQS, DynamoDB tags happen to be case-SENSITIVE and would accept
+   dual-case, but emitting dual-case there while IAM rejects it creates an inconsistent
+   template that only deploys when IAM resources are absent. Pick one case and stay
+   consistent across every resource in the template.
+
+   SCP/Config/OPA conditions downstream MUST align on the same canonical case. The
+   canonical form is PascalCase (`Owner`, `CostCenter`, `Environment`,
+   `DataClassification`) because AWS Config managed `required-tags` rule and Security
+   Hub standards use PascalCase. If a customer convention uses lowercase-hyphenated,
+   remap at the CI/CD layer, not in the template.
 
    **Terraform** (`main.tf` root `locals`):
    ```hcl
    locals {
      common_tags = {
-       # PascalCase — AWS Config / Security Hub / org-policy.rego
        "Owner"              = var.owner
        "CostCenter"         = var.cost_center
        "Environment"        = var.environment
        "DataClassification" = var.data_classification
-       # lowercase-hyphenated — AWS CLI / customer CI/CD convention
-       "owner"               = var.owner
-       "cost-center"         = var.cost_center
-       "environment"         = var.environment
-       "data-classification" = var.data_classification
      }
    }
    ```
 
-   **CDK TypeScript**: apply `Tags.of(resource).add("Owner", ownerParam)` and
-   `Tags.of(resource).add("owner", ownerParam)` in pairs for all four keys. Same for
-   CloudFormation (Tags list with both entries per key) and CDKTF (same locals pattern).
+   **CDK TypeScript**: apply `Tags.of(resource).add("Owner", ownerParam)` once per
+   canonical key — NEVER add a lowercase pair. Same for CloudFormation (Tags list with
+   one entry per key) and CDKTF (same locals pattern).
 
-   This dual emission is intentional (not a noise leak): canonicalizing on one form would
-   either break AWS Config managed rules (lowercase-only) or break customer CI/CD tagging
-   scripts (PascalCase-only). Adding a tag is cheap — no quota impact. Do NOT extend this
-   pattern to service-specific tags (`bucket-role`, `purpose`, `data-residency`); only the
-   four canonical operational tags need dual casing.
-
-   If `generate-preventive` changes the PascalCase required-tag set, update this rule in
-   lockstep — both skills must agree on the canonical key list.
+   If `generate-preventive` changes the required-tag set, update this rule in lockstep.
+   Both skills must agree on the canonical key list AND case.
 
 ---
 
@@ -598,7 +599,26 @@ Use `aws-cdk-mcp-server` MCP for L2/L3 constructs.
 1. `AwsCustomResource`: include BOTH `onCreate` AND `onUpdate`
 2. `installLatestAwsSdk: false` on every `AwsCustomResource`
 3. `PhysicalResourceId.of(<unique-stable-id>)` — never `fromResponse(...)` for creation
-4. Optional props: `?` marker + conditional spread
+4. Optional props: `?` marker + conditional spread.
+   CDK L2 `Props` interfaces (e.g. `lambda.FunctionProps`) are `readonly` — every
+   field is immutable after assignment. Do NOT declare the props object first and
+   mutate it inside `if (props.foo) { functionProps.vpc = ... }`: `tsc` rejects
+   that with `TS2540 Cannot assign to 'X' because it is a read-only property`.
+   Build each conditional block as its own object (typed `any` for the mutable
+   staging variable is fine — the final spread into the typed Props preserves
+   safety at construction time), then spread them into the final Props literal:
+   ```ts
+   const vpcConfig: any = {};
+   if (props.createVpcConfig) {
+     vpcConfig.vpc = vpc;
+     vpcConfig.vpcSubnets = { subnets: [...] };
+   }
+   const functionProps: lambda.FunctionProps = {
+     functionName,
+     runtime,
+     ...vpcConfig,   // conditional spread — not post-assignment mutation
+   };
+   ```
 5. IAM policy scoping: specific ARN patterns, never `*`
 6. One construct class per asset
 

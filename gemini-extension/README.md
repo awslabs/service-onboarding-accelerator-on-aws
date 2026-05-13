@@ -1,6 +1,6 @@
 # Service Approval — Gemini CLI Extension
 
-Generates AWS security controls for any AWS service via a 7-phase pipeline. Packaged as a Gemini CLI extension with MCP server config, a custom slash command (`/service-approval`), and context via `GEMINI.md`.
+Generates AWS security controls for any AWS service via an 8-phase pipeline. Packaged as a Gemini CLI extension with MCP server config, a custom slash command (`/service-approval`), and context via `GEMINI.md`.
 
 Bundles the same 18 skills that Claude Code, Copilot, and Kiro use — via shared files in `../skills/` (agentskills.io format).
 
@@ -59,7 +59,7 @@ service approval ./input --service=lambda --skip-test
 1. Gemini CLI loads `gemini-extension.json` — registers 5 MCP servers (aws-documentation, awsknowledge, awsiac, terraform, kb-search)
 2. `GEMINI.md` loads into context — contains the extension's rules and pipeline overview
 3. The `/service-approval` slash command is registered
-4. When invoked, the agent reads `../skills/service-approval/SKILL.md` and runs the 7-phase pipeline
+4. When invoked, the agent reads `../skills/service-approval/SKILL.md` and runs the 8-phase pipeline
 
 ## Repo layout
 
