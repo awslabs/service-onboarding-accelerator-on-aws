@@ -5,7 +5,7 @@ inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/**"
 ---
 
-# Pipeline — 7 phases, 19 sub-skills
+# Pipeline — 8 phases, 19 sub-skills
 
 ## Hard rules (re-stated)
 
@@ -95,7 +95,7 @@ threat → mitigation → control traceability. Phase 4 reads it.
 
 ```
 /spawn sa-generate-preventive  → controls/preventive/, controls/proactive/
-/spawn sa-generate-detective   → controls/detective/, controls/remediation/
+/spawn sa-generate-detective   → controls/detective/, controls/responsive/
 /spawn sa-generate-iac         → controls/iac/ (4 formats + TF modules)
 ```
 
@@ -104,7 +104,7 @@ Each generator reads `mapping-results.json` and emits artifacts to the right
 - Preventive: 9–12 files
 - Proactive: 12–15 files
 - Detective: 34–47 files
-- Corrective: 6 files
+- Responsive: 6 files
 - IaC: 17–31 files
 
 Total: 78–111 files depending on service surface area.

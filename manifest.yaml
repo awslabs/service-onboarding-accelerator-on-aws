@@ -12,8 +12,8 @@ name: service-approval
 version: 1.0.0
 description: >
   Generate AWS security controls and compliant IaC for any AWS service.
-  Runs a 7-phase pipeline (Assess, Research, Validate, Map, Generate, Test,
-  Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
+  Runs an 8-phase pipeline (Intake, Assess, Research, Validate, Map, Generate,
+  Test, Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
 
 author:
   name: GFS PACE
@@ -45,7 +45,7 @@ keywords:
   - preventive-controls
   - detective-controls
   - proactive-controls
-  - corrective-controls
+  - responsive-controls
 
 # ---------------------------------------------------------------------------
 # Skills — canonical list. Each skill lives at skills/<slug>/SKILL.md
@@ -54,6 +54,8 @@ keywords:
 skills:
   - slug: service-approval
     role: orchestrator
+  - slug: intake
+    role: phase-intake
   - slug: assess
     role: phase-0
   - slug: research

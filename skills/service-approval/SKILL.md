@@ -1,6 +1,6 @@
 ---
 name: service-approval-v3
-description: Orchestrate all 7 service-approval agents (Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service
+description: Orchestrate all 8 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service
 disable-model-invocation: false
 argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--questions=<file>] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>]'
 ---
@@ -311,11 +311,14 @@ Follow ALL instructions in `skills/research-api-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/state/research-api-surface.json`.
 
-**Step 1d — ATT&CK Attack Surface (optional):**
+**Step 1d — Threat Attack Surface (optional but recommended):**
 Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/state/research-attack-surface.json`.
-Skip this step if ATT&CK enrichment is not needed (no customer threat model input).
+**Auto-trigger rule:** Run this step if ANY file in the input folder matches threat model
+patterns: `*MITRE*`, `*ATT&CK*`, `*attack*`, `*STRIDE*`, `*threat*model*`, `*threat*catalog*`.
+Skip ONLY if no threat model file is present in the input folder AND no customer threat
+model input was provided.
 
 **Step 1e — Merge:**
 Run the merge step from `skills/research/SKILL.md` → "Merge Step" section.
@@ -355,10 +358,10 @@ Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
 Wait for `controls/preventive/` and `controls/proactive/` to be populated.
 
-**Step 4b — Detective/Corrective:**
+**Step 4b — Detective/Responsive:**
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/detective/` and `controls/remediation/` to be populated.
+Wait for `controls/detective/` and `controls/responsive/` to be populated.
 
 **Step 4c — IaC Templates:**
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
@@ -405,10 +408,11 @@ Agent 3: research-api-surface (background)
   Prompt: Full text of skills/research-api-surface/SKILL.md + --service flag
   Output: research-api-surface.json
 
-Agent 4: research-attack-surface (background, optional)
+Agent 4: research-attack-surface (background, recommended if threat model in input)
   Prompt: Full text of skills/research-attack-surface/SKILL.md + --service flag
   Output: research-attack-surface.json
-  Note: Always dispatch — runs fast and enriches controls with threat traceability.
+  Note: Always dispatch if input folder contains threat model files (MITRE, STRIDE, custom).
+  Runs fast and enriches controls with threat traceability.
   If it fails, pipeline continues without it (backward compatible).
 ```
 
@@ -483,7 +487,7 @@ Agent 4: generate-preventive (background)
 
 Agent 5: generate-detective (background)
   Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
-  Output: controls/detective/ + controls/remediation/
+  Output: controls/detective/ + controls/responsive/
 
 Agent 6: generate-iac (background)
   Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified

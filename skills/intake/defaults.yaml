@@ -1,0 +1,25 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Service Approval — Organization Defaults
+# ─────────────────────────────────────────────────────────────────────────────
+# These defaults apply to ALL service intake runs unless overridden by the
+# per-service intake file. Place this at the repo root or in a shared config.
+#
+# Resolution order (highest priority wins):
+#   CLI flags > per-service intake YAML > defaults.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Default control framework for all services
+framework: "ccmv4"
+
+# Default testing configuration
+testing:
+  enabled: false
+  region: "us-east-1"
+  dry_run: false
+
+# Default pipeline options
+options:
+  include_attack_surface: true
+  include_artifact_matrix: true
+  include_unverified: false
+  clean: false

@@ -1,6 +1,6 @@
 # Service Approval — Copilot Plugin
 
-Bundled GitHub Copilot plugin that generates AWS security controls for any AWS service via a 7-phase pipeline.
+Bundled GitHub Copilot plugin that generates AWS security controls for any AWS service via an 8-phase pipeline.
 
 ## What's in the bundle
 

@@ -52,7 +52,7 @@ Category prefixes:
 - `PRO` — proactive (CFN Guard, Checkov, OPA — evaluated before deploy)
 - `PRV` — preventive (SCPs, resource policies — IAM-level blocks)
 - `DET` — detective (Config rules, EventBridge — observe deployed state)
-- `COR` — corrective (Lambda remediators, SSM runbooks — act on findings)
+- `COR` — responsive (Lambda remediators, SSM runbooks — act on findings)
 
 ## Hard rules
 

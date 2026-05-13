@@ -17,7 +17,7 @@ Or use the slash command: `/service-approval` (with args after).
 
 The extension bundles 18 skills total in `${extensionPath}/../skills/`. Each has its own `SKILL.md` with frontmatter and instructions. The agentskills.io format — identical to Claude Code and GitHub Copilot, so the same skill files serve all three clients.
 
-## Pipeline (7 phases, 19 sub-skills)
+## Pipeline (8 phases, 19 sub-skills)
 
 ```
 Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json

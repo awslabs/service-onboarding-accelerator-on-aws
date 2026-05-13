@@ -29,7 +29,7 @@ def main():
 
     # Only run if there are actual control files (not just iac/)
     has_controls = False
-    for subdir in ("preventive", "detective", "remediation", "proactive"):
+    for subdir in ("preventive", "detective", "responsive", "proactive"):
         if os.path.isdir(os.path.join(controls_dir, subdir)):
             has_controls = True
             break

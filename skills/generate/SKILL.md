@@ -19,7 +19,7 @@ This skill is split into 3 focused sub-skills that write to separate directories
 | Sub-Skill | Focus | Output Directory |
 |-----------|-------|-----------------|
 | `generate-preventive` | SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA, CFN Guard | `controls/preventive/`, `controls/proactive/` |
-| `generate-detective` | Config rules, Lambda handlers, EventBridge, CloudWatch, SSM runbooks, Step Functions | `controls/detective/`, `controls/remediation/` |
+| `generate-detective` | Config rules, Lambda handlers, EventBridge, CloudWatch, SSM runbooks, Step Functions | `controls/detective/`, `controls/responsive/` |
 | `generate-iac` | Terraform modules, CDK TypeScript, CloudFormation YAML, CDK for Terraform | `controls/iac/` |
 
 **When invoked directly** (via `/generate`), this skill runs all 3 sub-skills sequentially.
@@ -37,9 +37,9 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 ```bash
 test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "ERROR: run mapper first"
 test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR: run validator first"
-mkdir -p .service-approval/controls/{proactive,preventive,detective,remediation,iac}
+mkdir -p .service-approval/controls/{proactive,preventive,detective,responsive,iac}
 mkdir -p .service-approval/controls/proactive/opa-policies
-mkdir -p .service-approval/controls/remediation/lambda-remediator
+mkdir -p .service-approval/controls/responsive/lambda-remediator
 mkdir -p .service-approval/controls/detective/config-rule-lambdas
 ```
 
@@ -65,7 +65,7 @@ Wait for `controls/preventive/` and `controls/proactive/` to be populated.
 ### Step 2: Run generate-detective
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/detective/` and `controls/remediation/` to be populated.
+Wait for `controls/detective/` and `controls/responsive/` to be populated.
 
 ### Step 3: Run generate-iac
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
@@ -89,19 +89,19 @@ Final validation runs automatically via PostToolUse hooks (validate_controls.py 
 Control generation complete (v3):
   Sub-skills:
     - generate-preventive:  preventive/ + proactive/
-    - generate-detective:   detective/ + remediation/
+    - generate-detective:   detective/ + responsive/
     - generate-iac:         iac/ (4 formats + {N} TF modules)
   Controls matrix:
     Org×Proactive:    tag-policy, OPA, cfn-guard [, scp-provisioning]
     Org×Preventive:   scp-policy [, ai-optout]
     Org×Detective:    config-org-rules, conformance-pack, cloudtrail-org-config
-    Org×Corrective:   ssm-runbook-org
+    Org×Responsive:   ssm-runbook-org
     Acc×Proactive:    cfn-guard-rules, cfn-hooks-policy, checkov-config, OPA
     Acc×Preventive:   permission-boundary
     Acc×Detective:    config-rules, eventbridge-rules, cloudwatch-alarms [, access-analyzer]
-    Acc×Corrective:   lambda-remediator, ssm-runbook, stepfunctions-workflow
+    Acc×Responsive:   lambda-remediator, ssm-runbook, stepfunctions-workflow
     Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
-    Res×Corrective:   stepfunctions-workflow (resource-level)
+    Res×Responsive:   stepfunctions-workflow (resource-level)
   IaC:          CDK, CFN, CDKTF + Terraform ({N} modules)
   Output: .service-approval/controls/
 ```

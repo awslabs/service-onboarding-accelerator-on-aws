@@ -1171,6 +1171,43 @@ def check_checkpoint_results(data: dict) -> list[str]:
 
 
 # ================================================================
+# Check S17: iac-support.json (Phase 0 Assess Step 2b output)
+# ================================================================
+
+def check_iac_support(data: dict) -> list[str]:
+    """Validate iac-support.json against the schema contract.
+
+    Shape/required-field/enum checks live in
+    schemas/iac-support.schema.json. Adds one cross-field invariant the
+    schema cannot express: each format's `generate_formats[<format>]`
+    must be false when the corresponding `<format>.supported` is false
+    (you cannot generate a format that AWS doesn't expose — assess/SKILL.md
+    Step 2b explicitly forbids forcing an unsupported format).
+    """
+    errors = schema_errors(data, "iac-support")
+
+    gen = data.get("generate_formats", {}) if isinstance(data.get("generate_formats"), dict) else {}
+    # Map generate_formats key → the top-level block whose `supported` gates it.
+    format_gate = {
+        "cloudformation": "cloudformation",
+        "terraform": "terraform",
+        "cdk_typescript": "cdk",
+        "cdktf": "cdktf",
+    }
+    for gen_key, gate_block in format_gate.items():
+        if gen.get(gen_key) is True:
+            block = data.get(gate_block, {})
+            if isinstance(block, dict) and block.get("supported") is False:
+                errors.append(
+                    f"generate_formats.{gen_key} is true but {gate_block}.supported is false — "
+                    f"cannot force generation of an unsupported IaC format "
+                    f"(assess/SKILL.md Step 2b)."
+                )
+
+    return errors
+
+
+# ================================================================
 # Main dispatcher
 # ================================================================
 
@@ -1201,6 +1238,9 @@ def validate_state_file(file_path: str) -> list[str]:
 
     elif basename == "checkpoint-results.json":
         errors.extend(check_checkpoint_results(data))
+
+    elif basename == "iac-support.json":
+        errors.extend(check_iac_support(data))
 
     elif "research-mitigations" in basename:
         errors.extend(check_required_fields(data, basename))
