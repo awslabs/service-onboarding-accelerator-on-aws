@@ -11,7 +11,7 @@ Generate all detective and responsive security control artifacts from the Contro
 This covers Organisation×Detective, Organisation×Responsive, Account×Detective,
 Account×Responsive, Resource×Detective, and Resource×Responsive cells.
 
-**Output:** `.service-approval/controls/detective/` and `.service-approval/controls/responsive/`
+**Output:** `.service-approval/<slug>/05-generate/detective/` and `.service-approval/<slug>/05-generate/responsive/`
 
 This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
@@ -20,17 +20,17 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
-test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR"
-mkdir -p .service-approval/controls/detective/config-rule-lambdas
-mkdir -p .service-approval/controls/responsive/lambda-remediator
+test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
+test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
+mkdir -p .service-approval/<slug>/05-generate/detective/config-rule-lambdas
+mkdir -p .service-approval/<slug>/05-generate/responsive/lambda-remediator
 ```
 
 Load detective and responsive controls:
 ```bash
 python3 -c "
 import json
-mr = json.load(open('.service-approval/state/mapping-results.json'))
+mr = json.load(open('.service-approval/<slug>/04-map/mapping-results.json'))
 det = [c for c in mr['controls'] if c['category'] == 'DET']
 cor = [c for c in mr['controls'] if c['category'] == 'COR']
 print(f'Detective controls: {len(det)}')
@@ -488,7 +488,7 @@ SSM Automation document for manual/scheduled remediation.
   The file MUST start with `schemaVersion: "0.3"` and have top-level keys `description`,
   `assumeRole`, `parameters`, `mainSteps`. Do NOT start with `AWSTemplateFormatVersion`
   or include a top-level `Resources:` block. CFN wrapping of an SSM document belongs
-  ONLY in `controls/iac/cloudformation/compliant-resource.cfn.yaml` (IaC), never in
+  ONLY in `<slug>/05-generate/iac/cloudformation/compliant-resource.cfn.yaml` (IaC), never in
   this remediation file. The Tier 2 deploy script passes this file's contents directly
   to `ssm:CreateDocument` — a CFN wrapper causes `mainSteps` to be absent at top level
   and the API rejects the document.
@@ -652,5 +652,5 @@ Generate (detective/responsive) complete:
   Res×Responsive:   resource-level remediation steps
   Compensating:     compensating-controls-documentation ({N} gap documentations)
   Lambda handlers:  {N} custom rule handlers generated
-  Output: .service-approval/controls/detective/, .service-approval/controls/responsive/
+  Output: .service-approval/<slug>/05-generate/detective/, .service-approval/<slug>/05-generate/responsive/
 ```

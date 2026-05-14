@@ -1,7 +1,7 @@
 {
   "name": "sa-map-generate-controls",
   "description": "Generate security controls from mitigations x capabilities organized by Category x Scope matrix",
-  "prompt": "Follow the instructions in `skills/map-generate-controls/SKILL.md`.\n\nRead the skill file, consume `.service-approval/state/validated.json`, and write\n`.service-approval/state/map-controls-generated.json`.",
+  "prompt": "Follow the instructions in `skills/map-generate-controls/SKILL.md`.\n\nRead the skill file, consume `.service-approval/<slug>/03-validate/validated.json`, and write\n`.service-approval/<slug>/04-map/map-controls-generated.json`.",
   "mcpServers": [
     "aws-documentation",
     "awsknowledge",

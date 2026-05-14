@@ -1,7 +1,7 @@
 {
   "name": "sa-validate",
   "description": "Verify research capabilities, parameters, and mitigation feasibility via MCP documentation",
-  "prompt": "Follow the instructions in `skills/validate/SKILL.md`.\n\nRead the skill file, consume `.service-approval/state/research.json`, cross-reference with\ncheckpoint-results.json and sar-facts.json, and write `.service-approval/state/validated.json`.",
+  "prompt": "Follow the instructions in `skills/validate/SKILL.md`.\n\nRead the skill file, consume `.service-approval/<slug>/02-research/research.json`, cross-reference with\ncheckpoint-results.json and sar-facts.json, and write `.service-approval/<slug>/03-validate/validated.json`.",
   "mcpServers": [
     "aws-documentation",
     "awsknowledge",

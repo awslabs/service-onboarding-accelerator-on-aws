@@ -13,8 +13,8 @@ Flags can also be expressed in natural language:
 
 ## What it does
 Read the skill at `skills/service-approval/SKILL.md` and follow it step by step.
-Run agents sequentially: researcher → validator → generator → tester → summarizer.
-All state is written to `.service-approval/` in the current working directory.
+Run 9 phases: Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence.
+All state is written to `.service-approval/<service-slug>/` (per-service layout) in the current working directory.
 
 ## MCP servers
 Registered via `.vscode/mcp.json`. Confirm these are reachable before starting the skill:
@@ -28,9 +28,10 @@ should use `aws-documentation` and `awsiac` instead. If the skill instructs you 
 `aws-cdk-mcp-server`, fall back to those two.
 
 ## Output
-- Final report: `.service-approval/APPROVAL-REPORT.md`
-- All controls: `.service-approval/controls/`
-- State files: `.service-approval/state/`
+- Final report: `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md`
+- All controls: `.service-approval/<service-slug>/05-generate/`
+- State files: `.service-approval/<service-slug>/` (per-phase subdirectories)
+- Evidence: `.service-approval/<service-slug>/08-evidence/` (if Phase 7 runs)
 
 ## Agent mode required
 This skill writes files and runs multi-step workflows. Use Copilot Chat in **Agent mode**,
@@ -38,12 +39,12 @@ not Ask mode.
 
 ## Hard rules — no shortcuts
 1. Never write a one-shot generator script that hardcodes state or controls. Run the
-   5-phase pipeline (research, validate, map, generate, test, summarize) as described
+   9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) as described
    in `skills/service-approval/SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP
    (`awsknowledge`, `aws-documentation`, `awsiac`). Hardcoded values from training data
    are banned.
-3. Log every MCP call to `.service-approval/state/mcp-calls.log`. The Stop hook enforces
+3. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. The Stop hook enforces
    a minimum of 10 logged calls.
 4. Every item in `validated.json` must have a unique `verification_note` specific to that
    item. Templated or duplicated notes fail integrity checks.

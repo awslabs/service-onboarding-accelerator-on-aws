@@ -10,7 +10,7 @@ argument-hint: '[--service=<name>]'
 Retrieve the COMPLETE API reference for the target AWS service. Every operation from the
 Service Authorization Reference must be captured — both control-plane AND data-plane.
 
-**Output:** `.service-approval/state/research-api-surface.json`
+**Output:** `.service-approval/<slug>/02-research/research-api-surface.json`
 **Schema:** `schemas/research-api-surface.schema.json` — encodes `phase: "research-api-surface"` const, `api_surface.operations[]` inlined (no `_ref` pointers), parameter `path` pattern `^\$\..*`, `gateable_by[]` subset of `{sar, api}`, `mutability` and `security_category` enums.
 
 This is one of 3 focused research sub-skills. The orchestrator merges outputs from all 3
@@ -21,8 +21,10 @@ into the final `research.json`.
 ## Prerequisites
 
 ```bash
-mkdir -p .service-approval/state
-touch .service-approval/state/mcp-calls.log
+from tools.paths import phase_dir, mcp_log
+research_dir = phase_dir(slug, "research")  # .service-approval/<slug>/02-research/
+research_dir.mkdir(parents=True, exist_ok=True)
+mcp_log(slug).touch()  # .service-approval/<slug>/mcp-calls.log
 ```
 
 ## Inputs
@@ -34,8 +36,8 @@ touch .service-approval/state/mcp-calls.log
 Check for data from sibling sub-skills and assessment phase:
 
 ```bash
-test -f .service-approval/state/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
-test -f .service-approval/state/research-capabilities.json && echo "Capabilities: OK" || echo "Capabilities: not found (running in parallel)"
+test -f .service-approval/<slug>/01-assess/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
+test -f .service-approval/<slug>/02-research/research-capabilities.json && echo "Capabilities: OK" || echo "Capabilities: not found (running in parallel)"
 ```
 
 **If `sar-facts.json` exists**: Use it as the authoritative action list. Every action
@@ -53,7 +55,7 @@ to get the action list and condition keys for validation.
 
 ## MCP Call Logging
 
-Log every MCP call to `.service-approval/state/mcp-calls.log`:
+Log every MCP call to `.service-approval/<slug>/mcp-calls.log`:
 ```
 [Step N] [API-Surface] <mcp-server> <tool-name> — <description> — <result-summary>
 ```
@@ -69,7 +71,7 @@ must be accounted for.
 **From sar-facts.json** (preferred):
 ```python
 import json
-sar = json.load(open('.service-approval/state/sar-facts.json'))
+sar = json.load(open('.service-approval/<slug>/01-assess/sar-facts.json'))
 all_actions = [a['action'] for a in sar.get('actions', [])]
 permission_only = sar.get('permission_only_actions', [])
 api_actions = [a for a in all_actions if a not in permission_only]
@@ -141,7 +143,7 @@ python3 -c "import boto3; print(boto3.__version__)"
 
 ```bash
 python3 tools/research/fetch_botocore_schema.py <service> \
-  -o .service-approval/state/botocore-schema.json
+  -o .service-approval/<slug>/02-research/botocore-schema.json
 ```
 
 A pre-computed cache exists for common services at
@@ -149,7 +151,7 @@ A pre-computed cache exists for common services at
 If the cache is present and matches the target service, prefer it over running
 the tool (saves ~5s). Always check the cache's boto3 version in `_metadata`.
 
-Log the MCP-equivalent call to `.service-approval/state/mcp-calls.log`:
+Log the MCP-equivalent call to `.service-approval/<slug>/mcp-calls.log`:
 ```
 [Step 2.5] [API-Surface] botocore fetch_botocore_schema.py — service=<name> — N ops, M params
 ```
@@ -179,7 +181,7 @@ doesn't list, it survives with `botocore_coverage: false`.
 
 ```bash
 python3 tools/research/compute_mutability.py <service> \
-  -o .service-approval/state/botocore-mutability.json
+  -o .service-approval/<slug>/02-research/botocore-mutability.json
 ```
 
 For each parameter, merge `mutability: "create_only" | "mutable" | "unknown"`
@@ -190,9 +192,9 @@ matching Update-family operation — keep it, don't guess.
 
 ```bash
 python3 tools/research/compute_gateable_by.py \
-  --schema .service-approval/state/botocore-schema.json \
-  --sar-facts .service-approval/state/sar-facts.json \
-  -o .service-approval/state/botocore-gateable.json
+  --schema .service-approval/<slug>/02-research/botocore-schema.json \
+  --sar-facts .service-approval/<slug>/01-assess/sar-facts.json \
+  -o .service-approval/<slug>/02-research/botocore-gateable.json
 ```
 
 This cross-references parameter paths against SAR condition keys. For each
@@ -372,7 +374,7 @@ Check that every `Create*` operation has corresponding CRUD operations:
 
 ## Step 5: Write Output
 
-Write `.service-approval/state/research-api-surface.json`:
+Write `.service-approval/<slug>/02-research/research-api-surface.json`:
 
 **CRITICAL — Output structure:** Operations MUST be nested under `api_surface.operations[]`,
 NOT at the top level. Each entry MUST use the key `"operation"` (not `"action"` or `"name"`).
@@ -450,5 +452,5 @@ Research (API surface) complete:
   Missing operations:           {N}
   Condition key cross-ref:      {PASS/FAIL}
   Doc sources:                  {N}
-  Output: .service-approval/state/research-api-surface.json
+  Output: .service-approval/<slug>/02-research/research-api-surface.json
 ```

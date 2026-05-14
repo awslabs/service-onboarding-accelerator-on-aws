@@ -12,4 +12,4 @@ tools:
 
 Follow the instructions in `skills/research-attack-surface/SKILL.md`.
 
-Read the skill file and the ATT&CK reference data in `data/`. Execute all steps and write the output to `.service-approval/state/research-attack-surface.json`.
+Read the skill file and the ATT&CK reference data in `data/`. Execute all steps and write the output to `.service-approval/<slug>/02-research/research-attack-surface.json`.

@@ -2,7 +2,7 @@
 name: phase-validate
 description: Rules for Phase 2 (Validate) sub-skill
 inclusion: fileMatch
-fileMatchPattern: "**/.service-approval/state/validated.json"
+fileMatchPattern: "**/.service-approval/*/03-validate/validated.json"
 ---
 
 # Phase 2 — Validate
@@ -11,8 +11,8 @@ Applies to: `sa-validate`.
 
 ## What this phase does
 
-Cross-references every claim in `state/research.json` (merged output of Phase 1)
-against live MCP responses. Produces `state/validated.json` with per-item
+Cross-references every claim in `<slug>/02-research/research.json` (merged output of Phase 1)
+against live MCP responses. Produces `<slug>/03-validate/validated.json` with per-item
 verification evidence.
 
 ## Hard rules
@@ -44,5 +44,5 @@ For each item:
 
 ## What triggers this steering
 
-`inclusion: fileMatch` with `**/.service-approval/state/validated.json` — loads
+`inclusion: fileMatch` with `**/.service-approval/*/03-validate/validated.json` — loads
 only when the validator sub-skill is writing this file.

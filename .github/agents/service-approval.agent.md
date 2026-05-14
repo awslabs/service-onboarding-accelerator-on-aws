@@ -13,7 +13,7 @@ and compliant resource templates for a specified AWS service.
 Read the skill file at `skills/service-approval/SKILL.md` and follow
 it step by step. That file is the authoritative source for the pipeline — do not skip steps.
 
-## Pipeline (8 phases, 20 sub-skills)
+## Pipeline (9 phases, 20 sub-skills)
 
 - **Intake (precursor):** collect service, inputs, framework, testing intent → `intake-manifest.json`
 - **Phase 0 — Assess:** 5-domain CAF security assessment + IaC provider discovery
@@ -23,8 +23,9 @@ it step by step. That file is the authoritative source for the pipeline — do n
 - **Phase 4 — Generate:** preventive, proactive, detective, responsive, IaC (4 formats)
 - **Phase 5 — Test:** mode set upfront in Intake (full-deploy / dry-run / skip / manual-cli)
 - **Phase 6 — Summarize:** APPROVAL-REPORT.md
+- **Phase 7 — Evidence:** CLI probes to attest control enforcement (requires Phase 5)
 
-Output goes to `.service-approval/` in the workspace root.
+Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layout).
 
 ## Required flags
 
@@ -39,12 +40,12 @@ Ask the user for these if not provided:
 
 1. Never deploy to production without explicit confirmation
 2. Always verify API params via MCP before generating controls
-3. Write all state files to `.service-approval/state/`
+3. Write all state files to `.service-approval/<service-slug>/` (per-service layout)
 4. Never skip Phase 2 (Validate) — UNVERIFIED items must not reach generation
 5. Every control must trace to at least one framework objective
 6. Never write a one-shot generator script that hardcodes outputs. Execute each skill phase
    through its SKILL.md
-7. Log every MCP call to `.service-approval/state/mcp-calls.log`. Minimum 10 entries enforced
+7. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. Minimum 10 entries enforced
 8. Every `verification_note` must be unique and item-specific. No templated notes
 9. IaC must be parameterized. No hardcoded account IDs (`123456789012`) or placeholder ARNs
 10. SCPs must contain at least one `Deny`. `StringEquals` and `StringNotEquals` in the same
@@ -67,5 +68,5 @@ use `aws-documentation` and `awsiac`.
 ## Output
 
 - `.service-approval/APPROVAL-REPORT.md` — final report
-- `.service-approval/controls/` — all generated artifacts
-- `.service-approval/state/` — intermediate JSON state files
+- `.service-approval/<slug>/05-generate/` — all generated artifacts
+- `.service-approval/<slug>/` — intermediate JSON state files per phase

@@ -2,7 +2,7 @@
 """
 Deterministic validator for pipeline state files.
 
-Checks state files (.service-approval/state/) for structural integrity:
+Checks state files (.service-approval/<slug>/<NN>-phase/) for structural integrity:
 duplicate assets, unenriched placeholders, schema version, required fields,
 per-phase schema validation, quality gates, cross-references.
 
@@ -37,9 +37,46 @@ def _load_json(path: str) -> dict | None:
         return None
 
 
-def _find_state_dir(file_path: str) -> str:
-    """Return the directory containing the state file."""
+def _phase_dir_of(file_path: str) -> str:
+    """Return the phase directory containing the given state file.
+
+    In the new per-service-per-phase layout, this returns the phase directory
+    (e.g., .service-approval/awslambda/04-map/) containing the file. It is
+    intentionally just os.path.dirname() — kept as a named helper so callers
+    document intent ("the phase dir of this file") rather than spelling out
+    dirname inline.
+
+    This is distinct from validate_controls.py's `_find_state_dir`, which
+    walks UP from the controls dir to locate the service root. Different
+    purpose, different return shape — they are not interchangeable.
+    """
     return os.path.dirname(os.path.abspath(file_path))
+
+
+def _load_sibling_phase(phase_dir: str, phase_name: str, filename: str) -> dict | None:
+    """Load a JSON file from a sibling phase directory.
+
+    Args:
+        phase_dir: Current phase directory (e.g., .service-approval/awslambda/04-map/)
+        phase_name: Phase prefix to look for (e.g., "03-validate", "01-assess")
+        filename: File to load (e.g., "validated.json")
+
+    Returns:
+        Loaded JSON dict or None if not found.
+
+    Example:
+        When validating .service-approval/awslambda/04-map/map-controls-generated.json,
+        to load validated.json from 03-validate/:
+        >>> _load_sibling_phase(state_dir, "03-validate", "validated.json")
+    """
+    # Walk up to service root (parent of phase_dir)
+    service_root = os.path.dirname(phase_dir.rstrip("/"))
+    # Look for sibling phase directory
+    sibling = os.path.join(service_root, phase_name)
+    if not os.path.isdir(sibling):
+        return None
+    target = os.path.join(sibling, filename)
+    return _load_json(target)
 
 
 # ================================================================
@@ -788,7 +825,8 @@ def check_controls_generated(data: dict, state_dir: str) -> list[str]:
 
     # Mitigation coverage: every mitigation should have at least one control.
     # Cross-file lookup — can't be expressed in a single JSON Schema.
-    vj = _load_json(os.path.join(state_dir, "validated.json"))
+    # validated.json lives in 03-validate/, not in the same phase as controls-generated
+    vj = _load_sibling_phase(state_dir, "03-validate", "validated.json")
     if vj:
         all_mit_ids = {m["id"] for m in vj.get("existing_mitigations", []) if m.get("id")}
         covered: set[str] = set()
@@ -834,6 +872,7 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
         return errors
 
     # Load sibling files for cross-checks
+    # All three map-* files are in the same phase (04-map/), so we can use direct join
     cg = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
     fw = _load_json(os.path.join(state_dir, "map-framework-parsed.json"))
 
@@ -1230,7 +1269,7 @@ def validate_state_file(file_path: str) -> list[str]:
     if not isinstance(data, dict):
         return [f"Expected JSON object, got {type(data).__name__}"]
 
-    state_dir = _find_state_dir(file_path)
+    state_dir = _phase_dir_of(file_path)
 
     # Dispatch by filename
     if basename == "sar-facts.json":

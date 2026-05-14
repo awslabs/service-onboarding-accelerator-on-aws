@@ -37,29 +37,49 @@ Each agent in `agents/sa-*.json` declares:
 
 ```
 .service-approval/
-├── state/
-│   ├── sar-facts.json
-│   ├── checkpoint-results.json
-│   ├── research.json              ← merged from 4 sub-skills
-│   ├── research-mitigations.json
-│   ├── research-capabilities.json
-│   ├── research-api-surface.json
-│   ├── research-attack-surface.json
-│   ├── validated.json
-│   ├── map-framework-parsed.json
-│   ├── map-controls-generated.json
-│   ├── map-framework-mapped.json
-│   ├── mapping-results.json
-│   ├── test-results.json
-│   └── mcp-calls.log              ← every MCP call appended here
-├── controls/
-│   ├── preventive/                 (SCPs, RCPs, resource policies)
-│   ├── proactive/                  (CFN Guard, OPA, Checkov, CFN Hooks)
-│   ├── detective/                  (Config rules + Lambda handlers, EventBridge)
-│   ├── responsive/                 (Lambda remediators, SSM runbooks)
-│   └── iac/                        (CDK, CloudFormation, CDKTF, modular Terraform)
-├── APPROVAL-REPORT.md
-└── ARTIFACT-FLOW-MATRIX.md
+├── _staging/<ts>/                  ← intake landing zone before slug is known (Phase 0 promotes)
+│   └── 00-intake/intake-manifest.json
+└── <slug>/                          ← per-service root (e.g. awslambda/, awss3/)
+    ├── attestation.md               ← reviewer's audit guide (Phase 7)
+    ├── mcp-calls.log                ← every MCP call appended here (service-scoped)
+    ├── 00-intake/intake-manifest.json
+    ├── 01-assess/
+    │   ├── sar-facts.json
+    │   ├── checkpoint-results.json
+    │   ├── assessment-summary.md
+    │   └── iac-support.json
+    ├── 02-research/
+    │   ├── research.json            ← merged from 4 sub-skills
+    │   ├── research-mitigations.json
+    │   ├── research-capabilities.json
+    │   ├── research-api-surface.json
+    │   └── research-attack-surface.json
+    ├── 03-validate/validated.json
+    ├── 04-map/
+    │   ├── map-framework-parsed.json
+    │   ├── map-controls-generated.json
+    │   ├── map-framework-mapped.json
+    │   ├── mapping-results.json
+    │   ├── controls-catalog.md
+    │   └── framework-mapping.md
+    ├── 05-generate/
+    │   ├── preventive/              (SCPs, RCPs, resource policies)
+    │   ├── proactive/               (CFN Guard, OPA, Checkov, CFN Hooks)
+    │   ├── detective/               (Config rules + Lambda handlers, EventBridge)
+    │   ├── responsive/              (Lambda remediators, SSM runbooks)
+    │   └── iac/                     (CDK, CloudFormation, CDKTF, modular Terraform)
+    ├── 06-test/
+    │   ├── test-results.json
+    │   ├── deployed-resources.json  ← stack ID + ARNs (consumed by Phase 7)
+    │   └── deploy-logs/*.log
+    ├── 07-summarize/
+    │   ├── APPROVAL-REPORT.md
+    │   └── ARTIFACT-FLOW-MATRIX.md
+    └── 08-evidence/
+        ├── attestation-report.md
+        ├── attestation-results.json
+        ├── cli-commands.json
+        └── cli-outputs/*.log
 ```
 
 ## Schema contracts

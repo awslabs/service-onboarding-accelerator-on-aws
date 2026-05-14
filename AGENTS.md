@@ -1,9 +1,9 @@
 # Service Approval — Agents Guide
 
-This repo generates AWS security controls for any AWS service via an 8-phase pipeline
-(Intake, Assess, Research, Validate, Map, Generate, Test, Summarize). It runs on any
-[Agent Skills](https://agentskills.io)-compatible client: Claude Code, GitHub Copilot,
-and Kiro.
+This repo generates AWS security controls for any AWS service via a 9-phase pipeline
+(Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence). It runs
+on any [Agent Skills](https://agentskills.io)-compatible client: Claude Code, GitHub
+Copilot, and Kiro.
 
 ## Install
 
@@ -35,21 +35,25 @@ Agents should:
 1. Read the user's request for an AWS service name and optional input folder.
 2. Activate the `service-approval` skill.
 3. Follow the pipeline steps in the skill body.
-4. Write all state to `.service-approval/` in the working directory.
+4. Write all state to `.service-approval/<service-slug>/` (per-service, per-phase layout).
 
 ## Pipeline summary
 
 ```
-Intake                        → intake-manifest.json (service, inputs, testing intent)
-Phase 0   Assess              → sar-facts.json, checkpoint-results.json, iac-support.json
-Phase 1   Research            → research.json (4 parallel sub-skills merged)
-Phase 2   Validate            → validated.json
-Phase 3   Map                 → mapping-results.json + framework-mapping.md
-Phase 4   Generate            → controls/ (proactive, preventive, detective, responsive, IaC)
-Phase 5   Test                → test-results.json (mode set upfront in Intake:
-                                full-deploy | dry-run | skip | manual-cli)
-Phase 6   Summarize           → APPROVAL-REPORT.md
+Precursor Intake    → _staging/<ts>/00-intake/intake-manifest.json (service, inputs, testing intent)
+Phase 0 Assess      → <slug>/01-assess/{sar-facts,checkpoint-results,iac-support}.json
+Phase 1 Research    → <slug>/02-research/research.json (4 parallel sub-skills merged)
+Phase 2 Validate    → <slug>/03-validate/validated.json
+Phase 3 Map         → <slug>/04-map/{mapping-results.json, framework-mapping.md}
+Phase 4 Generate    → <slug>/05-generate/{proactive,preventive,detective,responsive,iac}/
+Phase 5 Test        → <slug>/06-test/{test-results.json, deployed-resources.json} (mode set upfront in Intake: full-deploy | dry-run | skip | manual-cli)
+Phase 6 Summarize   → <slug>/07-summarize/APPROVAL-REPORT.md
+Phase 7 Evidence    → <slug>/08-evidence/{attestation-report.md, cli-outputs/} (requires AWS credentials)
 ```
+
+Intake runs first (unnumbered) and writes to a staging directory because the
+canonical service slug is only known after Phase 0 derives it from SAR. Phase 0
+atomically promotes the staging directory to `<slug>/`.
 
 See [`README.md`](README.md) for per-phase artifact counts and the full flag reference.
 
@@ -60,7 +64,7 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
 2. Every capability claim, API parameter, and condition key must be verified via MCP
    (`awsknowledge`, `aws-documentation`, `awsiac`). Hardcoded values from training data
    are banned.
-3. Log every MCP call to `.service-approval/state/mcp-calls.log`. Minimum 10 entries.
+3. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. Minimum 10 entries.
 4. Every item in `validated.json` must have a unique `verification_note`. Templated
    notes fail the integrity check.
 5. IaC templates must be parameterized. No hardcoded account IDs (`123456789012`) or

@@ -1,7 +1,7 @@
 {
   "name": "sa-research-capabilities",
   "description": "Research IAM, encryption, network, logging, and org-policy capabilities for an AWS service",
-  "prompt": "Follow the instructions in `skills/research-capabilities/SKILL.md`.\n\nRead the skill file, execute all steps, and write the output to `.service-approval/state/research-capabilities.json`.",
+  "prompt": "Follow the instructions in `skills/research-capabilities/SKILL.md`.\n\nRead the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-capabilities.json`.",
   "mcpServers": [
     "aws-documentation",
     "awsknowledge",

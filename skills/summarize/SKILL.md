@@ -6,17 +6,17 @@ disable-model-invocation: false
 
 # Service Approval — Summarizer v3
 
-Read all state files and generate the final approval report at `.service-approval/APPROVAL-REPORT.md`.
+Read all state files and generate the final approval report at `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md`.
 
 ## Prerequisites
 
 - [ ] Check required inputs:
   ```bash
-  test -f .service-approval/state/validated.json && echo "validated: OK" || echo "validated: MISSING"
-  test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "mapping-results: MISSING"
-  test -d .service-approval/controls && echo "controls: OK" || echo "controls: MISSING"
-  test -f .service-approval/state/assessment-summary.md && echo "assessment: OK" || echo "assessment: not found (optional)"
-  test -f .service-approval/state/checkpoint-results.json && echo "checkpoints: OK" || echo "checkpoints: not found (optional)"
+  test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "validated: MISSING"
+  test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "mapping-results: MISSING"
+  test -d .service-approval/<slug>/05-generate && echo "controls: OK" || echo "controls: MISSING"
+  test -f .service-approval/<slug>/01-assess/assessment-summary.md && echo "assessment: OK" || echo "assessment: not found (optional)"
+  test -f .service-approval/<slug>/01-assess/checkpoint-results.json && echo "checkpoints: OK" || echo "checkpoints: not found (optional)"
   ```
   Proceed even if `test-results.json` is absent (mark test as NOT RUN in the report).
   Assessment artifacts are optional — if present, they enrich the report.
@@ -60,7 +60,7 @@ This shows end-to-end traceability from customer mitigations through controls to
 
 ## Step 4: Build control inventory
 
-For each file in `.service-approval/controls/`, read its `_metadata` or header comments
+For each file in `.service-approval/<slug>/05-generate/`, read its `_metadata` or header comments
 (lines starting with `# SCOPE:`, `# LAYER:`, `# CONTROLS:`, `# FRAMEWORK:`).
 
 Build a table per layer:
@@ -69,7 +69,7 @@ Build a table per layer:
 ## Step 5: Build artifact manifest
 
 ```bash
-find .service-approval/controls -type f | sort
+find .service-approval/<slug>/05-generate -type f | sort
 ```
 
 ## Step 6: Write APPROVAL-REPORT.md
@@ -84,7 +84,7 @@ The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipelin
 - NO: "unverified_count = 0" → YES: "all items verified"
 - Apply all terminology rules from CLAUDE.md (see Terminology Rules section)
 
-Write `.service-approval/APPROVAL-REPORT.md` with these sections:
+Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections:
 
 ### Verdict
 [Verdict string with date, service name, resource count]
@@ -171,19 +171,31 @@ STRIDE coverage summary showing which STRIDE categories have controls addressing
 ### Artifact Manifest
 [Full file list from Step 5]
 
+### Evidence & Attestation
+**NEW:** If `.service-approval/<slug>/08-evidence/` exists, append this section:
+
+Runtime validation complete. Phase 7 Evidence runner executed CLI probes against deployed resources to verify each control is enforced. See:
+- `08-evidence/attestation-report.md` — control x CLI x verdict matrix
+- `08-evidence/attestation-results.json` — machine-readable verdicts
+- `08-evidence/summary.md` — top-level triage digest
+
+Evidence coverage: {pass_count} / {total_controls} controls verified PASS, {not_cli_validatable_count} NOT_CLI_VALIDATABLE.
+
+Otherwise, omit this section (Evidence phase was not run).
+
 ### Next Steps
 Deployment order:
 1. **Org level**: Apply SCPs, RCPs, tag policies via AWS Organizations
 2. **Account level**: Deploy Config conformance pack, Config rules, Access Analyzer
 3. **Service level**: Deploy CloudFormation Hooks, Config org rules
-4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `controls/iac/`
+4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `05-generate/iac/`
 
 ### Manual Deploy Commands
 
 **Render this section only when `intake-manifest.json.testing.mode == "manual-cli"`.**
 
 The user opted out of automated Phase 5 testing and asked for per-format deploy
-commands. Inspect `.service-approval/controls/iac/` and emit only the commands that
+commands. Inspect `.service-approval/<slug>/05-generate/iac/` and emit only the commands that
 match formats actually present. Always use placeholders (`<STACK_NAME>`,
 `<AWS_PROFILE>`, `<AWS_REGION>`) — never substitute a real profile name.
 
@@ -192,14 +204,14 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 
-manifest = Path(".service-approval/state/intake-manifest.json")
+manifest = Path(f".service-approval/{slug}/00-intake/intake-manifest.json")
 if not manifest.exists():
     raise SystemExit(0)
 mode = json.loads(manifest.read_text()).get("testing", {}).get("mode")
 if mode != "manual-cli":
     raise SystemExit(0)
 
-iac = Path(".service-approval/controls/iac")
+iac = Path(f".service-approval/{slug}/05-generate/iac")
 has_cfn       = any(iac.glob("*.cfn.yaml")) or any(iac.glob("*.yaml"))
 has_terraform = (iac / "modules").exists()
 has_cdk       = any(iac.rglob("*.ts")) and not (iac / "cdktf").exists()
@@ -207,42 +219,42 @@ has_cdktf     = (iac / "cdktf").exists() or any(iac.rglob("cdktf.json"))
 
 blocks = []
 if has_cfn:
-    blocks.append("""**CloudFormation:**
+    blocks.append(f"""**CloudFormation:**
 ```bash
 aws cloudformation deploy \\
-  --template-file .service-approval/controls/iac/compliant-resource.cfn.yaml \\
+  --template-file .service-approval/{slug}/05-generate/iac/compliant-resource.cfn.yaml \\
   --stack-name <STACK_NAME> \\
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \\
   --profile <AWS_PROFILE>
 ```""")
 if has_terraform:
-    blocks.append("""**Terraform:**
+    blocks.append(f"""**Terraform:**
 ```bash
-cd .service-approval/controls/iac
+cd .service-approval/{slug}/05-generate/iac
 terraform init
 terraform plan -out tfplan
 terraform apply tfplan
 ```""")
 if has_cdk:
-    blocks.append("""**CDK TypeScript:**
+    blocks.append(f"""**CDK TypeScript:**
 ```bash
-cd .service-approval/controls/iac
+cd .service-approval/{slug}/05-generate/iac
 npm install
 npx cdk bootstrap --profile <AWS_PROFILE>
 npx cdk deploy --profile <AWS_PROFILE>
 ```""")
 if has_cdktf:
-    blocks.append("""**CDK for Terraform:**
+    blocks.append(f"""**CDK for Terraform:**
 ```bash
-cd .service-approval/controls/iac/cdktf
+cd .service-approval/{slug}/05-generate/iac/cdktf
 npm install
 npx cdktf deploy
 ```""")
-if (Path(".service-approval/controls/responsive/lambda-remediator/template.yaml")).exists():
-    blocks.append("""**Detective controls stack (deploy after compliant resource):**
+if (Path(f".service-approval/{slug}/05-generate/responsive/lambda-remediator/template.yaml")).exists():
+    blocks.append(f"""**Detective controls stack (deploy after compliant resource):**
 ```bash
 aws cloudformation deploy \\
-  --template-file .service-approval/controls/responsive/lambda-remediator/template.yaml \\
+  --template-file .service-approval/{slug}/05-generate/responsive/lambda-remediator/template.yaml \\
   --stack-name <STACK_NAME>-detective \\
   --capabilities CAPABILITY_IAM \\
   --profile <AWS_PROFILE>
@@ -257,7 +269,7 @@ entire section when `testing.mode` is anything other than `manual-cli`.
 
 Print:
 ```
-Report written: .service-approval/APPROVAL-REPORT.md
+Report written: .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed

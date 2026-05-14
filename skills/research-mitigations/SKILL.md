@@ -10,7 +10,7 @@ argument-hint: '[./input-folder] [--service=<name>]'
 Parse customer-provided input files to extract existing mitigations, build an initial asset
 inventory, and collect assessment gaps from the CAF assessment phase.
 
-**Output:** `.service-approval/state/research-mitigations.json`
+**Output:** `.service-approval/<slug>/02-research/research-mitigations.json`
 **Schema:** `schemas/research-mitigations.schema.json` — encodes `phase: "research-mitigations"` const, mitigation `id` pattern `^M-.+`, assessment-gap `id` pattern `^GAP-`, `assets_partial[].cfn_type` pattern `^AWS::`, and per-mitigation required fields (`id`, `mitigation_goal`, `statement`). `resource_type` is allowed on mitigations but assets MUST use `cfn_type` (see Step 3 and "Quality rules" below).
 
 This is one of 3 focused research sub-skills. The orchestrator merges outputs from all 3
@@ -20,9 +20,7 @@ into the final `research.json`.
 
 ## Prerequisites
 
-```bash
-mkdir -p .service-approval/state
-```
+Per-service phase directory (`.service-approval/<slug>/02-research/`) is created dynamically using `tools/paths.py::phase_dir(slug, "research")`.
 
 ## Inputs
 
@@ -194,7 +192,7 @@ api-surface sub-skills respectively.
 Check if the `/assess` skill has produced artifacts:
 
 ```bash
-test -f .service-approval/state/assessment-summary.md && echo "OK" || echo "not found"
+test -f .service-approval/<slug>/01-assess/assessment-summary.md && echo "OK" || echo "not found"
 ```
 
 If `assessment-summary.md` exists:
@@ -221,7 +219,7 @@ If assessment-summary.md does not exist, set `assessment_gaps` to an empty array
 
 ## Step 5: Write Output
 
-Write `.service-approval/state/research-mitigations.json`:
+Write `.service-approval/<slug>/02-research/research-mitigations.json`:
 
 **CRITICAL — Field Name Enforcement:**
 - The top-level key MUST be `"phase"` (not `"skill"`, not `"stage"`)
@@ -305,5 +303,5 @@ Research (mitigations) complete:
   MITRE techniques:        {N} (or "skipped — no matrix file")
   Input files parsed:      {N}
   Framework file:          {path or "none"}
-  Output: .service-approval/state/research-mitigations.json
+  Output: .service-approval/<slug>/02-research/research-mitigations.json
 ```

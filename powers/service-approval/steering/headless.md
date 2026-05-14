@@ -78,10 +78,11 @@ Set a Kiro workspace token budget in the dashboard if running on a schedule.
 ## Artifacts for review
 
 Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
-- `APPROVAL-REPORT.md` — customer-facing verdict
-- `controls/` — all generated artifacts
-- `state/mcp-calls.log` — audit trail of every MCP call
-- `state/validated.json` — proof of MCP verification for every item
+- `<slug>/07-summarize/APPROVAL-REPORT.md` — customer-facing verdict
+- `<slug>/05-generate/` — all generated artifacts (preventive/proactive/detective/responsive/iac)
+- `<slug>/mcp-calls.log` — audit trail of every MCP call
+- `<slug>/03-validate/validated.json` — proof of MCP verification for every item
+- `<slug>/attestation.md` + `<slug>/08-evidence/` — Phase 7 runtime evidence (when Phase 5 ran)
 
 ## Troubleshooting CI runs
 

@@ -13,6 +13,6 @@ tools:
 Follow the instructions in `skills/map-assemble/SKILL.md`.
 
 Read the skill file, consume all map-*.json state files, and write:
-- `.service-approval/state/mapping-results.json`
-- `.service-approval/state/controls-catalog.md`
-- `.service-approval/state/framework-mapping.md`
+- `.service-approval/<slug>/04-map/mapping-results.json`
+- `.service-approval/<slug>/04-map/controls-catalog.md`
+- `.service-approval/<slug>/04-map/framework-mapping.md`

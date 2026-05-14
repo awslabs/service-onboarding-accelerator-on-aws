@@ -12,8 +12,8 @@ organized by the Category x Scope matrix. Each control traces back to mitigation
 includes rich metadata so downstream skills (framework-mapping, generate) can work without
 re-deriving the reasoning chain.
 
-**Input:** `.service-approval/state/validated.json`
-**Output:** `.service-approval/state/map-controls-generated.json`
+**Input:** `.service-approval/<slug>/03-validate/validated.json`
+**Output:** `.service-approval/<slug>/04-map/map-controls-generated.json`
 **Schema:** `schemas/map-controls-generated.schema.json` — encodes shape, id pattern `^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\d{3}$`, scope/category enums, `mitigation_ids[]` pattern `^M-.+`, per-control required fields.
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
@@ -23,15 +23,15 @@ This is one of 4 focused map sub-skills. Each writes to a separate intermediate 
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR: run validator first"
-mkdir -p .service-approval/state
+test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR: run validator first"
+mkdir -p .service-approval/<slug>/04-map
 ```
 
 Load validated.json and extract:
 ```bash
 python3 -c "
 import json
-vj = json.load(open('.service-approval/state/validated.json'))
+vj = json.load(open('.service-approval/<slug>/03-validate/validated.json'))
 print(f'Assets: {len(vj[\"assets\"])}')
 print(f'Operations: {len(vj[\"api_surface\"][\"operations\"])}')
 print(f'Mitigations: {len(vj[\"existing_mitigations\"])}')
@@ -430,7 +430,7 @@ if uncovered:
 
 ## Phase 4: Write Output
 
-Write `.service-approval/state/map-controls-generated.json`:
+Write `.service-approval/<slug>/04-map/map-controls-generated.json`:
 
 ```json
 {
@@ -501,5 +501,5 @@ Map (Generate Controls) complete:
   Controls: {total} ({by_scope}, {by_category})
   Mitigations covered: {covered}/{total} (100%)
   Assessment gaps covered: {covered}/{total}
-  Output: .service-approval/state/map-controls-generated.json
+  Output: .service-approval/<slug>/04-map/map-controls-generated.json
 ```

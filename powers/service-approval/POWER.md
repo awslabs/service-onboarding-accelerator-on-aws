@@ -1,7 +1,7 @@
 ---
 name: service-approval
 displayName: AWS Service Security Controls Generator
-description: Generate AWS security controls and compliant IaC for any AWS service. Runs an 8-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
+description: Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
 keywords:
 - aws
 - security
@@ -34,10 +34,10 @@ version: 1.0.0
 
 ## Overview
 
-This Power drives an 8-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to a control framework (CCMv4, NIST 800-53, CIS, ISO), and produces a full set of deployable artifacts.
+This Power drives a 9-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to a control framework (CCMv4, NIST 800-53, CIS, ISO), and produces a full set of deployable artifacts.
 
 **Key capabilities:**
-- **8-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize, with 20 sub-skills
+- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 20 sub-skills
 - **Parallel execution** — 4 research sub-skills, 3 generate sub-skills run concurrently via Kiro's `/spawn` command
 - **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge`, `aws-documentation`, and `awsiac` MCPs. Hardcoded values from training data are banned.
 - **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks, CDK/CDKTF/Terraform/CloudFormation templates
@@ -59,7 +59,7 @@ Triggered by keyword match. Say any of:
 - "run service approval for <service-name>"
 - "generate AWS security controls for <service-name>"
 - "service approval ./input --service=<name>"
-- "run the 8-phase pipeline on <service-name>"
+- "run the 9-phase pipeline on <service-name>"
 
 Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"*.
 
@@ -77,14 +77,15 @@ Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"
 ## Pipeline
 
 ```
-Phase Intake         → state/intake-manifest.json (service name, input type, testing prefs)
-Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json, state/iac-support.json
-Phase 1 Research     → state/research.json (4 parallel sub-skills merged)
-Phase 2 Validate     → state/validated.json
-Phase 3 Map          → state/mapping-results.json + framework-mapping.md
-Phase 4 Generate     → controls/ (preventive, proactive, detective, responsive, iac)
-Phase 5 Test         → state/test-results.json (needs --env)
-Phase 6 Summarize    → APPROVAL-REPORT.md
+Phase Intake         → _staging/<ts>/00-intake/intake-manifest.json (promoted to <slug>/00-intake/ in Phase 0)
+Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.json, iac-support.json
+Phase 1 Research     → <slug>/02-research/research.json (4 parallel sub-skills merged)
+Phase 2 Validate     → <slug>/03-validate/validated.json
+Phase 3 Map          → <slug>/04-map/mapping-results.json + framework-mapping.md
+Phase 4 Generate     → <slug>/05-generate/{preventive, proactive, detective, responsive, iac}/
+Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (needs --env)
+Phase 6 Summarize    → <slug>/07-summarize/APPROVAL-REPORT.md
+Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
 ```
 
 **Parallelization windows** (use `/spawn` at these points):
@@ -111,7 +112,7 @@ any of these violations:
 
 1. Never write a one-shot generator script that hardcodes state or controls. Run every phase through its `SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP. Hardcoded values from training data are banned.
-3. Log every MCP call to `.service-approval/state/mcp-calls.log`. Minimum 10 entries enforced.
+3. Log every MCP call to `.service-approval/<slug>/mcp-calls.log`. Minimum 10 entries enforced.
 4. Every item in `validated.json` must have a unique `verification_note` specific to that item. Templated notes fail integrity checks.
 5. IaC templates must be parameterized. No hardcoded account IDs (`123456789012`) or placeholder ARNs.
 6. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals` in the same Condition must target the same key.
@@ -120,14 +121,14 @@ any of these violations:
 ## Output
 
 - `.service-approval/APPROVAL-REPORT.md` — final report + CCMv4 coverage matrix
-- `.service-approval/controls/` — all generated artifacts (85+ files)
-- `.service-approval/state/` — pipeline state files (research.json, validated.json, etc.)
+- `.service-approval/<slug>/05-generate/` — all generated artifacts (85+ files)
+- `.service-approval/<slug>/` — pipeline state files per phase (01-assess/, 02-research/, 03-validate/, 04-map/, 05-generate/, 06-test/)
 - `.service-approval/ARTIFACT-FLOW-MATRIX.md` — per-artifact input/output dependency graph
 
 ## Troubleshooting
 
 ### `mcp-calls.log missing` (P1 hook failure)
-Every subagent must call `@awsknowledge`, `@aws-documentation`, or `@awsiac` at least once and log to `.service-approval/state/mcp-calls.log`. Check the Research and Validate phases — these are where calls are concentrated.
+Every subagent must call `@awsknowledge`, `@aws-documentation`, or `@awsiac` at least once and log to `.service-approval/<slug>/mcp-calls.log`. Check the Research and Validate phases — these are where calls are concentrated.
 
 ### `validated.json verification notes duplicated` (P2)
 Every `verification_note` must be item-specific. If Kiro is templating notes, re-run Validate with stricter prompting: *"write a unique verification note citing the exact MCP call result for each item."*
