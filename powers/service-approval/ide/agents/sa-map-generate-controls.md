@@ -12,5 +12,5 @@ tools:
 
 Follow the instructions in `skills/map-generate-controls/SKILL.md`.
 
-Read the skill file, consume `.service-approval/state/validated.json`, and write
-`.service-approval/state/map-controls-generated.json`.
+Read the skill file, consume `.service-approval/<slug>/03-validate/validated.json`, and write
+`.service-approval/<slug>/04-map/map-controls-generated.json`.

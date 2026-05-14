@@ -2,7 +2,7 @@
 name: phase-generate
 description: Rules for Phase 4 (Generate) sub-skills
 inclusion: fileMatch
-fileMatchPattern: "**/.service-approval/controls/**"
+fileMatchPattern: "**/.service-approval/*/05-generate/**"
 ---
 
 # Phase 4 — Generate
@@ -11,12 +11,12 @@ Applies to: `sa-generate-preventive`, `sa-generate-detective`, `sa-generate-iac`
 
 ## Parallel execution
 
-Use `/spawn` to run all three concurrently. Each writes to a disjoint subtree of `.service-approval/controls/`:
+Use `/spawn` to run all three concurrently. Each writes to a disjoint subtree of `.service-approval/<slug>/05-generate/`:
 
 ```
-/spawn sa-generate-preventive    → controls/preventive/, controls/proactive/
-/spawn sa-generate-detective     → controls/detective/, controls/responsive/
-/spawn sa-generate-iac           → controls/iac/{cdk,cloudformation,cdktf,terraform}/
+/spawn sa-generate-preventive    → 05-generate/preventive/, 05-generate/proactive/
+/spawn sa-generate-detective     → 05-generate/detective/, 05-generate/responsive/
+/spawn sa-generate-iac           → 05-generate/iac/{cdk,cloudformation,cdktf,terraform}/
 ```
 
 ## Hard rules
@@ -65,7 +65,7 @@ Exact counts vary by service surface area. Observed ranges:
 
 ## PostToolUse hook behavior
 
-`hooks/post-tool-use.json` fires on `fs_write` to anything under `.service-approval/controls/`. It runs:
+`hooks/post-tool-use.json` fires on `fs_write` to anything under `.service-approval/<slug>/05-generate/`. It runs:
 - JSON/YAML parse validation
 - Terraform `validate` + `fmt` on `.tf` files
 - cfn-lint on `.yaml`/`.json` CFN templates

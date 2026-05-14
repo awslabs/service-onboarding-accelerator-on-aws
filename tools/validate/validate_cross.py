@@ -3,7 +3,7 @@
 Cross-artifact consistency validator.
 
 Runs after a generation phase completes to verify consistency across all
-generated control artifacts in .service-approval/controls/.
+generated control artifacts in .service-approval/<slug>/05-generate/.
 
 Usage:
     python3 validate_cross.py <controls_dir>
@@ -31,13 +31,24 @@ def _load_json(path: str) -> dict | None:
         return None
 
 
-def _find_state_dir(controls_dir: str) -> str | None:
-    """Find .service-approval/state/ relative to controls dir."""
-    # controls_dir is typically .service-approval/controls/
-    parent = os.path.dirname(controls_dir.rstrip("/"))
-    state = os.path.join(parent, "state")
-    if os.path.isdir(state):
-        return state
+def _find_state_dir(controls_dir: str) -> dict[str, str] | None:
+    """Find sibling phase directories relative to controls dir.
+
+    In the new layout, controls_dir is .service-approval/<slug>/05-generate/
+    and we need to find 04-map/ and 03-validate/ siblings.
+
+    Returns:
+        Dict with keys "map" and "validate" pointing to phase directories,
+        or None if not found.
+    """
+    # controls_dir is typically .service-approval/<slug>/05-generate/
+    # Parent is the service root
+    service_root = os.path.dirname(controls_dir.rstrip("/"))
+    map_dir = os.path.join(service_root, "04-map")
+    validate_dir = os.path.join(service_root, "03-validate")
+    # Return dict if at least map dir exists (validate is optional for some checks)
+    if os.path.isdir(map_dir):
+        return {"map": map_dir, "validate": validate_dir}
     return None
 
 
@@ -642,12 +653,12 @@ def validate_all(controls_dir: str) -> list[str]:
     """Run all cross-artifact checks."""
     errors = []
 
-    state_dir = _find_state_dir(controls_dir)
+    state_dirs = _find_state_dir(controls_dir)
     validated = None
     mapping = None
-    if state_dir:
-        validated = _load_json(os.path.join(state_dir, "validated.json"))
-        mapping = _load_json(os.path.join(state_dir, "mapping-results.json"))
+    if state_dirs:
+        validated = _load_json(os.path.join(state_dirs["validate"], "validated.json"))
+        mapping = _load_json(os.path.join(state_dirs["map"], "mapping-results.json"))
 
     # Always run (no state dependency)
     errors.extend(check_framework_header_consistency(controls_dir))

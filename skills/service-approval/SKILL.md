@@ -1,6 +1,6 @@
 ---
 name: service-approval-v3
-description: Orchestrate all 8 service-approval phases (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service
+description: Orchestrate all 9 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) to generate AWS security controls and compliant resource templates for any AWS service
 disable-model-invocation: false
 argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--questions=<file>] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
 ---
@@ -10,12 +10,13 @@ argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-te
 Coordinate the service-approval agents to produce a complete set of AWS security controls
 and a compliant resource template for any AWS service.
 
-**Pipeline**: Intake → Assess → Research (3 sub-skills) → Validate → Map (4 sub-skills) → Generate (3 sub-skills) → Test → Summarize
+**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Generate (3 sub-skills) → Test → Summarize → Evidence
 
 Deployment intent (full-deploy / dry-run / skip / manual-cli) is captured upfront in
 the Intake phase via `testing.mode` in `intake-manifest.json`. There is no separate
 human-in-the-loop gate between Generate and Test — whatever Intake recorded is what
-Phase 5 does.
+Phase 5 does. Phase 7 Evidence runs after Summarize when `testing.mode == full-deploy`
+and Phase 5 succeeded.
 
 ## Flags
 
@@ -27,7 +28,7 @@ Phase 5 does.
 | `--skip-test` | Skip Tester agent | false |
 | `--dry-run` | Lint artifacts, do not deploy | false |
 | `--timeout=<minutes>` | Config evaluation timeout | 30 |
-| `--keep` | Keep deployed test resources | false |
+| `--keep` | Keep deployed resources alive after Phase 7 Evidence completes (default: Phase 7 tears down). Phase 5 always defers teardown to Phase 7 when Phase 7 is in scope. | false |
 | `--include-unverified` | Allow unverified items in generation | false |
 | `--questions=<file>` | Path to SITCO Bar Questions file (.docx or .txt) — passed to Phase 0 | None |
 | `--clean` | Delete existing .service-approval/ state before run | false |
@@ -73,7 +74,7 @@ on all agents executing any phase of the pipeline.
 ### No service-specific helper scripts
 
 Agents executing any phase MUST NOT create service-specific helper scripts in `scripts/`,
-`.service-approval/state/`, or `service-approval-plugin/`. If a one-off computation is
+`.service-approval/<slug>/`, or `service-approval-plugin/`. If a one-off computation is
 needed:
 - Keep it inline in the agent's task (Python `python3 -c "..."` or Bash)
 - Or write it under `/tmp/` for the duration of the run
@@ -142,37 +143,10 @@ MCP degraded coverage:
 Do NOT block execution — continue with degraded coverage and note it in the final report.
 
 **Kiro:**
-
-Kiro has two install paths (see `install.sh`); MCP-config handling differs between them.
-
-**Path 1 — Power install (CLI 2.0, recommended).** If the user installed via
-`kiro-cli power install --local powers/service-approval`, the Power bundles its own
-MCP config at `powers/service-approval/mcp.json` and registers it with Kiro
-automatically. **Do NOT hand-edit `~/.kiro/settings/mcp.json`** — that would shadow or
-duplicate the Power-bundled entries. Detect the Power install with:
-
 ```bash
-kiro-cli power list 2>/dev/null | grep -q "service-approval" && echo "Power installed" || echo "Power NOT installed"
+cat ~/.kiro/settings/mcp.json 2>/dev/null || echo "{}"
 ```
-
-If the Power is installed:
-- The MCPs are already wired via `powers/service-approval/mcp.json` (generated from
-  `manifest.yaml` by `tools/sync-ide-configs.py`). No action needed at runtime.
-- If MCPs appear unreachable in Kiro, instruct the user to run
-  `kiro-cli power install --local <repo>/powers/service-approval` again to re-register
-  the Power, then restart Kiro.
-
-**Path 2 — Manual IDE install.** If the user installed by copying
-`powers/service-approval/{steering,ide/*}` → `.kiro/` (the path `install.sh` falls back
-to when `kiro-cli` is not available), Kiro reads `~/.kiro/settings/mcp.json` for MCP
-config. Detect this path by:
-
-```bash
-test -d .kiro && ! kiro-cli power list 2>/dev/null | grep -q "service-approval" && echo "Manual install"
-```
-
-For each missing MCP under Path 2, add it to `~/.kiro/settings/mcp.json`:
-
+For each missing MCP, add it to `~/.kiro/settings/mcp.json` using this structure:
 ```json
 {
   "mcpServers": {
@@ -183,13 +157,8 @@ For each missing MCP under Path 2, add it to `~/.kiro/settings/mcp.json`:
   }
 }
 ```
-
 Merge (do not overwrite existing entries). Write back the updated file.
-After writing, inform the user: "Added missing MCP servers to
-`~/.kiro/settings/mcp.json`: <list>. Restart Kiro if this is the first time adding them."
-
-**If neither path is detected:** the Power is not installed. Instruct the user to run
-`./install.sh` from the repo root, then restart Kiro.
+After writing, inform the user: "Added missing MCP servers to ~/.kiro/settings/mcp.json: <list>. Restart Kiro if this is the first time adding them."
 
 **GitHub Copilot (VS Code):**
 Copilot in VS Code reads workspace-scoped `.vscode/mcp.json` automatically.
@@ -229,19 +198,19 @@ Continuing with degraded MCP coverage — some steps may fall back to web search
 
 - [ ] If `--clean` was passed:
   ```bash
-  rm -rf .service-approval/state .service-approval/controls .service-approval/APPROVAL-REPORT.md
+  # Clean all service-specific state trees
+  rm -rf .service-approval/*/
+  # Preserve plans/ directory if it exists
+  mkdir -p .service-approval/plans
   ```
 
-- [ ] Check for stale state — if `.service-approval/state/` exists AND `--clean` was NOT passed:
-  Tell the user: "Existing state found in .service-approval/. Use --clean to start fresh, or I'll
+- [ ] Check for stale state — if any `.service-approval/<slug>/` directories exist AND `--clean` was NOT passed:
+  Tell the user: "Existing service state found. Use --clean to start fresh, or I'll
   run all phases again and overwrite. Proceeding with fresh run."
   Then continue — NEVER silently read or report from old state files.
 
-- [ ] Create state directory and log file:
-  ```bash
-  mkdir -p .service-approval/state
-  touch .service-approval/state/mcp-calls.log
-  ```
+- [ ] Phase 0 Intake + Assess will create the service-specific directories automatically.
+  No pre-creation needed. The canonical slug is derived after SAR facts are loaded.
 
 - [ ] Validate required input:
   If no `./input-folder` AND no `--service` AND no `--from-intake`, the Intake
@@ -280,8 +249,9 @@ and any of `--env`, `--framework`, `--framework-file`, `--skip-test`, `--dry-run
 `--keep`, `--timeout` the user supplied at the orchestrator level (Intake uses
 them to pre-fill its form / intake manifest).
 
-When done: verify `.service-approval/state/intake-manifest.json` exists before
-proceeding. From that manifest, resolve the effective `--service`, `--framework`,
+When done: verify `.service-approval/_staging/<ts>/00-intake/intake-manifest.json`
+exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0
+Step 0b after slug derivation). From that manifest, resolve the effective `--service`, `--framework`,
 `--framework-file`, input folder, and Phase 5 intent (CLI flags still override;
 see Phase 5 resolution below).
 
@@ -299,17 +269,18 @@ interactively or short-circuit:
 (`skills/intake/intake-template.yaml`, `skills/intake/defaults.yaml`) are never
 auto-loaded as user intake — they are templates/defaults shared across users.
 
-`--clean` deletes `.service-approval/state/` but does **not** delete the
-user's `./service-approval-intake.yaml`.
+`--clean` deletes the entire `.service-approval/` tree (all per-slug service
+dirs and any `_staging/` snapshots) but does **not** delete the user's
+`./service-approval-intake.yaml`.
 
 ### Phase 0: Assess (Mandatory)
 Follow ALL instructions in `skills/assess/SKILL.md` exactly.
 Pass: input folder path (from intake), `--service` flag, `--questions` flag if provided.
 When done: verify these files exist before proceeding:
-- `.service-approval/state/sar-facts.json`
-- `.service-approval/state/checkpoint-results.json`
-- `.service-approval/state/assessment-summary.md`
-- `.service-approval/state/iac-support.json`
+- `.service-approval/<slug>/01-assess/sar-facts.json`
+- `.service-approval/<slug>/01-assess/checkpoint-results.json`
+- `.service-approval/<slug>/01-assess/assessment-summary.md`
+- `.service-approval/<slug>/01-assess/iac-support.json`
 
 **Skip condition**: Phase 0 is skipped ONLY if all four assessment artifacts already
 exist (from a previous `/assess` run). There is no flag to skip assessment.
@@ -319,22 +290,22 @@ exist (from a previous `/assess` run). There is no flag to skip assessment.
 **Step 1a — Mitigations:**
 Follow ALL instructions in `skills/research-mitigations/SKILL.md`.
 Pass: `./input-folder`, `--service`.
-Wait for `.service-approval/state/research-mitigations.json`.
+Wait for `.service-approval/<slug>/02-research/research-mitigations.json`.
 
 **Step 1b — Capabilities:**
 Follow ALL instructions in `skills/research-capabilities/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/research-capabilities.json`.
+Wait for `.service-approval/<slug>/02-research/research-capabilities.json`.
 
 **Step 1c — API Surface:**
 Follow ALL instructions in `skills/research-api-surface/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/research-api-surface.json`.
+Wait for `.service-approval/<slug>/02-research/research-api-surface.json`.
 
 **Step 1d — Threat Attack Surface (optional but recommended):**
 Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/research-attack-surface.json`.
+Wait for `.service-approval/<slug>/02-research/research-attack-surface.json`.
 **Auto-trigger rule:** Run this step if ANY file in the input folder matches threat model
 patterns: `*MITRE*`, `*ATT&CK*`, `*attack*`, `*STRIDE*`, `*threat*model*`, `*threat*catalog*`.
 Skip ONLY if no threat model file is present in the input folder AND no customer threat
@@ -342,51 +313,51 @@ model input was provided.
 
 **Step 1e — Merge:**
 Run the merge step from `skills/research/SKILL.md` → "Merge Step" section.
-Verify `.service-approval/state/research.json` exists and has `schema_version: "3.0"`.
+Verify `.service-approval/<slug>/02-research/research.json` exists and has `schema_version: "3.0"`.
 
 ### Phase 2: Validate
 Follow ALL instructions in `skills/validate/SKILL.md` exactly.
-When done: verify `.service-approval/state/validated.json` exists before proceeding.
+When done: verify `.service-approval/<slug>/03-validate/validated.json` exists before proceeding.
 
 ### Phase 3: Map (4 sub-skills, sequential in this mode)
 
 **Step 3a — Parse Framework:**
 Follow ALL instructions in `skills/map-parse-framework/SKILL.md`.
 Pass: `--framework` and `--framework-file` flags if provided.
-Wait for `.service-approval/state/map-framework-parsed.json`.
+Wait for `.service-approval/<slug>/04-map/map-framework-parsed.json`.
 
 **Step 3b — Generate Controls:**
 Follow ALL instructions in `skills/map-generate-controls/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/map-controls-generated.json`.
+Wait for `.service-approval/<slug>/04-map/map-controls-generated.json`.
 
 **Step 3c — Framework Mapping:**
 Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`.
-Wait for `.service-approval/state/map-framework-mapped.json`.
+Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 
 **Step 3d — Assemble:**
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
 Verify these files exist before proceeding:
-- `.service-approval/state/mapping-results.json`
-- `.service-approval/state/controls-catalog.md`
-- `.service-approval/state/framework-mapping.md`
+- `.service-approval/<slug>/04-map/mapping-results.json`
+- `.service-approval/<slug>/04-map/controls-catalog.md`
+- `.service-approval/<slug>/04-map/framework-mapping.md`
 
 ### Phase 4: Generate (3 sub-skills, sequential in this mode)
 
 **Step 4a — Preventive/Proactive:**
 Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/preventive/` and `controls/proactive/` to be populated.
+Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
 
 **Step 4b — Detective/Responsive:**
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/detective/` and `controls/responsive/` to be populated.
+Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
 
 **Step 4c — IaC Templates:**
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/iac/` to have all 4 formats.
+Wait for `<slug>/05-generate/iac/` to have all 4 formats.
 
 **Step 4d — Final Validation:**
 Run the final validation from `skills/generate/SKILL.md` → "Final Validation" section.
@@ -400,20 +371,78 @@ Resolve Phase 5 intent in this order (CLI flags > intake > default):
    (use `--env` if provided, else Tier 1 only).
 3. Else if `--env=<profile>` was passed → run `skills/test/SKILL.md` in full mode
    with that profile.
-4. Else read `.service-approval/state/intake-manifest.json` → `testing.mode`:
+4. Else read `.service-approval/<slug>/00-intake/intake-manifest.json` → `testing.mode`
+   (or the staging path if Phase 0 hasn't yet promoted):
    - `skip` or `manual-cli` → skip Phase 5. (Summarize handles the manual-cli
      cheat-sheet render.)
    - `dry-run` → run `skills/test/SKILL.md` with `--dry-run`; pass `--env` if
      `testing.aws_profile` is set.
    - `full-deploy` → run `skills/test/SKILL.md` in full mode with
-     `--env=<testing.aws_profile>`, `--keep` if `testing.keep`, and
-     `--timeout=<testing.timeout_minutes>`.
+     `--env=<testing.aws_profile>` and `--timeout=<testing.timeout_minutes>`.
+     **Do NOT pass `--keep` to Phase 5.** Phase 5 always leaves the stack
+     alive when Phase 7 will run; the user's `testing.keep` preference is
+     consumed by Phase 7 (which tears down at the end of evidence collection
+     unless `keep == true`). If Phase 7 is being skipped (e.g. orchestrator
+     was invoked with `--no-evidence` or `--env` is missing for Phase 7),
+     pass `--no-evidence` to Phase 5 so it reverts to the legacy
+     deploy-and-teardown behavior.
 5. If `intake-manifest.json` is missing (orchestrator invoked without Intake)
    and no CLI flags were provided → skip Phase 5 with a warning.
 
 ### Phase 6: Summarize
 Follow ALL instructions in `skills/summarize/SKILL.md` exactly.
 Report the final verdict to the user.
+
+### Phase 7: Evidence (Optional — requires AWS credentials)
+**NEW:** If `--env` was provided AND Phase 5 Test deployed resources successfully (not --dry-run):
+Run the Evidence skill to perform AWS CLI attestation against deployed resources.
+
+Follow ALL instructions in `skills/evidence/SKILL.md` exactly.
+Pass: `--env`, `--service=<slug>` flags.
+
+If `--skip-test` or `--dry-run` or Phase 5 was skipped: skip this phase entirely
+AND write a skip artifact so the audit trail isn't a hole:
+
+```python
+import json
+from datetime import datetime, timezone
+from tools.paths import phase_dir
+
+evidence_dir = phase_dir(slug, "evidence")
+evidence_dir.mkdir(parents=True, exist_ok=True)
+skip_reason = (
+    "Phase 5 Test was skipped or did not deploy resources. "
+    "Phase 7 requires a live deployed stack (06-test/deployed-resources.json) "
+    "to probe via AWS CLI. Re-run with --env=<profile> in full-deploy mode "
+    "to enable Phase 7."
+)
+skip_artifact = {
+    "schema_version": "1.0",
+    "phase": "evidence",
+    "skipped": True,
+    "skipped_at": datetime.now(timezone.utc).isoformat(),
+    "skip_reason": skip_reason,
+    "preconditions_failed": [
+        "phase_5_test_run",
+        "deployed_resources_present",
+    ],
+}
+(evidence_dir / "phase-skipped.json").write_text(json.dumps(skip_artifact, indent=2))
+```
+
+**Stack lifecycle:** Phase 5 left the stack alive (`teardown_status:
+"deferred_to_phase_7"` in `06-test/test-results.json`). Phase 7 reads
+`06-test/deployed-resources.json`, probes the stack via AWS CLI, then tears
+it down at the end of Step 11 — UNLESS `intake-manifest.json.testing.keep ==
+true`, in which case Phase 7 leaves the stack alive for manual debugging and
+records `teardown_status: "skipped_keep_true"`. See skills/evidence/SKILL.md
+Step 11 for the exact teardown procedure.
+
+Evidence produces:
+- `<slug>/08-evidence/attestation-report.md` — control x CLI x verdict matrix
+- `<slug>/08-evidence/attestation-results.json` — machine-readable verdicts (includes `teardown_status`)
+- `<slug>/08-evidence/summary.md` — top-level triage digest
+- `<slug>/attestation.md` — reviewer's audit guide (service tree manifest)
 
 ---
 
@@ -434,11 +463,12 @@ Dispatch Intake as a foreground subagent with the full text of
 `skills/intake/SKILL.md`, plus `--service`, `--from-intake`, `--interactive`, and
 any pre-Intake CLI flags the user passed (`--env`, `--framework`, `--framework-file`,
 `--skip-test`, `--dry-run`, `--keep`, `--timeout`).
-Wait for `.service-approval/state/intake-manifest.json`.
+Wait for `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` (Intake's pre-promotion landing zone).
 
 Plugin-repo files (`skills/intake/intake-template.yaml`,
 `skills/intake/defaults.yaml`) are never auto-loaded as user intake. `--clean`
-clears `.service-approval/state/` but does not touch the user's
+clears the entire `.service-approval/` tree (all per-slug service dirs and
+any `_staging/` snapshots) but does not touch the user's
 `./service-approval-intake.yaml`.
 
 ### Phase 0: Assess (Mandatory)
@@ -540,15 +570,15 @@ Dispatch all 3 generate sub-skills simultaneously as background subagents:
 ```
 Agent 4: generate-preventive (background)
   Prompt: Full text of skills/generate-preventive/SKILL.md + --service + --include-unverified
-  Output: controls/preventive/ + controls/proactive/
+  Output: <slug>/05-generate/preventive/ + <slug>/05-generate/proactive/
 
 Agent 5: generate-detective (background)
   Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
-  Output: controls/detective/ + controls/responsive/
+  Output: <slug>/05-generate/detective/ + <slug>/05-generate/responsive/
 
 Agent 6: generate-iac (background)
   Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified
-  Output: controls/iac/
+  Output: <slug>/05-generate/iac/
 ```
 
 **IMPORTANT:** Dispatch all 3 in a single message with 3 Agent tool calls.
@@ -601,6 +631,6 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 ```
 Service Approval complete.
 Report: .service-approval/APPROVAL-REPORT.md
-Controls: .service-approval/controls/
+Controls: .service-approval/<slug>/05-generate/
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 ```

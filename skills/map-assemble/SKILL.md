@@ -12,25 +12,25 @@ This step builds traceability links, identifies coverage gaps, and produces the 
 reports. It is largely mechanical — no LLM reasoning about control-objective alignment.
 
 **Inputs:**
-- `.service-approval/state/map-framework-parsed.json` — framework objectives
-- `.service-approval/state/map-controls-generated.json` — controls with metadata
-- `.service-approval/state/map-framework-mapped.json` — framework mappings with quality gates
-- `.service-approval/state/validated.json` — mitigations and capabilities (for traceability)
+- `.service-approval/<slug>/04-map/map-framework-parsed.json` — framework objectives
+- `.service-approval/<slug>/04-map/map-controls-generated.json` — controls with metadata
+- `.service-approval/<slug>/04-map/map-framework-mapped.json` — framework mappings with quality gates
+- `.service-approval/<slug>/03-validate/validated.json` — mitigations and capabilities (for traceability)
 
 **Outputs:**
-- `.service-approval/state/mapping-results.json` — machine-readable mapping state (final)
-- `.service-approval/state/controls-catalog.md` — controls inventory by Category x Scope
-- `.service-approval/state/framework-mapping.md` — framework objective crosswalk
+- `.service-approval/<slug>/04-map/mapping-results.json` — machine-readable mapping state (final)
+- `.service-approval/<slug>/04-map/controls-catalog.md` — controls inventory by Category x Scope
+- `.service-approval/<slug>/04-map/framework-mapping.md` — framework objective crosswalk
 
 ---
 
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/map-framework-parsed.json && echo "framework-parsed: OK" || echo "ERROR"
-test -f .service-approval/state/map-controls-generated.json && echo "controls-generated: OK" || echo "ERROR"
-test -f .service-approval/state/map-framework-mapped.json && echo "framework-mapped: OK" || echo "ERROR"
-test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/map-framework-parsed.json && echo "framework-parsed: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/map-controls-generated.json && echo "controls-generated: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/map-framework-mapped.json && echo "framework-mapped: OK" || echo "ERROR"
+test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
 ```
 
 All 4 files must exist before assembly.
@@ -44,8 +44,8 @@ For each control, collect all framework objectives it maps to:
 ```python
 import json
 
-fw_mapped = json.load(open('.service-approval/state/map-framework-mapped.json'))
-cg = json.load(open('.service-approval/state/map-controls-generated.json'))
+fw_mapped = json.load(open('.service-approval/<slug>/04-map/map-framework-mapped.json'))
+cg = json.load(open('.service-approval/<slug>/04-map/map-controls-generated.json'))
 
 # Build reverse index: control_id -> [objective_ids]
 ctrl_to_objs = {}
@@ -297,7 +297,7 @@ if attack_coverage:
 Combine all data into the final `mapping-results.json`:
 
 ```python
-fw_parsed = json.load(open('.service-approval/state/map-framework-parsed.json'))
+fw_parsed = json.load(open('.service-approval/<slug>/04-map/map-framework-parsed.json'))
 
 # Build control_summary
 from collections import Counter
@@ -326,7 +326,7 @@ mapping_results = {
 if attack_coverage:
     mapping_results['attack_coverage'] = attack_coverage
 
-with open('.service-approval/state/mapping-results.json', 'w') as f:
+with open('.service-approval/<slug>/04-map/mapping-results.json', 'w') as f:
     json.dump(mapping_results, f, indent=2)
 ```
 
@@ -334,7 +334,7 @@ with open('.service-approval/state/mapping-results.json', 'w') as f:
 
 ## Phase 5: Write controls-catalog.md
 
-Write `.service-approval/state/controls-catalog.md`:
+Write `.service-approval/<slug>/04-map/controls-catalog.md`:
 
 ```markdown
 # Security Controls Catalog — {service-name}
@@ -429,7 +429,7 @@ If `attack_coverage` is available, add after the Control Matrix Summary:
 
 ## Phase 6: Write framework-mapping.md
 
-Write `.service-approval/state/framework-mapping.md`.
+Write `.service-approval/<slug>/04-map/framework-mapping.md`.
 
 **CRITICAL REQUIREMENT:** The framework-mapping.md MUST be organized so that EVERY individual
 control objective from the parsed framework has its own entry showing which service controls

@@ -108,18 +108,35 @@ _KMS_SERVICE_CONDITION_KEYS = {
 # State file loading
 # ================================================================
 
-def _find_state_dir(file_path: str) -> str | None:
-    """Walk up from file_path to find .service-approval/state/."""
-    d = os.path.dirname(os.path.abspath(file_path))
-    for _ in range(10):
-        candidate = os.path.join(d, ".service-approval", "state")
-        if os.path.isdir(candidate):
-            return candidate
-        parent = os.path.dirname(d)
-        if parent == d:
-            break
-        d = parent
-    return None
+def _find_state_dir(file_path: str) -> dict[str, str] | None:
+    """Walk up from file_path to find service root, return phase paths.
+
+    In the new per-service-per-phase layout, controls live at
+    .service-approval/<slug>/05-generate/ and need to reference files in
+    sibling phases like 04-map/, 03-validate/, 01-assess/.
+
+    Delegates to tools.paths.find_service_root_for_file (regex-anchored to
+    canonical phase dir names) instead of the prior heuristic
+    `c.startswith("0") and "-" in c`, which mis-matched `0-day-old-cache`,
+    `00-private`, etc.
+
+    Returns:
+        Dict with keys "map", "validate", "assess" pointing to phase directories,
+        or None if service root cannot be found.
+    """
+    # Local import to avoid circular dependency at module load (paths.py is
+    # in the parent package, this module is in tools/validate/).
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from paths import find_service_root_for_file  # type: ignore
+
+    service_root = find_service_root_for_file(file_path)
+    if service_root is None:
+        return None
+    return {
+        "map": str(service_root / "04-map"),
+        "validate": str(service_root / "03-validate"),
+        "assess": str(service_root / "01-assess"),
+    }
 
 
 def _load_json(path: str) -> dict | None:
@@ -134,12 +151,12 @@ def _load_json(path: str) -> dict | None:
 
 
 def load_state_files(file_path: str) -> tuple:
-    """Load validated.json and mapping-results.json from nearest state dir."""
-    state_dir = _find_state_dir(file_path)
-    if not state_dir:
+    """Load validated.json and mapping-results.json from nearest state dirs."""
+    state_dirs = _find_state_dir(file_path)
+    if not state_dirs:
         return None, None
-    validated = _load_json(os.path.join(state_dir, "validated.json"))
-    mapping = _load_json(os.path.join(state_dir, "mapping-results.json"))
+    validated = _load_json(os.path.join(state_dirs["validate"], "validated.json"))
+    mapping = _load_json(os.path.join(state_dirs["map"], "mapping-results.json"))
     return validated, mapping
 
 

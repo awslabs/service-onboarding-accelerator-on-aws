@@ -11,7 +11,7 @@ Generate all preventive and proactive security control artifacts from the Contro
 This covers Organisation×Proactive, Organisation×Preventive, Account×Proactive,
 Account×Preventive, Resource×Proactive, and Resource×Preventive cells.
 
-**Output:** `.service-approval/controls/preventive/` and `.service-approval/controls/proactive/`
+**Output:** `.service-approval/<slug>/05-generate/preventive/` and `.service-approval/<slug>/05-generate/proactive/`
 
 This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
@@ -20,17 +20,17 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
-test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR"
-mkdir -p .service-approval/controls/{preventive,proactive/opa-policies}
+test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
+test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
+mkdir -p .service-approval/<slug>/05-generate/{preventive,proactive/opa-policies}
 ```
 
 Load controls from `mapping-results.json` and API surface from `validated.json`:
 ```bash
 python3 -c "
 import json
-mr = json.load(open('.service-approval/state/mapping-results.json'))
-vj = json.load(open('.service-approval/state/validated.json'))
+mr = json.load(open('.service-approval/<slug>/04-map/mapping-results.json'))
+vj = json.load(open('.service-approval/<slug>/03-validate/validated.json'))
 prv = [c for c in mr['controls'] if c['category'] == 'PRV']
 pro = [c for c in mr['controls'] if c['category'] == 'PRO']
 print(f'Preventive controls: {len(prv)}')
@@ -367,7 +367,7 @@ Both must be fixed together — trace to the source of the discrepancy.
   needed but has no control, either assign it to an existing control or omit it. Unmapped
   rules create audit confusion — every rule must trace back to the controls catalog.
 - **Mapping-driven ID lookup (REQUIRED — do not invent IDs)**: Before writing ANY artifact,
-  load `.service-approval/state/mapping-results.json` and find the control whose `mechanism`
+  load `.service-approval/<slug>/04-map/mapping-results.json` and find the control whose `mechanism`
   matches the artifact type you are generating. Use the EXACT `id` field from that control,
   verbatim:
   - Rule/policy names (Guard, OPA, Checkov): lowercase the ID, convert hyphens to underscores
@@ -508,7 +508,7 @@ Both must be fixed together — trace to the source of the discrepancy.
   definitions. Create `proactive/custom-policies/` and write a `.py` or `.yaml` policy file for
   each custom check. A Checkov config referencing non-existent custom policies will fail at runtime.
   ```bash
-  mkdir -p .service-approval/controls/proactive/custom-policies
+  mkdir -p .service-approval/<slug>/05-generate/proactive/custom-policies
   ```
   Each custom policy file must define the check ID, resource type, and evaluation logic.
 
@@ -849,5 +849,5 @@ Generate (preventive/proactive) complete:
   Acc×Preventive:   permission-boundary
   Res×Proactive:    cfn-guard resource rules
   Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
-  Output: .service-approval/controls/preventive/, .service-approval/controls/proactive/
+  Output: .service-approval/<slug>/05-generate/preventive/, .service-approval/<slug>/05-generate/proactive/
 ```

@@ -226,17 +226,40 @@ Additional options:
 
 ## Output
 
-Write to `.service-approval/state/intake-manifest.json`:
+**CRITICAL:** Intake runs BEFORE the canonical service slug is known (slug is derived by Phase 0 Assess from the SAR `service_prefix`). Therefore, intake writes to a staging directory indexed by timestamp.
+
+Compute the staging timestamp:
+
+```bash
+STAGING_TS=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
+STAGING_DIR=".service-approval/_staging/${STAGING_TS}"
+mkdir -p "${STAGING_DIR}/00-intake"
+```
+
+Or using Python:
+
+```python
+from datetime import datetime, timezone
+from pathlib import Path
+staging_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+staging_dir = Path(f".service-approval/_staging/{staging_ts}/00-intake")
+staging_dir.mkdir(parents=True, exist_ok=True)
+manifest_path = staging_dir / "intake-manifest.json"
+```
+
+Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`:
 
 ```json
 {
   "schema_version": "2.1.0",
   "generated_at": "{ISO-8601 timestamp}",
+  "staging_timestamp": "{STAGING_TS}",
   "service": {
     "name": "{service-name}",
     "friendly_name": "{AWS Service Friendly Name}",
     "sar_slug": "{slug from sar-slugs.json}",
-    "service_prefix": "{IAM prefix}"
+    "service_prefix": "{IAM prefix}",
+    "candidate_slug": "{lowercase, hyphenated service name from user input}"
   },
   "inputs": {
     "input_folder": "{path or null}",
@@ -292,7 +315,9 @@ to the orchestrator, those override the intake-derived flags (CLI > intake >
 defaults).
 
 **Note:** `iac_formats` and `iac_support` are NOT in the intake manifest. They are
-determined by Phase 0 (Assess) and written to `state/iac-support.json`.
+determined by Phase 0 (Assess) and written to `<slug>/01-assess/iac-support.json`.
+
+**Staging → Canonical Promotion:** Phase 0 (Assess) will atomically promote this staging directory to `.service-approval/<slug>/` after deriving the canonical slug from the SAR `service_prefix`. The promotion is described in Phase 0's Step 0b.
 
 ---
 
@@ -339,13 +364,14 @@ Proceed? (Y/n)
 
 | Phase | What it reads from intake-manifest.json |
 |-------|----------------------------------------|
-| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug` |
+| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion) |
 | Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface` |
 | Phase 2 (Validate) | `service` |
 | Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
-| Phase 4 (Generate) | Reads `state/iac-support.json` (from Phase 0), NOT intake |
-| Phase 5 (Test) | `testing.mode`, `testing.aws_profile`, `testing.region`, `testing.keep`, `testing.timeout_minutes` (orchestrator translates to `--env` / `--skip-test` / `--dry-run`) |
+| Phase 4 (Generate) | Reads `<slug>/01-assess/iac-support.json` (from Phase 0), NOT intake |
+| Phase 5 (Test) | `testing.mode`, `testing.aws_profile`, `testing.region`, `testing.timeout_minutes` (orchestrator translates to `--env` / `--skip-test` / `--dry-run`). Note: Phase 5 always passes `--keep` to smoke-deploy-test.sh when Phase 7 is in scope; `testing.keep` itself is consumed by Phase 7, not Phase 5. |
 | Phase 6 (Summarize) | Full manifest for report metadata; `testing.mode` drives the manual-cli cheat-sheet render when mode == `manual-cli` |
+| Phase 7 (Evidence) | `testing.keep` — when `true`, Phase 7 skips its end-of-run teardown (stack stays alive for manual debugging); when `false` (default), Phase 7 tears down the stack from `06-test/deployed-resources.json` after evidence collection completes. |
 
 ---
 
@@ -358,8 +384,9 @@ Intake complete:
   Inputs: {N} files ({types})
   Framework: {framework_type}
   Testing mode: {full-deploy|dry-run|skip|manual-cli} (profile: {name or n/a}, region: {region})
-  Manifest: .service-approval/state/intake-manifest.json
+  Staging: .service-approval/_staging/{STAGING_TS}/00-intake/intake-manifest.json
 
+Canonical service slug will be derived in Phase 0 (Assess).
 IaC formats will be determined in Phase 0 (Assess).
 Ready for Phase 0.
 ```

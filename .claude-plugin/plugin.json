@@ -1,7 +1,7 @@
 {
   "name": "service-approval",
   "version": "1.0.0",
-  "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs an 8-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.",
+  "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.",
   "author": {
     "name": "GFS PACE",
     "email": "fsi-pace@amazon.com"
@@ -32,5 +32,5 @@
     "proactive-controls",
     "responsive-controls"
   ],
-  "license": "MIT"
+  "license": "Apache-2.0"
 }

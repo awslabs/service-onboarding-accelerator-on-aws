@@ -18,7 +18,7 @@ Uses the service's API surface, capabilities, and customer-provided threat model
 produce a prioritized list of applicable threat techniques.
 
 **Input:** SAR facts, customer threat model (from input folder), reference data
-**Output:** `.service-approval/state/research-attack-surface.json`
+**Output:** `.service-approval/<slug>/02-research/research-attack-surface.json`
 
 This is one of 4 focused research sub-skills. Each writes to a separate intermediate
 state file. This sub-skill is **optional** — the pipeline works without it, but when
@@ -68,7 +68,7 @@ print summary. Set it using these rules:
 ## Prerequisites
 
 ```bash
-mkdir -p .service-approval/state
+mkdir -p .service-approval/<slug>/02-research
 ```
 
 Load reference data (used for MITRE ATT&CK mapping — skip if custom-only):
@@ -80,7 +80,7 @@ test -f data/attack-nist-ccm-crosswalk.json && echo "crosswalk: OK" || echo "WAR
 
 If SAR facts exist from Phase 0, load them:
 ```bash
-test -f .service-approval/state/sar-facts.json && echo "sar-facts: OK" || echo "sar-facts: not found (will use --service flag)"
+test -f .service-approval/<slug>/01-assess/sar-facts.json && echo "sar-facts: OK" || echo "sar-facts: not found (will use --service flag)"
 ```
 
 ---
@@ -200,7 +200,7 @@ Group applicable techniques by ATT&CK tactic:
 
 ## Step 5: Write Output
 
-Write `.service-approval/state/research-attack-surface.json`:
+Write `.service-approval/<slug>/02-research/research-attack-surface.json`:
 
 ```json
 {
@@ -273,5 +273,5 @@ Research (ATT&CK Attack Surface) complete:
   Applicable techniques: {N} (HIGH: {N}, MEDIUM: {N})
   Tactics covered: {N}/{total ATT&CK Cloud tactics}
   STRIDE bridge entries: {N}
-  Output: .service-approval/state/research-attack-surface.json
+  Output: .service-approval/<slug>/02-research/research-attack-surface.json
 ```

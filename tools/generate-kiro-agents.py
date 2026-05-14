@@ -98,13 +98,13 @@ IDE_HOOKS_TEMPLATES = {
     "post-tool-use.kiro.hook": """---
 title: Validate state files after write
 trigger: File Save
-filePattern: ".service-approval/state/*.json|.service-approval/controls/**/*"
+filePattern: ".service-approval/**/*.json|.service-approval/**/05-generate/**/*"
 ---
 
 # Post-write validation
 
 Run `python3 tools/validate/hook_post_tool_use.py` after any write to
-`.service-approval/state/` or `.service-approval/controls/`. The validator
+`.service-approval/<slug>/<phase>/` or `.service-approval/<slug>/05-generate/`. The validator
 checks schema shape, JSON validity, and cross-file references.
 
 Exit code 2 blocks the write.

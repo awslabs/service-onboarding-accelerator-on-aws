@@ -2,7 +2,7 @@
 """
 Stop hook: cross-artifact validation after generation phase.
 
-Runs validate_cross.py against .service-approval/controls/ when Claude
+Runs validate_cross.py against .service-approval/<slug>/05-generate/ when Claude
 signals completion. Only fires if controls directory exists.
 
 Reports warnings to stdout (non-blocking) by default. Set environment
@@ -23,37 +23,51 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 def main():
     cwd = os.getcwd()
-    controls_dir = os.path.join(cwd, ".service-approval", "controls")
-    if not os.path.isdir(controls_dir):
+    output_dir = os.path.join(cwd, ".service-approval")
+    if not os.path.isdir(output_dir):
         sys.exit(0)
 
-    # Only run if there are actual control files (not just iac/)
-    has_controls = False
-    for subdir in ("preventive", "detective", "responsive", "proactive"):
-        if os.path.isdir(os.path.join(controls_dir, subdir)):
-            has_controls = True
-            break
+    # Find all service directories with controls
+    service_dirs = []
+    for item in os.listdir(output_dir):
+        if item.startswith("_") or item == "plans":
+            continue
+        service_path = os.path.join(output_dir, item)
+        if not os.path.isdir(service_path):
+            continue
+        # Check for 05-generate/ with actual control files
+        controls_dir = os.path.join(service_path, "05-generate")
+        if os.path.isdir(controls_dir):
+            has_controls = any(
+                os.path.isdir(os.path.join(controls_dir, subdir))
+                for subdir in ("preventive", "detective", "responsive", "proactive")
+            )
+            if has_controls:
+                service_dirs.append(controls_dir)
 
-    if not has_controls:
+    if not service_dirs:
         sys.exit(0)
 
-    # --- Cross-validation ---
+    # --- Run validations for each service ---
     from validate_cross import validate_all
-    cross_errors = validate_all(controls_dir)
-
-    # --- Deployability validation ---
     from validate_deployable import validate_deployable, check_aws_credentials
-
-    has_creds, _ = check_aws_credentials()
-    deploy_errors = validate_deployable(
-        controls_dir, tier1_only=(not has_creds),
-    )
-
-    # --- Pipeline integrity validation ---
-    # Detects shortcut scripts, missing MCP calls, templated verification
-    # notes, inverted SCP logic, placeholder ARNs, and verdict inconsistencies.
     from validate_pipeline_integrity import validate_pipeline
     from pathlib import Path
+
+    has_creds, _ = check_aws_credentials()
+    cross_errors = []
+    deploy_errors = []
+
+    for controls_dir in service_dirs:
+        # Cross-validation
+        cross_errors.extend(validate_all(controls_dir))
+
+        # Deployability validation
+        deploy_errors.extend(
+            validate_deployable(controls_dir, tier1_only=(not has_creds))
+        )
+
+    # Pipeline integrity validation (runs once per repo, iterates services internally)
     integrity_errors = validate_pipeline(Path(cwd))
 
     all_errors = cross_errors + deploy_errors + integrity_errors

@@ -6,19 +6,19 @@ disable-model-invocation: false
 
 # Service Approval — Validator v3
 
-Read `.service-approval/state/research.json` (schema v3.0 produced by Researcher v3). Verify
+Read `.service-approval/<slug>/02-research/research.json` (schema v3.0 produced by Researcher v3). Verify
 every capability claim, API parameter, and mitigation against live MCP sources.
-Produce `.service-approval/state/validated.json`.
+Produce `.service-approval/<slug>/03-validate/validated.json`.
 
 ## Prerequisites
 
 - [ ] Confirm research.json exists (schema validation runs automatically via PostToolUse hook).
-  Stop if `.service-approval/state/research.json` is missing.
+  Stop if `.service-approval/<slug>/02-research/research.json` is missing.
 
 - [ ] Check for assessment artifacts (optional — from `/assess` phase):
   ```bash
-  test -f .service-approval/state/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
-  test -f .service-approval/state/checkpoint-results.json && echo "Checkpoints: OK" || echo "Checkpoints: not found"
+  test -f .service-approval/<slug>/01-assess/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
+  test -f .service-approval/<slug>/01-assess/checkpoint-results.json && echo "Checkpoints: OK" || echo "Checkpoints: not found"
   ```
   If present, load them — they provide pre-verified data that accelerates validation.
 
@@ -31,9 +31,9 @@ Produce `.service-approval/state/validated.json`.
   Before Step 1, check whether a prior `validated.json` exists:
 
   ```bash
-  if [ -f .service-approval/state/validated.json ]; then
-    mtime=$(stat -f "%Sm" -t "%Y-%m-%d" .service-approval/state/validated.json 2>/dev/null \
-            || stat -c "%y" .service-approval/state/validated.json | cut -d' ' -f1)
+  if [ -f .service-approval/<slug>/03-validate/validated.json ]; then
+    mtime=$(stat -f "%Sm" -t "%Y-%m-%d" .service-approval/<slug>/03-validate/validated.json 2>/dev/null \
+            || stat -c "%y" .service-approval/<slug>/03-validate/validated.json | cut -d' ' -f1)
     echo "Existing validated.json dated $mtime"
   fi
   ```
@@ -63,7 +63,7 @@ Produce `.service-approval/state/validated.json`.
 
 ## MCP call logging
 
-Log every MCP call to `.service-approval/state/mcp-calls.log` with format:
+Log every MCP call to `<slug>/mcp-calls.log` with format:
 ```
 [TIMESTAMP] [Validator] MCP CALL: <tool_name>
   <parameters>
@@ -341,7 +341,7 @@ operation. Do NOT replace the array with a summary string like `"INHERITED_FROM_
 Downstream skills (Generate) iterate over `api_surface.operations[]` to build the parameter
 coverage matrix. A string value will break the pipeline.
 
-Write `.service-approval/state/validated.json` — same root structure as `research.json` with
+Write `.service-approval/<slug>/03-validate/validated.json` — same root structure as `research.json` with
 verification annotations added throughout.
 
 The output preserves the v3.0 schema with these additions:
@@ -435,5 +435,5 @@ Validation complete (v3):
   - Enrichment opportunities:    N verified
   - Assessment gaps:             N (N addressed by mitigations)
   - UNVERIFIED items:            N
-  Output: .service-approval/state/validated.json
+  Output: .service-approval/<slug>/03-validate/validated.json
 ```

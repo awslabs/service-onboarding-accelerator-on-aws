@@ -10,7 +10,7 @@ argument-hint: '[./input-folder] [--service=<name>]'
 Analyze the target AWS service to discover its security capabilities and API surface.
 Produce a single structured output consumed by downstream skills.
 
-**Output:** `.service-approval/state/research.json`
+**Output:** `.service-approval/<slug>/02-research/research.json`
 
 ---
 
@@ -34,8 +34,10 @@ sub-skills in parallel (all 4 if ATT&CK enrichment is enabled) and calls the mer
 ## Prerequisites
 
 ```bash
-mkdir -p .service-approval/state
-touch .service-approval/state/mcp-calls.log
+from tools.paths import phase_dir, mcp_log
+research_dir = phase_dir(slug, "research")  # .service-approval/<slug>/02-research/
+research_dir.mkdir(parents=True, exist_ok=True)
+mcp_log(slug).touch()  # .service-approval/<slug>/mcp-calls.log
 ```
 
 **MCP refresh decision (REQUIRED — ask the user when a prior research.json exists)**:
@@ -44,9 +46,9 @@ research-capabilities and research-api-surface call `awsknowledge` / `kb-search`
 exists, ask the user before re-running:
 
 ```bash
-if [ -f .service-approval/state/research.json ]; then
-  mtime=$(stat -f "%Sm" -t "%Y-%m-%d" .service-approval/state/research.json 2>/dev/null \
-          || stat -c "%y" .service-approval/state/research.json | cut -d' ' -f1)
+if [ -f .service-approval/<slug>/02-research/research.json ]; then
+  mtime=$(stat -f "%Sm" -t "%Y-%m-%d" .service-approval/<slug>/02-research/research.json 2>/dev/null \
+          || stat -c "%y" .service-approval/<slug>/02-research/research.json | cut -d' ' -f1)
   echo "Existing research.json dated $mtime"
 fi
 ```
@@ -80,22 +82,22 @@ When this skill is invoked directly (not by orchestrator):
 ### Step 1: Run research-mitigations
 Follow ALL instructions in `skills/research-mitigations/SKILL.md`.
 Pass: `./input-folder`, `--service`.
-Wait for `.service-approval/state/research-mitigations.json`.
+Wait for `.service-approval/<slug>/02-research/research-mitigations.json`.
 
 ### Step 2: Run research-capabilities
 Follow ALL instructions in `skills/research-capabilities/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/research-capabilities.json`.
+Wait for `.service-approval/<slug>/02-research/research-capabilities.json`.
 
 ### Step 3: Run research-api-surface
 Follow ALL instructions in `skills/research-api-surface/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/research-api-surface.json`.
+Wait for `.service-approval/<slug>/02-research/research-api-surface.json`.
 
 ### Step 3b (optional): Run research-attack-surface
 Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
 Pass: `--service`.
-Wait for `.service-approval/state/research-attack-surface.json`.
+Wait for `.service-approval/<slug>/02-research/research-attack-surface.json`.
 This step is optional — skip if ATT&CK enrichment is not needed.
 
 ### Step 4: Merge
@@ -111,9 +113,9 @@ It can be invoked by the orchestrator after all 3 sub-skills complete.
 ### Prerequisites for merge
 
 ```bash
-test -f .service-approval/state/research-mitigations.json && echo "mitigations: OK" || echo "ERROR"
-test -f .service-approval/state/research-capabilities.json && echo "capabilities: OK" || echo "ERROR"
-test -f .service-approval/state/research-api-surface.json && echo "api-surface: OK" || echo "ERROR"
+test -f .service-approval/<slug>/02-research/research-mitigations.json && echo "mitigations: OK" || echo "ERROR"
+test -f .service-approval/<slug>/02-research/research-capabilities.json && echo "capabilities: OK" || echo "ERROR"
+test -f .service-approval/<slug>/02-research/research-api-surface.json && echo "api-surface: OK" || echo "ERROR"
 ```
 
 All 3 files must exist before merging.
@@ -124,9 +126,9 @@ All 3 files must exist before merging.
 import json
 
 # Load sub-skill outputs
-mit = json.load(open('.service-approval/state/research-mitigations.json'))
-cap = json.load(open('.service-approval/state/research-capabilities.json'))
-api = json.load(open('.service-approval/state/research-api-surface.json'))
+mit = json.load(open('.service-approval/<slug>/02-research/research-mitigations.json'))
+cap = json.load(open('.service-approval/<slug>/02-research/research-capabilities.json'))
+api = json.load(open('.service-approval/<slug>/02-research/research-api-surface.json'))
 
 # Normalize sub-skill field name variations before merging
 # Mitigations sub-skill may use 'resource_type' instead of 'cfn_type',
@@ -185,7 +187,7 @@ for op in api.get('api_surface', {}).get('operations', []):
         cfn_prefix = ''
         sar = None
         try:
-            sar = json.load(open('.service-approval/state/sar-facts.json'))
+            sar = json.load(open('<slug>/01-assess/sar-facts.json'))
             cfn_prefix = sar.get('cfn_prefix', '')
         except: pass
         if not cfn_prefix:
@@ -300,7 +302,7 @@ if merged_poa:
 
 # Load ATT&CK attack surface (optional — backward compatible)
 import os
-atk_path = '.service-approval/state/research-attack-surface.json'
+atk_path = '<slug>/02-research/research-attack-surface.json'
 if os.path.isfile(atk_path):
     atk = json.load(open(atk_path))
     research['attack_surface'] = {
@@ -310,7 +312,7 @@ if os.path.isfile(atk_path):
         'customer_stride_profile': atk.get('customer_stride_profile', {})
     }
 
-json.dump(research, open('.service-approval/state/research.json', 'w'), indent=2)
+json.dump(research, open('.service-approval/<slug>/02-research/research.json', 'w'), indent=2)
 ```
 
 ### Merged Output Validation
@@ -329,7 +331,7 @@ Validation runs automatically via PostToolUse hook (validate_state.py Check S9).
 
 ```
 Research v3 complete:
-  Output: .service-approval/state/research.json (schema v3.0)
+  Output: .service-approval/<slug>/02-research/research.json (schema v3.0)
   Sub-skills:
     - Mitigations:     {N} mitigations, {N} assessment gaps
     - Capabilities:    {N} condition keys, {N} resources
