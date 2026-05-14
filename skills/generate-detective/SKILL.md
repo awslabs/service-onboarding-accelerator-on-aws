@@ -537,7 +537,7 @@ the remediation step cannot find the resource ARN because the describe step over
 **CRITICAL — SDK service name casing:** Step Functions SDK integrations use camelCase service
 identifiers in the Resource ARN: `arn:aws:states:::aws-sdk:<serviceName>:<apiAction>`. The
 service name is derived from the AWS SDK service identifier with hyphens removed and camelCase
-applied. For example, `bedrock-agentcore` becomes `bedrockAgentCore` (NOT `bedrockagentcore`).
+applied. For example, a hyphenated service ID like `my-service` becomes `myService` (NOT `myservice`).
 Verify the correct SDK service ID via `awsknowledge` MCP. An incorrect service name causes
 a runtime error: "The service '<wrong>' is not supported by Step Functions."
 

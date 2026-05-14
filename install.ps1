@@ -59,53 +59,6 @@ if (Test-Path "$RepoDir\.github") {
 }
 
 # ---------------------------------------------------------------------------
-# Cursor — auto-discovers .cursor/.
-# ---------------------------------------------------------------------------
-Log ""
-Log "Cursor"
-if (Test-Path "$RepoDir\.cursor") {
-    Ok ".cursor\ present - Cursor auto-discovers"
-} else {
-    Skip ".cursor\ not in repo - Cursor users can still read AGENTS.md"
-}
-
-# ---------------------------------------------------------------------------
-# Codex CLI — reads AGENTS.md.
-# ---------------------------------------------------------------------------
-Log ""
-Log "Codex CLI"
-if (Test-Path "$RepoDir\AGENTS.md") {
-    Ok "AGENTS.md present - Codex CLI auto-reads"
-} else {
-    Warn "AGENTS.md missing"
-}
-
-# ---------------------------------------------------------------------------
-# Gemini CLI — needs `gemini extensions link`.
-# ---------------------------------------------------------------------------
-Log ""
-Log "Gemini CLI"
-if (Get-Command gemini -ErrorAction SilentlyContinue) {
-    $extPath = Join-Path $RepoDir "gemini-extension"
-    if (Test-Path $extPath) {
-        if ($Check) {
-            Skip "would run: gemini extensions link $extPath"
-        } else {
-            try {
-                & gemini extensions link $extPath 2>&1 | Out-Null
-                Ok "extension linked (symlink - git pull auto-updates)"
-            } catch {
-                Skip "extension already linked or link failed"
-            }
-        }
-    } else {
-        Skip "gemini-extension\ not yet created (awaiting PR3)"
-    }
-} else {
-    Skip "gemini CLI not installed"
-}
-
-# ---------------------------------------------------------------------------
 # Kiro CLI 2.0 — install the Power.
 # ---------------------------------------------------------------------------
 Log ""

@@ -24,7 +24,8 @@ Output lands in `.service-approval/` in your working directory:
 ## Pipeline
 
 ```
-Phase 0: Assess              → sar-facts.json, checkpoint-results.json, assessment-summary.md
+Intake (precursor)           → intake-manifest.json (service, inputs, framework, testing intent)
+Phase 0: Assess              → sar-facts.json, checkpoint-results.json, assessment-summary.md, iac-support.json
 Phase 1: Research (4 parallel sub-skills + merge)
   1a: research-mitigations   → research-mitigations.json
   1b: research-capabilities  → research-capabilities.json
@@ -41,13 +42,15 @@ Phase 4: Generate (3 parallel sub-skills)
   4a: generate-preventive    → controls/preventive/, controls/proactive/
   4b: generate-detective     → controls/detective/, controls/responsive/
   4c: generate-iac           → controls/iac/ (4 formats + TF modules)
-Phase 5: Test                → test-results.json (dry-run or full deployment)
+Phase 5: Test                → test-results.json (mode comes from
+                                intake-manifest.json.testing.mode:
+                                full-deploy | dry-run | skip | manual-cli)
 Phase 6: Summarize           → APPROVAL-REPORT.md, ARTIFACT-FLOW-MATRIX.md
 ```
 
 ### Key Features
 
-The pipeline runs as 19 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, Gemini CLI, GitHub Copilot, and any other agentskills.io-compatible client.
+The pipeline runs as 20 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
 
 <!-- SKILLS-TABLE-START -->
 | Skill | Description |
@@ -120,7 +123,7 @@ A detailed per-artifact input/output matrix with dependency tracking is generate
 One install script detects every installed client and wires it up. Clone and run:
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
+git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git [TO BE REPLACED WITH PUBLIC URL]
 cd service-onboarding
 ./install.sh        # macOS / Linux
 # or Windows PowerShell:
@@ -139,8 +142,7 @@ See [`docs/INSTALL.md`](docs/INSTALL.md) for per-client notes. Windows needs Dev
 
 | Client | Prerequisite | Why |
 |--------|--------------|-----|
-| Claude Code / Copilot / Cursor / Codex | none beyond the client itself | auto-discover from repo files |
-| Gemini CLI | `gemini` on PATH | `./install.sh` runs `gemini extensions link` |
+| Claude Code / Copilot | none beyond the client itself | auto-discover from repo files |
 | Kiro CLI / IDE | `kiro-cli` or Kiro.app | installer wires both |
 | Any client using `aws-documentation` / `awsiac` MCP | [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH | MCP servers run via `uvx awslabs.*@latest` |
 | Any client using `terraform` MCP | Docker Desktop running | stdio MCP runs in a container |
@@ -155,11 +157,8 @@ Invocation after install:
 | Client | How to invoke |
 |--------|---------------|
 | Claude Code | `/service-approval ./input --service=s3` |
-| Gemini CLI | `/service-approval ./input --service=s3` |
 | GitHub Copilot (Agent mode) | `@service-approval ./input --service=s3` |
 | Kiro (CLI or IDE) | "run service approval for s3" (keyword match) |
-| Cursor / Codex | Ask the agent to run service-approval from `AGENTS.md` |
-| Amazon Q | Say "run service approval for s3" |
 
 Examples:
 ```
@@ -171,6 +170,8 @@ Examples:
 ---
 
 ## Flags
+
+Note: if you do not provide any values, or custom threat models / frameworks in the input folder, the tool will default to CCMv4 and MITRE for the frameworks. 
 
 | Flag | Description | Default |
 |------|-------------|---------|
@@ -218,7 +219,6 @@ python3 tools/validate/validate_deployable.py --profile delegated-admin .service
 ├── manifest.yaml                  ← single source of truth (metadata + MCP servers)
 ├── install.sh / install.ps1       ← cross-client installer with --sync / --update
 ├── Makefile                       ← make install / sync / update / check / verify
-├── AGENTS.md                      ← Codex + Cursor entry point
 ├── .githooks/post-merge           ← enable via `make enable-auto-sync`
 ├── .gitlab-ci.yml                 ← pytest + sync-drift + install-check + schema-validity
 │
@@ -241,7 +241,6 @@ python3 tools/validate/validate_deployable.py --profile delegated-admin .service
 ├── .agents/skills -> ../skills    ← agentskills.io cross-tool alias
 ├── .mcp.json                      ← Claude Code workspace MCP (generated)
 ├── .vscode/mcp.json               ← VS Code Copilot MCP (generated)
-├── .amazonq/instructions.md       ← Amazon Q (minimal)
 ├── .github/                       ← Copilot: agents, prompts, hooks, plugin bundle
 │
 ├── powers/service-approval/       ← Kiro Power (IDE + CLI 2.0 dual-format from agents-src/)
@@ -252,18 +251,17 @@ python3 tools/validate/validate_deployable.py --profile delegated-admin .service
 │   ├── ide/agents/*.md            ← generated: Kiro IDE format
 │   ├── ide/hooks/*.kiro.hook      ← generated: Kiro IDE hook format
 │   └── cli/agents/sa-*.json       ← generated: Kiro CLI 2.0 format with embedded hooks
-│
-└── gemini-extension/              ← Gemini CLI extension
-    ├── gemini-extension.json      ← manifest (generated)
-    ├── GEMINI.md                  ← context file
-    ├── commands/*.toml            ← slash commands
-    └── hooks/hooks.json           ← AfterAgent → tools/validate/hook_stop.py
 ```
 
 **Update propagation:** every client config is regenerated by `tools/sync-ide-configs.py` from `manifest.yaml`. Edit the manifest, run `./install.sh --sync`, and all 4 client manifests + 4 MCP configs update in lockstep. CI blocks drift via `.gitlab-ci.yml`.
 
+
 ---
 
-## Authors
+## Security
+For information about contributing and reporting security issues, see [`CONTRIBUTING`](CONTRIBUTING.md).
 
-GFS PACE — fsi-pace@amazon.com
+---
+
+## License
+This project is licensed under the Apache-2.0 License.

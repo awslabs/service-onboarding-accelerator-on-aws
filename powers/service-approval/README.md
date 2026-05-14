@@ -46,12 +46,13 @@ Full parameter reference is in [`POWER.md`](POWER.md).
 ## Pipeline
 
 ```
-Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json
+Intake               → state/intake-manifest.json (service, inputs, testing intent)
+Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json, state/iac-support.json
 Phase 1 Research     → state/research.json (4 parallel sub-skills)
 Phase 2 Validate     → state/validated.json (cross-MCP verification)
 Phase 3 Map          → state/mapping-results.json (+ framework-mapping.md)
 Phase 4 Generate     → controls/ (78–111 files)
-Phase 5 Test         → state/test-results.json (optional, needs --env)
+Phase 5 Test         → state/test-results.json (mode set upfront in Intake)
 Phase 6 Summarize    → APPROVAL-REPORT.md
 ```
 
@@ -75,6 +76,7 @@ powers/service-approval/
 │   ├── phase-generate.md        Loads for controls/ artifacts
 │   └── headless.md              CI / headless invocation recipe
 ├── agents/
+│   ├── sa-intake.json                    (precursor)
 │   ├── sa-assess.json
 │   ├── sa-research-mitigations.json    (parallel, phase 1)
 │   ├── sa-research-capabilities.json   (parallel, phase 1)

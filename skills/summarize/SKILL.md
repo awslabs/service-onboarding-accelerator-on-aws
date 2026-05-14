@@ -103,7 +103,12 @@ Write `.service-approval/APPROVAL-REPORT.md` with these sections:
 
 ### Framework Coverage Matrix ({framework-name})
 [Full table from Step 2 — all framework objectives, mapped or N/A]
-Use the framework name dynamically: "CCMv4 Coverage Matrix", "NIST 800-53 Coverage Matrix", etc.
+Use the framework name dynamically from `mapping-results.json.framework.name`:
+- Default (no input): "CSA CCMv4 Coverage Matrix"
+- Customer NIST file: "NIST 800-53 Coverage Matrix"
+- Customer CIS file: "CIS Benchmarks Coverage Matrix"
+- Customer ISO file: "ISO 27001 Coverage Matrix"
+- Customer custom file: "Custom Framework Coverage Matrix"
 
 ### Mitigation Traceability
 [Full table from Step 3 — all customer mitigations with control and framework mappings]
@@ -120,10 +125,13 @@ and content adapt based on the `attack_coverage` data:
 - Read `attack_coverage.attack_matrix_source` for the source file name (if present)
 - Use the threat model name from the source file or default to "Threat Model"
 
-**Section title:** Use the threat model name dynamically:
-- If source contains "MITRE" or "ATT&CK" → "MITRE ATT&CK Threat Coverage (v{version})"
+**Section title:** Use the threat model name dynamically (mirrors the 5-case
+naming-rules table in `skills/research-attack-surface/SKILL.md`):
+- If source contains "MITRE" or "ATT&CK" (or is the default `data/attack-cloud-matrix.json`) → "MITRE ATT&CK Threat Coverage (v{version})"
 - If source contains "STRIDE" → "STRIDE Threat Coverage"
-- Otherwise → "Threat Model Coverage ({source_filename})"
+- If hybrid (multiple sources merged, e.g. MITRE + STRIDE) → "{combined_name} Threat Coverage" (e.g. "MITRE ATT&CK + STRIDE Threat Coverage")
+- If source is a custom file → "Threat Model Coverage ({source_filename})"
+- If no threat model source can be identified → "Threat Model Coverage"
 
 Build a tactic/category heat map showing control coverage:
 
@@ -170,12 +178,89 @@ Deployment order:
 3. **Service level**: Deploy CloudFormation Hooks, Config org rules
 4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `controls/iac/`
 
+### Manual Deploy Commands
+
+**Render this section only when `intake-manifest.json.testing.mode == "manual-cli"`.**
+
+The user opted out of automated Phase 5 testing and asked for per-format deploy
+commands. Inspect `.service-approval/controls/iac/` and emit only the commands that
+match formats actually present. Always use placeholders (`<STACK_NAME>`,
+`<AWS_PROFILE>`, `<AWS_REGION>`) — never substitute a real profile name.
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+manifest = Path(".service-approval/state/intake-manifest.json")
+if not manifest.exists():
+    raise SystemExit(0)
+mode = json.loads(manifest.read_text()).get("testing", {}).get("mode")
+if mode != "manual-cli":
+    raise SystemExit(0)
+
+iac = Path(".service-approval/controls/iac")
+has_cfn       = any(iac.glob("*.cfn.yaml")) or any(iac.glob("*.yaml"))
+has_terraform = (iac / "modules").exists()
+has_cdk       = any(iac.rglob("*.ts")) and not (iac / "cdktf").exists()
+has_cdktf     = (iac / "cdktf").exists() or any(iac.rglob("cdktf.json"))
+
+blocks = []
+if has_cfn:
+    blocks.append("""**CloudFormation:**
+```bash
+aws cloudformation deploy \\
+  --template-file .service-approval/controls/iac/compliant-resource.cfn.yaml \\
+  --stack-name <STACK_NAME> \\
+  --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \\
+  --profile <AWS_PROFILE>
+```""")
+if has_terraform:
+    blocks.append("""**Terraform:**
+```bash
+cd .service-approval/controls/iac
+terraform init
+terraform plan -out tfplan
+terraform apply tfplan
+```""")
+if has_cdk:
+    blocks.append("""**CDK TypeScript:**
+```bash
+cd .service-approval/controls/iac
+npm install
+npx cdk bootstrap --profile <AWS_PROFILE>
+npx cdk deploy --profile <AWS_PROFILE>
+```""")
+if has_cdktf:
+    blocks.append("""**CDK for Terraform:**
+```bash
+cd .service-approval/controls/iac/cdktf
+npm install
+npx cdktf deploy
+```""")
+if (Path(".service-approval/controls/responsive/lambda-remediator/template.yaml")).exists():
+    blocks.append("""**Detective controls stack (deploy after compliant resource):**
+```bash
+aws cloudformation deploy \\
+  --template-file .service-approval/controls/responsive/lambda-remediator/template.yaml \\
+  --stack-name <STACK_NAME>-detective \\
+  --capabilities CAPABILITY_IAM \\
+  --profile <AWS_PROFILE>
+```""")
+
+print("\n\n".join(blocks) if blocks else "No deployable IaC artifacts found.")
+PY
+```
+
+Append the rendered blocks to `APPROVAL-REPORT.md` under this heading. Skip the
+entire section when `testing.mode` is anything other than `manual-cli`.
+
 Print:
 ```
 Report written: .service-approval/APPROVAL-REPORT.md
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed
-ATT&CK techniques: {covered} / {total} covered (if attack_coverage present, adapt label to threat model name)
+Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)
 Total control artifacts: N
 ```

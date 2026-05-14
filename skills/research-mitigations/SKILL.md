@@ -28,7 +28,7 @@ mkdir -p .service-approval/state
 
 Parse arguments:
 - `./input-folder` (optional) — read all `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files
-- `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`, `s3`, `lambda`)
+- `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`, `lambda`, `s3`)
 
 If no input folder is provided, skip mitigation extraction (MCP-only mode — mitigations
 will be empty). If no --service is provided, ask the user.
@@ -56,7 +56,7 @@ for entity in data.get("entities", []):
 
 ### Markdown files (Mitigation Report)
 
-Mitigation reports (e.g. `input/Amazon Bedrock (AgentCore Control) — Mitigation Report.md`)
+Mitigation reports (e.g. `input/<Service Name> — Mitigation Report.md`)
 follow a consistent shape. Parse with the reference spec below — do NOT reinvent on
 each run.
 
@@ -81,7 +81,7 @@ bolded label and column 2 as the value. Parse rows keyed by the bolded label:
 | `**Request Parameters**` | `request_parameters[]` | Split on commas or Markdown list bullets; strip whitespace; JSON paths like `$.encryptionKeyArn`. |
 
 Emit each parsed block as an `existing_mitigations[]` entry with the fields above
-plus `source: "<report-basename>"` (e.g. `"source": "Amazon Bedrock (AgentCore Control) — Mitigation Report.md"`) so downstream runs can trace provenance.
+plus `source: "<report-basename>"` (e.g. `"source": "<Service Name> — Mitigation Report.md"`) so downstream runs can trace provenance.
 
 **Row parsing pseudocode:**
 
