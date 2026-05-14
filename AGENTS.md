@@ -2,8 +2,8 @@
 
 This repo generates AWS security controls for any AWS service via an 8-phase pipeline
 (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize). It runs on any
-[Agent Skills](https://agentskills.io)-compatible client: Claude Code, Gemini CLI,
-GitHub Copilot, Kiro, Cursor, Codex, and others.
+[Agent Skills](https://agentskills.io)-compatible client: Claude Code, GitHub Copilot,
+and Kiro.
 
 ## Install
 
@@ -40,13 +40,15 @@ Agents should:
 ## Pipeline summary
 
 ```
-Phase 0 Assess      → sar-facts.json, checkpoint-results.json
-Phase 1 Research    → research.json (4 parallel sub-skills merged)
-Phase 2 Validate    → validated.json
-Phase 3 Map         → mapping-results.json + framework-mapping.md
-Phase 4 Generate    → controls/ (proactive, preventive, detective, responsive, IaC)
-Phase 5 Test        → test-results.json (optional, needs AWS profile)
-Phase 6 Summarize   → APPROVAL-REPORT.md
+Intake                        → intake-manifest.json (service, inputs, testing intent)
+Phase 0   Assess              → sar-facts.json, checkpoint-results.json, iac-support.json
+Phase 1   Research            → research.json (4 parallel sub-skills merged)
+Phase 2   Validate            → validated.json
+Phase 3   Map                 → mapping-results.json + framework-mapping.md
+Phase 4   Generate            → controls/ (proactive, preventive, detective, responsive, IaC)
+Phase 5   Test                → test-results.json (mode set upfront in Intake:
+                                full-deploy | dry-run | skip | manual-cli)
+Phase 6   Summarize           → APPROVAL-REPORT.md
 ```
 
 See [`README.md`](README.md) for per-phase artifact counts and the full flag reference.
@@ -85,19 +87,14 @@ See [`rules/service-approval-safety.md`](rules/service-approval-safety.md) for t
 | `.claude-plugin/` | Claude Code plugin manifest |
 | `.github/` | Copilot agents, prompts, chatmodes, skills, hooks |
 | `powers/service-approval/` | Kiro Power (CLI 2.0 format) |
-| `gemini-extension/` | Gemini CLI extension (MCP + slash commands + skills) |
 
 ## Client-specific notes
 
 | Client | Entry point | Auto-discovers? |
 |--------|-------------|-----------------|
 | Claude Code | `.claude-plugin/plugin.json` | Yes |
-| Gemini CLI | `gemini-extension/gemini-extension.json` | After `./install.sh` |
 | GitHub Copilot | `.github/agents/service-approval.agent.md` | Yes |
-| Cursor | `.cursor/rules/` or `AGENTS.md` | Yes |
-| Codex CLI | `AGENTS.md` | Yes |
 | Kiro CLI | `powers/service-approval/POWER.md` | After `./install.sh` |
-| Amazon Q | `.amazonq/instructions.md` | Yes |
 
 ## Contributing
 

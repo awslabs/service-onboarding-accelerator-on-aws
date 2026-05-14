@@ -45,9 +45,23 @@ Record the detected threat model in the output:
 {
   "attack_matrix_version": "<version from file or 'custom'>",
   "attack_matrix_source": "<filename>",
-  "threat_model_type": "<mitre_attack|stride|custom|hybrid>"
+  "threat_model_type": "<mitre_attack|stride|custom|hybrid>",
+  "threat_model_name": "<display name for output titles>"
 }
 ```
+
+**Threat model name rules (CRITICAL for output titles):**
+
+The `threat_model_name` field flows into the APPROVAL-REPORT.md section title and the
+print summary. Set it using these rules:
+
+| Source | `threat_model_name` value | Example output title |
+|--------|--------------------------|---------------------|
+| Default MITRE data file (`data/attack-cloud-matrix.json`) | `"MITRE ATT&CK"` | "MITRE ATT&CK Threat Coverage (v16.1)" |
+| Customer file with "MITRE" or "ATT&CK" in name | `"MITRE ATT&CK"` | "MITRE ATT&CK Threat Coverage (v{version})" |
+| Customer file with "STRIDE" in name | `"STRIDE"` | "STRIDE Threat Coverage" |
+| Customer file that doesn't match known patterns | `"Custom Threat Model"` | "Custom Threat Model Coverage ({filename})" |
+| Hybrid (multiple sources merged) | `"MITRE ATT&CK + STRIDE"` or `"MITRE ATT&CK + Custom"` | "MITRE ATT&CK + STRIDE Threat Coverage" |
 
 ---
 
@@ -215,11 +229,11 @@ Write `.service-approval/state/research-attack-surface.json`:
       "tactic_id": "TA0001",
       "tactic_name": "Initial Access",
       "applicability": "HIGH",
-      "applicability_reason": "Service uses IAM roles for agent execution (CreateAgentRuntime $.roleArn). Confused deputy prevention required.",
-      "api_surface_evidence": ["CreateAgentRuntime", "UpdateAgentRuntime"],
+      "applicability_reason": "Service uses IAM roles for execution (Create<Resource> $.roleArn). Confused deputy prevention required.",
+      "api_surface_evidence": ["Create<Resource>", "Update<Resource>"],
       "stride_categories": ["Spoofing", "Elevation of Privilege"],
-      "nist_controls": ["AC-2", "AC-3", "AC-6", "IA-2", "IA-5", "IA-8"],
-      "ccmv4_objectives": ["IAM-01", "IAM-02", "IAM-03", "IAM-04", "IAM-05", "IAM-06", "IAM-12"]
+      "framework_controls": ["AC-2", "AC-3", "AC-6", "IA-2", "IA-5", "IA-8"],
+      "framework_objectives": ["IAM-01", "IAM-02", "IAM-03", "IAM-04", "IAM-05", "IAM-06", "IAM-12"]
     }
   ],
   "tactic_coverage_summary": {
@@ -240,7 +254,7 @@ Write `.service-approval/state/research-attack-surface.json`:
 - Every technique MUST have: `technique_id`, `technique_name`, `tactic_id`, `tactic_name`, `applicability`, `applicability_reason`, `api_surface_evidence`
 - `technique_id` MUST match pattern `T\d{4}(\.\d{3})?`
 - `applicability` MUST be `"HIGH"` or `"MEDIUM"` (LOW is filtered out)
-- `nist_controls` and `ccmv4_objectives` come from `attack-nist-ccm-crosswalk.json`
+- `framework_controls` and `framework_objectives` come from the active crosswalk data file (default: `data/attack-nist-ccm-crosswalk.json` for MITRE→CCMv4/NIST)
 - `stride_categories` lists which STRIDE categories this technique maps to (from bridge)
 
 ---

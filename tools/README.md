@@ -1,6 +1,6 @@
 # `tools/`
 
-Shared scripts for validation, MCP integration, post-processing, and cross-IDE sync. Every agentic client (Claude Code, Kiro, Copilot, Gemini CLI) reaches into this directory through its own hook or command system.
+Shared scripts for validation, MCP integration, post-processing, and cross-IDE sync. Every agentic client (Claude Code, Kiro) reaches into this directory through its own hook or command system.
 
 | Dir / File | Purpose |
 |------------|---------|
@@ -25,10 +25,9 @@ Edit `manifest.yaml` at the repo root. Never edit the per-client manifests direc
 |--------|--------------------|
 | Claude Code | `.claude-plugin/plugin.json` |
 | Kiro Power | `powers/service-approval/POWER.md` (frontmatter only; body preserved) |
-| Gemini extension | `gemini-extension/gemini-extension.json` |
 | Copilot plugin | `.github/plugins/service-approval/.github/plugin/plugin.json` |
 
-Body content (Kiro POWER.md body, Gemini GEMINI.md, Copilot plugin README) is NOT touched. Those are human-edited.
+Body content (Kiro POWER.md body, Copilot plugin README) is NOT touched. Those are human-edited.
 
 ## Validators
 

@@ -34,7 +34,7 @@ results become SCP/RCP feasibility inputs.
 
 Parse arguments:
 - `./input-folder` (optional) — read .md, .json, .xlsx, .pdf, .docx files for context
-- `--service=<name>` — AWS service name (e.g., "Amazon Bedrock AgentCore", "Amazon S3")
+- `--service=<name>` — AWS service name (e.g., "Amazon Bedrock AgentCore", "AWS Lambda", "Amazon S3")
 - `--questions=<file>` — Path to SITCO Bar Questions file (.docx or .txt). If provided, also produce questionnaire answers.
 
 If no `--service` and no input folder, ask the user for a service name.

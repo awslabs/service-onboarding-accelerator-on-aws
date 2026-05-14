@@ -10,7 +10,7 @@
 #   ./install.sh --quiet      Suppress non-error output
 #
 # Update flow:
-#   - Symlinked installs (Gemini CLI `link`, Kiro CLI `power install --local`)
+#   - Symlinked installs (Kiro CLI `power install --local`)
 #     auto-update on git pull.
 #   - Copy-based installs (Kiro IDE — which reads .kiro/agents/*.md, .kiro/hooks/
 #     *.kiro.hook, .kiro/settings/mcp.json) need --sync to re-copy.
@@ -162,52 +162,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Cursor — auto-discovers .cursor/rules/ or reads AGENTS.md.
-# ---------------------------------------------------------------------------
-log ""
-log "Cursor"
-if [ -d "$REPO_DIR/.cursor" ]; then
-  ok ".cursor/ present — Cursor auto-discovers"
-else
-  skip ".cursor/ not in repo — Cursor users read AGENTS.md"
-fi
-
-# ---------------------------------------------------------------------------
-# Codex CLI — reads AGENTS.md. Nothing to install.
-# ---------------------------------------------------------------------------
-log ""
-log "Codex CLI"
-if [ -f "$REPO_DIR/AGENTS.md" ]; then
-  ok "AGENTS.md present — Codex CLI auto-reads"
-else
-  warn "AGENTS.md missing"
-fi
-
-# ---------------------------------------------------------------------------
-# Gemini CLI — `gemini extensions link` for MCP + slash command + skills.
-# Symlink install — git pull auto-updates.
-# ---------------------------------------------------------------------------
-log ""
-log "Gemini CLI"
-if command -v gemini >/dev/null 2>&1; then
-  if [ -d "$REPO_DIR/gemini-extension" ]; then
-    if [ "$MODE" = "check" ]; then
-      skip "would run: gemini extensions link $REPO_DIR/gemini-extension"
-    else
-      if gemini extensions link "$REPO_DIR/gemini-extension" >/dev/null 2>&1; then
-        ok "extension linked (symlink — git pull auto-updates)"
-      else
-        skip "extension already linked"
-      fi
-    fi
-  else
-    skip "gemini-extension/ missing"
-  fi
-else
-  skip "gemini CLI not installed — see https://geminicli.com"
-fi
-
-# ---------------------------------------------------------------------------
 # Kiro CLI 2.0 — install the Power (symlink) AND copy IDE files to .kiro/.
 # ---------------------------------------------------------------------------
 log ""
@@ -246,17 +200,6 @@ if [ -d "/Applications/Kiro.app" ] || [ -d "$HOME/.kiro" ]; then
   fi
 else
   skip "Kiro IDE not detected (install from https://kiro.dev)"
-fi
-
-# ---------------------------------------------------------------------------
-# Amazon Q Developer — reads .amazonq/instructions.md.
-# ---------------------------------------------------------------------------
-log ""
-log "Amazon Q"
-if [ -f "$REPO_DIR/.amazonq/instructions.md" ]; then
-  ok "instructions.md present — Amazon Q auto-reads"
-else
-  skip ".amazonq/instructions.md missing"
 fi
 
 # ---------------------------------------------------------------------------

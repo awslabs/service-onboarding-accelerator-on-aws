@@ -172,16 +172,16 @@ works without it.
 For each technique in `attack_surface.applicable_techniques[]`:
 1. Check that every action in `api_surface_evidence[]` exists in `api_surface.operations[].operation`
    - If an action is missing, set `verified: false` with note "Action {action} not found in API surface"
-2. Verify `nist_controls[]` and `ccmv4_objectives[]` against the crosswalk data file:
+2. Verify `framework_controls[]` and `framework_objectives[]` against the crosswalk data file:
    ```bash
    python3 -c "
    import json
-   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))
+   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; use custom if --threat-model-file provided
    xw_map = {m['attack_technique_id']: m for m in xw['mappings']}
-   # Check each technique's NIST/CCM mappings
+   # Check each technique's framework mappings
    "
    ```
-   - If technique is in crosswalk: confirm `nist_controls` and `ccmv4_objectives` match
+   - If technique is in crosswalk: confirm `framework_controls` and `framework_objectives` match
    - If technique is NOT in crosswalk: mark `verified: false` with note "Technique not in crosswalk data"
 
 ### 2c.2 Cross-reference with mitigations

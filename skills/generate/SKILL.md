@@ -83,6 +83,45 @@ Final validation runs automatically via PostToolUse hooks (validate_controls.py 
 
 ---
 
+## Phase 4 Inventory
+
+After sub-skills finish, print a one-screen inventory of what was generated. This
+gives the user (and Summarize) a quick view of category counts and which IaC formats
+are actually present. Runs unconditionally — no HITL gate.
+
+```bash
+python3 - <<'PY'
+import json
+from pathlib import Path
+
+root = Path(".service-approval/controls")
+categories = ["preventive", "proactive", "detective", "responsive", "iac"]
+counts = {c: sum(1 for _ in (root / c).rglob("*") if _.is_file()) if (root / c).exists() else 0
+          for c in categories}
+
+iac_formats = {}
+iac_root = root / "iac"
+if iac_root.exists():
+    iac_formats["terraform"]      = (iac_root / "modules").exists()
+    iac_formats["cloudformation"] = any(iac_root.glob("*.cfn.yaml")) or any(iac_root.glob("*.yaml"))
+    iac_formats["cdk-typescript"] = any(iac_root.rglob("*.ts"))
+    iac_formats["cdktf"]          = (iac_root / "cdktf").exists() or any(iac_root.rglob("cdktf.json"))
+
+service = None
+sj = Path(".service-approval/state/validated.json")
+if sj.exists():
+    service = json.loads(sj.read_text()).get("service")
+
+formats_present = ", ".join(k for k, v in iac_formats.items() if v) or "(none)"
+print(f"Phase 4 complete — {service or '(unknown service)'}:")
+for c in categories:
+    print(f"  {c.capitalize():13} {counts[c]} files")
+print(f"  IaC formats:  {formats_present}")
+PY
+```
+
+---
+
 ## Print Summary
 
 ```
