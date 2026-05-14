@@ -44,26 +44,102 @@ final approval report with verdict.
 
 ## Input Modes
 
-### Mode 1: From Intake File (recommended for repeatable use)
+### Mode 1: Explicit intake file
 
 ```bash
-service-approval --from-intake=intakes/bedrock-agentcore.yaml
+service-approval --from-intake=path/to/my-service.yaml
 ```
 
-Reads a YAML file with all configuration. See `intake-template.yaml` for the schema.
-No interactive prompts — pipeline starts immediately.
+Reads the YAML at the given path. No interactive prompts unless required fields
+are missing. CLI flag wins over auto-discovery.
 
-### Mode 2: Interactive (default when no file provided)
+### Mode 2: Auto-discovered project intake (recommended for repeated runs)
 
-Present the intake form to the user and collect answers.
+If `./service-approval-intake.yaml` exists in the user's current working
+directory, it is loaded automatically. The user is shown a summary and given
+two choices: **[U]se as-is** or **[E]dit a field** (see "Existing Intake Flow"
+below). This is the path most users hit on their second and subsequent runs.
 
-### Mode 3: CLI Flags
+### Mode 3: Interactive (first-time path)
+
+When no intake YAML is found and no flags are provided, present the full intake
+form. After the user confirms, **offer to save** the answers to
+`./service-approval-intake.yaml` so the next run can auto-discover them.
+
+### Mode 4: CLI flags
 
 ```bash
 service-approval --service=s3 ./input --env=my-profile --framework=ccmv4
 ```
 
-All required fields provided via flags — no prompts needed.
+All required fields provided via flags — no prompts needed. `--interactive`
+forces the full prompt flow even when a YAML or manifest exists (escape hatch).
+
+---
+
+## Discovery Rules
+
+Resolution order, highest priority first:
+
+1. **`--from-intake=<path>` flag** — explicit, always honored.
+2. **`./service-approval-intake.yaml` in CWD** — auto-discovered. Show summary,
+   prompt `[U]se as-is / [E]dit`.
+3. **None found** — fall through to the interactive form (first-time path).
+
+**Plugin-repo guard:** Files inside the installed plugin directory
+(`skills/intake/intake-template.yaml`, `skills/intake/defaults.yaml`, anything
+under the plugin root) are **never** auto-loaded as user intake. They are
+templates and org defaults, not user data. Reject any auto-discovery path that
+resolves inside the plugin install dir; if `--from-intake` explicitly points
+there, warn and refuse.
+
+`--interactive` short-circuits steps 1 and 2 — always run the full prompt flow.
+
+---
+
+## Existing Intake Flow
+
+When `./service-approval-intake.yaml` is found (and `--interactive` was not
+passed), render a digestible summary and prompt:
+
+```
+┌─ Existing intake found: ./service-approval-intake.yaml ─┐
+│  Service:        {friendly_name} ({service-id})         │
+│  Framework:      {framework_type}                       │
+│  Testing mode:   {full-deploy | dry-run | skip | manual-cli} │
+│  AWS profile:    {profile or n/a}                       │
+│  Region:         {region}                               │
+│  ATT&CK Mapping: {Yes | No}                             │
+└─────────────────────────────────────────────────────────┘
+
+[U]se as-is   [E]dit a field   (default: U)
+```
+
+- **Use as-is** (default): proceed with the loaded values, write the manifest,
+  continue to Phase 0.
+- **Edit a field**: walk the user through the intake fields one at a time with
+  current values pre-filled. The user accepts each (Enter) or overrides. After
+  edits, write the updated YAML back to `./service-approval-intake.yaml` and
+  continue.
+
+There is no "fresh start" option in this prompt. To start over, the user
+deletes `./service-approval-intake.yaml` or passes `--interactive`.
+
+---
+
+## First-Time Save Prompt
+
+After the interactive form completes (Mode 3), before writing the runtime
+manifest, ask:
+
+```
+Save these answers to ./service-approval-intake.yaml so future runs skip
+the prompts? (Y/n)
+```
+
+If yes, serialize the collected fields into the YAML schema from
+`intake-template.yaml` and write to the user's CWD. Do **not** write into the
+plugin repo.
 
 ---
 
@@ -100,17 +176,43 @@ Are you providing any of the following? (select all that apply)
   - Filename contains "ISO" or "27001" → `iso`
 - If no framework file is provided, default to `ccmv4`
 
-### 3. Testing Requirements (optional)
+### 3. Testing Requirements (required — default: `skip`)
+
+This is the single point where the user declares how Phase 5 (Test) should run.
+There is no later human-in-the-loop gate — whatever is chosen here is what the
+pipeline does.
 
 ```
-Do you want to deploy and validate the generated controls against a live AWS account?
-  [ ] Yes — provide your AWS CLI profile name and region
-  [ ] No — generate controls only (no deployment)
+How do you want to validate the generated controls?
+
+  A. Full deploy + validate  (mode: full-deploy)
+     Deploys the compliant resource template into an AWS account, waits for
+     Config rule evaluations, checks CloudWatch alarms, then tears down.
+     Requires an AWS CLI profile.
+
+  B. Dry-run validation only  (mode: dry-run)
+     Runs static checks (terraform validate, cfn-lint, CDK tsc, CFN Guard
+     syntax, py_compile). Optionally CloudFormation validate-template + IAM
+     Access Analyzer if a profile is provided. No deployment.
+
+  C. Skip testing  (mode: skip)
+     Stop after generation. Artifacts remain on disk for manual review.
+
+  D. Manual CLI — show commands  (mode: manual-cli)
+     Skip Phase 5. The Summarize phase appends per-format deploy commands
+     (terraform apply, cdk deploy, aws cloudformation deploy) to the final
+     approval report so you can run them yourself later.
 ```
 
-- If testing is requested, record the profile name and region
-- If no testing, the pipeline will skip Phase 5 (Test) entirely
-- Default: No testing (safe default — no credentials required)
+Validation rules:
+- `full-deploy` requires `aws_profile`; if missing, re-prompt. If the profile
+  is not configured in `~/.aws/credentials` or `~/.aws/config`, warn and
+  downgrade to `mode: skip`.
+- `dry-run` accepts a profile (enables Tier 2 static checks) but does not
+  require one.
+- `manual-cli` does not require a profile — the cheat-sheet uses
+  `<AWS_PROFILE>` placeholders.
+- Default when the user declines to choose: `skip`.
 
 ### 4. Additional Options (optional)
 
@@ -128,7 +230,7 @@ Write to `.service-approval/state/intake-manifest.json`:
 
 ```json
 {
-  "schema_version": "2.0.0",
+  "schema_version": "2.1.0",
   "generated_at": "{ISO-8601 timestamp}",
   "service": {
     "name": "{service-name}",
@@ -148,10 +250,11 @@ Write to `.service-approval/state/intake-manifest.json`:
     ]
   },
   "testing": {
-    "enabled": true|false,
+    "mode": "full-deploy|dry-run|skip|manual-cli",
     "aws_profile": "{profile-name or null}",
     "region": "{region or us-east-1}",
-    "dry_run": true|false
+    "keep": false,
+    "timeout_minutes": 30
   },
   "output": {
     "include_attack_surface": true|false,
@@ -166,12 +269,27 @@ Write to `.service-approval/state/intake-manifest.json`:
     "framework_file": "{path or null}",
     "skip_test": true|false,
     "dry_run": true|false,
+    "keep": true|false,
+    "timeout": 30,
     "skip_attack_surface": true|false,
     "include_unverified": false,
     "clean": false
   }
 }
 ```
+
+**Derivation from `testing.mode` to `pipeline_flags`:**
+
+| `testing.mode` | `skip_test` | `dry_run` | `env`               | Phase 5 effect                         |
+|----------------|-------------|-----------|---------------------|----------------------------------------|
+| `full-deploy`  | false       | false     | `testing.aws_profile` | `test` full mode                     |
+| `dry-run`      | false       | true      | `testing.aws_profile` or null | `test` `--dry-run` (Tier 1/2)  |
+| `skip`         | true        | false     | null                | Phase 5 skipped                        |
+| `manual-cli`   | true        | false     | null                | Phase 5 skipped; Summarize prints CLI cheat-sheet |
+
+CLI flag overrides: if the user passes `--env`, `--skip-test`, or `--dry-run`
+to the orchestrator, those override the intake-derived flags (CLI > intake >
+defaults).
 
 **Note:** `iac_formats` and `iac_support` are NOT in the intake manifest. They are
 determined by Phase 0 (Assess) and written to `state/iac-support.json`.
@@ -189,8 +307,10 @@ After collecting inputs, present a summary:
 │  Service:        {friendly_name} ({service-id})             │
 │  Input:          {description of inputs}                    │
 │  Framework:      {framework_type}                           │
-│  Testing:        {Yes (profile: X, region: Y) | No}        │
-│  ATT&CK Mapping: {Yes | No}                                │
+│  Testing mode:   {full-deploy | dry-run | skip | manual-cli}│
+│  AWS profile:    {profile or n/a}                           │
+│  Region:         {region}                                   │
+│  ATT&CK Mapping: {Yes | No}                                 │
 ├─────────────────────────────────────────────────────────────┤
 │  Note: IaC output formats will be determined in Phase 0     │
 │  (Assess) based on actual provider support for this service.│
@@ -207,9 +327,11 @@ Proceed? (Y/n)
 |-----------|--------|
 | Service not found in `sar-slugs.json` | Warn user, attempt SAR page lookup via MCP. If found, continue. If not, halt. |
 | Input folder path invalid | Ask user to correct the path |
-| AWS profile not configured | Warn and disable testing (set `skip_test: true`) |
+| `testing.mode == full-deploy` but `aws_profile` missing | Re-prompt for profile; if still missing, downgrade to `mode: skip` |
+| AWS profile not configured in `~/.aws/` | Warn and downgrade `testing.mode` to `skip` |
 | Intake YAML file not found | Fall back to interactive mode |
 | Intake YAML missing required fields | Report which fields are missing, halt |
+| Intake YAML has invalid `testing.mode` | List valid modes (full-deploy, dry-run, skip, manual-cli), halt |
 
 ---
 
@@ -222,8 +344,8 @@ Proceed? (Y/n)
 | Phase 2 (Validate) | `service` |
 | Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
 | Phase 4 (Generate) | Reads `state/iac-support.json` (from Phase 0), NOT intake |
-| Phase 5 (Test) | `testing.*` |
-| Phase 6 (Summarize) | Full manifest for report metadata |
+| Phase 5 (Test) | `testing.mode`, `testing.aws_profile`, `testing.region`, `testing.keep`, `testing.timeout_minutes` (orchestrator translates to `--env` / `--skip-test` / `--dry-run`) |
+| Phase 6 (Summarize) | Full manifest for report metadata; `testing.mode` drives the manual-cli cheat-sheet render when mode == `manual-cli` |
 
 ---
 
@@ -235,7 +357,7 @@ Intake complete:
   SAR slug: {slug}
   Inputs: {N} files ({types})
   Framework: {framework_type}
-  Testing: {enabled/disabled}
+  Testing mode: {full-deploy|dry-run|skip|manual-cli} (profile: {name or n/a}, region: {region})
   Manifest: .service-approval/state/intake-manifest.json
 
 IaC formats will be determined in Phase 0 (Assess).

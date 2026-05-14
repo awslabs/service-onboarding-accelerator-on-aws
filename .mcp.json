@@ -38,7 +38,7 @@
         "tools/kb-search-mcp/server.py"
       ],
       "env": {
-        "AWS_PROFILE": "delegated-admin",
+        "AWS_PROFILE": "claude-code",
         "AWS_REGION": "us-east-1"
       }
     },
@@ -48,7 +48,7 @@
         "awslabs.iam-mcp-server@latest"
       ],
       "env": {
-        "AWS_PROFILE": "delegated-admin",
+        "AWS_PROFILE": "claude-code",
         "AWS_REGION": "us-east-1",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }

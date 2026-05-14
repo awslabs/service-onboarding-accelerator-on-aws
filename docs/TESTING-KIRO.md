@@ -156,6 +156,7 @@ run service approval for s3 --dry-run
 ```
 
 The agent should run all 8 phases. Watch for:
+- Intake writes `.service-approval/state/intake-manifest.json` before Phase 0
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
 - Phase 4 (Generate) spawns 3 parallel

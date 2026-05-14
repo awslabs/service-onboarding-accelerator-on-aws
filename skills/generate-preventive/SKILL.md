@@ -115,11 +115,11 @@ For every such artifact:
    requires, document it as a compensating control in
    `compensating-controls-documentation.json` rather than inventing an action name.
 
-   Example of the failure mode (real iter-18 AgentCore regression):
-   - WRONG: `bedrock-agentcore:SearchMemoryRecords` — invented by the LLM; does not
+   Example of the failure mode (real regression observed in production runs):
+   - WRONG: `<service-prefix>:SearchRecords` — invented by the LLM; does not
      exist in SAR or botocore. IAM AccessAnalyzer rejects with "The action X does
      not exist."
-   - RIGHT: `bedrock-agentcore:RetrieveMemoryRecords` — the actual SAR action.
+   - RIGHT: `<service-prefix>:RetrieveRecords` — the actual SAR action.
 
    IAM AccessAnalyzer at Tier 2 validates every action against the live service-prefix
    registry. Fabricated actions pass JSON-syntax checks but fail deploy-time policy

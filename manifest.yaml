@@ -136,7 +136,7 @@ mcp_servers:
     command: python3
     script: tools/kb-search-mcp/server.py
     env:
-      AWS_PROFILE: delegated-admin
+      AWS_PROFILE: claude-code
       AWS_REGION: us-east-1
     optional: true
     # Kiro requires users to approve the ${workspaceRoot} template variable
@@ -144,14 +144,14 @@ mcp_servers:
     # smoother, auto-registering kb-search causes "Connection closed" errors
     # on every fresh install. Exclude it from the Kiro Power config so it
     # doesn't break the Power out-of-the-box. Still ships to Claude Code,
-    # Gemini, and VS Code (which don't have the approval gate).
+    # and VS Code (which don't have the approval gate).
     skip_clients: [kiro]
   iam:
     type: stdio
     command: uvx
     args: ["awslabs.iam-mcp-server@latest"]
     env:
-      AWS_PROFILE: delegated-admin
+      AWS_PROFILE: claude-code
       AWS_REGION: us-east-1
       FASTMCP_LOG_LEVEL: ERROR
     optional: true
@@ -173,12 +173,6 @@ clients:
     mcp_config: powers/service-approval/mcp.json
     # Kiro CLI 2.0 uses JSON agent definitions (one per sub-skill)
     agent_format: cli-2.0-json
-  gemini:
-    manifest: gemini-extension/gemini-extension.json
-    context_file: gemini-extension/GEMINI.md
-    commands_dir: gemini-extension/commands/
-    # Skills discovered via .agents/skills alias at repo root
-    skills_discovery: agentskills-alias
   copilot:
     instructions: .github/copilot-instructions.md
     agents_dir: .github/agents/
@@ -186,23 +180,10 @@ clients:
     hooks_dir: .github/hooks/
     plugin_manifest: .github/plugins/service-approval/.github/plugin/plugin.json
     skills_discovery: symlink
-  codex:
-    # Codex CLI reads AGENTS.md at repo root
-    agents_md: AGENTS.md
-    skills_discovery: agents-md-pointer
-  cursor:
-    # Cursor reads AGENTS.md or .cursor/rules/ — we ship AGENTS.md
-    agents_md: AGENTS.md
-    skills_discovery: agents-md-pointer
-  amazon-q:
-    instructions: .amazonq/instructions.md
-    # No hooks, no skill discovery — minimal integration
-    skills_discovery: none
 
 # ---------------------------------------------------------------------------
 # Pipeline-integrity checks — enforced at Stop hook time across every client
-# that supports hooks (Claude Code, Kiro, Copilot). Gemini CLI has no hooks
-# so the agent invokes tools/validate/hook_stop.py manually at end-of-pipeline.
+# that supports hooks (Claude Code, Kiro, Copilot).
 # ---------------------------------------------------------------------------
 integrity_checks:
   - id: P1
@@ -233,5 +214,4 @@ test_policy:
   must_not_drift:
     - .claude-plugin/plugin.json
     - powers/service-approval/POWER.md
-    - gemini-extension/gemini-extension.json
     - .github/plugins/service-approval/.github/plugin/plugin.json

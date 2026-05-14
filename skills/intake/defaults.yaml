@@ -12,10 +12,12 @@
 framework: "ccmv4"
 
 # Default testing configuration
+# mode: full-deploy | dry-run | skip | manual-cli
 testing:
-  enabled: false
+  mode: "skip"
   region: "us-east-1"
-  dry_run: false
+  keep: false
+  timeout_minutes: 30
 
 # Default pipeline options
 options:
