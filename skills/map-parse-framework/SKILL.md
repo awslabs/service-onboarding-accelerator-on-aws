@@ -11,7 +11,7 @@ Parse a customer-provided control framework file into a normalized array of fram
 This is the smallest, most deterministic sub-skill in the map pipeline.
 
 **Input:** Framework file (xlsx/json/md) or built-in CCMv4 reference
-**Output:** `.service-approval/state/map-framework-parsed.json`
+**Output:** `.service-approval/<slug>/04-map/map-framework-parsed.json`
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
 
@@ -20,7 +20,7 @@ This is one of 4 focused map sub-skills. Each writes to a separate intermediate 
 ## Prerequisites
 
 ```bash
-mkdir -p .service-approval/state
+mkdir -p .service-approval/<slug>/04-map
 ```
 
 ## Inputs
@@ -172,7 +172,7 @@ should produce `framework.name = "NIST 800-53"`.
 **Rule:** If the file cannot be classified into any known framework, set
 `framework.name = "Custom Framework"`. Never leave it empty or null.
 
-Write `.service-approval/state/map-framework-parsed.json`:
+Write `.service-approval/<slug>/04-map/map-framework-parsed.json`:
 
 ```json
 {
@@ -216,5 +216,5 @@ Map (Parse Framework) complete:
   Source: {source_file}
   Objectives: {total_objectives}
   Domains: {count unique domains}
-  Output: .service-approval/state/map-framework-parsed.json
+  Output: .service-approval/<slug>/04-map/map-framework-parsed.json
 ```

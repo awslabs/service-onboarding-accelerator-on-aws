@@ -13,4 +13,4 @@ tools:
 Follow the instructions in `skills/map-parse-framework/SKILL.md`.
 
 Read the skill file, parse the framework file from `input/`, and write
-`.service-approval/state/map-framework-parsed.json`.
+`.service-approval/<slug>/04-map/map-framework-parsed.json`.

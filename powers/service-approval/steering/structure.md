@@ -74,8 +74,8 @@ powers/service-approval/
 | Hook | `hooks/<event>.json` | `hooks/stop.json` |
 | Validator | `tools/validate/validate_<scope>.py` | `tools/validate/validate_state.py` |
 | Test | `tools/validate/test_<validator>.py` | `tools/validate/test_validate_state.py` |
-| Control artifact | `.service-approval/controls/<category>/<CTRL-ID>.<ext>` | `.service-approval/controls/preventive/CTRL-ORG-PRV-001.json` |
-| State file | `.service-approval/state/<name>.json` | `.service-approval/state/research.json` |
+| Control artifact | `.service-approval/<slug>/05-generate/<category>/<CTRL-ID>.<ext>` | `.service-approval/<slug>/05-generate/preventive/CTRL-ORG-PRV-001.json` |
+| State file | `.service-approval/<slug>/<phase>/<name>.json` | `.service-approval/<slug>/02-research/research.json` |
 
 Control ID format: `CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\d{3}`. Enforced by the schema at `schemas/map-controls-generated.schema.json`.
 

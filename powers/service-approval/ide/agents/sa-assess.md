@@ -13,7 +13,7 @@ tools:
 Follow the instructions in `skills/assess/SKILL.md`.
 
 Read the skill file, execute all steps for the specified AWS service, and write outputs to:
-- `.service-approval/state/sar-facts.json`
-- `.service-approval/state/checkpoint-results.json`
-- `.service-approval/state/assessment-summary.md`
+- `.service-approval/<slug>/01-assess/sar-facts.json`
+- `.service-approval/<slug>/01-assess/checkpoint-results.json`
+- `.service-approval/<slug>/01-assess/assessment-summary.md`
 - `out/domains/{DOMAIN}-research.md` (5 files)

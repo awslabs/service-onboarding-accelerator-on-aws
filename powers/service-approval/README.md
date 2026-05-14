@@ -1,6 +1,6 @@
 # Service Approval — Kiro Power
 
-Kiro CLI 2.0 Power that generates AWS security controls for any AWS service via an 8-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to a control framework (CCMv4, NIST 800-53, CIS, ISO).
+Kiro CLI 2.0 Power that generates AWS security controls for any AWS service via a 9-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to a control framework (CCMv4, NIST 800-53, CIS, ISO).
 
 ## Install
 
@@ -39,21 +39,22 @@ Full parameter reference is in [`POWER.md`](POWER.md).
 ## What this Power does
 
 1. Reads customer inputs (`./input/` folder with .md, .json, .xlsx, .pdf, .docx)
-2. Runs an 8-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize)
-3. Writes state and artifacts to `.service-approval/` in the working directory
-4. Produces `APPROVAL-REPORT.md` with a framework-coverage matrix and a verdict
+2. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence)
+3. Writes state and artifacts to `.service-approval/<service-slug>/` (per-service layout) in the working directory
+4. Produces `APPROVAL-REPORT.md` with a framework-coverage matrix and a verdict, plus optional CLI attestation evidence
 
 ## Pipeline
 
 ```
-Intake               → state/intake-manifest.json (service, inputs, testing intent)
-Phase 0 Assess       → state/sar-facts.json, state/checkpoint-results.json, state/iac-support.json
-Phase 1 Research     → state/research.json (4 parallel sub-skills)
-Phase 2 Validate     → state/validated.json (cross-MCP verification)
-Phase 3 Map          → state/mapping-results.json (+ framework-mapping.md)
-Phase 4 Generate     → controls/ (78–111 files)
-Phase 5 Test         → state/test-results.json (mode set upfront in Intake)
-Phase 6 Summarize    → APPROVAL-REPORT.md
+Intake               → _staging/<ts>/00-intake/intake-manifest.json (promoted to <slug>/00-intake/ in Phase 0)
+Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.json, iac-support.json
+Phase 1 Research     → <slug>/02-research/research.json (4 parallel sub-skills)
+Phase 2 Validate     → <slug>/03-validate/validated.json (cross-MCP verification)
+Phase 3 Map          → <slug>/04-map/mapping-results.json (+ framework-mapping.md)
+Phase 4 Generate     → <slug>/05-generate/ (78–111 files across preventive/proactive/detective/responsive/iac)
+Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (mode set upfront in Intake)
+Phase 6 Summarize    → <slug>/07-summarize/APPROVAL-REPORT.md
+Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
 ```
 
 Uses Kiro CLI 2.0 `/spawn` for parallel execution in Phases 1, 3, and 4.
@@ -137,7 +138,7 @@ Full testing guide at [`docs/TESTING-KIRO.md`](../../docs/TESTING-KIRO.md). Cove
 - Verifying the install populated `.kiro/agents/`, `.kiro/hooks/`, `.kiro/steering/`
 - Confirming MCP servers connect (requires `uv` on PATH for `aws-documentation` and `awsiac`)
 - Keyword activation tests
-- Hook-fire verification via `.service-approval/state/mcp-calls.log`
+- Hook-fire verification via `.service-approval/<slug>/mcp-calls.log`
 - Fixes for "fetch failed", "aws-cdk-mcp-server Connection closed", and the "workspaceRoot not approved" security warning
 
 ## License

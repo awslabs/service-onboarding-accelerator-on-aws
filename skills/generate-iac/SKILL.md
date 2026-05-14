@@ -11,7 +11,7 @@ Generate compliant infrastructure-as-code templates in all 4 required formats fr
 Controls Matrix. Each template implements ALL controls as properties/variables on the
 compliant resource.
 
-**Output:** `.service-approval/controls/iac/`
+**Output:** `.service-approval/<slug>/05-generate/iac/`
 
 This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
@@ -20,15 +20,15 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
-test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
+test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
 ```
 
 Create directory structure:
 ```bash
-mkdir -p .service-approval/controls/iac/modules/_shared
-for asset in $(python3 -c "import json; d=json.load(open('.service-approval/state/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
-  mkdir -p ".service-approval/controls/iac/modules/${asset}"
+mkdir -p .service-approval/<slug>/05-generate/iac/modules/_shared
+for asset in $(python3 -c "import json; d=json.load(open('.service-approval/<slug>/03-validate/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
+  mkdir -p ".service-approval/<slug>/05-generate/iac/modules/${asset}"
 done
 ```
 
@@ -36,8 +36,8 @@ Load controls and API surface:
 ```bash
 python3 -c "
 import json
-mr = json.load(open('.service-approval/state/mapping-results.json'))
-vj = json.load(open('.service-approval/state/validated.json'))
+mr = json.load(open('.service-approval/<slug>/04-map/mapping-results.json'))
+vj = json.load(open('.service-approval/<slug>/03-validate/validated.json'))
 print(f'Controls: {len(mr[\"controls\"])}')
 print(f'Assets: {len(vj[\"assets\"])}')
 print(f'API operations: {len(vj[\"api_surface\"][\"operations\"])}')
@@ -928,8 +928,8 @@ After writing CDK and CDKTF package.json files, run `npm install` in each direct
 generate `package-lock.json`. The stop hook uses `npm ci` which requires a lock file.
 
 ```bash
-cd .service-approval/controls/iac/cdk && npm install --silent && cd -
-cd .service-approval/controls/iac/cdktf && npm install --silent && cd -
+cd .service-approval/<slug>/05-generate/iac/cdk && npm install --silent && cd -
+cd .service-approval/<slug>/05-generate/iac/cdktf && npm install --silent && cd -
 ```
 
 ### 2. Generate smoke-test parameter files
@@ -987,7 +987,7 @@ Required workflow:
 
 1. For every CFN Name-like parameter you add an `AllowedPattern` to, extract the authoritative
    pattern from the service's boto3 shape metadata in
-   `.service-approval/state/validated.json` / `research.json`
+   `.service-approval/<slug>/03-validate/validated.json` / `research.json`
    (`api_surface.operations[].parameters[].pattern`), NOT from a guessed regex.
 2. Cross-check the `Default:` literal string against the pattern. If the pattern forbids
    hyphens (e.g., `[a-zA-Z][a-zA-Z0-9_]*`), the Default must use underscores or camelCase.
@@ -1069,5 +1069,5 @@ Generate (IaC) complete:
   CDK for Terraform:  iac/cdktf/compliant-resource.cdktf.ts (+ package.json, tsconfig.json)
   Parameter coverage: {N}/{N} parameters across all templates
   Known gaps:         {N} documented
-  Output: .service-approval/controls/iac/
+  Output: .service-approval/<slug>/05-generate/iac/
 ```

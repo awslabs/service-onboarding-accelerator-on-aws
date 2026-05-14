@@ -1,9 +1,12 @@
 # Service Approval — CI pipeline
 #
-# Three gates that must pass on every MR before merge:
-#   1. Unit tests — 205+ Python tests in tools/validate/
+# Four gates that must pass on every MR before merge:
+#   1. Unit tests — 280+ Python tests in tools/validate/ + tools/evidence/
 #   2. Sync drift — tools/sync-ide-configs.py --check must show no drift
+#      AND tools/generate-kiro-agents.py --check must show no drift
+#      (agent mirrors regenerated from agents-src/*.yaml)
 #   3. Install check — install.sh --check must complete without errors
+#   4. Schema validity — every schema in schemas/ parses as Draft 2020-12
 #
 # Headless service-approval runs (actually generating controls) are out of
 # scope here; add a scheduled job if you want that.
@@ -18,16 +21,22 @@ default:
 
 unit-tests:
   stage: verify
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq git
+    - pip install --quiet pyyaml jsonschema pytest jmespath jinja2
   script:
-    - python3 -m pytest tools/validate/ -q
+    - python3 -m pytest tools/validate/ tools/evidence/ -q
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_BRANCH == "main"
+  variables:
+    CI: "true"  # R16 fail-closed when git is missing under CI
 
 sync-drift:
   stage: verify
   script:
     - python3 tools/sync-ide-configs.py --check
+    - python3 tools/generate-kiro-agents.py --check
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_BRANCH == "main"
@@ -60,6 +69,20 @@ schema-validity:
               failed += 1
       exit(failed)
       "
+  rules:
+    - if: $CI_MERGE_REQUEST_IID
+    - if: $CI_COMMIT_BRANCH == "main"
+
+shellcheck:
+  stage: verify
+  image: koalaman/shellcheck-alpine:stable
+  before_script: []
+  script:
+    # Shipped scripts (smoke-deploy-test.sh, install.sh) must lint clean
+    - shellcheck scripts/smoke-deploy-test.sh
+    - shellcheck install.sh
+    - shellcheck .githooks/pre-commit
+    - shellcheck .githooks/post-merge
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_BRANCH == "main"

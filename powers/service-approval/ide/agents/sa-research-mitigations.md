@@ -12,4 +12,4 @@ tools:
 
 Follow the instructions in `skills/research-mitigations/SKILL.md`.
 
-Read the skill file, execute all steps, and write the output to `.service-approval/state/research-mitigations.json`.
+Read the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-mitigations.json`.

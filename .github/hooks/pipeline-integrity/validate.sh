@@ -14,7 +14,27 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
-if [ ! -d ".service-approval/state" ]; then
+# Check if any service directories exist (skip _staging/ and plans/)
+if [ ! -d ".service-approval" ]; then
+  exit 0
+fi
+
+# Look for any service directory with phase subdirs
+has_services=false
+for dir in .service-approval/*/; do
+  [ -d "$dir" ] || continue
+  # Skip _staging/ and plans/
+  case "$(basename "$dir")" in
+    _*|plans) continue ;;
+  esac
+  # Check if it has phase directories (0N-*)
+  if ls -d "$dir"0*-*/ 2>/dev/null | grep -q .; then
+    has_services=true
+    break
+  fi
+done
+
+if [ "$has_services" = "false" ]; then
   # No pipeline state — nothing to validate. Not a failure.
   exit 0
 fi

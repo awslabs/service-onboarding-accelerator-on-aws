@@ -72,9 +72,10 @@ def _load_json(path: Path) -> dict | None:
         return None
 
 
-def check_mcp_log(state_dir: Path) -> list[str]:
+def check_mcp_log(service_root: Path) -> list[str]:
+    """Check MCP log at service root (not in a phase dir)."""
     errors: list[str] = []
-    log = state_dir / "mcp-calls.log"
+    log = service_root / "mcp-calls.log"
     if not log.exists():
         return ["P1 mcp-calls.log missing — pipeline must log every MCP call"]
     content = log.read_text()
@@ -91,10 +92,36 @@ def check_mcp_log(state_dir: Path) -> list[str]:
     return errors
 
 
-def check_validated_notes(state_dir: Path) -> list[str]:
+def check_validated_notes(validate_dir: Path) -> list[str]:
+    """Check validated.json in 03-validate/ phase dir.
+
+    P2 gate: a missing or unreadable validated.json is a hard fail —
+    Phase 2 (Validate) is mandatory and its absence means the pipeline
+    skipped a required phase. Previously this function returned `[]`
+    silently, letting the gate pass open.
+    """
     errors: list[str] = []
-    validated = _load_json(state_dir / "validated.json")
+    validated_path = validate_dir / "validated.json"
+    validated = _load_json(validated_path)
+    if validated is None:
+        if validated_path.exists():
+            errors.append(
+                f"P2 FAIL: {validated_path} exists but failed to parse as JSON. "
+                "Phase 2 (Validate) must produce a well-formed validated.json."
+            )
+        else:
+            errors.append(
+                f"P2 FAIL: {validated_path} is missing. Phase 2 (Validate) is "
+                "mandatory — every pipeline run must produce validated.json with "
+                "verification notes for each capability claim."
+            )
+        return errors
     if not validated:
+        # Empty dict — file exists, parses, but contains nothing meaningful.
+        errors.append(
+            f"P2 FAIL: {validated_path} is empty. Phase 2 (Validate) must "
+            "produce content — at minimum, capabilities and verification notes."
+        )
         return errors
 
     notes: list[str] = []
@@ -246,11 +273,12 @@ def check_iac_placeholders(iac_dir: Path) -> list[str]:
     return errors
 
 
-def check_framework_coverage(state_dir: Path) -> list[str]:
+def check_framework_coverage(map_dir: Path) -> list[str]:
+    """Check framework coverage from 04-map/ phase dir."""
     errors: list[str] = []
-    mapping = _load_json(state_dir / "mapping-results.json")
+    mapping = _load_json(map_dir / "mapping-results.json")
     if not mapping:
-        mapping = _load_json(state_dir / "map-framework-mapped.json")
+        mapping = _load_json(map_dir / "map-framework-mapped.json")
     if not mapping:
         return errors
 
@@ -278,9 +306,10 @@ def check_framework_coverage(state_dir: Path) -> list[str]:
     return errors
 
 
-def check_verdict_consistency(output_dir: Path, integrity_errors_count: int) -> list[str]:
+def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) -> list[str]:
+    """Check verdict consistency from 07-summarize/ phase dir."""
     errors: list[str] = []
-    report = output_dir / "APPROVAL-REPORT.md"
+    report = summarize_dir / "APPROVAL-REPORT.md"
     if not report.exists():
         return errors
     content = report.read_text()
@@ -298,21 +327,69 @@ def check_verdict_consistency(output_dir: Path, integrity_errors_count: int) -> 
 
 
 def validate_pipeline(root: Path) -> list[str]:
-    output_dir = root / ".service-approval"
-    state_dir = output_dir / "state"
-    controls_dir = output_dir / "controls"
-    iac_dir = controls_dir / "iac"
+    """Validate pipeline integrity for all services in .service-approval/.
 
-    if not state_dir.exists():
+    Iterates over all service subdirectories (.service-approval/<slug>/)
+    and runs integrity checks on each one. Skips _staging/ and plans/.
+    """
+    output_dir = root / ".service-approval"
+    if not output_dir.exists():
         return []
 
     errors: list[str] = []
-    errors.extend(check_mcp_log(state_dir))
-    errors.extend(check_validated_notes(state_dir))
-    errors.extend(check_iam_policies(controls_dir))
-    errors.extend(check_iac_placeholders(iac_dir))
-    errors.extend(check_framework_coverage(state_dir))
-    errors.extend(check_verdict_consistency(output_dir, len(errors)))
+
+    # Find all service directories (skip _staging/ and plans/).
+    # Phase-dir detection is regex-anchored via tools.paths.is_phase_dir_name
+    # so unrelated "0-something" or "00-private" dirs aren't mistaken for
+    # service roots.
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from paths import is_phase_dir_name  # type: ignore
+
+    service_dirs = []
+    for item in output_dir.iterdir():
+        if not item.is_dir():
+            continue
+        if item.name.startswith("_") or item.name == "plans":
+            continue
+        # Check if this looks like a service dir (has phase subdirs)
+        has_phases = any(
+            child.is_dir() and is_phase_dir_name(child.name)
+            for child in item.iterdir()
+        )
+        if has_phases:
+            service_dirs.append(item)
+
+    if not service_dirs:
+        return []
+
+    # Validate each service
+    for service_root in service_dirs:
+        # Check MCP log at service root
+        errors.extend(check_mcp_log(service_root))
+
+        # Check validated.json in 03-validate/
+        validate_dir = service_root / "03-validate"
+        if validate_dir.exists():
+            errors.extend(check_validated_notes(validate_dir))
+
+        # Check controls in 05-generate/
+        controls_dir = service_root / "05-generate"
+        if controls_dir.exists():
+            errors.extend(check_iam_policies(controls_dir))
+            iac_dir = controls_dir / "iac"
+            if iac_dir.exists():
+                errors.extend(check_iac_placeholders(iac_dir))
+
+        # Check framework coverage in 04-map/
+        map_dir = service_root / "04-map"
+        if map_dir.exists():
+            errors.extend(check_framework_coverage(map_dir))
+
+        # Check verdict consistency in 07-summarize/
+        summarize_dir = service_root / "07-summarize"
+        if summarize_dir.exists():
+            errors.extend(check_verdict_consistency(summarize_dir, len(errors)))
+
     return errors
 
 

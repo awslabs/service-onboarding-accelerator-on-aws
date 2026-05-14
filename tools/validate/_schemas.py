@@ -18,6 +18,16 @@ flat `list[str]` shape as the hand-rolled `check_*` functions in
 - **Error format:** `"SCHEMA <name>: <json-pointer>: <message>"` so every
   schema violation is one line, greppable, with the path into the JSON
   document as a dotted string.
+
+## Registered schemas (evidence-attestation branch, W1):
+
+State files (Phases 0-6):
+  - checkpoint-results, sar-facts, research, validated,
+    map-controls-generated, map-framework-parsed, map-framework-mapped,
+    mapping-results, test-results, iac-support
+
+Evidence files (Phase 7):
+  - cli-commands, attestation-results, deployed-resources
 """
 from __future__ import annotations
 
@@ -47,7 +57,7 @@ class SchemaMissingError(FileNotFoundError):
 def _load_validator(schema_name: str) -> Draft202012Validator:
     """Load the schema file and return a cached Draft202012Validator.
 
-    Cached via lru_cache because each pytest run loads 11 schemas many
+    Cached via lru_cache because each pytest run loads 14 schemas many
     times across tests — disk I/O doesn't need to repeat.
     """
     path = os.path.join(_SCHEMA_DIR, f"{schema_name}.schema.json")

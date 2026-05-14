@@ -11,10 +11,10 @@ Map each generated control to framework objectives individually. This is the mos
 sub-skill in the map pipeline. It produces quality-gated framework mappings with rationale.
 
 **Inputs:**
-- `.service-approval/state/map-framework-parsed.json` — normalized framework objectives
-- `.service-approval/state/map-controls-generated.json` — controls with rich metadata
+- `.service-approval/<slug>/04-map/map-framework-parsed.json` — normalized framework objectives
+- `.service-approval/<slug>/04-map/map-controls-generated.json` — controls with rich metadata
 
-**Output:** `.service-approval/state/map-framework-mapped.json`
+**Output:** `.service-approval/<slug>/04-map/map-framework-mapped.json`
 **Schema:** `schemas/map-framework-mapped.schema.json` — encodes status enum strictly `MAPPED` or `N/A` (iter-14 Class F15-revised), coverage enum, `control_id` pattern matching map-controls-generated, and per-mapping required fields. See also the "Schema rules" section below.
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
@@ -24,16 +24,16 @@ This is one of 4 focused map sub-skills. Each writes to a separate intermediate 
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/map-framework-parsed.json && echo "framework: OK" || echo "ERROR"
-test -f .service-approval/state/map-controls-generated.json && echo "controls: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/map-framework-parsed.json && echo "framework: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/map-controls-generated.json && echo "controls: OK" || echo "ERROR"
 ```
 
 Load both inputs:
 ```bash
 python3 -c "
 import json
-fw = json.load(open('.service-approval/state/map-framework-parsed.json'))
-cg = json.load(open('.service-approval/state/map-controls-generated.json'))
+fw = json.load(open('.service-approval/<slug>/04-map/map-framework-parsed.json'))
+cg = json.load(open('.service-approval/<slug>/04-map/map-controls-generated.json'))
 print(f'Framework: {fw[\"framework\"][\"name\"]} — {len(fw[\"framework_objectives\"])} objectives')
 print(f'Controls: {len(cg[\"controls\"])}')
 "
@@ -212,7 +212,7 @@ Use as a STARTING POINT for candidate controls, then apply per-objective evaluat
 
 ## Phase 4: Write Output
 
-Write `.service-approval/state/map-framework-mapped.json`:
+Write `.service-approval/<slug>/04-map/map-framework-mapped.json`:
 
 ```json
 {
@@ -318,5 +318,5 @@ Map (Framework Mapping) complete:
   N/A: {na}
   Quality gates: all PASS
   Orphaned controls: {count}
-  Output: .service-approval/state/map-framework-mapped.json
+  Output: .service-approval/<slug>/04-map/map-framework-mapped.json
 ```

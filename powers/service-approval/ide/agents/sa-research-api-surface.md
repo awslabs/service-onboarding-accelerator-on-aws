@@ -12,4 +12,4 @@ tools:
 
 Follow the instructions in `skills/research-api-surface/SKILL.md`.
 
-Read the skill file, execute all steps, and write the output to `.service-approval/state/research-api-surface.json`.
+Read the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-api-surface.json`.

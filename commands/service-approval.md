@@ -5,7 +5,7 @@ argument-hint: "[./input-folder] [--service=<name>] [--env=<profile>] [--framewo
 
 # Service Approval — Orchestrator
 
-Invokes the full 8-phase pipeline defined at `skills/service-approval/SKILL.md`.
+Invokes the full 9-phase pipeline defined at `skills/service-approval/SKILL.md`.
 
 ## Parse arguments
 
@@ -44,14 +44,16 @@ Intake always runs. Its prompt behavior depends on what it finds:
    - Phase 4: `skills/generate-preventive/`, `generate-detective/`, `generate-iac/` (parallel)
    - Phase 5: `skills/test/` (only if `--env` provided and not `--skip-test`)
    - Phase 6: `skills/summarize/`
-3. Use MCP servers (`awsknowledge`, `aws-documentation`, `awsiac`) for every capability, API parameter, and condition key. Log each call to `.service-approval/state/mcp-calls.log` (minimum 10 entries).
+   - Phase 7: `skills/evidence/` (only if Phase 5 Test completed successfully)
+3. Use MCP servers (`awsknowledge`, `aws-documentation`, `awsiac`) for every capability, API parameter, and condition key. Log each call to `.service-approval/<service-slug>/mcp-calls.log` (minimum 10 entries).
 4. Pipeline integrity is enforced automatically by the `Stop` hook at `hooks/hooks.json`, which invokes `tools/validate/hook_stop.py`. Exit code 2 blocks the stop and forces verdict `REQUIRES REMEDIATION`.
 
 ## Output
 
-- `.service-approval/APPROVAL-REPORT.md` — final verdict + CCMv4 coverage matrix
-- `.service-approval/controls/` — all 78–111 generated artifacts
-- `.service-approval/state/` — pipeline state files (research.json, validated.json, etc.)
+- `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md` — final verdict + CCMv4 coverage matrix
+- `.service-approval/<service-slug>/05-generate/` — all 78–111 generated artifacts
+- `.service-approval/<service-slug>/` — pipeline state files (per-phase subdirectories)
+- `.service-approval/<service-slug>/08-evidence/` — CLI attestation results (if Phase 7 runs)
 
 ## Report back
 

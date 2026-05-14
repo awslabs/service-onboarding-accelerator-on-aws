@@ -53,8 +53,24 @@ def test_mcp_log_case_insensitive_call_marker(tmp_path: Path) -> None:
 # ---------- P2: validated.json verification notes ----------
 
 
-def test_validated_notes_missing_file_is_noop(tmp_path: Path) -> None:
-    assert check_validated_notes(tmp_path) == []
+def test_validated_notes_missing_file_is_p2_failure(tmp_path: Path) -> None:
+    """A missing validated.json must be a P2 failure, not a silent pass.
+
+    Previously the gate returned [] when the file was absent — letting a
+    pipeline that skipped Phase 2 entirely sneak through. Now the gate
+    reports a hard fail.
+    """
+    errors = check_validated_notes(tmp_path)
+    assert len(errors) == 1
+    assert "P2 FAIL" in errors[0] and "missing" in errors[0]
+
+
+def test_validated_notes_unparseable_file_is_p2_failure(tmp_path: Path) -> None:
+    """A validated.json that exists but doesn't parse must also be a P2 failure."""
+    (tmp_path / "validated.json").write_text("{not valid json")
+    errors = check_validated_notes(tmp_path)
+    assert len(errors) == 1
+    assert "P2 FAIL" in errors[0] and "failed to parse" in errors[0]
 
 
 def test_validated_notes_no_notes_fails(tmp_path: Path) -> None:
@@ -355,22 +371,31 @@ def test_verdict_no_errors_approved_passes(tmp_path: Path) -> None:
 
 
 def test_validate_pipeline_no_state_dir_returns_empty(tmp_path: Path) -> None:
-    # No .service-approval/state/ → nothing to validate (pre-pipeline run).
+    # No .service-approval/ → nothing to validate (pre-pipeline run).
     assert validate_pipeline(tmp_path) == []
 
 
 def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
+    # New layout: .service-approval/<slug>/0N-phase/
     out = tmp_path / ".service-approval"
-    state = out / "state"
-    controls = out / "controls"
-    state.mkdir(parents=True)
-    controls.mkdir(parents=True)
-    # Trigger P1 (missing mcp-calls.log) and P3 (inverted SCP without Deny).
+    service = out / "testservice"
+    service.mkdir(parents=True)
+
+    # Create phase directories
+    (service / "03-validate").mkdir()
+    (service / "05-generate").mkdir()
+    (service / "05-generate" / "preventive").mkdir()
+
+    # Trigger P1 (missing mcp-calls.log at service root)
+    # No mcp-calls.log created → will fail P1
+
+    # Trigger P3 (inverted SCP without Deny)
     _write_policy(
-        controls,
+        service / "05-generate",
         "scp-baseline.json",
         {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]},
     )
+
     errors = validate_pipeline(tmp_path)
     assert any("P1" in e for e in errors)
     assert any("P3" in e and "SCP has no Deny" in e for e in errors)

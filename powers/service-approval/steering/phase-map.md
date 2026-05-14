@@ -2,7 +2,7 @@
 name: phase-map
 description: Rules for Phase 3 (Map) sub-skills
 inclusion: fileMatch
-fileMatchPattern: "**/.service-approval/state/map*.json"
+fileMatchPattern: "**/.service-approval/*/04-map/map*.json"
 ---
 
 # Phase 3 — Map
@@ -34,10 +34,10 @@ Use `/spawn` for the first two. After both complete, run framework-mapping and a
 
 | Sub-skill | Output | Schema |
 |-----------|--------|--------|
-| `map-parse-framework` | `state/map-framework-parsed.json` | `map-framework-parsed.schema.json` |
-| `map-generate-controls` | `state/map-controls-generated.json` | `map-controls-generated.schema.json` |
-| `map-framework-mapping` | `state/map-framework-mapped.json` | `map-framework-mapped.schema.json` |
-| `map-assemble` | `state/mapping-results.json` + `controls-catalog.md` + `framework-mapping.md` | `mapping-results.schema.json` |
+| `map-parse-framework` | `<slug>/04-map/map-framework-parsed.json` | `map-framework-parsed.schema.json` |
+| `map-generate-controls` | `<slug>/04-map/map-controls-generated.json` | `map-controls-generated.schema.json` |
+| `map-framework-mapping` | `<slug>/04-map/map-framework-mapped.json` | `map-framework-mapped.schema.json` |
+| `map-assemble` | `<slug>/04-map/mapping-results.json` + `controls-catalog.md` + `framework-mapping.md` | `mapping-results.schema.json` |
 
 ## Control ID format
 
