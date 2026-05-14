@@ -10,7 +10,7 @@ argument-hint: '[--service=<name>]'
 Discover the target AWS service's security capabilities across 5 domains using MCP servers
 and any available assessment artifacts.
 
-**Output:** `.service-approval/state/research-capabilities.json`
+**Output:** `.service-approval/<slug>/02-research/research-capabilities.json`
 **Schema:** `schemas/research-capabilities.schema.json` — encodes `phase: "research-capabilities"` const, `condition_keys[]` object form `{key, applies_to_actions[]}` (iter-14 Class F13 — strings-only arrays rejected), the 5 required capability sub-objects (iam / encryption / network / logging / organization_policies), and `abac_support` enum `{full, partial, none}`.
 
 This is one of 3 focused research sub-skills. The orchestrator merges outputs from all 3
@@ -21,8 +21,10 @@ into the final `research.json`.
 ## Prerequisites
 
 ```bash
-mkdir -p .service-approval/state
-touch .service-approval/state/mcp-calls.log
+from tools.paths import phase_dir, mcp_log
+research_dir = phase_dir(slug, "research")  # .service-approval/<slug>/02-research/
+research_dir.mkdir(parents=True, exist_ok=True)
+mcp_log(slug).touch()  # .service-approval/<slug>/mcp-calls.log
 ```
 
 ## Inputs
@@ -34,8 +36,8 @@ touch .service-approval/state/mcp-calls.log
 Check for assessment artifacts:
 
 ```bash
-test -f .service-approval/state/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
-test -f .service-approval/state/checkpoint-results.json && echo "Checkpoints: OK" || echo "Checkpoints: not found"
+test -f .service-approval/<slug>/01-assess/sar-facts.json && echo "SAR facts: OK" || echo "SAR facts: not found"
+test -f .service-approval/<slug>/01-assess/checkpoint-results.json && echo "Checkpoints: OK" || echo "Checkpoints: not found"
 ```
 
 ### SAR Facts (`sar-facts.json`)
@@ -64,7 +66,7 @@ When present, provides **verified factual data** from source-of-truth pages:
 
 ## MCP Call Logging
 
-Log every MCP call to `.service-approval/state/mcp-calls.log`:
+Log every MCP call to `.service-approval/<slug>/mcp-calls.log`:
 ```
 [Step N] [Capabilities] <mcp-server> <tool-name> — <description> — <result-summary>
 ```
@@ -309,7 +311,7 @@ These are the service-specific resource type names from the SAR page.
 
 ## Write Output
 
-Write `.service-approval/state/research-capabilities.json`:
+Write `.service-approval/<slug>/02-research/research-capabilities.json`:
 
 ```json
 {
@@ -352,5 +354,5 @@ Research (capabilities) complete:
   Resources:               {N}
   Doc sources:             {N}
   Assessment data used:    SAR={Yes/No}, Checkpoints={Yes/No}
-  Output: .service-approval/state/research-capabilities.json
+  Output: .service-approval/<slug>/02-research/research-capabilities.json
 ```

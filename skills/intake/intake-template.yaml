@@ -64,7 +64,12 @@ testing:
   # Target region for test deployment
   region: "us-east-1"
 
-  # Keep deployed resources after a successful full-deploy test (full-deploy only)
+  # Keep deployed resources alive after Phase 7 Evidence completes (full-deploy only).
+  # Phase 5 ALWAYS leaves the stack alive when Phase 7 is in scope so Phase 7
+  # can probe the deployed resources via CLI. This flag controls whether
+  # Phase 7 tears down at the end:
+  #   false (default): Phase 7 tears down the stack after evidence collection
+  #   true:            Phase 7 skips teardown — stack remains for manual debugging
   keep: false
 
   # Config rule evaluation timeout in minutes (full-deploy only)

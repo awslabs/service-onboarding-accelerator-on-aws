@@ -2,7 +2,7 @@
 name: phase-research
 description: Rules that apply to Phase 1 (Research) sub-skills
 inclusion: fileMatch
-fileMatchPattern: "**/.service-approval/state/research*.json"
+fileMatchPattern: "**/.service-approval/*/02-research/research*.json"
 ---
 
 # Phase 1 — Research sub-skill rules
@@ -11,7 +11,7 @@ Applies to: `sa-research-mitigations`, `sa-research-capabilities`, `sa-research-
 
 ## Hard rules
 
-1. **Every capability claim must be MCP-verified.** For each mitigation, capability, API parameter, and condition key, make at least one call to `@awsknowledge`, `@aws-documentation`, or `@awsiac`. Log it to `state/mcp-calls.log`. Integrity rule P1 enforces a minimum of 10 total calls.
+1. **Every capability claim must be MCP-verified.** For each mitigation, capability, API parameter, and condition key, make at least one call to `@awsknowledge`, `@aws-documentation`, or `@awsiac`. Log it to `<slug>/mcp-calls.log`. Integrity rule P1 enforces a minimum of 10 total calls.
 
 2. **No training-data values.** If your answer starts with "I know that S3 supports..." or "Lambda has a feature called...", stop. Re-query MCP. Training data is banned as a source of truth.
 
@@ -23,10 +23,10 @@ Each research sub-skill writes its output to a file matching its schema in `/sch
 
 | Sub-skill | Output | Schema |
 |-----------|--------|--------|
-| `research-mitigations` | `state/research-mitigations.json` | `schemas/research-mitigations.schema.json` |
-| `research-capabilities` | `state/research-capabilities.json` | `schemas/research-capabilities.schema.json` |
-| `research-api-surface` | `state/research-api-surface.json` | `schemas/research-api-surface.schema.json` |
-| `research-attack-surface` | `state/research-attack-surface.json` | (optional, no schema) |
+| `research-mitigations` | `<slug>/02-research/research-mitigations.json` | `schemas/research-mitigations.schema.json` |
+| `research-capabilities` | `<slug>/02-research/research-capabilities.json` | `schemas/research-capabilities.schema.json` |
+| `research-api-surface` | `<slug>/02-research/research-api-surface.json` | `schemas/research-api-surface.schema.json` |
+| `research-attack-surface` | `<slug>/02-research/research-attack-surface.json` | (optional, no schema) |
 
 The PostToolUse hook (`hook_post_tool_use.py`) validates the output against the schema on every `fs_write`.
 
@@ -46,6 +46,6 @@ before proceeding to the merge step (Phase 1e in `skills/research/SKILL.md`).
 
 ## What triggers this steering
 
-`inclusion: fileMatch` with pattern `**/.service-approval/state/research*.json`
+`inclusion: fileMatch` with pattern `**/.service-approval/*/02-research/research*.json`
 means this file loads into context only when a research sub-skill is writing
 one of these files. Saves tokens for unrelated phases.

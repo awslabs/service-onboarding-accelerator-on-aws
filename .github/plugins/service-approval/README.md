@@ -1,6 +1,6 @@
 # Service Approval — Copilot Plugin
 
-Bundled GitHub Copilot plugin that generates AWS security controls for any AWS service via an 8-phase pipeline.
+Bundled GitHub Copilot plugin that generates AWS security controls for any AWS service via a 9-phase pipeline.
 
 ## What's in the bundle
 
@@ -8,7 +8,7 @@ Bundled GitHub Copilot plugin that generates AWS security controls for any AWS s
 |------|---------|
 | `../../agents/service-approval.agent.md` | Chat-mode agent (Copilot Chat in Agent mode) |
 | `../../prompts/service-approval.prompt.md` | `/service-approval` slash command |
-| `../../skills/*/SKILL.md` | Skills the agent loads progressively |
+| `../../skills/*/SKILL.md` | 20 skills the agent loads progressively |
 | `../../hooks/pipeline-integrity/` | sessionEnd hook — runs integrity checks |
 | `../../copilot-instructions.md` | Repo-wide rules (always-applied) |
 
@@ -107,8 +107,8 @@ Create `.vscode/mcp.json` if missing:
 ## Output
 
 - `.service-approval/APPROVAL-REPORT.md` — final verdict + CCMv4 matrix
-- `.service-approval/controls/` — all 78–111 generated artifacts
-- `.service-approval/state/` — pipeline state files + mcp-calls.log
+- `.service-approval/<slug>/05-generate/` — all 78–111 generated artifacts
+- `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 
 ## Update
 

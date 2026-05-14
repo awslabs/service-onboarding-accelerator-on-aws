@@ -1,6 +1,6 @@
 # Service Approval Plugin
 
-Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates an 8-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize) and maps everything to your control framework (CCMv4, NIST 800-53, CIS, ISO 27001).
+Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a 9-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) and maps everything to your control framework (CCMv4, NIST 800-53, CIS, ISO 27001).
 
 ## What it produces
 
@@ -11,12 +11,20 @@ Generates AWS security controls and compliant IaC templates for any AWS service.
 - **Compliant IaC** — CDK (TypeScript), Terraform (modular), CloudFormation, CDK for Terraform
 - **Validation** — Tier 1 static checks + Tier 2 AWS API policy validation (automatic via hooks)
 
-Output lands in `.service-approval/` in your working directory:
+Output lands in `.service-approval/<service-slug>/` (per-service layout) in your working directory:
 ```
-.service-approval/
-  APPROVAL-REPORT.md   ← final verdict + framework coverage matrix
-  controls/            ← all generated control artifacts
-  state/               ← pipeline state files (research.json, validated.json, etc.)
+.service-approval/<service-slug>/
+  00-intake/              ← intake manifest
+  01-assess/              ← SAR facts, checkpoints, assessment summary
+  02-research/            ← research.json (merged from 4 sub-skills)
+  03-validate/            ← validated.json
+  04-map/                 ← mapping-results.json, controls-catalog.md, framework-mapping.md
+  05-generate/            ← all generated control artifacts (preventive, proactive, detective, responsive, IaC)
+  06-test/                ← test-results.json, deploy logs
+  07-summarize/           ← APPROVAL-REPORT.md
+  08-evidence/            ← attestation-report.md, CLI probe outputs, attestation-results.json
+  attestation.md          ← reviewer's audit guide
+  mcp-calls.log           ← MCP call audit log
 ```
 
 ---
@@ -24,28 +32,29 @@ Output lands in `.service-approval/` in your working directory:
 ## Pipeline
 
 ```
-Intake (precursor)           → intake-manifest.json (service, inputs, framework, testing intent)
-Phase 0: Assess              → sar-facts.json, checkpoint-results.json, assessment-summary.md, iac-support.json
+Intake (precursor)           → _staging/<ts>/00-intake/intake-manifest.json (service, inputs, framework, testing intent)
+Phase 0: Assess              → <slug>/01-assess/{sar-facts.json, checkpoint-results.json, assessment-summary.md, iac-support.json}
 Phase 1: Research (4 parallel sub-skills + merge)
-  1a: research-mitigations   → research-mitigations.json
-  1b: research-capabilities  → research-capabilities.json
-  1c: research-api-surface   → research-api-surface.json
-  1d: research-attack-surface→ research-attack-surface.json (optional, MITRE ATT&CK)
-  1e: merge                  → research.json
-Phase 2: Validate            → validated.json
+  1a: research-mitigations   → <slug>/02-research/research-mitigations.json
+  1b: research-capabilities  → <slug>/02-research/research-capabilities.json
+  1c: research-api-surface   → <slug>/02-research/research-api-surface.json
+  1d: research-attack-surface→ <slug>/02-research/research-attack-surface.json (optional, MITRE ATT&CK)
+  1e: merge                  → <slug>/02-research/research.json
+Phase 2: Validate            → <slug>/03-validate/validated.json
 Phase 3: Map (4 sub-skills)
-  3a: map-parse-framework    → map-framework-parsed.json
-  3b: map-generate-controls  → map-controls-generated.json (parallel with 3a)
-  3c: map-framework-mapping  → map-framework-mapped.json (after 3a+3b)
-  3d: map-assemble           → mapping-results.json, controls-catalog.md, framework-mapping.md
+  3a: map-parse-framework    → <slug>/04-map/map-framework-parsed.json
+  3b: map-generate-controls  → <slug>/04-map/map-controls-generated.json (parallel with 3a)
+  3c: map-framework-mapping  → <slug>/04-map/map-framework-mapped.json (after 3a+3b)
+  3d: map-assemble           → <slug>/04-map/mapping-results.json, controls-catalog.md, framework-mapping.md
 Phase 4: Generate (3 parallel sub-skills)
-  4a: generate-preventive    → controls/preventive/, controls/proactive/
-  4b: generate-detective     → controls/detective/, controls/responsive/
-  4c: generate-iac           → controls/iac/ (4 formats + TF modules)
-Phase 5: Test                → test-results.json (mode comes from
+  4a: generate-preventive    → <slug>/05-generate/preventive/, proactive/
+  4b: generate-detective     → <slug>/05-generate/detective/, responsive/
+  4c: generate-iac           → <slug>/05-generate/iac/ (4 formats + TF modules)
+Phase 5: Test                → <slug>/06-test/test-results.json (mode comes from
                                 intake-manifest.json.testing.mode:
                                 full-deploy | dry-run | skip | manual-cli)
-Phase 6: Summarize           → APPROVAL-REPORT.md, ARTIFACT-FLOW-MATRIX.md
+Phase 6: Summarize           → <slug>/07-summarize/APPROVAL-REPORT.md, ARTIFACT-FLOW-MATRIX.md
+Phase 7: Evidence            → <slug>/08-evidence/attestation-report.md, attestation-results.json, CLI outputs
 ```
 
 ### Key Features
@@ -70,7 +79,7 @@ The pipeline runs as 20 discrete skills under [`skills/`](skills/). Each one is 
 | [`research-capabilities`](skills/research-capabilities/SKILL.md) | Discover AWS service security capabilities (IAM, encryption, network, logging, org-policies) using MCP servers and assessment artifacts. Produces research-capabilities.json consumed by the research merge step. |
 | [`research-mitigations`](skills/research-mitigations/SKILL.md) | Parse input files to extract existing mitigations, build initial asset inventory, and collect assessment gaps. Produces research-mitigations.json consumed by the research merge step. |
 | [`research`](skills/research/SKILL.md) | AWS service capability discovery producing research.json with structured capabilities, API surface, and existing mitigations. Uses MCP servers for AWS documentation, service authorization, and best practices. Downstream skills (Validate, Map) consume this output. Split into 3 focused sub-skills for better accuracy; this skill orchestrates and merges. |
-| [`service-approval`](skills/service-approval/SKILL.md) | Orchestrate all 8 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize) to generate AWS security controls and compliant resource templates for any AWS service |
+| [`service-approval`](skills/service-approval/SKILL.md) | Orchestrate all 9 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) to generate AWS security controls and compliant resource templates for any AWS service |
 | [`summarize`](skills/summarize/SKILL.md) | Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, test evidence, and verdic |
 | [`test`](skills/test/SKILL.md) | Deploy compliant resource template and validate zero Config rule findings. Requires AWS credentials. |
 | [`validate`](skills/validate/SKILL.md) | Verify research.json v3.0 findings via MCP — confirm capabilities, API parameters, condition keys, SCP/RCP expressibility, and mitigation feasibility. Produce validated.json. |
@@ -83,12 +92,12 @@ Run `python3 tools/sync-ide-configs.py` or `./install.sh --sync` if you add a ne
 Each phase consumes the previous phase's output — the pipeline is a strict DAG:
 
 ```
-Input Files ──► Assess ──► Research ──► Validate ──► Map ──► Generate ──► Test ──► Summarize
-                  │           │            │          │         │           │          │
-              sar-facts   research.json  validated  mapping  controls/  test-      APPROVAL-
-              checkpoints  (merged from  .json      results  (85 files) results    REPORT.md
-              assessment    4 sub-skills)           .json                          ARTIFACT-
-                                                                                  FLOW-MATRIX
+Input Files ──► Assess ──► Research ──► Validate ──► Map ──► Generate ──► Test ──► Summarize ──► Evidence
+                  │           │            │          │         │           │          │              │
+              sar-facts   research.json  validated  mapping  controls/  test-      APPROVAL-   attestation-
+              checkpoints  (merged from  .json      results  (85 files) results    REPORT.md   report.md
+              assessment    4 sub-skills)           .json                          ARTIFACT-   attestation-
+                                                                                  FLOW-MATRIX  results.json
 ```
 
 **Phase 1 (Research)** runs 4 parallel sub-skills — mitigations, capabilities, API surface,
@@ -204,10 +213,10 @@ The plugin includes automatic validation hooks that run at session end:
 Run manually:
 ```bash
 # Tier 1 only
-python3 tools/validate/validate_deployable.py --tier1-only .service-approval/controls/
+python3 tools/validate/validate_deployable.py --tier1-only .service-approval/<slug>/05-generate/
 
 # Tier 1 + Tier 2
-python3 tools/validate/validate_deployable.py --profile delegated-admin .service-approval/controls/
+python3 tools/validate/validate_deployable.py --profile delegated-admin .service-approval/<slug>/05-generate/
 ```
 
 ---

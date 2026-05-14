@@ -12,4 +12,4 @@ tools:
 
 Follow the instructions in `skills/research-capabilities/SKILL.md`.
 
-Read the skill file, execute all steps, and write the output to `.service-approval/state/research-capabilities.json`.
+Read the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-capabilities.json`.

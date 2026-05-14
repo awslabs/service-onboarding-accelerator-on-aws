@@ -22,11 +22,11 @@ results become SCP/RCP feasibility inputs.
 
 | File | Purpose | Consumed By |
 |------|---------|-------------|
-| `.service-approval/state/assessment-summary.md` | CAF-structured findings with GAPS tables per domain | Researcher (gap-driven controls), Summarizer |
-| `.service-approval/state/sar-facts.json` | Extracted SAR data (actions, condition keys, resource types, permission-only actions) | Validator (condition key verification), Researcher (IAM controls) |
-| `.service-approval/state/checkpoint-results.json` | Factual checkpoint verification results (RCP, declarative policies, FIPS, RAM, etc.) | Validator (SCP/RCP expressibility), Generator (skip inapplicable controls) |
-| `.service-approval/state/assessment-questionnaire.md` | SITCO Bar questionnaire answers (if --questions provided) | Summarizer (evidence) |
-| `out/domains/{DOMAIN}-research.md` | Intermediate domain research files | Researcher (reuse findings) |
+| `.service-approval/<slug>/01-assess/assessment-summary.md` | CAF-structured findings with GAPS tables per domain | Researcher (gap-driven controls), Summarizer |
+| `.service-approval/<slug>/01-assess/sar-facts.json` | Extracted SAR data (actions, condition keys, resource types, permission-only actions) | Validator (condition key verification), Researcher (IAM controls) |
+| `.service-approval/<slug>/01-assess/checkpoint-results.json` | Factual checkpoint verification results (RCP, declarative policies, FIPS, RAM, etc.) | Validator (SCP/RCP expressibility), Generator (skip inapplicable controls) |
+| `.service-approval/<slug>/01-assess/assessment-questionnaire.md` | SITCO Bar questionnaire answers (if --questions provided) | Summarizer (evidence) |
+| `.service-approval/<slug>/01-assess/domains/{DOMAIN}-research.md` | Intermediate domain research files | Researcher (reuse findings) |
 
 ---
 
@@ -43,10 +43,8 @@ If no `--service` and no input folder, ask the user for a service name.
 
 ## Prerequisites
 
-```bash
-mkdir -p .service-approval/state
-mkdir -p out/domains
-```
+Per-service slug and phase directories are created after slug derivation in Step 0b.
+No hardcoded prerequisites — paths are derived dynamically.
 
 ---
 
@@ -114,7 +112,7 @@ The Service Authorization Reference page is the definitive source for IAM action
      Missing entries cause the IaC generator to attempt invalid resource ARN scoping.
 5. Also extract: total action count, SLR details, dependent actions.
 
-Write to `.service-approval/state/sar-facts.json`:
+**DO NOT write sar-facts.json yet** — Step 0b (below) derives the canonical slug first.
 ```json
 {
   "service": "{service-name}",
@@ -136,6 +134,84 @@ Write to `.service-approval/state/sar-facts.json`:
   "service_prefix": "{iam-prefix}"
 }
 ```
+
+---
+
+## Step 0b: Derive Canonical Slug and Promote Staging
+
+**NEW:** After SAR facts are extracted (Step 0), derive the canonical service slug and atomically promote the intake staging directory to the per-service tree.
+
+1. **Read intake manifest** from staging:
+
+   ```python
+   import json
+   from pathlib import Path
+   
+   # Find the latest staging directory
+   staging_base = Path(".service-approval/_staging")
+   if staging_base.exists():
+       staging_dirs = sorted(staging_base.iterdir(), key=lambda p: p.name, reverse=True)
+       if staging_dirs:
+           latest_staging = staging_dirs[0]
+           manifest_path = latest_staging / "00-intake" / "intake-manifest.json"
+           with open(manifest_path) as f:
+               intake_manifest = json.load(f)
+   ```
+
+2. **Derive canonical slug** using `tools/slug.py`:
+
+   ```python
+   from tools.slug import derive_canonical_slug
+   
+   # From Step 0 SAR extraction
+   service_name = sar_facts["service"]          # e.g., "AWS Lambda"
+   service_prefix = sar_facts["service_prefix"] # e.g., "lambda"
+   user_candidate = intake_manifest["service"].get("candidate_slug", service_prefix)
+   
+   slug = derive_canonical_slug(service_name, service_prefix, user_candidate)
+   # Result: "awslambda" for Lambda, "bedrock-agentcore" for AgentCore, "s3" for S3
+   ```
+
+3. **Create service root and promote staging**:
+
+   ```bash
+   # Using tools/paths.py
+   from tools.paths import service_root, phase_dir
+   
+   service_dir = service_root(slug)  # .service-approval/<slug>/
+   assess_dir = phase_dir(slug, "assess")  # .service-approval/<slug>/01-assess/
+   
+   # Create directory structure
+   assess_dir.mkdir(parents=True, exist_ok=True)
+   (assess_dir / "domains").mkdir(exist_ok=True)
+   
+   # Atomic promotion: move staging intake to canonical location
+   import shutil
+   staging_intake = latest_staging / "00-intake"
+   target_intake = service_dir / "00-intake"
+   if target_intake.exists():
+       shutil.rmtree(target_intake)  # Clean mode or re-run
+   shutil.move(str(staging_intake), str(target_intake))
+   
+   # Optionally remove staging parent if empty
+   if not any(latest_staging.iterdir()):
+       latest_staging.rmdir()
+   ```
+
+4. **Write sar-facts.json** to the canonical path:
+
+   Write to `.service-approval/<slug>/01-assess/sar-facts.json` using the JSON structure from Step 0.
+
+5. **Record slug in intake manifest** (update in place):
+
+   ```python
+   intake_manifest["service"]["canonical_slug"] = slug
+   intake_path = service_dir / "00-intake" / "intake-manifest.json"
+   with open(intake_path, "w") as f:
+       json.dump(intake_manifest, f, indent=2)
+   ```
+
+**All downstream steps** (checkpoints, domain research, assessment summary) write to `.service-approval/<slug>/01-assess/` per the per-slug layout.
 
 ---
 
@@ -161,7 +237,7 @@ Each research agent MUST:
 2. Execute ALL mandatory searches (substituting `{service}`)
 3. Query relevant Knowledge Bases using `mcp__kb-search__search_*` tools
 4. Include the SAR facts for IAM/LOGGING/DATA domains
-5. Write findings to `out/domains/{DOMAIN}-research.md`
+5. Write findings to `.service-approval/<slug>/01-assess/domains/{DOMAIN}-research.md`
 6. Include source URLs for every finding
 
 CRITICAL RESEARCH RULES:
@@ -278,7 +354,7 @@ override any findings from Step 1 if they contradict.
 **Definitive checkpoints** (marked **Yes**): These are exhaustive lists. If the service
 is NOT listed, the answer is definitively "No" / "Not supported."
 
-Write to `.service-approval/state/checkpoint-results.json`:
+Write to `.service-approval/<slug>/01-assess/checkpoint-results.json`:
 ```json
 {
   "service": "{service-name}",
@@ -376,7 +452,7 @@ If a format is NOT supported, it cannot be forced — the generator has no resou
 
 ### Write Results
 
-Write to `.service-approval/state/iac-support.json`:
+Write to `.service-approval/<slug>/01-assess/iac-support.json`:
 
 ```json
 {
@@ -426,7 +502,7 @@ If the file is missing (e.g., assess was skipped), Generate defaults to CloudFor
 
 ## Step 3: Synthesize CAF Assessment
 
-After all research completes, read the domain research files from `out/domains/`.
+After all research completes, read the domain research files from `.service-approval/<slug>/01-assess/domains/`.
 
 For EACH domain, produce a CAF section using this format:
 
@@ -561,8 +637,8 @@ If `--questions` was provided:
    ```
    Directions: Yes / No / Yes, partially / Not found in available AWS documentation
 6. Verify against checkpoints — override contradicted answers
-7. Write to `.service-approval/state/assessment-questionnaire.md`
-8. Run post-processing: `python3 tools/post-process/fix_output.py .service-approval/state/assessment-questionnaire.md`
+7. Write to `.service-approval/<slug>/01-assess/assessment-questionnaire.md`
+8. Run post-processing: `python3 tools/post-process/fix_output.py .service-approval/<slug>/01-assess/assessment-questionnaire.md`
 
 ---
 
@@ -604,7 +680,7 @@ from ALL domain compliance matrices into a single table.
 |---|--------|-------------|--------|---------|
 ```
 
-Write to `.service-approval/state/assessment-summary.md`:
+Write to `.service-approval/<slug>/01-assess/assessment-summary.md`:
 ```markdown
 # Security Posture Assessment: {Service Name}
 
@@ -633,7 +709,7 @@ Write to `.service-approval/state/assessment-summary.md`:
 {consolidated gaps table}
 ```
 
-Run post-processing: `python3 tools/post-process/fix_output.py .service-approval/state/assessment-summary.md`
+Run post-processing: `python3 tools/post-process/fix_output.py .service-approval/<slug>/01-assess/assessment-summary.md`
 
 ---
 
@@ -658,14 +734,14 @@ Flag contradictions: `> **CROSS-CHECK**: {description}`
 ## Output Verification
 
 After all steps complete, verify:
-- [ ] `.service-approval/state/sar-facts.json` exists and is valid JSON
-- [ ] `.service-approval/state/checkpoint-results.json` exists and is valid JSON
-- [ ] `.service-approval/state/iac-support.json` exists and is valid JSON
-- [ ] `.service-approval/state/assessment-summary.md` exists with all 5 domain sections
+- [ ] `.service-approval/<slug>/01-assess/sar-facts.json` exists and is valid JSON
+- [ ] `.service-approval/<slug>/01-assess/checkpoint-results.json` exists and is valid JSON
+- [ ] `.service-approval/<slug>/01-assess/iac-support.json` exists and is valid JSON
+- [ ] `.service-approval/<slug>/01-assess/assessment-summary.md` exists with all 5 domain sections
 - [ ] GAPS counts match actual table rows
 - [ ] No leaked terminology (check CLAUDE.md terminology rules)
 - [ ] No meta-commentary (check CLAUDE.md meta-commentary rules)
-- [ ] If `--questions` provided: `.service-approval/state/assessment-questionnaire.md` exists
+- [ ] If `--questions` provided: `.service-approval/<slug>/01-assess/assessment-questionnaire.md` exists
 
 ## Print Summary
 
@@ -683,5 +759,5 @@ Assessment complete:
     - iac-support.json
     - assessment-summary.md
     [- assessment-questionnaire.md (if --questions)]
-  Output: .service-approval/state/
+  Output: .service-approval/<slug>/01-assess/
 ```

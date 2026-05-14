@@ -774,7 +774,9 @@ def main():
     parser = argparse.ArgumentParser(
         description="Validate deployability of generated security control artifacts.",
     )
-    parser.add_argument("controls_dir", help="Path to .service-approval/controls/")
+    parser.add_argument(
+        "controls_dir", help="Path to .service-approval/<slug>/05-generate/"
+    )
     parser.add_argument("--profile", help="AWS CLI profile for Tier 2 checks")
     parser.add_argument(
         "--tier1-only", action="store_true",

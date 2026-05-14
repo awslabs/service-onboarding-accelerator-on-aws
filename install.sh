@@ -103,7 +103,8 @@ sync_kiro_ide() {
 }
 
 # ---------------------------------------------------------------------------
-# sync_configs: regenerate client-specific manifests from manifest.yaml.
+# sync_configs: regenerate client-specific manifests from manifest.yaml AND
+# regenerate Kiro CLI/IDE agent mirrors from powers/service-approval/agents-src/*.yaml.
 # ---------------------------------------------------------------------------
 sync_configs() {
   if [ ! -f "$REPO_DIR/manifest.yaml" ]; then
@@ -115,6 +116,7 @@ sync_configs() {
     return 1
   fi
   python3 "$REPO_DIR/tools/sync-ide-configs.py" || return $?
+  python3 "$REPO_DIR/tools/generate-kiro-agents.py" || return $?
 }
 
 # ===========================================================================
@@ -127,10 +129,10 @@ if [ "$MODE" = "sync" ]; then
 
   log ""
   log "Client manifest sync"
-  sync_configs && ok "manifests regenerated from manifest.yaml"
+  sync_configs && ok "manifests + agent mirrors regenerated from manifest.yaml + agents-src/"
 
   log ""
-  log "Done. Re-run any time after editing manifest.yaml, powers/, or steering."
+  log "Done. Re-run any time after editing manifest.yaml, agents-src/*.yaml, powers/, or steering."
   log "Enable auto-sync on git pull: git config core.hooksPath .githooks"
   exit 0
 fi
@@ -207,8 +209,8 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$MODE" = "install" ]; then
   log ""
-  log "Running sync to regenerate client manifests..."
-  sync_configs >/dev/null 2>&1 && ok "manifests in sync with manifest.yaml"
+  log "Running sync to regenerate client manifests + agent mirrors..."
+  sync_configs >/dev/null 2>&1 && ok "manifests + agent mirrors in sync with sources"
 fi
 
 log ""

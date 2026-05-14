@@ -7,10 +7,10 @@ argument-hint: '[--service=<name>] [--include-unverified]'
 
 # Service Approval — Control Generator v3
 
-Read `.service-approval/state/mapping-results.json` (produced by Mapper) for controls and
-framework mappings. Read `.service-approval/state/validated.json` (produced by Validator v3)
+Read `.service-approval/<slug>/04-map/mapping-results.json` (produced by Mapper) for controls and
+framework mappings. Read `.service-approval/<slug>/03-validate/validated.json` (produced by Validator v3)
 for API surface and capabilities. Generate artifacts organized by the Controls Matrix
-(Category x Scope). Write to `.service-approval/controls/`.
+(Category x Scope). Write to `.service-approval/<slug>/05-generate/`.
 
 ## Sub-Skill Architecture
 
@@ -18,9 +18,9 @@ This skill is split into 3 focused sub-skills that write to separate directories
 
 | Sub-Skill | Focus | Output Directory |
 |-----------|-------|-----------------|
-| `generate-preventive` | SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA, CFN Guard | `controls/preventive/`, `controls/proactive/` |
-| `generate-detective` | Config rules, Lambda handlers, EventBridge, CloudWatch, SSM runbooks, Step Functions | `controls/detective/`, `controls/responsive/` |
-| `generate-iac` | Terraform modules, CDK TypeScript, CloudFormation YAML, CDK for Terraform | `controls/iac/` |
+| `generate-preventive` | SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA, CFN Guard | `<slug>/05-generate/preventive/`, `<slug>/05-generate/proactive/` |
+| `generate-detective` | Config rules, Lambda handlers, EventBridge, CloudWatch, SSM runbooks, Step Functions | `<slug>/05-generate/detective/`, `<slug>/05-generate/responsive/` |
+| `generate-iac` | Terraform modules, CDK TypeScript, CloudFormation YAML, CDK for Terraform | `<slug>/05-generate/iac/` |
 
 **When invoked directly** (via `/generate`), this skill runs all 3 sub-skills sequentially.
 **When invoked by the orchestrator**, the orchestrator dispatches sub-skills in parallel.
@@ -35,20 +35,20 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 ## Prerequisites
 
 ```bash
-test -f .service-approval/state/mapping-results.json && echo "mapping-results: OK" || echo "ERROR: run mapper first"
-test -f .service-approval/state/validated.json && echo "validated: OK" || echo "ERROR: run validator first"
-mkdir -p .service-approval/controls/{proactive,preventive,detective,responsive,iac}
-mkdir -p .service-approval/controls/proactive/opa-policies
-mkdir -p .service-approval/controls/responsive/lambda-remediator
-mkdir -p .service-approval/controls/detective/config-rule-lambdas
+test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR: run mapper first"
+test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR: run validator first"
+mkdir -p .service-approval/<slug>/05-generate/{proactive,preventive,detective,responsive,iac}
+mkdir -p .service-approval/<slug>/05-generate/proactive/opa-policies
+mkdir -p .service-approval/<slug>/05-generate/responsive/lambda-remediator
+mkdir -p .service-approval/<slug>/05-generate/detective/config-rule-lambdas
 ```
 
 Create Terraform module directories:
 ```bash
-for asset in $(python3 -c "import json; d=json.load(open('.service-approval/state/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
-  mkdir -p ".service-approval/controls/iac/modules/${asset}"
+for asset in $(python3 -c "import json; d=json.load(open('.service-approval/<slug>/03-validate/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
+  mkdir -p ".service-approval/<slug>/05-generate/iac/modules/${asset}"
 done
-mkdir -p .service-approval/controls/iac/modules/_shared
+mkdir -p .service-approval/<slug>/05-generate/iac/modules/_shared
 ```
 
 ---
@@ -60,17 +60,17 @@ When this skill is invoked directly (not by orchestrator):
 ### Step 1: Run generate-preventive
 Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/preventive/` and `controls/proactive/` to be populated.
+Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
 
 ### Step 2: Run generate-detective
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/detective/` and `controls/responsive/` to be populated.
+Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
 
 ### Step 3: Run generate-iac
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `controls/iac/` to be populated with all 4 formats.
+Wait for `<slug>/05-generate/iac/` to be populated with all 4 formats.
 
 ### Step 4: Final Validation
 Run the comprehensive validation below.
@@ -94,7 +94,7 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 
-root = Path(".service-approval/controls")
+root = Path(f".service-approval/{slug}/05-generate")
 categories = ["preventive", "proactive", "detective", "responsive", "iac"]
 counts = {c: sum(1 for _ in (root / c).rglob("*") if _.is_file()) if (root / c).exists() else 0
           for c in categories}
@@ -108,7 +108,7 @@ if iac_root.exists():
     iac_formats["cdktf"]          = (iac_root / "cdktf").exists() or any(iac_root.rglob("cdktf.json"))
 
 service = None
-sj = Path(".service-approval/state/validated.json")
+sj = Path(f".service-approval/{slug}/03-validate/validated.json")
 if sj.exists():
     service = json.loads(sj.read_text()).get("service")
 
@@ -142,5 +142,5 @@ Control generation complete (v3):
     Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
     Res×Responsive:   stepfunctions-workflow (resource-level)
   IaC:          CDK, CFN, CDKTF + Terraform ({N} modules)
-  Output: .service-approval/controls/
+  Output: .service-approval/<slug>/05-generate/
 ```

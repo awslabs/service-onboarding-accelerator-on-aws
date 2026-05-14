@@ -139,10 +139,10 @@ After a full run (remove `--dry-run`):
 
 ```bash
 # PostToolUse hook should have logged schema errors (if any) during the run
-ls .service-approval/state/
+ls .service-approval/<slug>/
 
 # Stop hook should have written mcp-calls.log with >=10 entries
-wc -l .service-approval/state/mcp-calls.log
+wc -l .service-approval/<slug>/mcp-calls.log
 ```
 
 If `mcp-calls.log` is missing or <10 lines, integrity rule P1 will fail and the verdict will be `REQUIRES REMEDIATION` — hooks are working.
@@ -155,12 +155,13 @@ Create an `./input/` folder with a minimal AWS service input (at least `sar-slug
 run service approval for s3 --dry-run
 ```
 
-The agent should run all 8 phases. Watch for:
-- Intake writes `.service-approval/state/intake-manifest.json` before Phase 0
+The agent should run all 9 phases. Watch for:
+- Intake writes `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` before Phase 0
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
 - Phase 4 (Generate) spawns 3 parallel
-- Phase 6 (Summarize) writes `.service-approval/APPROVAL-REPORT.md`
+- Phase 6 (Summarize) writes `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md`
+- Phase 7 (Evidence) runs if Phase 5 Test completed (requires --env flag)
 
 End state should be verdict `APPROVED` or `REQUIRES REMEDIATION` in the report, not silence.
 

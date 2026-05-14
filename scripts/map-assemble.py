@@ -1,12 +1,33 @@
 #!/usr/bin/env python3
-"""Phase 3d: Deterministic assembly of map sub-skill outputs into final mapping state files."""
+"""Phase 3d: Deterministic assembly of map sub-skill outputs into final mapping state files.
 
+Updated for per-service-per-phase layout. Reads from:
+  .service-approval/<slug>/04-map/map-framework-parsed.json
+  .service-approval/<slug>/04-map/map-controls-generated.json
+  .service-approval/<slug>/04-map/map-framework-mapped.json
+  .service-approval/<slug>/03-validate/validated.json
+
+Writes to:
+  .service-approval/<slug>/04-map/mapping-results.json
+  .service-approval/<slug>/04-map/controls-catalog.md
+  .service-approval/<slug>/04-map/framework-mapping.md
+"""
+
+import argparse
 import json
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-STATE_DIR = Path(".service-approval/state")
+# Add repo root to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from tools import paths
+    from tools.slug import SlugValidationError
+except ImportError:
+    print("ERROR: tools.paths module not found. Expected W1 (foundations) to be merged first.", file=sys.stderr)
+    sys.exit(1)
 
 
 def load_json(path: Path) -> dict:
@@ -630,16 +651,106 @@ def validate(
 
 
 # ---------------------------------------------------------------------------
+# Service slug detection
+# ---------------------------------------------------------------------------
+def detect_single_service() -> str | None:
+    """Auto-detect service slug if exactly one exists under .service-approval/."""
+    try:
+        root = paths.repo_root() / ".service-approval"
+        if not root.exists():
+            return None
+
+        candidates = [
+            d.name for d in root.iterdir()
+            if d.is_dir() and d.name not in ("_staging", "plans")
+        ]
+
+        if len(candidates) == 1:
+            return candidates[0]
+        return None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> int:
-    print("Map (Assemble) starting...\n")
+    parser = argparse.ArgumentParser(
+        description="Phase 3d: Deterministic assembly of map sub-skill outputs",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "--service",
+        help="Service slug (e.g., 'awslambda', 's3'). Auto-detected if only one service exists.",
+    )
 
-    # Load inputs
-    fw_parsed = load_json(STATE_DIR / "map-framework-parsed.json")
-    cg = load_json(STATE_DIR / "map-controls-generated.json")
-    fw_mapped = load_json(STATE_DIR / "map-framework-mapped.json")
-    validated = load_json(STATE_DIR / "validated.json")
+    args = parser.parse_args()
+
+    # Resolve service slug
+    slug = args.service
+    if not slug:
+        slug = detect_single_service()
+        if not slug:
+            print("ERROR: --service argument required (no single service detected)", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("Detected services:", file=sys.stderr)
+            try:
+                root = paths.repo_root() / ".service-approval"
+                candidates = [
+                    d.name for d in root.iterdir()
+                    if d.is_dir() and d.name not in ("_staging", "plans")
+                ]
+                if candidates:
+                    for c in sorted(candidates):
+                        print(f"  - {c}", file=sys.stderr)
+                else:
+                    print("  (none)", file=sys.stderr)
+            except Exception:
+                pass
+            print("", file=sys.stderr)
+            print("Usage: python3 scripts/map-assemble.py --service <slug>", file=sys.stderr)
+            return 2
+
+    # Validate paths exist
+    try:
+        service_root = paths.service_root(slug)
+        if not service_root.exists():
+            print(f"ERROR: Service directory does not exist: {service_root}", file=sys.stderr)
+            print("", file=sys.stderr)
+            print("Did you mean to use the old layout? The new layout is:", file=sys.stderr)
+            print(f"  .service-approval/{slug}/04-map/", file=sys.stderr)
+            print(f"  .service-approval/{slug}/03-validate/validated.json", file=sys.stderr)
+            print("", file=sys.stderr)
+            return 1
+
+        map_dir = paths.phase_dir(slug, "map")
+        validate_dir = paths.phase_dir(slug, "validate")
+
+        if not map_dir.exists():
+            print(f"ERROR: Map phase directory not found: {map_dir}", file=sys.stderr)
+            return 1
+
+        if not validate_dir.exists():
+            print(f"ERROR: Validate phase directory not found: {validate_dir}", file=sys.stderr)
+            return 1
+
+    except (paths.PathResolutionError, SlugValidationError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+    print("Map (Assemble) starting...\n")
+    print(f"  Service: {slug}")
+    print(f"  Map dir: {map_dir}")
+    print(f"  Validate dir: {validate_dir}")
+    print("")
+
+    # Load inputs from new paths
+    fw_parsed = load_json(map_dir / "map-framework-parsed.json")
+    cg = load_json(map_dir / "map-controls-generated.json")
+    fw_mapped = load_json(map_dir / "map-framework-mapped.json")
+    validated = load_json(validate_dir / "validated.json")
 
     controls = cg["controls"]
     mitigations = validated["existing_mitigations"]
@@ -696,19 +807,19 @@ def main() -> int:
     mapping_results = assemble_mapping_results(
         controls, threat_mitigation_map, fw_parsed, fw_mapped, coverage_gaps, service,
     )
-    mapping_results_path = STATE_DIR / "mapping-results.json"
+    mapping_results_path = map_dir / "mapping-results.json"
     write_json(mapping_results_path, mapping_results)
     print()
 
     # Phase 5: Write controls-catalog.md
     print("Phase 5: Writing controls-catalog.md...")
-    catalog_path = STATE_DIR / "controls-catalog.md"
+    catalog_path = map_dir / "controls-catalog.md"
     write_controls_catalog(controls, catalog_path)
     print()
 
     # Phase 6: Write framework-mapping.md
     print("Phase 6: Writing framework-mapping.md...")
-    fw_mapping_path = STATE_DIR / "framework-mapping.md"
+    fw_mapping_path = map_dir / "framework-mapping.md"
     write_framework_mapping(
         fw_mapped, controls, ctrl_to_objs, coverage_gaps, threat_mitigation_map, fw_mapping_path
     )

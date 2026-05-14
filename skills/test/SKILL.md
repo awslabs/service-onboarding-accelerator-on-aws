@@ -2,26 +2,42 @@
 name: test
 description: Deploy compliant resource template and validate zero Config rule findings. Requires AWS credentials.
 disable-model-invocation: false
-argument-hint: '[--env=<profile>] [--keep] [--dry-run] [--timeout=<minutes>]'
+argument-hint: '[--env=<profile>] [--dry-run] [--timeout=<minutes>] [--no-evidence]'
 ---
 
 # Service Approval — Tester
 
 Deploy the generated compliant resource template and validate that it produces zero Config rule
-findings and no Config compliance violations. Write results to `.service-approval/state/test-results.json`.
+findings and no Config compliance violations. Write results to `.service-approval/<slug>/06-test/test-results.json`.
+
+## Stack lifecycle (Phase 5 ⇄ Phase 7)
+
+**Phase 5 leaves the deployed stack alive when Phase 7 Evidence is in scope.**
+Phase 7 reads `06-test/deployed-resources.json` and probes the stack via AWS CLI
+to produce runtime attestation. Tearing down at the end of Phase 5 would leave
+Phase 7 with `ResourceNotFoundException` on every probe.
+
+| Condition | Phase 5 teardown |
+|---|---|
+| Default (Phase 7 in scope) | **DEFERRED** — Phase 5 passes `--keep` to smoke-deploy-test.sh; Phase 7 owns teardown |
+| `--no-evidence` flag (Phase 7 skipped) | Phase 5 tears down at end (legacy behavior) |
+| `--dry-run` | No deploy, no teardown |
+
+The intake YAML's `testing.keep` field is now consumed by **Phase 7**, not Phase 5.
+It controls whether Phase 7 tears down at the end of evidence collection.
 
 ## Prerequisites
 
 - [ ] Check controls exist:
   ```bash
-  test -d .service-approval/controls && echo "OK" || echo "ERROR: run generator first"
+  test -d .service-approval/<slug>/05-generate && echo "OK" || echo "ERROR: run generator first"
   ```
 
 - [ ] Parse flags:
   - `--env=<profile>`: AWS CLI profile (REQUIRED for full mode)
-  - `--keep`: keep deployed resources after test
   - `--dry-run`: lint only, no deployment
   - `--timeout=<minutes>`: Config evaluation timeout (default: 30)
+  - `--no-evidence`: skip Phase 7 (Phase 5 reverts to legacy teardown-on-success behavior)
 
 ## Dry-run mode (--dry-run or no --env)
 
@@ -29,7 +45,7 @@ Run the deployability validator (Tier 1 + Tier 2 if credentials available):
 
 ```bash
 python3 tools/validate/validate_deployable.py \
-  [--profile {env}] [--tier1-only] .service-approval/controls/
+  [--profile {env}] [--tier1-only] .service-approval/<slug>/05-generate/
 ```
 
 **Without `--env`**: Runs Tier 1 only (static checks — JSON, YAML, terraform validate/fmt,
@@ -43,7 +59,7 @@ If credentials are missing when `--env` is provided, print instructions:
 Run: aws sso login --profile <profile>
 ```
 
-Write to `.service-approval/state/test-results.json`:
+Write to `.service-approval/<slug>/06-test/test-results.json`:
 ```json
 {
   "passed": null,
@@ -55,7 +71,7 @@ Write to `.service-approval/state/test-results.json`:
   "config_compliance": null,
   "cloudwatch_alarms_triggered": null,
   "deployed_resources": [],
-  "teardown_complete": true
+  "teardown_status": "not_attempted"
 }
 ```
 
@@ -69,27 +85,40 @@ aws sts get-caller-identity --profile {env}
 Display account ID and alias. Confirm with user before proceeding.
 If account alias contains: prod, prd, production, live → ask for explicit double confirmation.
 
-### Step 2: Deploy + verify + teardown via smoke-deploy-test.sh
+### Step 2: Deploy + verify via smoke-deploy-test.sh
 
-DO NOT invoke `aws cloudformation deploy` directly — the script handles the full
-deploy/verify/teardown cycle AND substitutes `${ACCOUNT_ID}` placeholders in
-`smoke-test-params.json` (line 161 of the script). Invoking raw `aws deploy`
-bypasses the substitution and fails with "ARN in the specified key policy is invalid."
+DO NOT invoke `aws cloudformation deploy` directly — the script handles the
+deploy/verify cycle AND substitutes `${ACCOUNT_ID}` placeholders in
+`smoke-test-params.json`. Invoking raw `aws deploy` bypasses the substitution
+and fails with "ARN in the specified key policy is invalid."
+
+**Default: pass `--keep` so Phase 7 can probe the deployed stack.**
+Only omit `--keep` when `--no-evidence` was passed (legacy mode).
 
 ```bash
-AWS_PROFILE="{env}" bash scripts/smoke-deploy-test.sh --cloudformation
+# Default — Phase 7 will tear down later
+AWS_PROFILE="{env}" bash scripts/smoke-deploy-test.sh \
+  --cloudformation --slug=<slug> --keep
+
+# Legacy mode — Phase 5 tears down at end (no Phase 7)
+AWS_PROFILE="{env}" bash scripts/smoke-deploy-test.sh \
+  --cloudformation --slug=<slug>
 ```
 
 The script:
 1. Verifies AWS identity and refuses production-alias accounts.
-2. Resolves `${ACCOUNT_ID}` in `smoke-test-params.json` → a temp file.
-3. `aws cloudformation deploy` with `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM`.
-4. Verifies stack outputs inline (ExecutionRoleArn, FunctionArn, KmsKeyArn,
-   LogGroupArn — see script lines 218-222). No separate wait-and-poll step.
-5. `aws cloudformation delete-stack` + `wait stack-delete-complete`.
+2. Auto-discovers slug from `.service-approval/*/05-generate/iac/` (or uses `--slug`).
+3. Resolves `${ACCOUNT_ID}` in `smoke-test-params.json` → a temp file.
+4. `aws cloudformation deploy` with `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM`.
+5. Verifies stack outputs inline.
+6. With `--keep`: prints stack name and exits PASS without teardown.
+   Without `--keep`: `aws cloudformation delete-stack` + `wait stack-delete-complete`.
 
-Capture the stack name and outputs from the script's stdout for Step 4b.
-Exit code 0 = PASS, 1 = deploy failed, 2 = teardown failed (resources may remain).
+Capture the stack name and outputs from the script's stdout — they're written to
+`deployed-resources.json` in Step 6 for Phase 7 to consume.
+
+Exit code 0 = PASS, 1 = deploy failed, 2 = teardown failed (only meaningful
+when `--keep` was NOT passed).
 
 ### Step 3: Detective-stack deploy (SKIP for now)
 
@@ -102,9 +131,9 @@ evaluation, run `smoke-deploy-controls.py --tier 2` after Step 2 succeeds.
 ### Step 4: Evaluate results
 
 Script exit code from Step 2:
-- 0 → deploy + teardown PASSED
+- 0 → deploy PASSED (and teardown PASSED if no `--keep`; teardown DEFERRED if `--keep`)
 - 1 → deploy FAILED (check script stdout for `describe-stack-events` output)
-- 2 → teardown FAILED (resources may remain; follow cleanup instructions)
+- 2 → teardown FAILED (only when `--keep` was NOT passed; resources may remain)
 
 ### Step 4b: Coverage Verification
 
@@ -155,17 +184,24 @@ Rationale: `smoke-check-traceability.py` is the single authoritative indexer.
 Duplicating its logic here leads to silent coverage drift when one skill
 evolves and the other doesn't.
 
-### Step 5: Teardown (covered by Step 2)
+### Step 5: Teardown handoff to Phase 7
 
-`smoke-deploy-test.sh` performs `aws cloudformation delete-stack` +
-`wait stack-delete-complete` as part of its normal run. No separate teardown
-step is required. If the script exited with code 2, teardown failed — record
-the stack name (captured from Step 2 stdout) in `test-results.json` under
-`teardown_failed` so operators can finish cleanup manually.
+When this skill ran with `--keep` (default — Phase 7 in scope):
+- The CFN stack is **alive**. Do NOT call `delete-stack` here.
+- Step 6 records `teardown_status: "deferred_to_phase_7"` in test-results.json.
+- Step 6 writes `deployed-resources.json` with the live stack ID + ARNs so
+  Phase 7's `synthesize.py` can probe the resources.
+- Phase 7 (skills/evidence/SKILL.md, Step 11) tears down at the end of evidence
+  collection unless `intake-manifest.json.testing.keep == true`.
+
+When this skill ran without `--keep` (`--no-evidence` mode):
+- `smoke-deploy-test.sh` already tore down. If it exited with code 2, teardown
+  failed — record the stack name in `test-results.json` under `teardown_status:
+  "failed"` so operators can finish cleanup manually.
 
 ### Step 6: Write test-results.json
 
-Write `.service-approval/state/test-results.json`:
+Write `.service-approval/<slug>/06-test/test-results.json`:
 ```json
 {
   "passed": true,
@@ -196,9 +232,36 @@ Write `.service-approval/state/test-results.json`:
     "missing": ["CEK-19", "LOG-11"],
     "percentage": 98.2
   },
-  "teardown_complete": true
+  "teardown_status": "deferred_to_phase_7"
 }
 ```
+
+`teardown_status` values:
+- `"deferred_to_phase_7"` — Phase 5 ran with `--keep`; stack is alive; Phase 7 owns teardown.
+- `"completed"` — Phase 5 ran without `--keep` and tore down successfully (`--no-evidence` mode).
+- `"failed"` — Phase 5 attempted teardown and `wait stack-delete-complete` errored.
+- `"not_attempted"` — Phase 5 was skipped (`--dry-run`).
+
+Also write `.service-approval/<slug>/06-test/deployed-resources.json` (NEW - required for Phase 7 Evidence):
+
+```json
+{
+  "schema_version": "1.0",
+  "stack_id": "arn:aws:cloudformation:us-east-1:123456789012:stack/...",
+  "region": "us-east-1",
+  "deployed_at": "{ISO-8601 timestamp}",
+  "resources": [
+    {
+      "logical_id": "{CloudFormation logical ID}",
+      "cfn_type": "AWS::Lambda::Function",
+      "arn": "arn:aws:lambda:us-east-1:123456789012:function:...",
+      "name": "{resource name}"
+    }
+  ]
+}
+```
+
+This file feeds Phase 7 Evidence runner for CLI probes against deployed resources.
 
 Print summary:
 ```
@@ -209,7 +272,7 @@ Test complete:
   Deployed resources: N
   Mitigation coverage: N/N ({percentage}%)
   Framework coverage: N/N ({percentage}%)
-  Teardown: complete/skipped (--keep)
+  Teardown: deferred_to_phase_7 | completed | failed | not_attempted
   RESULT: PASS/FAIL
 ```
 

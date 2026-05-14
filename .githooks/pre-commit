@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Pre-commit hook: enforce sync-drift gates before allowing a commit.
+#
+# Enable: git config core.hooksPath .githooks
+# Disable: git config --unset core.hooksPath
+#
+# Three checks (matching .gitlab-ci.yml sync-drift job):
+#   1. tools/sync-ide-configs.py --check (manifest.yaml ↔ MCP/plugin configs)
+#   2. tools/generate-kiro-agents.py --check (agents-src/*.yaml ↔ cli/ide mirrors)
+#   3. tools/validate/test_no_legacy_path_refs.py (R16 — legacy path regression)
+#
+# These gates block at commit time so contributors can't push a commit
+# that CI would reject. To bypass intentionally, use `git commit --no-verify`
+# (NOT recommended — it defeats the gate).
+#
+# Exit codes:
+#   0 — all checks pass (commit proceeds)
+#   1 — at least one check failed (commit blocked)
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+GATE_FAIL=0
+
+# Only run gates when we're committing files that could affect them. If a
+# commit touches only docs/, we skip the gates to avoid pestering doc-only PRs.
+TOUCHES_RELEVANT=$(git diff --cached --name-only | grep -E '^(manifest\.yaml|tools/|powers/service-approval/(agents-src|cli|ide)/|skills/|scripts/|schemas/|\.gitlab-ci\.yml|install\.(sh|ps1)|Makefile)' || true)
+
+if [ -z "$TOUCHES_RELEVANT" ]; then
+  exit 0
+fi
+
+# ----- Gate 1: sync-ide-configs --check -----
+if ! python3 tools/sync-ide-configs.py --check >/dev/null 2>&1; then
+  echo "  [pre-commit] sync-ide-configs.py --check FAILED:" >&2
+  python3 tools/sync-ide-configs.py --check >&2 || true
+  echo "  Fix: run 'python3 tools/sync-ide-configs.py' and re-add the changes." >&2
+  GATE_FAIL=1
+fi
+
+# ----- Gate 2: generate-kiro-agents --check -----
+if ! python3 tools/generate-kiro-agents.py --check >/dev/null 2>&1; then
+  echo "  [pre-commit] generate-kiro-agents.py --check FAILED:" >&2
+  python3 tools/generate-kiro-agents.py --check >&2 || true
+  echo "  Fix: run 'python3 tools/generate-kiro-agents.py' and re-add the changes." >&2
+  GATE_FAIL=1
+fi
+
+# ----- Gate 3: R16 legacy-paths regression test -----
+# Hard-fail if pytest isn't installed — silently skipping turns the gate
+# into a no-op on contributor machines that "just happen" to have a clean
+# environment. Pre-commit gates must be deterministic.
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "  [pre-commit] python3 missing on PATH — install Python 3.9+ to run R16." >&2
+  GATE_FAIL=1
+elif ! python3 -c "import pytest" >/dev/null 2>&1; then
+  echo "  [pre-commit] pytest not installed — R16 cannot run." >&2
+  echo "  Install with: pip3 install pytest  (or: pip3 install -r tools/kb-search-mcp/requirements.txt)" >&2
+  GATE_FAIL=1
+elif ! python3 -m pytest tools/validate/test_no_legacy_path_refs.py -q >/dev/null 2>&1; then
+  echo "  [pre-commit] R16 legacy path refs check FAILED:" >&2
+  python3 -m pytest tools/validate/test_no_legacy_path_refs.py 2>&1 | tail -20 >&2 || true
+  GATE_FAIL=1
+fi
+
+if [ $GATE_FAIL -ne 0 ]; then
+  echo "" >&2
+  echo "  pre-commit gates failed. To bypass (not recommended): git commit --no-verify" >&2
+  exit 1
+fi
+
+exit 0

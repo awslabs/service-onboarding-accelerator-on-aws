@@ -10,7 +10,7 @@ These rules apply across all clients and all agents.
 - The `--env` flag must point to a named AWS CLI profile — never use the default profile.
 
 ## State Safety
-- Always write state to `.service-approval/state/` relative to the current working directory.
+- Always write state to `.service-approval/<slug>/<phase>/` relative to the current working directory.
 - Never overwrite existing `research.json` or `validated.json` without user confirmation.
 - State files from previous runs are preserved unless `--clean` flag is passed.
 
@@ -29,4 +29,4 @@ These rules apply across all clients and all agents.
 ## MCP Safety
 - All API parameters, condition keys, and Config rule names must be sourced from MCP — never
   from model training data.
-- Log every MCP call to `.service-approval/state/mcp-calls.log`.
+- Log every MCP call to `.service-approval/<slug>/mcp-calls.log`.

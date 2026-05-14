@@ -17,9 +17,9 @@ framework mappings, and traceability. This skill bridges the gap between capabil
 - Customer threat model (Mitigation Report) from validated.json `existing_mitigations[]`
 
 **Outputs:**
-- `.service-approval/state/mapping-results.json` — machine-readable mapping state
-- `.service-approval/state/controls-catalog.md` — controls inventory by Category x Scope matrix
-- `.service-approval/state/framework-mapping.md` — framework objective crosswalk
+- `.service-approval/<slug>/04-map/mapping-results.json` — machine-readable mapping state
+- `.service-approval/<slug>/04-map/controls-catalog.md` — controls inventory by Category x Scope matrix
+- `.service-approval/<slug>/04-map/framework-mapping.md` — framework objective crosswalk
 
 ## Sub-Skill Architecture
 
@@ -49,9 +49,13 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 
 ## Prerequisites
 
-```bash
-test -f .service-approval/state/validated.json && echo "OK" || echo "ERROR: run validator first"
-mkdir -p .service-approval/state
+```python
+from tools.paths import phase_dir, service_root
+# slug derived by Phase 0 (Assess) Step 0b — read it from the resolved staging promotion
+validate_dir = phase_dir(slug, "validate")  # .service-approval/<slug>/03-validate/
+map_dir = phase_dir(slug, "map")             # .service-approval/<slug>/04-map/
+assert (validate_dir / "validated.json").exists(), "ERROR: run validator first"
+map_dir.mkdir(parents=True, exist_ok=True)
 ```
 
 ## Inputs
@@ -69,16 +73,16 @@ When this skill is invoked directly (not by orchestrator):
 ### Step 1: Run map-parse-framework
 Follow ALL instructions in `skills/map-parse-framework/SKILL.md`.
 Pass: `--framework`, `--framework-file` flags if provided.
-Wait for `.service-approval/state/map-framework-parsed.json`.
+Wait for `.service-approval/<slug>/04-map/map-framework-parsed.json`.
 
 ### Step 2: Run map-generate-controls
 Follow ALL instructions in `skills/map-generate-controls/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `.service-approval/state/map-controls-generated.json`.
+Wait for `.service-approval/<slug>/04-map/map-controls-generated.json`.
 
 ### Step 3: Run map-framework-mapping
 Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`.
-Wait for `.service-approval/state/map-framework-mapped.json`.
+Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 
 ### Step 4: Run map-assemble
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
@@ -154,17 +158,17 @@ After all sub-skills complete, verify the final outputs:
 
 ```bash
 # Verify all 3 output files exist
-test -f .service-approval/state/mapping-results.json && echo "OK: mapping-results.json" || echo "MISSING"
-test -f .service-approval/state/controls-catalog.md && echo "OK: controls-catalog.md" || echo "MISSING"
-test -f .service-approval/state/framework-mapping.md && echo "OK: framework-mapping.md" || echo "MISSING"
+test -f .service-approval/<slug>/04-map/mapping-results.json && echo "OK: mapping-results.json" || echo "MISSING"
+test -f .service-approval/<slug>/04-map/controls-catalog.md && echo "OK: controls-catalog.md" || echo "MISSING"
+test -f .service-approval/<slug>/04-map/framework-mapping.md && echo "OK: framework-mapping.md" || echo "MISSING"
 
 # Validate mapping-results.json
-python3 -m json.tool .service-approval/state/mapping-results.json > /dev/null && echo "OK: valid JSON" || echo "ERROR: invalid JSON"
+python3 -m json.tool .service-approval/<slug>/04-map/mapping-results.json > /dev/null && echo "OK: valid JSON" || echo "ERROR: invalid JSON"
 
 # Quick stats
 python3 -c "
 import json
-d = json.load(open('.service-approval/state/mapping-results.json'))
+d = json.load(open('.service-approval/<slug>/04-map/mapping-results.json'))
 fm = d.get('framework_mapping', [])
 mapped = sum(1 for f in fm if f.get('status') == 'MAPPED')
 na = sum(1 for f in fm if f.get('status') == 'N/A')
@@ -206,5 +210,5 @@ Map complete (v2):
     - Mitigations addressed:   {N}/{total} ({pct}%)
     - Framework objectives:    {mapped}/{total} mapped, {na} N/A
     - Coverage gaps:           {N}
-  Output: .service-approval/state/
+  Output: .service-approval/<slug>/04-map/
 ```
