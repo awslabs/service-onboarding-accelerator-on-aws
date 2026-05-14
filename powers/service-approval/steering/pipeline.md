@@ -5,7 +5,7 @@ inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/**"
 ---
 
-# Pipeline — 8 phases, 19 sub-skills
+# Pipeline — 8 phases (Intake + 7), 20 sub-skills
 
 ## Hard rules (re-stated)
 
@@ -22,6 +22,21 @@ fileMatchPattern: "**/.service-approval/**"
 Read `skills/service-approval/SKILL.md` in full. That file is the authoritative
 orchestrator; do not deviate from the steps it prescribes.
 
+## Intake — Precursor
+
+**Sub-skill:** `skills/intake/SKILL.md`
+**Agent:** `sa-intake`
+**Inputs:** `--service`, `--from-intake=<file>`, `--interactive`, plus any
+orchestrator-level CLI flags (`--env`, `--framework`, `--framework-file`,
+`--skip-test`, `--dry-run`, `--keep`, `--timeout`)
+**Outputs:**
+- `state/intake-manifest.json` — service identity, input folder, framework
+  selection, testing intent (`full-deploy`/`dry-run`/`skip`/`manual-cli`)
+
+Runs before Phase 0. Deployment intent is captured here and consumed by Phase 5
+via the orchestrator's flag-resolution rules. IaC format selection is NOT done
+here — that happens in Phase 0 (Assess) Step 2b.
+
 ## Phase 0 — Assess
 
 **Sub-skill:** `skills/assess/SKILL.md`
@@ -31,10 +46,13 @@ orchestrator; do not deviate from the steps it prescribes.
 - `state/sar-facts.json` — SAR extraction (actions, condition keys, resource types)
 - `state/checkpoint-results.json` — CAF security assessment per domain
 - `state/assessment-summary.md`
+- `state/iac-support.json` — per-format IaC provider support for the service
+  (CloudFormation, Terraform hashicorp/awscc, CDK, CDKTF); consumed by Phase 4
 
 Runs sequentially. Loads `sar-slugs.json` from `data/` to resolve the service's
 SAR URL. Calls `@awsknowledge` for condition keys, `@aws-documentation` for
-service descriptions.
+service descriptions, and runs the IaC Provider Discovery step that populates
+`iac-support.json`.
 
 ## Phase 1 — Research (parallel)
 

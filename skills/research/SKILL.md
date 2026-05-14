@@ -67,7 +67,7 @@ Do not silently reuse. Log the decision to `mcp-calls.log`.
 
 Parse arguments:
 - `./input-folder` (optional) — read all `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files
-- `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`, `s3`, `lambda`)
+- `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`, `lambda`, `s3`)
 
 If neither is provided, ask the user for a service name before proceeding.
 

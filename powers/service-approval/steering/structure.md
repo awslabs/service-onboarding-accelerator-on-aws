@@ -21,9 +21,7 @@ alwaysApply: true
 ├── rules/                            (canonical)
 ├── .claude-plugin/                   (symlink) — Claude Code discovery
 ├── .agents/skills/                   (symlink) — agentskills.io alias
-├── AGENTS.md                         Codex CLI + Cursor entry point
 ├── powers/service-approval/          This Power
-├── gemini-extension/                 Gemini CLI extension (PR3)
 ├── .github/                          Copilot agents, prompts, hooks (PR4)
 ├── install.sh / install.ps1          Cross-IDE installer
 └── docs/INSTALL.md                   Install guide

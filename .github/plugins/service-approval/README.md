@@ -8,7 +8,7 @@ Bundled GitHub Copilot plugin that generates AWS security controls for any AWS s
 |------|---------|
 | `../../agents/service-approval.agent.md` | Chat-mode agent (Copilot Chat in Agent mode) |
 | `../../prompts/service-approval.prompt.md` | `/service-approval` slash command |
-| `../../skills/*/SKILL.md` | 18 skills the agent loads progressively |
+| `../../skills/*/SKILL.md` | Skills the agent loads progressively |
 | `../../hooks/pipeline-integrity/` | sessionEnd hook — runs integrity checks |
 | `../../copilot-instructions.md` | Repo-wide rules (always-applied) |
 
@@ -92,7 +92,7 @@ Create `.vscode/mcp.json` if missing:
 │   └── service-approval.agent.md      Agent in Agent mode
 ├── prompts/
 │   └── service-approval.prompt.md     Slash command
-├── skills/                            symlink → /skills/ (18 skills)
+├── skills/                            symlink → /skills/
 ├── hooks/
 │   └── pipeline-integrity/
 │       ├── hooks.json                 sessionEnd trigger

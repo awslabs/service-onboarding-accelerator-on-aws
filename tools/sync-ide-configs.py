@@ -88,27 +88,6 @@ def render_mcp_kiro(mcp: dict) -> dict:
             out[name] = entry
     return {"mcpServers": out}
 
-
-def render_mcp_gemini(mcp: dict) -> dict:
-    """Gemini gemini-extension.json mcpServers. HTTP uses httpUrl. Script uses
-    ${extensionPath}/../."""
-    out = {}
-    for name, cfg in mcp.items():
-        if cfg["type"] == "http":
-            out[name] = {"httpUrl": cfg["url"]}
-        elif cfg["type"] == "stdio":
-            entry = {"command": cfg["command"]}
-            if "args" in cfg:
-                entry["args"] = list(cfg["args"])
-            if "script" in cfg:
-                entry["args"] = [f"${{extensionPath}}/../{cfg['script']}"]
-                entry["cwd"] = "${extensionPath}"
-            if "env" in cfg:
-                entry["env"] = dict(cfg["env"])
-            out[name] = entry
-    return out
-
-
 def render_mcp_vscode(mcp: dict) -> dict:
     """VS Code .vscode/mcp.json uses `servers` (not mcpServers)."""
     out = {}
@@ -226,24 +205,6 @@ def sync_kiro(m: dict, check: bool) -> bool:
     return drift
 
 
-def sync_gemini(m: dict, check: bool) -> bool:
-    """Gemini extension manifest includes MCP inline."""
-    target = REPO / "gemini-extension" / "gemini-extension.json"
-    existing = _read_json(target)
-    new = {
-        "name": m["name"],
-        "version": m["version"],
-        "description": m["description"].strip().replace("\n  ", " "),
-        "contextFileName": "GEMINI.md",
-        "mcpServers": render_mcp_gemini(m["mcp_servers"]),
-        "excludeTools": existing.get("excludeTools", [
-            "run_shell_command(rm -rf)",
-            "run_shell_command(sudo)",
-        ]),
-    }
-    return _write_json(target, new, check)
-
-
 def sync_copilot(m: dict, check: bool) -> bool:
     """Copilot plugin.json (awesome-copilot schema) + .vscode/mcp.json."""
     drift = False
@@ -271,7 +232,6 @@ def sync_copilot(m: dict, check: bool) -> bool:
 SYNCERS = {
     "claude-code": sync_claude_code,
     "kiro": sync_kiro,
-    "gemini": sync_gemini,
     "copilot": sync_copilot,
 }
 

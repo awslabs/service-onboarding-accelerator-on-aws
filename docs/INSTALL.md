@@ -37,25 +37,6 @@ Open the repo in VS Code. Copilot auto-discovers:
 
 Invoke from Copilot Chat in Agent mode: `@service-approval ./input --service=<name>`.
 
-### Cursor — zero install
-
-Cursor reads `AGENTS.md` at the repo root. Ask it to run the service-approval workflow.
-
-### Codex CLI — zero install
-
-Codex reads `AGENTS.md`. Start a session in the repo dir.
-
-### Gemini CLI — one install command
-
-Requires `gemini` on PATH. `install.sh` runs:
-
-```bash
-gemini extensions link /path/to/service-onboarding/gemini-extension
-```
-
-This creates a symlink from Gemini's extensions directory to this repo. `git pull`
-auto-updates the extension on next session. Invoke: `/service-approval`.
-
 ### Kiro CLI 2.0 — one install command
 
 Requires `kiro-cli` on PATH. `install.sh` runs:
@@ -70,10 +51,6 @@ Symlinked, so `git pull` updates the Power. Invoke via keyword match in chat
 Alternative (GUI): Kiro app → Powers panel → Add power from local path → select
 `powers/service-approval/`.
 
-### Amazon Q Developer — zero install
-
-Amazon Q reads `.amazonq/instructions.md` if present. Low-fidelity support; no
-hooks, no enforcement. Run the validate step manually after generation.
 
 ## Windows Developer Mode
 
@@ -107,18 +84,17 @@ worked before a real install.
 git pull
 ```
 
-Symlinked clients (Gemini CLI, Kiro) reflect changes on next session. Auto-discovered
-clients (Claude Code, Copilot, Cursor, Codex) read the latest files every session.
+Symlinked clients (Kiro) reflect changes on next session. Auto-discovered
+clients (Claude Code, Copilot) read the latest files every session.
 
 If an IDE caches configs, restart the client after a pull that changes MCP servers
 or top-level manifests.
 
 ## Uninstall
 
-Delete the repo. Optionally unlink from Gemini / Kiro first:
+Delete the repo. Optionally unlink from Kiro first:
 
 ```bash
-gemini extensions unlink service-approval
 kiro-cli power uninstall service-approval
 ```
 
@@ -136,10 +112,6 @@ See [`docs/TESTING-KIRO.md`](TESTING-KIRO.md) for a step-by-step Kiro IDE + CLI 
 chmod +x install.sh
 ```
 
-**`gemini: command not found`**
-Install Gemini CLI per https://geminicli.com. The installer skips Gemini if it's
-not on PATH.
-
 **`kiro-cli: command not found`**
 Install via `curl -fsSL https://cli.kiro.dev/install | bash`.
 
@@ -151,7 +123,3 @@ Install via `curl -fsSL https://cli.kiro.dev/install | bash`.
 **Kiro doesn't activate the Power**
 Keyword-triggered. Mention "service approval" or the specific AWS service name in
 your chat, OR explicitly ask Kiro to use the power.
-
-**Gemini extension not loading**
-Run `gemini extensions list` — confirm `service-approval` is listed. If not, rerun
-`./install.sh`. If it's listed but tools aren't available, restart the Gemini session.

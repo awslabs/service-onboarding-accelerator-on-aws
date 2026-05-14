@@ -131,9 +131,9 @@ AWS service can use different property names for the "same" concept on
 different resource types. Do NOT assume uniform naming across a service's
 resources.
 
-Concrete case surfaced in iter-14 Bedrock Agentcore coverage:
-- `AWS::BedrockAgentCore::Memory.EncryptionKeyArn` — KMS key for memory store
-- `AWS::BedrockAgentCore::Gateway.KmsKeyArn` — KMS key for gateway
+Concrete case surfaced in production runs with multi-resource encryption:
+- `AWS::<Service>::<ResourceA>.EncryptionKeyArn` — KMS key for one resource type
+- `AWS::<Service>::<ResourceB>.KmsKeyArn` — KMS key for another resource type
 
 Both properties encrypt with a customer-managed KMS key, but the property
 names differ. Other examples across AWS: `KmsKeyId` vs `KmsKeyArn` vs
@@ -147,14 +147,14 @@ multiple resource types (e.g., "require CMK on all service resources"),
 split it into per-type blocks:
 
 ```
-rule cmk_required_memory {
-    AWS::BedrockAgentCore::Memory {
+rule cmk_required_resource_a {
+    AWS::<Service>::<ResourceA> {
         Properties.EncryptionKeyArn exists
     }
 }
 
-rule cmk_required_gateway {
-    AWS::BedrockAgentCore::Gateway {
+rule cmk_required_resource_b {
+    AWS::<Service>::<ResourceB> {
         Properties.KmsKeyArn exists
     }
 }
@@ -714,8 +714,8 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
      into one statement per AWS resource type and scope the `Resource` to its specific ARN
      pattern using `!Sub "arn:${AWS::Partition}:<service-arn-namespace>:${AWS::Region}:${AWS::AccountId}:<resource-type>/*"`.
      Notes:
-     - Control-plane action namespaces (e.g., `bedrock-agentcore-control:*`) often operate on
-       *data-plane* ARN namespaces (e.g., `arn:...:bedrock-agentcore:...`). Verify against the
+     - Control-plane action namespaces (e.g., `<service>-control:*`) often operate on
+       *data-plane* ARN namespaces (e.g., `arn:...:<service>:...`). Verify against the
        service-authorization reference before assuming the namespaces match.
      - `iam:PassRole` → scope `Resource` to `arn:${AWS::Partition}:iam::${AWS::AccountId}:role/*`
        plus `iam:PassedToService` condition.
@@ -1017,9 +1017,9 @@ Services vary widely in what their Name regexes permit:
 
 | Service / resource | Pattern permits | Pattern forbids |
 |-------------------|-----------------|-----------------|
-| AWS Lambda function name | `[a-zA-Z0-9-_]+` | `.` |
-| Amazon S3 bucket name | `[a-z0-9.-]{3,63}` | uppercase, underscores |
-| Amazon DynamoDB table name | `[a-zA-Z0-9_.-]+` | spaces |
+| Lambda function name | `[a-zA-Z0-9-_]+` | `.` |
+| S3 bucket name | `[a-z0-9.-]{3,63}` | uppercase, underscores |
+| DynamoDB table name | `[a-zA-Z0-9_.-]+` | spaces |
 | IAM role name | `[\w+=,.@-]+` | whitespace |
 | Many managed-service resource names | `[a-zA-Z][a-zA-Z0-9_]*` | hyphens, leading digits |
 
@@ -1046,7 +1046,7 @@ Features that work standalone (KMS keys, log groups, DLQ, X-Ray, tags, execution
 should ALWAYS be created — they have no external prereqs.
 
 **Primary resource toggle**: For services where the main resource requires external
-artifacts (e.g., S3 code artifacts for AgentCore runtimes, container images for ECS),
+artifacts (e.g., code artifacts for serverless runtimes, container images for ECS),
 add a `create_primary_resource` toggle (default true, smoke-test false). When false,
 the template deploys only the supporting infrastructure (KMS, IAM, log group, VPC).
 This validates the security posture resources without needing a real artifact.

@@ -479,7 +479,15 @@ or service name in the template logic.
 **Objectives Mapped:** {mapped}
 **Objectives Not Applicable:** {na}
 **Domains Covered:** {domains_covered} / {total_domains}
+```
 
+Where `{Framework Name}` and `{name}` come from `map-framework-parsed.json.framework.name`.
+Examples of rendered titles:
+- "CSA CCMv4 Control Mapping — Amazon S3" (default, no framework file provided)
+- "NIST 800-53 Control Mapping — Amazon ECS" (customer uploaded NIST file)
+- "Custom Framework Control Mapping — AWS KMS" (customer uploaded unrecognized framework)
+
+```markdown
 ## Domain Coverage Summary
 
 | Domain | Objectives in Domain | Mapped | Not Applicable | Coverage % | Notes |

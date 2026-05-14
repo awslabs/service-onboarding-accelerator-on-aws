@@ -145,13 +145,40 @@ When using built-in fallback, each objective gets:
 
 ## Step 4: Write Output
 
+### Framework Name Rules (CRITICAL for output titles)
+
+The `framework.name` field flows into ALL downstream output titles (e.g., "CSA CCMv4 Control
+Mapping — {service}", "NIST 800-53 Coverage Matrix", "Threat Model Coverage for MITRE ATT&CK").
+Set it using these rules:
+
+| Source | `framework.name` value | Example output title |
+|--------|----------------------|---------------------|
+| Built-in CCMv4 fallback (no file provided) | `"CSA CCMv4"` | "CSA CCMv4 Control Mapping — Amazon S3" |
+| Customer xlsx with "CCMv4" in filename | `"CSA CCMv4"` | "CSA CCMv4 Control Mapping — Amazon ECS" |
+| Customer xlsx with "NIST" or "800-53" in filename | `"NIST 800-53"` | "NIST 800-53 Control Mapping — AWS KMS" |
+| Customer xlsx with "CIS" in filename | `"CIS Benchmarks"` | "CIS Benchmarks Control Mapping — Amazon RDS" |
+| Customer xlsx with "ISO" or "27001" in filename | `"ISO 27001"` | "ISO 27001 Control Mapping — Amazon EKS" |
+| Customer file that doesn't match any known pattern | `"Custom Framework"` | "Custom Framework Control Mapping — Amazon Lambda" |
+| `--framework=ccmv4` flag (no file) | `"CSA CCMv4"` | "CSA CCMv4 Control Mapping — ..." |
+| `--framework=nist` flag (no file) | `"NIST 800-53"` | "NIST 800-53 Control Mapping — ..." |
+| `--framework=cis` flag (no file) | `"CIS Benchmarks"` | "CIS Benchmarks Control Mapping — ..." |
+| `--framework=iso` flag (no file) | `"ISO 27001"` | "ISO 27001 Control Mapping — ..." |
+
+**Rule:** If the customer provides a file with a recognizable framework name in its content
+(headers, sheet names, or first-row data), prefer that over filename-based detection. For
+example, a file named `security-controls.xlsx` whose first column header is "NIST Control ID"
+should produce `framework.name = "NIST 800-53"`.
+
+**Rule:** If the file cannot be classified into any known framework, set
+`framework.name = "Custom Framework"`. Never leave it empty or null.
+
 Write `.service-approval/state/map-framework-parsed.json`:
 
 ```json
 {
   "schema_version": "1.0",
   "framework": {
-    "name": "CCMv4",
+    "name": "CSA CCMv4",
     "version": "4.0",
     "source_file": "<path or 'built-in'>",
     "total_objectives": 197
