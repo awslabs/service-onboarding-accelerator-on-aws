@@ -117,12 +117,51 @@ This step always runs, regardless of whether a customer threat model exists.
 
 ### 2.1 Load reference data
 
+ATT&CK technique data has two sources, in preference order:
+
+1. **`mitre-attack` MCP** (live MITRE ATT&CK knowledge base, source:
+   https://github.com/stoyky/mitre-attack-mcp). Always-on MCP shipped with this
+   plugin. Query it for technique details, sub-techniques, and tactic
+   relationships. Prefer this — it tracks the latest ATT&CK release.
+2. **`data/attack-cloud-matrix.json`** (bundled snapshot, schema_version 1.0,
+   ATT&CK 16.1). Fallback when the MCP fails to spawn or the user is offline.
+   Always present in the repo, so this branch always works.
+
 ```python
 import json
 
-cloud_matrix = json.load(open('data/attack-cloud-matrix.json'))
+# Try MCP first
+cloud_matrix = None
+try:
+    # mitre-attack MCP exposes get_techniques / get_tactics / get_technique_by_id
+    # Pseudocode — the agent should issue actual MCP tool calls here.
+    cloud_matrix = mcp_call("mitre-attack", "list_techniques",
+                             {"matrix": "enterprise-attack",
+                              "platforms": ["IaaS", "SaaS", "Identity Provider"]})
+except Exception as e:
+    # MCP unavailable (server didn't spawn, timed out, etc.) — fall back
+    print(f"mitre-attack MCP unreachable ({e}); using bundled snapshot")
+
+# Fallback: bundled JSON
+if not cloud_matrix:
+    cloud_matrix = json.load(open('data/attack-cloud-matrix.json'))
+
 stride_bridge = json.load(open('data/stride-to-attack-bridge.json'))
 crosswalk = json.load(open('data/attack-nist-ccm-crosswalk.json'))
+```
+
+The bundled JSON's structure (tactics → techniques) is the canonical shape every
+downstream step expects. If the MCP returns a different shape, normalize it to
+match `attack-cloud-matrix.json` before continuing — do NOT rewrite the consuming
+steps.
+
+Record the source in the output for provenance:
+
+```json
+{
+  "attack_matrix_source": "mitre-attack-mcp" | "bundled-snapshot",
+  "attack_matrix_version": "<MCP version string OR '16.1' for snapshot>"
+}
 ```
 
 ### 2.2 Analyze service API patterns

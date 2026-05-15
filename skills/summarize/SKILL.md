@@ -10,16 +10,16 @@ Read all state files and generate the final approval report at `.service-approva
 
 ## Prerequisites
 
-- [ ] Check required inputs:
+- [ ] **Hard gate — verify the phases summarize depends on:**
   ```bash
-  test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "validated: MISSING"
-  test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "mapping-results: MISSING"
-  test -d .service-approval/<slug>/05-generate && echo "controls: OK" || echo "controls: MISSING"
-  test -f .service-approval/<slug>/01-assess/assessment-summary.md && echo "assessment: OK" || echo "assessment: not found (optional)"
-  test -f .service-approval/<slug>/01-assess/checkpoint-results.json && echo "checkpoints: OK" || echo "checkpoints: not found (optional)"
+  python3 -m tools.validate.check_phase_complete --slug <slug> --phase 01-assess || exit 2
+  python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
+  python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
+  test -d .service-approval/<slug>/05-generate || { echo "ERROR: run generator first"; exit 2; }
   ```
-  Proceed even if `test-results.json` is absent (mark test as NOT RUN in the report).
-  Assessment artifacts are optional — if present, they enrich the report.
+  Phase 6 (Test) is OPTIONAL — proceed even if 06-test/ is absent (mark test
+  as NOT RUN in the report). The summarize skill must NOT pre-gate Phase 6
+  because intake's testing.mode=skip is a legitimate path that skips Phase 5.
 
 ## Step 1: Determine verdict
 

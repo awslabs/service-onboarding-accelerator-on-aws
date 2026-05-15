@@ -46,6 +46,16 @@ input:
   # Explicit path to framework file (optional — auto-detected from folder if null)
   framework_file: null
 
+  # Bootstrap behavior when ./input/ does not exist in the user's cwd.
+  # In interactive mode the intake skill prompts for these. For file-driven
+  # runs (--from-intake=...), set them here to skip the prompt.
+  bootstrap:
+    # Copy the bundled CCMv4 framework xlsx from the plugin's input/ into ./input/
+    seed_from_plugin: false
+    # Try downloading the latest CCMv4 from CSA (falls back to opening browser
+    # if CSA returns a login wall instead of an xlsx)
+    auto_download_ccmv4: false
+
 testing:
   # How should Phase 5 (Test) run?
   #   full-deploy  Deploy compliant resource template, wait for Config, tear down

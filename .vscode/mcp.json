@@ -57,6 +57,15 @@
         "AWS_REGION": "us-east-1",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }
+    },
+    "mitre-attack": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/stoyky/mitre-attack-mcp",
+        "mitre-attack-mcp"
+      ]
     }
   }
 }
