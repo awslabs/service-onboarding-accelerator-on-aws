@@ -11,6 +11,14 @@
 # Default control framework for all services
 framework: "ccmv4"
 
+# Default input-folder bootstrap behavior
+# Applied only when ./input/ is missing AND the run is non-interactive.
+# Interactive runs always prompt the user and ignore these defaults.
+input:
+  bootstrap:
+    seed_from_plugin: false
+    auto_download_ccmv4: false
+
 # Default testing configuration
 # mode: full-deploy | dry-run | skip | manual-cli
 testing:

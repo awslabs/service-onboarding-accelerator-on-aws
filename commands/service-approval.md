@@ -15,7 +15,10 @@ Expect arguments in `$ARGUMENTS`. Extract:
   - From `--service=<name>` flag, or
   - Inferred from `./input/` folder contents
 - Input folder — optional path to customer docs (.md, .json, .xlsx, .pdf, .docx); defaults to `./input/`
-- AWS profile — optional `--env=<profile>` (required only for Phase 5 Test with `full-deploy`)
+  - If `./input/` is missing, the Intake skill creates it and offers to seed it with the bundled
+    CCMv4 framework xlsx and/or auto-download the latest CCMv4 from CSA. See
+    `skills/intake/SKILL.md` "Step 0" for the full bootstrap flow.
+- AWS profile — optional `--env=<profile>` (required only for Phase 5 Test)
 - Framework — optional `--framework=<ccmv4|nist|cis|iso>`; auto-detected from input if absent
 - Intake controls — `--from-intake=<file>`, `--interactive`
 - Flags: `--skip-test`, `--dry-run`, `--clean`
@@ -36,7 +39,7 @@ Intake always runs. Its prompt behavior depends on what it finds:
 
 1. Read `skills/service-approval/SKILL.md` in full. Do NOT write a one-shot generator script. Follow every step.
 2. Run every sub-skill through its own SKILL.md:
-   - Intake (precursor): `skills/intake/` — writes `state/intake-manifest.json`
+   - Intake (precursor): `skills/intake/` — writes `_staging/<ts>/00-intake/intake-manifest.json`, promoted to `<slug>/00-intake/intake-manifest.json` after slug derivation in Phase 0
    - Phase 0: `skills/assess/`
    - Phase 1: `skills/research-mitigations/`, `research-capabilities/`, `research-api-surface/`, `research-attack-surface/` (parallel), then `skills/research/` (merge)
    - Phase 2: `skills/validate/`
@@ -45,7 +48,7 @@ Intake always runs. Its prompt behavior depends on what it finds:
    - Phase 5: `skills/test/` (only if `--env` provided and not `--skip-test`)
    - Phase 6: `skills/summarize/`
    - Phase 7: `skills/evidence/` (only if Phase 5 Test completed successfully)
-3. Use MCP servers (`awsknowledge`, `aws-documentation`, `awsiac`) for every capability, API parameter, and condition key. Log each call to `.service-approval/<service-slug>/mcp-calls.log` (minimum 10 entries).
+3. Use MCP servers (`awsknowledge`, `aws-documentation`, `awsiac`) for every capability, API parameter, and condition key. Each call appends to the consolidated `.service-approval/<service-slug>/pipeline.log` (the primary debugging artifact, with `[mcp:<server>:call]` source tags) and is mirrored to `.service-approval/<service-slug>/mcp-calls.log` for backward compatibility (minimum 10 entries enforced by the Stop hook's P1 check).
 4. Pipeline integrity is enforced automatically by the `Stop` hook at `hooks/hooks.json`, which invokes `tools/validate/hook_stop.py`. Exit code 2 blocks the stop and forces verdict `REQUIRES REMEDIATION`.
 
 ## Output

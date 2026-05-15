@@ -59,16 +59,18 @@ Phase 7: Evidence            → <slug>/08-evidence/attestation-report.md, attes
 
 ### Key Features
 
-The pipeline runs as 20 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
+The pipeline runs as 21 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
 
 <!-- SKILLS-TABLE-START -->
 | Skill | Description |
 |-------|-------------|
 | [`assess`](skills/assess/SKILL.md) | Run a 5-domain CAF security posture assessment for an AWS service. Produces (1) assessment-summary.md — CAF-structured findings with GAPS tables, (2) sar-facts.json — extracted SAR data, (3) checkpoint-results.json — factual checkpoint verification. These feed into the research, validate, and generate phases. |
+| [`evidence`](skills/evidence/SKILL.md) | Phase 7. Run service-agnostic AWS CLI probes against deployed compliant resources to produce a control × verdict matrix proving each mapped control is actually enforced at runtime. Reads from 06-test/deployed-resources.json; writes attestation-results.json + attestation-report.md + audit guide. |
 | [`generate-detective`](skills/generate-detective/SKILL.md) | Generate detective and responsive security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json. |
 | [`generate-iac`](skills/generate-iac/SKILL.md) | Generate compliant IaC templates in all 4 formats — modular Terraform, CDK TypeScript, CloudFormation YAML, and CDK for Terraform. Uses parameter coverage matrix from mapping-results.json and API surface from validated.json. |
 | [`generate-preventive`](skills/generate-preventive/SKILL.md) | Generate preventive and proactive security control artifacts — SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA policies, and CloudFormation Guard rules. Reads from mapping-results.json and validated.json. |
 | [`generate`](skills/generate/SKILL.md) | Generate all security control artifacts and compliant IaC templates from mapping-results.json and validated.json. Split into 3 focused sub-skills for better accuracy; this skill orchestrates them. |
+| [`intake`](skills/intake/SKILL.md) | Precursor phase. Collect service name, input type, framework, and testing preferences from the user (or pre-filled `service-approval-intake.yaml`). Produces intake-manifest.json consumed by every downstream phase. |
 | [`map-assemble`](skills/map-assemble/SKILL.md) | Deterministic assembly of map sub-skill outputs into final mapping-results.json, controls-catalog.md, and framework-mapping.md. Builds traceability, identifies coverage gaps, and runs comprehensive validation. No LLM reasoning required — pure data assembly. |
 | [`map-framework-mapping`](skills/map-framework-mapping/SKILL.md) | Map generated controls to framework objectives with per-objective analysis, confidence scoring, and strict quality gates. Produces map-framework-mapped.json consumed by map-assemble. The hardest sub-skill — requires careful per-objective reasoning, not batch keyword matching. |
 | [`map-generate-controls`](skills/map-generate-controls/SKILL.md) | Generate security controls from mitigations x capabilities, organized by Category x Scope matrix. Produces map-controls-generated.json with rich metadata for downstream framework mapping. Consumes validated.json. |
@@ -85,7 +87,7 @@ The pipeline runs as 20 discrete skills under [`skills/`](skills/). Each one is 
 | [`validate`](skills/validate/SKILL.md) | Verify research.json v3.0 findings via MCP — confirm capabilities, API parameters, condition keys, SCP/RCP expressibility, and mitigation feasibility. Produce validated.json. |
 <!-- SKILLS-TABLE-END -->
 
-Run `python3 tools/sync-ide-configs.py` or `./install.sh --sync` if you add a new skill — the hook regenerates this table from `SKILL.md` frontmatter.
+The table is hand-maintained — when you add a skill, edit this block AND update the count in the paragraph above + the tree diagram below. (Auto-regeneration from `SKILL.md` frontmatter is planned but not yet wired into `tools/sync-ide-configs.py`.)
 
 ### Artifact flow
 
@@ -123,16 +125,26 @@ applicability). The ranges below reflect observed output across validated servic
 | IaC | 17-31 | CDK TypeScript, CloudFormation YAML, CDKTF, modular Terraform (per-resource modules + shared + root) |
 
 A detailed per-artifact input/output matrix with dependency tracking is generated in
-`.service-approval/ARTIFACT-FLOW-MATRIX.md`.
+`.service-approval/<slug>/07-summarize/ARTIFACT-FLOW-MATRIX.md` (per-service).
 
 ---
 
 ## Installation & usage
 
-One install script detects every installed client and wires it up. Clone and run:
+Pick the install path that matches your client.
+
+**Claude Code only (recommended for Claude Code users)** — uses `manifest.yaml` as the source of truth, skips the multi-client detection, fastest:
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git [TO BE REPLACED WITH PUBLIC URL]
+git clone git@ssh.gitlab.aws.dev:lightninglane/service-onboarding.git
+cd service-onboarding
+./install-claude.sh
+```
+
+**All clients (Claude Code + Kiro + Copilot)** — auto-detects what's installed, wires up everything:
+
+```bash
+git clone git@ssh.gitlab.aws.dev:lightninglane/service-onboarding.git
 cd service-onboarding
 ./install.sh        # macOS / Linux
 # or Windows PowerShell:
@@ -161,20 +173,82 @@ See [`docs/INSTALL.md`](docs/INSTALL.md) for per-client notes. Windows needs Dev
 - **Kiro IDE + CLI 2.0**: [`docs/TESTING-KIRO.md`](docs/TESTING-KIRO.md) — step-by-step install verification, MCP errors, hook-fire checks, keyword activation
 - **All clients**: [`docs/INSTALL.md`](docs/INSTALL.md) — per-client install flow + common errors
 
-Invocation after install:
+### Running the plugin
+
+After installation, start the plugin from **your own working directory** — not
+the cloned repo. This can be an empty folder or one containing your custom input
+files (threat models, framework spreadsheets, etc.):
+
+```bash
+mkdir ~/my-service-approval && cd ~/my-service-approval
+
+# Optionally add your own input files:
+# cp /path/to/threat-model.xlsx ./input/
+# cp /path/to/ccmv4-framework.json ./input/
+```
+
+Then invoke from your AI client:
 
 | Client | How to invoke |
 |--------|---------------|
 | Claude Code | `/service-approval ./input --service=s3` |
 | GitHub Copilot (Agent mode) | `@service-approval ./input --service=s3` |
-| Kiro (CLI or IDE) | "run service approval for s3" (keyword match) |
+| Kiro (IDE) | "run service approval for s3" (keyword match) |
+
+If you have no custom input files, the plugin uses built-in defaults (CCMv4 +
+MITRE ATT&CK). Output lands in `.service-approval/<service-slug>/` within your
+working directory.
 
 Examples:
 ```
-/service-approval ./input --service=bedrock-agentcore
+/service-approval --service=bedrock-agentcore
 /service-approval ./input --service=s3 --env=delegated-admin
-/service-approval ./input --service=kms --dry-run
+/service-approval --service=kms --dry-run
 ```
+
+### Running without an input folder
+
+If you don't have customer-specific inputs (mitigation reports, threat models, framework
+files), the **Intake** phase detects the missing `./input/` folder, creates an empty one
+in your cwd, and offers a seed menu:
+
+```
+[1] Skip — run in MCP-only mode (research everything from scratch)
+[2] Leave empty — I'll add files myself before continuing
+[3] Seed bundled CCMv4 framework  (recommended)
+[4] Auto-download latest CCMv4 from CSA
+[5] Both — copy bundled CCMv4 AND try CSA download
+```
+
+- **Bundled CCMv4** is `input/CCMv4_LightningLane.xlsx` from the plugin — copied as-is
+  into your `./input/`. Good for offline / first-run usage.
+- **CSA auto-download** tries `https://cloudsecurityalliance.org/download/artifacts/cloud-controls-matrix-v4-1`.
+  CSA may require sign-in; if the response is HTML instead of an xlsx, the skill falls
+  back to opening your browser and waits for you to drop the file into `./input/`.
+- The bundled mitigation report is **never** auto-copied — it's customer-specific and
+  would mislead downstream skills. Drop your own mitigation report in `./input/` if you
+  have one.
+
+For non-interactive runs, set the choice in your intake YAML:
+
+```yaml
+input:
+  bootstrap:
+    seed_from_plugin: true        # ≡ choice [3]
+    auto_download_ccmv4: false
+```
+
+### MITRE ATT&CK threat modeling
+
+Phase 1d (`research-attack-surface`) maps the service's API surface to ATT&CK techniques
+and tactics. By default it queries the
+[`mitre-attack` MCP](https://github.com/stoyky/mitre-attack-mcp) for live MITRE data;
+if the MCP fails to spawn, it falls back to the bundled snapshot at
+`data/attack-cloud-matrix.json` (ATT&CK 16.1) — so the phase keeps working offline.
+
+The MCP is registered in `manifest.yaml` and propagated to every client by
+`tools/sync-ide-configs.py`. Like the other `uvx`-based MCPs, it requires
+[`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH.
 
 ---
 
@@ -231,7 +305,7 @@ python3 tools/validate/validate_deployable.py --profile delegated-admin .service
 ├── .githooks/post-merge           ← enable via `make enable-auto-sync`
 ├── .gitlab-ci.yml                 ← pytest + sync-drift + install-check + schema-validity
 │
-├── skills/                        ← 19 Agent Skills (agentskills.io format, shared across clients)
+├── skills/                        ← 21 Agent Skills (agentskills.io format, shared across clients)
 ├── tools/
 │   ├── validate/                  ← validators + hooks (hook_stop.py, hook_post_tool_use.py)
 │   ├── kb-search-mcp/             ← Bedrock KB MCP server

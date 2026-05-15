@@ -24,9 +24,12 @@ from validate_pipeline_integrity import (
 
 
 def test_mcp_log_missing_fails(tmp_path: Path) -> None:
+    """Neither pipeline.log nor mcp-calls.log exists → P1 fails."""
     errors = check_mcp_log(tmp_path)
     assert len(errors) == 1
-    assert errors[0].startswith("P1") and "missing" in errors[0]
+    assert errors[0].startswith("P1")
+    # Either log file name appears in the error message
+    assert "pipeline.log" in errors[0] or "mcp-calls.log" in errors[0]
 
 
 def test_mcp_log_below_minimum_fails(tmp_path: Path) -> None:
@@ -48,6 +51,33 @@ def test_mcp_log_case_insensitive_call_marker(tmp_path: Path) -> None:
     lines = ["MCP CALL foo"] * 5 + ["MCP call bar"] * 5
     (tmp_path / "mcp-calls.log").write_text("\n".join(lines))
     assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_log_mcp_calls_counted(tmp_path: Path) -> None:
+    """P1 reads MCP call count from the consolidated pipeline.log.
+
+    The consolidated logger writes lines like:
+      <ts> [01-assess] [mcp:awsknowledge:call]  <message>
+    P1 must recognize these and count them — same threshold as legacy.
+    """
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [01-assess] [mcp:awsknowledge:call]  search_documentation: query{i}"
+        for i in range(MIN_MCP_CALLS)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_log_below_minimum_fails(tmp_path: Path) -> None:
+    """pipeline.log present but with too few MCP calls fails P1."""
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [01-assess] [mcp:awsknowledge:call]  q{i}"
+        for i in range(2)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    errors = check_mcp_log(tmp_path)
+    assert len(errors) == 1
+    assert "P1" in errors[0]
 
 
 # ---------- P2: validated.json verification notes ----------

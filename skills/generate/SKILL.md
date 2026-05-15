@@ -34,14 +34,22 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 
 ## Prerequisites
 
+**Hard gate — halts the run if upstream phases are incomplete.**
+
 ```bash
-test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR: run mapper first"
-test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR: run validator first"
+python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
+python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
+
 mkdir -p .service-approval/<slug>/05-generate/{proactive,preventive,detective,responsive,iac}
 mkdir -p .service-approval/<slug>/05-generate/proactive/opa-policies
 mkdir -p .service-approval/<slug>/05-generate/responsive/lambda-remediator
 mkdir -p .service-approval/<slug>/05-generate/detective/config-rule-lambdas
 ```
+
+The check_phase_complete CLI verifies every required artifact (mapping-results.json,
+controls-catalog.md, framework-mapping.md, validated.json, etc.) exists and is
+non-stub. Without this gate, generate would silently skip controls when its
+inputs are missing, producing an empty 05-generate/ tree.
 
 Create Terraform module directories:
 ```bash

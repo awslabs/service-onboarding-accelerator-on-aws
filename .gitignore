@@ -60,3 +60,7 @@ Thumbs.db
 *.swp
 *.swo
 *.log
+
+# Per-user intake config (filled in by the user before each pipeline run;
+# the plugin's intake template lives at skills/intake/intake-template.yaml).
+service-approval-intake.yaml

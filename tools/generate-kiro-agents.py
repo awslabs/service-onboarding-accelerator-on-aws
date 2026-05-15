@@ -25,15 +25,11 @@ except ImportError:
     sys.exit(1)
 
 
-def _find_repo_root() -> Path:
-    start = Path(__file__).resolve().parent.parent
-    for candidate in [start, *start.parents]:
-        if (candidate / "manifest.yaml").exists():
-            return candidate
-    raise FileNotFoundError("manifest.yaml not found")
+# Reuse the canonical repo-root resolver from tools.paths.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from paths import repo_root  # type: ignore  # noqa: E402
 
-
-REPO = _find_repo_root()
+REPO = repo_root()
 SRC_DIR = REPO / "powers" / "service-approval" / "agents-src"
 IDE_AGENTS = REPO / "powers" / "service-approval" / "ide" / "agents"
 IDE_HOOKS = REPO / "powers" / "service-approval" / "ide" / "hooks"

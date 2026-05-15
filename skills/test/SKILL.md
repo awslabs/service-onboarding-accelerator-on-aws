@@ -28,10 +28,14 @@ It controls whether Phase 7 tears down at the end of evidence collection.
 
 ## Prerequisites
 
-- [ ] Check controls exist:
+- [ ] **Hard gate — verify upstream phases produced their outputs:**
   ```bash
-  test -d .service-approval/<slug>/05-generate && echo "OK" || echo "ERROR: run generator first"
+  python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
+  # 05-generate has no flat-file outputs; check the dir is populated:
+  test -d .service-approval/<slug>/05-generate || { echo "ERROR: run generator first"; exit 2; }
   ```
+  Without this gate, /test would deploy whatever IaC the agent left around
+  (or fail silently if nothing exists), wasting AWS resources.
 
 - [ ] Parse flags:
   - `--env=<profile>`: AWS CLI profile (REQUIRED for full mode)

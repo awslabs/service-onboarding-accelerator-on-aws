@@ -27,27 +27,33 @@ Run service-agnostic AWS CLI probes against deployed compliant resources to prov
 
 ## Preconditions
 
-Check that Phase 6 (test) completed successfully:
+**Hard gate — Phase 7 needs Map outputs (control roster, framework
+mapping) and Test outputs (deployed stack ARNs). Halt the run if either
+phase is incomplete.**
 
 ```bash
 SERVICE_SLUG="awslambda"  # or from --service flag
-TEST_RESULTS="<slug>/06-test/test-results.json"
 
-if [ ! -f "$TEST_RESULTS" ]; then
-  echo "ERROR: Phase 6 (test) has not run. Run /test first."
-  exit 1
-fi
+python3 -m tools.validate.check_phase_complete --slug "$SERVICE_SLUG" --phase 04-map || exit 2
+python3 -m tools.validate.check_phase_complete --slug "$SERVICE_SLUG" --phase 06-test || exit 2
 
-PASSED=$(jq -r '.test_results.passed' "$TEST_RESULTS")
-if [ "$PASSED" != "true" ]; then
-  echo "ERROR: Phase 6 tests failed. Fix deployment before running evidence."
-  exit 1
-fi
-
-DEPLOYED_RESOURCES="<slug>/06-test/deployed-resources.json"
+# Phase 5 contract — full-deploy must have produced deployed-resources.json
+# (the explicit Phase 5 check_phase_complete above already gates on
+# test-results.json, but deployed-resources.json is conditional on
+# full-deploy mode and lives in 06-test/ — same phase dir, different file):
+DEPLOYED_RESOURCES=".service-approval/${SERVICE_SLUG}/06-test/deployed-resources.json"
 if [ ! -f "$DEPLOYED_RESOURCES" ]; then
-  echo "ERROR: deployed-resources.json missing. Re-run /test with latest version."
-  exit 1
+  echo "ERROR: deployed-resources.json missing. Phase 7 needs it for stack ARN and resource list."
+  echo "  If you ran /test in dry-run or skip mode, Phase 7 cannot proceed."
+  echo "  Re-run /test in full-deploy mode (intake.testing.mode=full-deploy) first."
+  exit 2
+fi
+
+# Confirm Phase 5 actually passed (no point probing a failed deploy):
+PASSED=$(jq -r '.test_results.passed' ".service-approval/${SERVICE_SLUG}/06-test/test-results.json")
+if [ "$PASSED" != "true" ]; then
+  echo "ERROR: Phase 5 tests failed. Fix deployment before running evidence."
+  exit 2
 fi
 ```
 
@@ -359,8 +365,8 @@ All written to `<slug>/08-evidence/`:
 - `attestation-report.md` — human-readable control × verdict matrix
 - `summary.md` — 2-paragraph triage digest
 - `cli-outputs/*.log` — raw stdout/stderr per command (one file per control)
-- `iac-time-evidence/*.log` — supplemental IaC validation logs from Phase 4/5
-- `deploy-evidence/*.log` — deploy logs from Phase 6
+- `iac-time-evidence/*.log` — supplemental IaC validation logs from Phase 3/4
+- `deploy-evidence/*.log` — deploy logs from Phase 5 (Test)
 
 Plus at service root:
 
@@ -395,7 +401,7 @@ echo "  python3 tools/evidence/replay.py --service=$SERVICE_SLUG --all"
 
 ## Error Handling
 
-- **Missing Phase 6 outputs:** Fail fast with clear message to run `/test` first
+- **Missing Phase 5 outputs:** Fail fast with clear message to run `/test` first
 - **Coverage gap:** If any control is silently dropped (not in commands[] or not_cli_validatable[]), HALT
 - **CLI execution errors:** Verdict = ERROR, log error message, continue to next control
 - **Schema validation failure:** HALT, print errors
