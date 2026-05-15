@@ -18,6 +18,8 @@ import time
 # Allow sibling imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from _hook_log import log_hook_fire  # noqa: E402
+
 
 # Hard-fail grace window: after the legacy-layout marker has existed for this
 # long without the user migrating, the hook starts rejecting writes to the
@@ -82,6 +84,12 @@ def _emit_legacy_migration_warning(norm: str, file_path: str) -> str | None:
             f"Hook will hard-fail in 24h if not migrated.",
             file=sys.stderr,
         )
+        log_hook_fire(
+            "legacy-detected",
+            "warn",
+            f"Legacy layout marker created at {marker}; 24h grace started",
+            file_path=file_path,
+        )
     except OSError:
         # Marker creation is best-effort; don't fail the hook over it.
         return marker
@@ -133,6 +141,13 @@ def main():
                 f"  the marker file.",
                 file=sys.stderr,
             )
+            log_hook_fire(
+                "post-tool-use",
+                "reject",
+                f"Legacy layout grace expired for {file_path}",
+                file_path=file_path,
+                extra={"marker": marker},
+            )
             sys.exit(2)
 
         # Check if it's in a 05-generate/ directory (controls)
@@ -153,8 +168,21 @@ def main():
         print(f"HOOK VALIDATION FAILED ({len(errors)} errors):", file=sys.stderr)
         for e in errors:
             print(f"  {e}", file=sys.stderr)
+        log_hook_fire(
+            "post-tool-use",
+            "fail",
+            f"{len(errors)} schema errors on {file_path}",
+            file_path=file_path,
+            extra={"first_error": errors[0][:200]},
+        )
         sys.exit(2)
 
+    log_hook_fire(
+        "post-tool-use",
+        "pass",
+        f"validated {file_path}",
+        file_path=file_path,
+    )
     sys.exit(0)
 
 

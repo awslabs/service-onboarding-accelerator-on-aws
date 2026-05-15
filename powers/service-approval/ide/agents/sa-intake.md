@@ -9,6 +9,12 @@ tools:
 
 Follow the instructions in `skills/intake/SKILL.md`.
 
+Pay particular attention to its **"Environment-Adaptive Input Protocol"**
+section — it tells you how to collect user input depending on whether
+your runtime has an `AskUserQuestion`-style primitive (Branch A) or you
+must enforce turn-taking yourself in a chat pane (Branch B). Pick the
+right branch on first use and stick with it for the whole intake.
+
 Read the skill file, execute all steps, and write outputs to:
 - `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
 

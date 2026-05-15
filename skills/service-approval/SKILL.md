@@ -93,6 +93,66 @@ needed:
 
 ---
 
+## Pipeline Audit Log
+
+**Every phase logs to a single consolidated file:**
+
+```
+.service-approval/<slug>/pipeline.log
+```
+
+This is the primary debugging artifact. Hooks (PostToolUse, Stop,
+check_phase_complete), MCP calls, skill lifecycle (start/end/retry/halt),
+and subprocess invocations all append to the same file in chronological
+order. When something breaks, `tail -50 .service-approval/<slug>/pipeline.log`
+shows the failure plus the last few causally-relevant events.
+
+**Line format:**
+
+```
+<UTC-iso8601> [<phase>] [<source>:<verdict>]  <message> [k=v ...]
+```
+
+**Sources:**
+- `hook:post-tool-use` / `hook:stop` / `hook:check-phase-complete` — validation hooks
+- `mcp:<server>` — MCP calls (verdict `call` or `response`)
+- `skill:<skill-name>` — skill lifecycle (verdict `start` / `end` / `retry` / `halt`)
+- `script:<script-name>` — subprocess invocations (smoke-deploy-test.sh, etc.)
+
+**How skills emit events:**
+
+Skills SHOULD log a `start` event at the top and an `end` (or `halt`) event
+at the bottom — this is what makes `pipeline.log` useful for debugging
+("which phase started, when did it finish, did it halt?"). Coverage is
+being added to skills incrementally; today the canonical example is
+`skills/map-assemble/SKILL.md`. Until every skill emits these events,
+gaps in `pipeline.log` mean "skill ran without lifecycle logging," not
+"phase didn't run." Use the bash CLI:
+
+```bash
+# At skill start:
+python3 -m tools.validate.log --slug <slug> --phase <NN-phase> \
+    --source skill:<skill-name> --verdict start \
+    --message "<one-line summary of what this run will do>"
+
+# At skill end:
+python3 -m tools.validate.log --slug <slug> --phase <NN-phase> \
+    --source skill:<skill-name> --verdict end \
+    --message "<one-line summary of outcome>"
+
+# When retrying (e.g. after a hook auto-fix):
+python3 -m tools.validate.log --slug <slug> --phase <NN-phase> \
+    --source skill:<skill-name> --verdict retry \
+    --message "<reason>" --extra attempt=2
+```
+
+**Backward compatibility:** the old `mcp-calls.log` is still written as
+a shadow file (whenever an `mcp:*` event lands in pipeline.log, it's
+mirrored to `mcp-calls.log` too). Tools that grep `mcp-calls.log`
+continue to work; new tooling should read `pipeline.log`.
+
+---
+
 ## Prerequisites
 
 ### MCP Pre-flight Check
@@ -143,10 +203,37 @@ MCP degraded coverage:
 Do NOT block execution — continue with degraded coverage and note it in the final report.
 
 **Kiro:**
+
+Kiro has two install paths (see `install.sh`); MCP-config handling differs between them.
+
+**Path 1 — Power install (CLI 2.0, recommended).** If the user installed via
+`kiro-cli power install --local powers/service-approval`, the Power bundles its own
+MCP config at `powers/service-approval/mcp.json` and registers it with Kiro
+automatically. **Do NOT hand-edit `~/.kiro/settings/mcp.json`** — that would shadow or
+duplicate the Power-bundled entries. Detect the Power install with:
+
 ```bash
-cat ~/.kiro/settings/mcp.json 2>/dev/null || echo "{}"
+kiro-cli power list 2>/dev/null | grep -q "service-approval" && echo "Power installed" || echo "Power NOT installed"
 ```
-For each missing MCP, add it to `~/.kiro/settings/mcp.json` using this structure:
+
+If the Power is installed:
+- The MCPs are already wired via `powers/service-approval/mcp.json` (generated from
+  `manifest.yaml` by `tools/sync-ide-configs.py`). No action needed at runtime.
+- If MCPs appear unreachable in Kiro, instruct the user to run
+  `kiro-cli power install --local <repo>/powers/service-approval` again to re-register
+  the Power, then restart Kiro.
+
+**Path 2 — Manual IDE install.** If the user installed by copying
+`powers/service-approval/{steering,ide/*}` → `.kiro/` (the path `install.sh` falls back
+to when `kiro-cli` is not available), Kiro reads `~/.kiro/settings/mcp.json` for MCP
+config. Detect this path by:
+
+```bash
+test -d .kiro && ! kiro-cli power list 2>/dev/null | grep -q "service-approval" && echo "Manual install"
+```
+
+For each missing MCP under Path 2, add it to `~/.kiro/settings/mcp.json`:
+
 ```json
 {
   "mcpServers": {
@@ -157,8 +244,13 @@ For each missing MCP, add it to `~/.kiro/settings/mcp.json` using this structure
   }
 }
 ```
+
 Merge (do not overwrite existing entries). Write back the updated file.
-After writing, inform the user: "Added missing MCP servers to ~/.kiro/settings/mcp.json: <list>. Restart Kiro if this is the first time adding them."
+After writing, inform the user: "Added missing MCP servers to
+`~/.kiro/settings/mcp.json`: <list>. Restart Kiro if this is the first time adding them."
+
+**If neither path is detected:** the Power is not installed. Instruct the user to run
+`./install.sh` from the repo root, then restart Kiro.
 
 **GitHub Copilot (VS Code):**
 Copilot in VS Code reads workspace-scoped `.vscode/mcp.json` automatically.

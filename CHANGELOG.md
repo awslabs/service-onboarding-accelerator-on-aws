@@ -2,6 +2,73 @@
 
 All notable changes to the service-approval pipeline are documented here.
 
+## [Unreleased] — feature/smoke-test-lambda-e2e
+
+### Added — Consolidated pipeline audit log
+
+A single `pipeline.log` per service captures the full debugging timeline.
+One file per service consolidates hooks, MCP calls, skill lifecycle, and
+subprocess invocations — `tail -f` shows the run as it progresses,
+`grep ":fail" pipeline.log` finds breakages, and event causality is
+visible at a glance.
+
+```
+.service-approval/<slug>/pipeline.log
+```
+
+Line format:
+
+```
+<UTC-iso8601> [<phase>] [<source>:<verdict>]  <message> [k=v ...]
+```
+
+**Sources logged:**
+- `hook:post-tool-use` / `hook:stop` / `hook:check-phase-complete` / `hook:legacy-detected`
+- `mcp:<server>` (verdict `call` or `response`)
+- `skill:<skill-name>` (verdict `start` / `end` / `retry` / `halt`)
+- `script:<script-name>` for subprocess invocations
+
+**Components:**
+- `tools/validate/_hook_log.py` — the logger module. Single API
+  (`log_event`); convenience helpers (`log_skill`, `log_mcp`, `log_script`);
+  backward-compat aliases (`log_hook_fire`, `log_phase_event`) so existing
+  callers keep working.
+- `tools/validate/log.py` — bash-friendly CLI. Skills call
+  `python3 -m tools.validate.log --slug <slug> --phase <NN-phase>
+  --source skill:<name> --verdict start|end|retry|halt --message "..."`
+  to emit lifecycle events without re-implementing the format.
+- All three hooks (`hook_post_tool_use`, `hook_stop`,
+  `check_phase_complete`) write to pipeline.log on every fire.
+- Backward-compat: MCP events also shadow to `mcp-calls.log` so older
+  tools that grep that file keep working. Stop-hook P1 reads MCP count
+  from pipeline.log first, falls back to mcp-calls.log.
+
+**Replaces** the earlier per-phase `.hooks.log` design (3 nested files
+per phase) — single file is far better for debugging timelines.
+
+**Test count:** 338 → 353 (added 15 tests for the consolidated logger
+and P1's pipeline.log integration).
+
+### Added — Pre-phase precondition gate + P7 Stop-hook safety net
+
+- **`tools/validate/check_phase_complete.py`** — new CLI invoked by every
+  downstream skill as a precondition. Reads `PHASE_REQUIRED_OUTPUTS` from
+  `validate_pipeline_integrity.py` (single source of truth), exits 2 with
+  clear errors if any required artifact is missing or below its size
+  threshold. Halts the pipeline BEFORE wasting time on a doomed downstream
+  phase. Closes the gap where Phase 4 (Generate) would silently start with
+  missing Phase 3 (Map) outputs.
+- **P7 Stop-hook check** in `validate_pipeline_integrity.py` — safety net
+  that runs at end-of-run. Walks each per-slug `<slug>/<NN>-phase/` dir
+  and validates declared outputs exist + meet min-size thresholds. Catches
+  the case where a contributor edited the per-skill precondition but
+  forgot to update the gate.
+- **Skills wired** with the precondition gate: map-assemble, generate,
+  test, summarize, evidence. Each has a "Hard gate — verify upstream
+  phases produced their outputs" block at the top of its Prerequisites
+  section that exits 2 if check_phase_complete fails.
+- **Test count:** 322 → 338 (added 16 tests for the new CLI + gate).
+
 ## [Unreleased] — feature/evidence-attestation (MR !14)
 
 ### Added — Phase 7 Evidence

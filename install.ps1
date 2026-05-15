@@ -146,6 +146,32 @@ if (-not $devMode -or $devMode.AllowDevelopmentWithoutDevLicense -ne 1) {
 }
 
 # ---------------------------------------------------------------------------
+# Symlink integrity check (Git for Windows materializes symlinks as plain
+# text files when core.symlinks=false, which silently breaks Claude Code's
+# plugin loader — .claude-plugin/commands and skills become dead refs).
+# Fail-closed here so users discover the issue at install time, not at
+# /service-approval invocation time.
+# ---------------------------------------------------------------------------
+$cmdLink = Join-Path $RepoDir ".claude-plugin\commands"
+$skLink  = Join-Path $RepoDir ".claude-plugin\skills"
+foreach ($link in @($cmdLink, $skLink)) {
+    if (Test-Path $link) {
+        $item = Get-Item $link -Force
+        $isReparse = $item.Attributes -band [IO.FileAttributes]::ReparsePoint
+        if (-not $isReparse) {
+            Write-Host "  [!!] $link exists as a regular file, not a symlink." -ForegroundColor Red
+            Write-Host "       Git for Windows materialized symlinks as text files." -ForegroundColor Red
+            Write-Host "       Fix:" -ForegroundColor Red
+            Write-Host "         1. Enable Developer Mode (above)" -ForegroundColor Red
+            Write-Host "         2. git config --global core.symlinks true" -ForegroundColor Red
+            Write-Host "         3. git -c core.symlinks=true checkout HEAD -- .claude-plugin/" -ForegroundColor Red
+            Write-Host "         4. Re-run .\install.ps1" -ForegroundColor Red
+            exit 1
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Claude Code — auto-discovers.
 # ---------------------------------------------------------------------------
 Log "Claude Code"

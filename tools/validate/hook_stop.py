@@ -20,6 +20,8 @@ import sys
 # Allow sibling imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from _hook_log import log_hook_fire  # noqa: E402
+
 
 def main():
     cwd = os.getcwd()
@@ -73,6 +75,16 @@ def main():
     all_errors = cross_errors + deploy_errors + integrity_errors
 
     if not all_errors:
+        # Log a pass entry to each service's log so the audit trail isn't
+        # silent on a clean run.
+        for controls_dir in service_dirs:
+            # controls_dir = .../service-approval/<slug>/05-generate
+            log_hook_fire(
+                "stop",
+                "pass",
+                "all integrity + cross + deploy checks passed",
+                file_path=controls_dir,
+            )
         sys.exit(0)
 
     # Strict-by-default: integrity failures always block.
@@ -96,6 +108,21 @@ def main():
             print(f"DEPLOYABILITY VALIDATION FAILED ({len(deploy_errors)} errors):", file=sys.stderr)
             for e in deploy_errors:
                 print(f"  {e}", file=sys.stderr)
+        # Log to each service's audit trail so a post-mortem can find the
+        # exact failures without re-grepping the session JSONL.
+        for controls_dir in service_dirs:
+            log_hook_fire(
+                "stop",
+                "fail",
+                f"integrity={len(integrity_errors)} cross={len(cross_errors)} "
+                f"deploy={len(deploy_errors)}",
+                file_path=controls_dir,
+                extra={
+                    "first_integrity": integrity_errors[0][:200] if integrity_errors else None,
+                    "first_cross": cross_errors[0][:200] if cross_errors else None,
+                    "first_deploy": deploy_errors[0][:200] if deploy_errors else None,
+                },
+            )
         sys.exit(2)
     else:
         # Non-blocking: report via stdout JSON for Claude's awareness
@@ -117,6 +144,14 @@ def main():
         if not has_creds:
             result["tier2_skipped"] = True
             result["tier2_fix"] = "Run: aws sso login --profile delegated-admin"
+        for controls_dir in service_dirs:
+            log_hook_fire(
+                "stop",
+                "warn",
+                f"cross={len(cross_errors)} deploy={len(deploy_errors)} "
+                f"(non-strict mode)",
+                file_path=controls_dir,
+            )
         print(json.dumps(result))
         sys.exit(0)
 
