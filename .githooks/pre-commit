@@ -26,7 +26,12 @@ GATE_FAIL=0
 
 # Only run gates when we're committing files that could affect them. If a
 # commit touches only docs/, we skip the gates to avoid pestering doc-only PRs.
-TOUCHES_RELEVANT=$(git diff --cached --name-only | grep -E '^(manifest\.yaml|tools/|powers/service-approval/(agents-src|cli|ide)/|skills/|scripts/|schemas/|\.gitlab-ci\.yml|install\.(sh|ps1)|Makefile)' || true)
+# Critically: include the synced OUTPUT files (.mcp.json, .vscode/mcp.json,
+# powers/.../mcp.json, .claude-plugin/plugin.json) too — a contributor who
+# hand-edits a synced file without touching manifest.yaml otherwise slips
+# past the local sync-drift gate (CI catches it but the hook docstring
+# claims gate parity with CI).
+TOUCHES_RELEVANT=$(git diff --cached --name-only | grep -E '^(manifest\.yaml|\.mcp\.json|\.vscode/mcp\.json|\.claude-plugin/plugin\.json|tools/|powers/service-approval/(agents-src|cli|ide|mcp\.json)|skills/|scripts/|schemas/|\.gitlab-ci\.yml|install(\-claude)?\.(sh|ps1)|Makefile)' || true)
 
 if [ -z "$TOUCHES_RELEVANT" ]; then
   exit 0

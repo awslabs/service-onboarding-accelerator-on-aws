@@ -2,18 +2,22 @@
 """
 Pipeline integrity validator.
 
-Detects agents that skip the 5-phase pipeline and emit hardcoded artifacts
-instead of running real MCP-driven research/validation/generation.
+Detects agents that skip the 9-phase pipeline (Intake → Assess → Research →
+Validate → Map → Generate → Test → Summarize → Evidence) and emit hardcoded
+artifacts instead of running real MCP-driven research/validation/generation.
 
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
-    P1 — mcp-calls.log missing or too few calls
+    P1 — pipeline.log / mcp-calls.log missing or too few MCP calls
     P2 — validated.json has templated or empty verification notes
     P3 — IAM policy logic errors (inverted SCP, permissive boundaries)
     P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
     P6 — verdict mismatch (APPROVED emitted despite integrity failures)
+    P7 — phase-output completeness: every phase dir on disk must contain
+         its declared outputs (mapping-results.json, controls-catalog.md,
+         framework-mapping.md, etc.) at min-size thresholds
 """
 from __future__ import annotations
 
@@ -72,20 +76,55 @@ def _load_json(path: Path) -> dict | None:
         return None
 
 
+_MCP_CALL_TOKEN_RE = re.compile(r"\[mcp:[^\]]+:call\]")
+
+
 def check_mcp_log(service_root: Path) -> list[str]:
-    """Check MCP log at service root (not in a phase dir)."""
+    """Check MCP call count from the consolidated pipeline.log.
+
+    Counts lines whose source matches the canonical `[mcp:<server>:call]`
+    token in pipeline.log. Anchored regex so a message field that happens
+    to contain the literal text `[mcp:` or `:call]` cannot inflate the
+    count (e.g., a `skill:research:start` event whose message describes
+    "starting [mcp:awsknowledge:call] phase" would substring-match but not
+    regex-match).
+
+    Falls back to the legacy mcp-calls.log shadow file. Legacy lines start
+    with literal "MCP CALL"; we anchor with `startswith` so a message
+    containing "MCP CALL" mid-line doesn't inflate the count either.
+    """
     errors: list[str] = []
-    log = service_root / "mcp-calls.log"
-    if not log.exists():
-        return ["P1 mcp-calls.log missing — pipeline must log every MCP call"]
-    content = log.read_text()
-    call_lines = [
-        ln for ln in content.splitlines()
-        if "MCP CALL" in ln or "MCP call" in ln
-    ]
+    pipeline_log = service_root / "pipeline.log"
+    mcp_shadow = service_root / "mcp-calls.log"
+
+    call_lines: list[str] = []
+
+    if pipeline_log.exists():
+        content = pipeline_log.read_text()
+        call_lines.extend(
+            ln for ln in content.splitlines()
+            if _MCP_CALL_TOKEN_RE.search(ln)
+        )
+
+    # Either source — pipeline.log uses the new format; mcp-calls.log may
+    # still receive raw "MCP CALL" lines from older skills/scripts.
+    if mcp_shadow.exists() and not call_lines:
+        content = mcp_shadow.read_text()
+        call_lines = [
+            ln for ln in content.splitlines()
+            if ln.startswith("MCP CALL") or ln.startswith("MCP call")
+            or _MCP_CALL_TOKEN_RE.search(ln)
+        ]
+
+    if not pipeline_log.exists() and not mcp_shadow.exists():
+        return [
+            "P1 neither pipeline.log nor mcp-calls.log exists at service "
+            "root — pipeline must log every MCP call to pipeline.log"
+        ]
+
     if len(call_lines) < MIN_MCP_CALLS:
         errors.append(
-            f"P1 mcp-calls.log has {len(call_lines)} logged calls "
+            f"P1 pipeline.log has {len(call_lines)} logged MCP calls "
             f"(minimum {MIN_MCP_CALLS}). Validate and Research phases must "
             f"call MCP for every capability, API parameter, and condition key."
         )
@@ -306,6 +345,146 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
     return errors
 
 
+# ----------------------------------------------------------------------
+# P7: per-phase output completeness
+# ----------------------------------------------------------------------
+# For each phase directory that exists on disk, the documented outputs
+# of that phase MUST exist with at least the stated minimum size. A
+# phase dir's existence means the agent claimed to run that phase —
+# missing outputs mean the run was incomplete and downstream consumers
+# will silently break.
+#
+# Phase dir absence is OK (the phase didn't run — Intake's testing.mode
+# == "skip" legitimately skips Phase 5 + Phase 7, for instance).
+#
+# Min sizes are calibrated for the typical Lambda/S3-scale service:
+#   * JSON state files: 1024 bytes (~30 keys, schema-required)
+#   * markdown reports: 3072 bytes (controls-catalog) / 5120 bytes
+#     (framework-mapping — has 1 row per framework objective, ~197 rows
+#     for CCMv4)
+#   * single-record files: 256 bytes (intake-manifest, sar-facts head)
+PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
+    "00-intake": [
+        ("intake-manifest.json", 256),
+    ],
+    "01-assess": [
+        ("sar-facts.json", 256),
+        ("checkpoint-results.json", 256),
+        ("assessment-summary.md", 1024),
+        ("iac-support.json", 256),
+    ],
+    "02-research": [
+        ("research.json", 1024),
+        # research-mitigations/capabilities/api-surface are merged into
+        # research.json by the merge sub-skill; they may be cleaned up,
+        # so don't gate them. attack-surface is optional.
+    ],
+    "03-validate": [
+        ("validated.json", 1024),
+    ],
+    "04-map": [
+        ("map-framework-parsed.json", 1024),
+        ("map-controls-generated.json", 1024),
+        ("map-framework-mapped.json", 1024),
+        ("mapping-results.json", 1024),
+        ("controls-catalog.md", 3072),
+        ("framework-mapping.md", 5120),
+    ],
+    "05-generate": [
+        # 05-generate/ contains category subdirs, not single files.
+        # Existence of at least one of {preventive, proactive, detective,
+        # responsive, iac} signals the phase ran. Empty dir = incomplete.
+    ],
+    "06-test": [
+        ("test-results.json", 256),
+        # deployed-resources.json only required for full-deploy (where
+        # Phase 7 will run); checked separately below.
+    ],
+    "07-summarize": [
+        ("APPROVAL-REPORT.md", 2048),
+    ],
+    "08-evidence": [
+        ("cli-commands.json", 256),
+        ("attestation-results.json", 256),
+        ("attestation-report.md", 1024),
+    ],
+}
+
+
+def check_phase_outputs(service_root: Path) -> list[str]:
+    """P7: every phase dir that exists must contain its documented outputs.
+
+    Walks each phase dir under service_root and asserts that every required
+    output exists and meets its minimum size threshold. A phase dir not
+    present is considered "phase did not run" and skipped silently — the
+    user may have set testing.mode=skip, --dry-run, etc.
+
+    The full-deploy → Phase 7 contract gets an extra check: if 06-test/
+    exists with deployed-resources.json AND 08-evidence/ exists, the linkage
+    is sound; if 06-test/test-results.json says full-deploy succeeded but
+    deployed-resources.json is missing, Phase 7 cannot run.
+    """
+    errors: list[str] = []
+
+    for phase_name, required in PHASE_REQUIRED_OUTPUTS.items():
+        phase_dir = service_root / phase_name
+        if not phase_dir.exists():
+            continue  # phase did not run — OK
+
+        for filename, min_size in required:
+            artifact = phase_dir / filename
+            if not artifact.exists():
+                errors.append(
+                    f"P7 {service_root.name}/{phase_name}/{filename}: MISSING. "
+                    f"Phase {phase_name} ran (dir exists) but did not produce "
+                    f"{filename}. Downstream consumers depend on this artifact; "
+                    f"re-run the {phase_name.split('-', 1)[1]} skill."
+                )
+                continue
+            actual_size = artifact.stat().st_size
+            if actual_size < min_size:
+                errors.append(
+                    f"P7 {service_root.name}/{phase_name}/{filename}: "
+                    f"{actual_size} bytes (< {min_size} min). File exists but "
+                    f"is too small to contain valid content. Likely a stub or "
+                    f"truncated write. Re-run the {phase_name.split('-', 1)[1]} skill."
+                )
+
+    # 05-generate/: at least one category subdir must contain real files.
+    # `any(cat_dir.rglob("*"))` would return True for an empty subdir tree
+    # (any directory entry counts), letting an empty `preventive/empty/`
+    # satisfy the gate. Require at least one actual file.
+    generate_dir = service_root / "05-generate"
+    if generate_dir.exists():
+        categories = ["preventive", "proactive", "detective", "responsive", "iac"]
+        any_populated = False
+        for cat in categories:
+            cat_dir = generate_dir / cat
+            if cat_dir.exists() and any(p.is_file() for p in cat_dir.rglob("*")):
+                any_populated = True
+                break
+        if not any_populated:
+            errors.append(
+                f"P7 {service_root.name}/05-generate/: phase ran but produced "
+                f"NO files in any of {categories}. Re-run generate."
+            )
+
+    # full-deploy → Phase 7 contract: if 08-evidence/ exists, then
+    # 06-test/deployed-resources.json must also exist (Phase 7 reads it).
+    evidence_dir = service_root / "08-evidence"
+    if evidence_dir.exists() and not (evidence_dir / "phase-skipped.json").exists():
+        deployed_resources = service_root / "06-test" / "deployed-resources.json"
+        if not deployed_resources.exists():
+            errors.append(
+                f"P7 {service_root.name}/06-test/deployed-resources.json: MISSING "
+                f"but 08-evidence/ exists. Phase 7 needs deployed-resources.json "
+                f"to know which stack/ARNs to probe; without it, every CLI verdict "
+                f"will be ERROR. Re-run Phase 5 with full-deploy mode."
+            )
+
+    return errors
+
+
 def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) -> list[str]:
     """Check verdict consistency from 07-summarize/ phase dir."""
     errors: list[str] = []
@@ -366,6 +545,11 @@ def validate_pipeline(root: Path) -> list[str]:
     for service_root in service_dirs:
         # Check MCP log at service root
         errors.extend(check_mcp_log(service_root))
+
+        # P7: phase-output completeness — every phase dir that exists must
+        # contain its declared outputs (safety net; the per-skill
+        # check_phase_complete CLI catches this earlier in the run).
+        errors.extend(check_phase_outputs(service_root))
 
         # Check validated.json in 03-validate/
         validate_dir = service_root / "03-validate"

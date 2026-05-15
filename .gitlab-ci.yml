@@ -1,7 +1,7 @@
 # Service Approval — CI pipeline
 #
 # Four gates that must pass on every MR before merge:
-#   1. Unit tests — 280+ Python tests in tools/validate/ + tools/evidence/
+#   1. Unit tests — Python tests in tools/validate/ + tools/evidence/
 #   2. Sync drift — tools/sync-ide-configs.py --check must show no drift
 #      AND tools/generate-kiro-agents.py --check must show no drift
 #      (agent mirrors regenerated from agents-src/*.yaml)

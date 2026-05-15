@@ -5,7 +5,7 @@ inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/**"
 ---
 
-# Pipeline — 9 service-approval agents (1 precursor + 8 numbered phases), 20 sub-skills
+# Pipeline — 9 service-approval agents (1 precursor + 8 numbered phases), 21 sub-skills
 
 The pipeline runs as 9 agents total: an unnumbered **Intake** precursor that
 gathers customer inputs and writes a candidate slug to a staging directory,
@@ -17,7 +17,7 @@ canonical service slug from SAR.
 
 1. Never write a one-shot generator script. Run every phase through its `SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP.
-3. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. Minimum 10 entries.
+3. Log every MCP call to `.service-approval/<service-slug>/pipeline.log` (the consolidated debugging artifact, with `[mcp:<server>:call]` source tags). Lines are mirrored to `mcp-calls.log` for backward compatibility, but `pipeline.log` is the source of truth. Minimum 10 entries enforced by the Stop hook's P1 check.
 4. Every `validated.json` item needs a unique `verification_note`.
 5. IaC templates must be parameterized — no hardcoded accounts or ARNs.
 6. SCPs need at least one `Deny`. `StringEquals`/`StringNotEquals` must target the same key.
@@ -49,6 +49,19 @@ to `.service-approval/<slug>/` after slug derivation; see Phase 0 Step 0b.
 Deployment intent (`testing.mode`) is captured here and consumed by Phase 5 via
 the orchestrator's flag-resolution rules. IaC format selection is NOT done here —
 that happens in Phase 0 (Assess) Step 2b and lands in `iac-support.json`.
+
+If the user has an existing `./service-approval-intake.yaml` (the per-user
+config they fill in from `skills/intake/intake-template.yaml`), the intake
+skill auto-discovers it, renders a summary, and prompts: `[U]se as-is /
+[E]dit a field` (case-insensitive). To start over, the user deletes the
+file or passes `--interactive`; there is no in-prompt "fresh start"
+option by design.
+
+The intake skill is the source of truth for that flow — see
+`skills/intake/SKILL.md` "Existing Intake Flow" section. Don't
+re-implement it here.
+
+
 
 ## Phase 0 — Assess
 

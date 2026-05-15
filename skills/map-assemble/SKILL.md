@@ -26,14 +26,41 @@ reports. It is largely mechanical — no LLM reasoning about control-objective a
 
 ## Prerequisites
 
+**Hard gate — halts the run if upstream phases are incomplete.** The
+pre-phase precondition CLI verifies that each upstream phase produced
+its declared artifacts (with min-size thresholds to catch stub writes).
+Exit non-zero from any of these means STOP — do not proceed with assembly.
+
 ```bash
-test -f .service-approval/<slug>/04-map/map-framework-parsed.json && echo "framework-parsed: OK" || echo "ERROR"
-test -f .service-approval/<slug>/04-map/map-controls-generated.json && echo "controls-generated: OK" || echo "ERROR"
-test -f .service-approval/<slug>/04-map/map-framework-mapped.json && echo "framework-mapped: OK" || echo "ERROR"
-test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
+python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
+# Note: 04-map outputs from upstream sub-skills are checked individually below
+# (map-assemble produces controls-catalog.md / framework-mapping.md / mapping-results.json
+# which are the outputs OF this skill, so they're validated in Phase 7).
+test -f .service-approval/<slug>/04-map/map-framework-parsed.json || { echo "ERROR: map-parse-framework didn't run"; exit 2; }
+test -f .service-approval/<slug>/04-map/map-controls-generated.json || { echo "ERROR: map-generate-controls didn't run"; exit 2; }
+test -f .service-approval/<slug>/04-map/map-framework-mapped.json || { echo "ERROR: map-framework-mapping didn't run"; exit 2; }
 ```
 
-All 4 files must exist before assembly.
+After Phase 7 below writes mapping-results.json, controls-catalog.md, and
+framework-mapping.md, the Stop hook's P7 check (validate_pipeline_integrity:
+check_phase_outputs) re-validates that all 04-map outputs are present and
+non-stub-sized. Skipping Phase 5 or Phase 6 of this skill will trip P7
+and fail the verdict.
+
+**Audit log — emit start/end events:**
+
+```bash
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source skill:map-assemble --verdict start \
+    --message "assembling map outputs"
+# ... do the work ...
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source skill:map-assemble --verdict end \
+    --message "wrote mapping-results.json + controls-catalog.md + framework-mapping.md"
+```
+
+If the skill halts early (precondition failure, validation error), emit
+`--verdict halt` instead of `end` with the reason in `--message`.
 
 ---
 

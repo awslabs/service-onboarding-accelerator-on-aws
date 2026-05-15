@@ -143,9 +143,258 @@ plugin repo.
 
 ---
 
+## Environment-Adaptive Input Protocol
+
+The form below is rendered **interactively** — one question at a time, waiting
+for the user's answer before continuing. How you do that depends on what your
+runtime offers. Pick the right branch on first use and stick with it for the
+whole intake.
+
+### Branch detection
+
+| Signal | Branch |
+|--------|--------|
+| Your tool list includes `AskUserQuestion` (Claude Code) | Use **Branch A** |
+| Your tool list includes any sanctioned blocking ask-user primitive (a future Kiro elicitation tool, an MCP elicitation tool, etc.) | Use **Branch A** with that tool's name in place of `AskUserQuestion` |
+| Neither — you're in a chat pane (Kiro IDE, generic CLI, GitHub Copilot chat) | Use **Branch B** |
+
+Do not invent a tool that isn't present. If unsure, fall through to Branch B.
+
+### Branch A — Sanctioned ask-user tool available
+
+For each question in "Intake Form Fields" below:
+
+1. Call `AskUserQuestion` (or the equivalent primitive) **once** with that
+   single question.
+2. Use the question wording from this file verbatim as the `question` field.
+3. Convert the question's enumerated choices into the tool's option list
+   when the tool supports structured options; otherwise put the choices in
+   the question text.
+4. Do not bundle multiple questions into one call. One field per call.
+5. Do not infer answers from earlier conversation context. If the user
+   mentioned a value in passing, still ask — pre-fill it as the default
+   option, but require an explicit selection.
+6. Skip a question only when its value was supplied by a CLI flag or
+   `--from-intake=<file>`. Announce the skip once
+   ("Using `--service=s3` from CLI, skipping service prompt") then move on.
+
+After all questions are answered, render the **User Confirmation** summary
+(see that section below) and ask one final `AskUserQuestion` — "Proceed?
+[Y/n]" — before any write to `intake-manifest.json`.
+
+### Branch B — Chat-pane fallback (no blocking primitive)
+
+Your runtime cannot pause the agent loop to wait for a typed reply. You must
+enforce turn-taking yourself or you will silently commit the user to defaults
+they never saw.
+
+**Rules:**
+
+1. **Ask one question per turn.** Never bundle questions.
+2. **After asking, STOP.** End your turn with the literal marker:
+
+   ```
+   >>> WAITING FOR YOUR REPLY — I will not proceed until you answer.
+   ```
+
+   Do not call any further tool (`fs_read`, `fs_write`, `execute_bash`, MCP)
+   in the same turn after this marker. The next user message is your only
+   trigger to continue.
+3. **Do not infer answers from earlier context.** If the user's opening
+   prompt mentioned a value, re-ask explicitly with it pre-filled
+   (e.g. "I see you mentioned S3 — confirm `s3`? [Y/n]").
+4. **Do not skip ahead.** Only act on the question you just asked, even if
+   the user volunteers extra info for later questions.
+5. **Confirmed answers are locked.** Don't silently overwrite a previously
+   acknowledged value during a later turn.
+6. **The summary is a hard gate.** Before writing
+   `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`, render the
+   "User Confirmation" summary box and end with:
+
+   ```
+   Type Y to write the manifest, N to revise, or "edit <field>" to change
+   one field.
+
+   >>> WAITING FOR YOUR REPLY — I will not write the manifest until you answer.
+   ```
+
+   A literal "Y" (case-insensitive) is the only trigger to write the file.
+7. **Skip a question only on CLI-flag / `--from-intake` evidence.** Same
+   rule as Branch A — announce the skip once, then move on.
+
+### Question order (both branches)
+
+1. Step 0 — Input folder bootstrap (only if `./input/` missing)
+2. Step 1 — Service name
+3. Step 2 — Input type
+4. Step 3 — Testing requirements
+5. Step 4 — Additional options
+6. Final summary (always — never skipped)
+
+---
+
 ## Intake Form Fields
 
 Present this form when running interactively. Fields marked **(required)** must be answered.
+
+### 0. Input Folder Bootstrap (when `./input/` is missing)
+
+Before asking the service question, check whether `./input/` exists in the user's
+current working directory:
+
+```bash
+test -d ./input && echo "PRESENT" || echo "MISSING"
+```
+
+**If PRESENT:** skip this step entirely and go to Step 1.
+
+**If MISSING:** create the folder and present the seed menu below. Do NOT silently
+fall back to MCP-only mode — let the user decide.
+
+```bash
+mkdir -p ./input
+```
+
+```
+No ./input/ folder was found in this directory. I just created an empty one.
+You can populate it with customer documents (.md, .json, .xlsx, .pdf, .docx) for
+mitigation reports, threat models, and control frameworks — or run without inputs.
+
+How would you like to seed it?
+  [1] Skip — run in MCP-only mode (research everything from scratch)
+  [2] Leave empty — I'll add files myself before continuing
+  [3] Seed bundled CCMv4 framework (recommended)
+  [4] Auto-download latest CCMv4 from CSA
+  [5] Both — copy bundled CCMv4 AND try CSA download
+
+Choice [1-5]:
+```
+
+If the run is non-interactive (CLI flags or `--from-intake=<file>`), read the answer
+from `input.bootstrap.{seed_from_plugin, auto_download_ccmv4}` in the intake YAML.
+Defaults: both `false` → equivalent to choice [1] (skip).
+
+#### Locate the plugin's bundled input/
+
+The plugin is symlinked or copied into client-specific paths. Walk up from a known
+anchor to find the plugin root (the directory containing `manifest.yaml`):
+
+```bash
+# Try environment variables first (Claude Code sets CLAUDE_PLUGIN_ROOT)
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+
+# Fall back: walk up from the skill file's known location
+if [ -z "$PLUGIN_ROOT" ]; then
+  for dir in \
+    "$(pwd)" \
+    "$HOME/.claude/plugins/service-approval" \
+    "$HOME/.gemini/extensions/service-approval" \
+    "$HOME/.kiro/powers/service-approval"; do
+    if [ -f "$dir/manifest.yaml" ] && [ -d "$dir/input" ]; then
+      PLUGIN_ROOT="$dir"
+      break
+    fi
+  done
+fi
+
+# Last resort: search common parent paths for manifest.yaml + input/
+if [ -z "$PLUGIN_ROOT" ]; then
+  PLUGIN_ROOT="$(find "$HOME" -maxdepth 6 -name manifest.yaml -path '*service-onboarding*' -print -quit 2>/dev/null | xargs -I{} dirname {})"
+fi
+
+echo "$PLUGIN_ROOT"
+```
+
+If `PLUGIN_ROOT` cannot be located, warn the user, disable choices [3] and [5],
+and offer [1], [2], or [4] only.
+
+#### Choice [3] — Seed bundled CCMv4
+
+```bash
+cp "$PLUGIN_ROOT/input/CCMv4_LightningLane.xlsx" ./input/
+```
+
+Print: `Copied CCMv4_LightningLane.xlsx → ./input/`. Set `inputs.input_folder = "./input"`
+and `inputs.framework_type = "ccmv4"` in the manifest.
+
+We deliberately do NOT copy the bundled mitigation report — that's customer-specific
+and would mislead downstream skills. The user supplies their own mitigation report
+(if any) by dropping it into `./input/` themselves.
+
+#### Choice [4] — Auto-download CCMv4 from CSA
+
+Try a direct download first. The CSA download URL may serve HTML (login wall) instead
+of an xlsx, so verify the response shape before trusting it.
+
+```bash
+CSA_URL="https://cloudsecurityalliance.org/download/artifacts/cloud-controls-matrix-v4-1"
+TMP=$(mktemp -t ccmv4.XXXXXX)
+
+# Follow redirects, fail on HTTP error, time out at 30s
+if curl -sSfL --max-time 30 -A "service-approval/1.0" -o "$TMP" "$CSA_URL"; then
+  CT=$(file -b --mime-type "$TMP")
+  case "$CT" in
+    application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|\
+    application/zip|\
+    application/octet-stream)
+      mv "$TMP" ./input/CCMv4-CSA-latest.xlsx
+      echo "Downloaded CCMv4 from CSA → ./input/CCMv4-CSA-latest.xlsx"
+      ;;
+    *)
+      rm -f "$TMP"
+      echo "CSA returned $CT (likely a login/marketing page). Falling back to manual download."
+      OPEN_BROWSER=1
+      ;;
+  esac
+else
+  rm -f "$TMP"
+  echo "CSA download failed. Falling back to manual download."
+  OPEN_BROWSER=1
+fi
+
+if [ "${OPEN_BROWSER:-0}" = "1" ]; then
+  echo ""
+  echo "Manual CCMv4 download:"
+  echo "  1. Visit: $CSA_URL"
+  echo "  2. Sign in to your CSA account (free)"
+  echo "  3. Save the .xlsx file into ./input/"
+  echo ""
+
+  # Best-effort browser launch
+  if command -v open >/dev/null 2>&1; then
+    open "$CSA_URL" 2>/dev/null || true
+  elif command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$CSA_URL" 2>/dev/null || true
+  elif command -v start >/dev/null 2>&1; then
+    start "$CSA_URL" 2>/dev/null || true
+  fi
+
+  read -r -p "Press Enter once the file is in ./input/ (or Ctrl-C to abort): " _
+fi
+```
+
+#### Choice [5] — Both
+
+Run choice [3] first, then choice [4]. If both succeed, the user has two CCMv4 files
+in `./input/`. The Map phase auto-detects framework files by filename pattern (any
+xlsx with `CCMv4`/`ccm`/`CSA` in the name) — having both is harmless, but if both
+files are present, prefer the CSA download (it's likely newer). Tell the user:
+
+```
+You have two CCMv4 files in ./input/:
+  - CCMv4_LightningLane.xlsx (bundled snapshot)
+  - CCMv4-CSA-latest.xlsx (just downloaded)
+
+The Map phase will use CCMv4-CSA-latest.xlsx (newer). Delete the other file if
+you want to silence this notice.
+```
+
+#### After bootstrap
+
+Continue to Step 1 with `inputs.input_folder = "./input"`. The rest of the intake
+form runs normally; `framework_type` defaults to `ccmv4` if a CCMv4 file is present.
+
+---
 
 ### 1. Service Name (required)
 
@@ -351,6 +600,9 @@ Proceed? (Y/n)
 | Condition | Action |
 |-----------|--------|
 | Service not found in `sar-slugs.json` | Warn user, attempt SAR page lookup via MCP. If found, continue. If not, halt. |
+| `./input/` folder missing | Run Step 0 bootstrap (create empty + offer seed menu). Never silently skip. |
+| Plugin root cannot be located for seeding | Warn, disable choices [3] and [5], keep [1]/[2]/[4] available |
+| CSA auto-download returns HTML / non-xlsx | Delete partial file, fall back to opening browser + printing URL, wait for user to drop file |
 | Input folder path invalid | Ask user to correct the path |
 | `testing.mode == full-deploy` but `aws_profile` missing | Re-prompt for profile; if still missing, downgrade to `mode: skip` |
 | AWS profile not configured in `~/.aws/` | Warn and downgrade `testing.mode` to `skip` |

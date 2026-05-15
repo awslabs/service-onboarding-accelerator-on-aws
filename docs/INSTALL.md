@@ -22,10 +22,56 @@ anytime. Idempotent.
 
 ## Per-client install detail
 
-### Claude Code — zero install
+### Claude Code — scripted install (recommended)
 
-Open the repo in Claude Code. `.claude-plugin/plugin.json` is auto-discovered.
-Invoke: `/service-approval ./input --service=<name>`.
+From the repo root:
+
+```bash
+./install-claude.sh
+```
+
+This creates the `.claude/commands/` symlink, writes `.claude/settings.json` (MCP
+servers, permissions, plugin enablement), and writes `.vscode/mcp.json`. After
+running, open the repo in Claude Code and invoke:
+
+```
+/service-approval ./input --service=<name>
+```
+
+### Claude Code — manual install (alternative)
+
+If you prefer to install the plugin manually without the script:
+
+1. **Add the repo as a local marketplace.** From within Claude Code, run:
+
+   ```
+   /plugin marketplace add ./
+   ```
+
+2. **Install the plugin.** Run:
+
+   ```
+   /plugin install service-approval@service-onboarding
+   ```
+
+   Choose **Project scope** when prompted (installs for all collaborators on this repo).
+
+3. **Reload plugins.** Run:
+
+   ```
+   /reload-plugins
+   ```
+
+4. **Verify.** The `/service-approval` slash command should now appear. Run:
+
+   ```
+   /service-approval ./input --service=<name>
+   ```
+
+> **Note:** The manual approach does not configure MCP servers. You will need to
+> approve MCP server connections (aws-documentation, awsknowledge, awsiac, etc.)
+> when prompted on first use, or run `./install-claude.sh` afterward to write the
+> MCP config.
 
 ### GitHub Copilot (VS Code) — zero install
 
@@ -37,33 +83,32 @@ Open the repo in VS Code. Copilot auto-discovers:
 
 Invoke from Copilot Chat in Agent mode: `@service-approval ./input --service=<name>`.
 
-### Kiro CLI 2.0 — one install command
+### Kiro — Power install via CLI 2.0 (recommended)
 
-Requires `kiro-cli` on PATH. `install.sh` runs:
+If you have `kiro-cli` installed, the easiest path is the symlink-based
+Power install — `git pull` auto-updates the registered Power without
+re-installing:
 
 ```bash
-kiro-cli power install --local /path/to/service-onboarding/powers/service-approval
+kiro-cli power install --local powers/service-approval
 ```
 
-Symlinked, so `git pull` updates the Power. Invoke via keyword match in chat
-("run service approval for S3"), or explicitly ask Kiro to use the power.
+`./install.sh` runs this automatically when `kiro-cli` is on PATH; you only
+need to invoke it manually if you skipped `install.sh` or installed Kiro
+CLI later.
 
-Alternative (GUI): Kiro app → Powers panel → Add power from local path → select
-`powers/service-approval/`.
+### Kiro — manual Power install via IDE (fallback)
 
+If you don't have Kiro CLI 2.0 (or you're using Kiro IDE only):
 
-## Windows Developer Mode
+1. Open **Kiro** IDE
+2. Open the **Powers** panel
+3. Click **Add power from local path**
+4. Select `powers/service-approval/` from this repo
 
-Symlink installs need Developer Mode on Windows (one-time toggle):
+Invoke via keyword match in chat ("run service approval for S3"), or explicitly
+ask Kiro to use the power.
 
-1. Open **Settings** (Win + I)
-2. **Update & Security** (Windows 10) or **Privacy & Security** (Windows 11)
-3. **For developers**
-4. Turn **Developer Mode** ON
-5. Reboot not required
-
-Without Developer Mode, symlinks need an elevated terminal. The alternative is
-copying files instead of linking, which breaks auto-update via `git pull`.
 
 ## Verifying the install
 
@@ -84,22 +129,20 @@ worked before a real install.
 git pull
 ```
 
-Symlinked clients (Kiro) reflect changes on next session. Auto-discovered
-clients (Claude Code, Copilot) read the latest files every session.
+Auto-discovered clients (Claude Code, Copilot) read the latest files every session.
+Kiro reads from the Power path — re-add the Power if you move the repo.
 
 If an IDE caches configs, restart the client after a pull that changes MCP servers
 or top-level manifests.
 
 ## Uninstall
 
-Delete the repo. Optionally unlink from Kiro first:
+Delete the repo. Optionally remove the Power from Kiro first:
 
-```bash
-kiro-cli power uninstall service-approval
-```
+1. Open **Kiro** IDE → **Powers** panel
+2. Remove **service-approval**
 
-Neither is strictly required — with the repo gone, symlinks dangle and the clients
-stop discovering them.
+Neither is strictly required — with the repo gone, the clients stop discovering it.
 
 ## Kiro-specific testing and troubleshooting
 
@@ -112,8 +155,8 @@ See [`docs/TESTING-KIRO.md`](TESTING-KIRO.md) for a step-by-step Kiro IDE + CLI 
 chmod +x install.sh
 ```
 
-**`kiro-cli: command not found`**
-Install via `curl -fsSL https://cli.kiro.dev/install | bash`.
+**Kiro doesn't show the Power**
+Re-add via Powers panel → Add power from local path → select `powers/service-approval/`.
 
 **Copilot doesn't see the agent**
 1. Confirm Copilot Chat is in Agent mode (not Ask mode)

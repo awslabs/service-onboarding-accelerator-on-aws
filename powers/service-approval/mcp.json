@@ -48,6 +48,17 @@
         "FASTMCP_LOG_LEVEL": "ERROR",
         "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
       }
+    },
+    "mitre-attack": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/stoyky/mitre-attack-mcp",
+        "mitre-attack-mcp"
+      ],
+      "env": {
+        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
     }
   }
 }
