@@ -2,6 +2,111 @@
 
 All notable changes to the service-approval pipeline are documented here.
 
+## [Unreleased] — integration/2026-05-18
+
+### Fixed
+- **Stop-hook 17-hour identical-failure loop** — added two prevention
+  mechanisms: a `[pipeline:complete:<VERDICT>]` terminal-state sentinel
+  emitted by `summarize` and `evidence` that exempts finalized runs from
+  P1 (MCP-call-count gate), and a 3-fail snooze backstop in
+  `tools/validate/hook_stop.py` that suppresses identical hook:stop:fail
+  loops with no progress between fires.
+- **Verdict-tag bash transform** — single-pass `tr` did not fold spaces
+  in `APPROVED with exceptions`; switched to two-pass uppercase + space-or-hyphen → underscore.
+- **Evidence verdict extraction** — grep regex did not match the actual
+  `## Verdict` H2 + bold line shape; switched to awk extraction with
+  parens-strip canonicalization for `APPROVED (test not run)`.
+- **License divergence** — `POWER.md` and `powers/README.md` said MIT;
+  aligned with `LICENSE`/`manifest.yaml` at Apache-2.0.
+- **R16 controls-side regex** — symmetrized with state-side close-quote
+  alternation; literal `Path(".service-approval/controls")` no longer evades.
+- **R16 trip-case drift** — production patterns and trip-case patterns
+  unified into module-level constants.
+- **`_action_matches_wildcard_only`** — dropped glob-expansion branch
+  (SAR data is incomplete; literal-only matching keeps the carve-out tight).
+- **`_load_wildcard_only_actions` empty-prefix guard** — bare actions
+  with no prefix and an empty fallback no longer enter the set as `:Action`.
+- **Manifest path drift** — `manifest.yaml clients.kiro` paths now match
+  the actual filesystem layout (`cli/agents/`, `ide/agents/`, `ide/hooks/`).
+- **Stale `hooks/stop.json` references** in 7 docs replaced with
+  `ide/hooks/stop.kiro.hook` (real path under `powers/service-approval/`).
+
+### Changed
+- **Framework scope narrowed** to CCMv4 for interactive intake;
+  multi-framework parsing remains via `--framework=<type>` CLI flag for
+  advanced operators. Updated marketing/metadata across `manifest.yaml`,
+  `README.md`, `POWER.md`, `powers/README.md`, `pipeline.md`, plus scope
+  notes in `summarize`, `map`, `map-parse-framework` SKILL.md.
+- **Pipeline integrity validator docstring** — added P1 sentinel
+  exemption note; corrected `_load_wildcard_only_actions` docstring
+  about cross-service floor.
+
+### Removed
+- **kiro-cli install code path** from `install.sh`. The Kiro IDE manual
+  install is now the supported flow; cascade docs (`docs/TESTING-KIRO.md`,
+  `skills/service-approval/SKILL.md`, `powers/service-approval/README.md`,
+  `powers/service-approval/steering/headless.md`) carry deprecation
+  banners pending a full kiro-cli runtime decision.
+
+### Added
+- **Plugin marketplace registration** in `install-claude.sh` —
+  `claude plugin marketplace add` lets `/service-approval` invoke from
+  any working directory, not just when this repo is open.
+- **Kiro guardrails into install.sh sync path** —
+  `block-direct-state-writes.kiro.hook` and
+  `service-approval-enforcement.md` now live in
+  `powers/service-approval/ide/hooks/` and `steering/`, picked up by
+  install.sh's existing `*.kiro.hook` and `*.md` globs.
+- **8 unit tests** for snooze logic (threshold, JSON-escape round-trip,
+  progress-event reset, sub-threshold count); 4 sentinel-anchoring
+  tests; wildcard-only literal-only carve-out tests; empty-prefix guard tests.
+- **R16 helper-test fail-closed** — `_git_or_skip()` now used by the
+  positive-trip case and the parametrize evasion suite, fail-closed
+  under `CI=true`.
+- **APPROVAL-REPORT.md H3 → H2 verdict header** — promoted 13 section
+  headers in the `summarize` template to match the `evidence` awk
+  sentinel emit and `validate_pipeline_integrity` P6 verdict regex
+  (both anchor on H2). Tightened the P6 regex with `(?<!#)##(?!#)`
+  lookarounds so H3 substring no longer matches as H2.
+- **P5 + P6 silent fail-open** — `check_framework_coverage` (P5) and
+  `check_verdict_consistency` (P6) now append explicit `P{N} FAIL`
+  errors instead of returning `[]` on missing/corrupt input. Same
+  Probe 33 fix-shape that closed P2 earlier.
+- **Snooze reset semantics** — `_should_snooze` now resets on any
+  non-fail event regardless of position; matches the docstring's
+  "any non-`hook:stop:fail` event resets" claim.
+- **Stop hook + validator docstrings** — `hook_stop.py` rewritten to
+  enumerate all three validators (cross + deployable + integrity)
+  and the strict-by-default integrity behavior;
+  `validate_pipeline_integrity.py` failure-signal block updated to
+  note the P1 sentinel exemption for finalized runs and replace P3's
+  aspirational "inverted SCP, permissive boundaries" wording with the
+  three checks the validator actually performs (mismatched
+  StringEquals/StringNotEquals keys, broad Allow on Resource:* without
+  Condition, SCP without Deny).
+- **P1–P7 cascade across 8 customer-facing surfaces** — `POWER.md`,
+  `powers/README.md`, `pipeline.md`, `headless.md`, `manifest.yaml`,
+  `.github/hooks/pipeline-integrity/README.md`, `stop.kiro.hook`,
+  `tech.md` all now mirror the validator's actual P-check list with
+  cultural rules factored to `service-approval-enforcement.md`
+  (Hard Rules 5 + 6 added there to close the redirect-target gap).
+- **Drift-prone absolute counts dropped** — `TESTING-KIRO.md`,
+  `tools/README.md`, `structure.md` replaced "13 sa-*.md /
+  9 steering / 18 SKILL.md / 11 JSON Schema files / 205 tests"
+  idioms with self-validating wording (e.g.,
+  "matches `powers/service-approval/<dir>/`",
+  "one *.schema.json per pipeline state file").
+- **Skill SKILL.md line-79 cites** — `assess`, `research-api-surface`,
+  `research-capabilities`, `validate` replaced
+  `validate_pipeline_integrity.py:79` with symbol references to
+  `_MCP_CALL_TOKEN_RE` so future docstring rewrites don't re-break.
+- **POWER.md sub-skill count** — 20 → 21 (matches on-disk skills/
+  count, README.md, pipeline.md, manifest.yaml).
+- **Validator fail-close contract** — added an audit-result comment
+  block above `validate_pipeline()` documenting the contract for
+  every `check_*()` function so future contributors don't re-introduce
+  the silent-fail-open pattern.
+
 ## [Unreleased] — feature/smoke-test-lambda-e2e
 
 ### Added — Consolidated pipeline audit log

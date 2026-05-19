@@ -1,6 +1,6 @@
 # Service Approval — Kiro Power
 
-Kiro CLI 2.0 Power that generates AWS security controls for any AWS service via a 9-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to a control framework (CCMv4, NIST 800-53, CIS, ISO).
+Kiro Power that generates AWS security controls for any AWS service via a 9-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to CCMv4 (other frameworks deferred).
 
 ## Install
 
@@ -11,7 +11,7 @@ cd /path/to/service-onboarding
 ./install.sh
 ```
 
-The installer runs `kiro-cli power install --local powers/service-approval` under the hood, creating a symlink so `git pull` auto-updates the Power.
+The installer copies the Power's IDE files (agents, hooks, steering, MCP config) into your workspace `.kiro/` so the Kiro IDE picks them up on open. Re-run `./install.sh` after `git pull` to refresh.
 
 From GitHub (Kiro desktop app):
 1. Open the **Powers** panel
@@ -20,7 +20,7 @@ From GitHub (Kiro desktop app):
 
 ## Prerequisites
 
-1. **Kiro CLI 2.0+** — `kiro-cli --version` should report 2.0.0 or later
+1. **Kiro IDE** — https://kiro.dev
 2. **Python 3.9+** — required for validators and hooks
 3. **Docker** — required for `terraform` MCP server
 4. **MCP servers** — registered in `mcp.json`, loaded automatically when the Power activates
@@ -57,63 +57,60 @@ Phase 6 Summarize    → <slug>/07-summarize/APPROVAL-REPORT.md
 Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
 ```
 
-Uses Kiro CLI 2.0 `/spawn` for parallel execution in Phases 1, 3, and 4.
+Uses Kiro IDE's `/spawn` (Kiro CLI 2.0 also supports it; runtime path is being re-evaluated) for parallel execution in Phases 1, 3, and 4.
 
 ## Repository layout
 
 ```
 powers/service-approval/
-├── POWER.md                     Manifest + body (keywords, invocation, pipeline)
-├── README.md                    (this file)
-├── mcp.json                     MCP server registrations
-├── steering/
-│   ├── product.md               What and why (always-on)
-│   ├── tech.md                  Stack + validators (always-on)
-│   ├── structure.md             Layout + conventions (always-on)
-│   ├── pipeline.md              Full phase-by-phase guide
-│   ├── phase-research.md        Loads for research state files
-│   ├── phase-validate.md        Loads for validated.json
-│   ├── phase-map.md             Loads for map-* state files
-│   ├── phase-generate.md        Loads for controls/ artifacts
-│   └── headless.md              CI / headless invocation recipe
-├── agents/
-│   ├── sa-intake.json                    (precursor)
-│   ├── sa-assess.json
-│   ├── sa-research-mitigations.json    (parallel, phase 1)
-│   ├── sa-research-capabilities.json   (parallel, phase 1)
-│   ├── sa-research-api-surface.json    (parallel, phase 1)
-│   ├── sa-research-attack-surface.json (parallel, phase 1 — optional)
-│   ├── sa-validate.json
-│   ├── sa-map-parse-framework.json     (parallel, phase 3)
-│   ├── sa-map-generate-controls.json   (parallel, phase 3)
-│   ├── sa-map-framework-mapping.json
-│   ├── sa-map-assemble.json
-│   ├── sa-generate-preventive.json     (parallel, phase 4)
-│   ├── sa-generate-detective.json      (parallel, phase 4)
-│   └── sa-generate-iac.json            (parallel, phase 4)
-└── hooks/
-    ├── post-tool-use.json       fs_write → validates state files
-    ├── stop.json                Stop → runs pipeline integrity checks
-    └── README.md                How to test hooks manually
+├── POWER.md                              Manifest + body (keywords, invocation, pipeline)
+├── README.md                             (this file)
+├── mcp.json                              MCP server registrations
+├── steering/                             Always-on + fileMatch-loaded guidance
+│   ├── product.md                        What and why (always-on)
+│   ├── tech.md                           Stack + validators (always-on)
+│   ├── structure.md                      Layout + conventions (always-on)
+│   ├── pipeline.md                       Full phase-by-phase guide
+│   ├── phase-research.md                 Loads for research state files
+│   ├── phase-validate.md                 Loads for validated.json
+│   ├── phase-map.md                      Loads for map-* state files
+│   ├── phase-generate.md                 Loads for 05-generate/ artifacts
+│   ├── headless.md                       CI / headless invocation recipe
+│   └── service-approval-enforcement.md   Skill-based execution guardrail
+├── agents-src/                           Source-of-truth YAML — one sa-<slug>.yaml per agent
+│   └── sa-*.yaml                         (one per sub-skill)
+├── cli/agents/                           Generated CLI format (JSON)
+│   └── sa-*.json                         (run tools/generate-kiro-agents.py to regenerate)
+└── ide/                                  Generated IDE artifacts
+    ├── agents/sa-*.md                    (markdown agents the IDE loads)
+    └── hooks/                            (Kiro IDE Stop / PostToolUse / PreToolUse hooks)
+        ├── stop.kiro.hook                Runs pipeline integrity checks
+        ├── post-tool-use.kiro.hook       Validates state files on write
+        └── block-direct-state-writes.kiro.hook   Enforces skill-based execution
 ```
 
 ## Hard rules
 
-The Stop hook (`hooks/stop.json`) runs `tools/validate/hook_stop.py` which invokes `validate_pipeline_integrity.py`. Exit code 2 blocks on:
+The Stop hook (`ide/hooks/stop.kiro.hook`) runs `tools/validate/hook_stop.py` which invokes `validate_pipeline_integrity.py`. Exit code 2 blocks on any P1–P7 failure signal:
 
-1. No one-shot generator scripts — every phase runs through its `SKILL.md`
-2. Every claim MCP-verified — no training-data values
-3. `mcp-calls.log` has ≥10 entries
-4. `validated.json` notes unique (≥50% uniqueness)
-5. IaC parameterized — no `123456789012` or placeholder ARNs
-6. SCPs have ≥1 `Deny`; `StringEquals`/`StringNotEquals` target same key
-7. Verdict matches integrity — no false `APPROVED`
+- **P1** — too few MCP calls (≥10 required; exempted for finalized runs by the `[pipeline:complete:<VERDICT>]` terminal sentinel)
+- **P2** — `validated.json` notes templated or empty (≥50% uniqueness required)
+- **P3** — IAM policy logic errors (mismatched `StringEquals`/`StringNotEquals` keys, broad Allow on `Resource:*` without Condition, SCP without Deny)
+- **P4** — IaC templates contain placeholder account IDs or placeholder ARNs
+- **P5** — framework coverage below 15% with no per-objective rationale
+- **P6** — verdict mismatch (`APPROVED` despite integrity failures)
+- **P7** — phase-output completeness (every phase dir produces its declared outputs)
 
-Full list in [`POWER.md`](POWER.md) and [`steering/pipeline.md`](steering/pipeline.md).
+Cultural rules (skill-based execution, no one-shot generator scripts) live in [`steering/service-approval-enforcement.md`](steering/service-approval-enforcement.md). Full list and validator implementation in [`tools/validate/validate_pipeline_integrity.py`](../../tools/validate/validate_pipeline_integrity.py).
 
 ## Headless / CI
 
-Kiro CLI 2.0 headless mode works with this Power. Set `KIRO_API_KEY`, pass `--no-interactive --trust-tools="aws-documentation,awsknowledge,awsiac,terraform,kb-search"`. Full recipe in [`steering/headless.md`](steering/headless.md).
+> **Note (2026-05-18):** Kiro CLI 2.0 headless mode is no longer wired by
+> `install.sh`. The recipe in `steering/headless.md` requires installing
+> `kiro-cli` separately and is being re-evaluated; for new CI pipelines,
+> consider Claude Code CLI (`install-claude.sh`).
+
+Kiro CLI 2.0 headless mode works with this Power when `kiro-cli` is installed manually. Set `KIRO_API_KEY`, pass `--no-interactive --trust-tools="aws-documentation,awsknowledge,awsiac,terraform,kb-search"`. Full recipe in [`steering/headless.md`](steering/headless.md).
 
 ## Updating
 
@@ -122,15 +119,11 @@ cd /path/to/service-onboarding
 git pull
 ```
 
-The Power is symlink-installed — changes in the repo take effect on next session. No re-install.
+Re-run `./install.sh` to refresh the Power's IDE files in your workspace `.kiro/`.
 
 ## Uninstalling
 
-```bash
-kiro-cli power uninstall service-approval
-```
-
-Or: Kiro app → Powers panel → service-approval → Uninstall.
+Kiro app → Powers panel → service-approval → Uninstall. To remove the workspace files, delete the `.kiro/` directory in your repo.
 
 ## Testing and troubleshooting
 
@@ -143,4 +136,4 @@ Full testing guide at [`docs/TESTING-KIRO.md`](../../docs/TESTING-KIRO.md). Cove
 
 ## License
 
-MIT
+Apache-2.0

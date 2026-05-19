@@ -10,10 +10,9 @@
 #   ./install.sh --quiet      Suppress non-error output
 #
 # Update flow:
-#   - Symlinked installs (Kiro CLI `power install --local`)
-#     auto-update on git pull.
-#   - Copy-based installs (Kiro IDE — which reads .kiro/agents/*.md, .kiro/hooks/
-#     *.kiro.hook, .kiro/settings/mcp.json) need --sync to re-copy.
+#   - This script's only Kiro install mode is copy-based: Kiro IDE reads
+#     .kiro/agents/*.md, .kiro/hooks/*.kiro.hook, .kiro/settings/mcp.json
+#     from the workspace; --sync re-copies after a git pull.
 #   - Enable auto-sync on git pull:
 #       git config core.hooksPath .githooks
 #     .githooks/post-merge fires --sync automatically.
@@ -161,29 +160,6 @@ if [ -d "$REPO_DIR/.github" ]; then
   ok ".github/ present — VS Code + Copilot auto-discovers"
 else
   warn ".github/ missing"
-fi
-
-# ---------------------------------------------------------------------------
-# Kiro CLI 2.0 — install the Power (symlink) AND copy IDE files to .kiro/.
-# ---------------------------------------------------------------------------
-log ""
-log "Kiro CLI"
-if command -v kiro-cli >/dev/null 2>&1; then
-  if [ -d "$REPO_DIR/powers/service-approval" ]; then
-    if [ "$MODE" = "check" ]; then
-      skip "would run: kiro-cli power install --local $REPO_DIR/powers/service-approval"
-    else
-      if kiro-cli power install --local "$REPO_DIR/powers/service-approval" >/dev/null 2>&1; then
-        ok "Power installed (symlink — git pull auto-updates)"
-      else
-        skip "Power already installed"
-      fi
-    fi
-  else
-    skip "powers/service-approval/ missing"
-  fi
-else
-  skip "kiro-cli not installed — see https://kiro.dev/docs/cli"
 fi
 
 # ---------------------------------------------------------------------------

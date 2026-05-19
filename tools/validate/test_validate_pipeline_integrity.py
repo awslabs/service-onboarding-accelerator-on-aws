@@ -321,8 +321,39 @@ def test_iac_parameterized_passes(tmp_path: Path) -> None:
 # ---------- P5: framework coverage ----------
 
 
-def test_framework_coverage_missing_file_is_noop(tmp_path: Path) -> None:
-    assert check_framework_coverage(tmp_path) == []
+def test_framework_coverage_both_files_missing_fails_closed(tmp_path: Path) -> None:
+    """04-map/ exists but neither mapping-results.json nor
+    map-framework-mapped.json is present. Pre-fix this returned [] silently;
+    same Probe 33 pattern X1 closed for P2 and X2 closed for P6."""
+    errors = check_framework_coverage(tmp_path)
+    assert errors and "P5 FAIL" in errors[0] and "neither" in errors[0]
+
+
+def test_framework_coverage_corrupt_json_fails_closed(tmp_path: Path) -> None:
+    """A 1024+ byte mapping-results.json that fails to parse must
+    fail-closed (P7's size threshold is content-blind)."""
+    (tmp_path / "mapping-results.json").write_text("{not valid json" + "x" * 2000)
+    errors = check_framework_coverage(tmp_path)
+    assert errors and "P5 FAIL" in errors[0]
+
+
+def test_framework_coverage_no_mapping_key_fails_closed(tmp_path: Path) -> None:
+    """A file that parses but lacks the `framework_mapping` key must
+    fail-closed. P7 only enforces size, not content shape."""
+    (tmp_path / "mapping-results.json").write_text(
+        json.dumps({"controls": [{"id": "c1"}], "padding": "x" * 2000})
+    )
+    errors = check_framework_coverage(tmp_path)
+    assert errors and "P5 FAIL" in errors[0] and "framework_mapping" in errors[0]
+
+
+def test_framework_coverage_empty_mapping_list_fails_closed(tmp_path: Path) -> None:
+    """`framework_mapping: []` is the same shape as missing — fail-closed."""
+    (tmp_path / "mapping-results.json").write_text(
+        json.dumps({"framework_mapping": [], "padding": "x" * 2000})
+    )
+    errors = check_framework_coverage(tmp_path)
+    assert errors and "P5 FAIL" in errors[0] and "framework_mapping" in errors[0]
 
 
 def test_framework_coverage_high_passes(tmp_path: Path) -> None:
@@ -397,6 +428,23 @@ def test_verdict_no_errors_approved_passes(tmp_path: Path) -> None:
     assert check_verdict_consistency(tmp_path, integrity_errors_count=0) == []
 
 
+def test_verdict_h3_header_fails_closed(tmp_path: Path) -> None:
+    """A report with `### Verdict` H3 (instead of `## Verdict` H2) must
+    fail-closed. Pre-fix this returned [] silently — letting any verdict
+    through, even APPROVED with integrity failures."""
+    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n### Verdict\nAPPROVED\n")
+    errors = check_verdict_consistency(tmp_path, integrity_errors_count=3)
+    assert errors and "P6 FAIL" in errors[0] and "no `## Verdict` H2 header" in errors[0]
+
+
+def test_verdict_no_header_at_all_fails_closed(tmp_path: Path) -> None:
+    """A report without any verdict header (e.g., truncated mid-write)
+    must fail-closed for the same reason."""
+    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\nNo verdict here.\n")
+    errors = check_verdict_consistency(tmp_path, integrity_errors_count=0)
+    assert errors and "P6 FAIL" in errors[0]
+
+
 # ---------- validate_pipeline integration ----------
 
 
@@ -419,7 +467,7 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
     # Trigger P1 (missing mcp-calls.log at service root)
     # No mcp-calls.log created → will fail P1
 
-    # Trigger P3 (inverted SCP without Deny)
+    # Trigger P3 (SCP without at least one Deny)
     _write_policy(
         service / "05-generate",
         "scp-baseline.json",
@@ -429,3 +477,116 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
     errors = validate_pipeline(tmp_path)
     assert any("P1" in e for e in errors)
     assert any("P3" in e and "SCP has no Deny" in e for e in errors)
+
+
+# ---------- P1 sentinel anchoring ----------
+
+
+def test_pipeline_complete_sentinel_in_message_does_not_close_p1(tmp_path: Path) -> None:
+    """A pipeline.log line whose MESSAGE contains the literal sentinel text must
+    NOT close out P1 — only a real `[pipeline:complete:<VERDICT>]` source-tag
+    counts. This protects against the validator getting tricked by skill prose
+    that happens to quote the sentinel."""
+    leaked = (
+        "2026-05-14T18:32:01Z [07-summarize] [skill:summarize:end]  "
+        "wrote `[pipeline:complete:APPROVED]` reference to docs only\n"
+    )
+    (tmp_path / "pipeline.log").write_text(leaked)
+    errors = check_mcp_log(tmp_path)
+    # P1 should still fail (no real MCP calls AND no real sentinel).
+    assert errors and "P1" in errors[0]
+
+
+def test_pipeline_complete_sentinel_at_source_tag_closes_p1(tmp_path: Path) -> None:
+    """The real sentinel format closes out P1 retroactively — finalized runs
+    are exempt because the file is frozen at that point."""
+    line = (
+        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:APPROVED]  "
+        "summarize finalized; verdict=APPROVED\n"
+    )
+    (tmp_path / "pipeline.log").write_text(line)
+    assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_complete_sentinel_with_underscored_verdict(tmp_path: Path) -> None:
+    """All three closed-set verdicts close out P1."""
+    for verdict in ("APPROVED", "APPROVED_WITH_EXCEPTIONS", "REQUIRES_REMEDIATION"):
+        line = (
+            f"2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:{verdict}]  "
+            f"finalized; verdict={verdict}\n"
+        )
+        (tmp_path / "pipeline.log").write_text(line)
+        assert check_mcp_log(tmp_path) == [], f"verdict {verdict} should close P1"
+
+
+def test_pipeline_complete_sentinel_with_unknown_verdict_is_ignored(tmp_path: Path) -> None:
+    """A sentinel with an out-of-set verdict (e.g., a typo or future verdict)
+    should NOT close P1 — fail closed against unknown values."""
+    line = (
+        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:UNCLEAR]  "
+        "weird state\n"
+    )
+    (tmp_path / "pipeline.log").write_text(line)
+    errors = check_mcp_log(tmp_path)
+    assert errors and "P1" in errors[0]
+
+
+# ---------- P3 wildcard-only literal-only matching ----------
+
+
+def test_action_matches_wildcard_only_literal_match() -> None:
+    """A literal action present in the wildcard-only set is exempt."""
+    from validate_pipeline_integrity import _action_matches_wildcard_only
+    wildcard_only = {"datasync:DescribeAgent", "datasync:DescribeTask"}
+    assert _action_matches_wildcard_only("datasync:DescribeAgent", wildcard_only)
+
+
+def test_action_matches_wildcard_only_glob_no_longer_exempted() -> None:
+    """Globs (`Describe*`) are NOT exempted — even if some matching actions
+    are wildcard-only. SAR data is incomplete; literal-only matching keeps
+    the carve-out tight."""
+    from validate_pipeline_integrity import _action_matches_wildcard_only
+    wildcard_only = {"datasync:DescribeAgent"}
+    assert not _action_matches_wildcard_only("datasync:Describe*", wildcard_only)
+
+
+def test_action_matches_wildcard_only_unknown_action_not_exempted() -> None:
+    """An action not in the set is not exempted regardless of prefix overlap."""
+    from validate_pipeline_integrity import _action_matches_wildcard_only
+    wildcard_only = {"datasync:DescribeAgent"}
+    assert not _action_matches_wildcard_only("datasync:CreateTask", wildcard_only)
+
+
+# ---------- _load_wildcard_only_actions empty-prefix guard (F11) ----------
+
+
+def test_wildcard_only_loader_skips_bare_actions_when_prefix_empty(tmp_path: Path) -> None:
+    """When sar-facts.json omits service_prefix and an action has no prefix,
+    the loader must NOT emit `:Action` (which silently matches nothing)."""
+    from validate_pipeline_integrity import _load_wildcard_only_actions
+    assess_dir = tmp_path / "01-assess"
+    assess_dir.mkdir()
+    (assess_dir / "sar-facts.json").write_text(json.dumps({
+        "wildcard_only_actions": ["BareAction"],
+        "actions": [{"name": "AnotherBare", "resource_types": []}],
+    }))
+    controls_dir = tmp_path / "05-generate"
+    controls_dir.mkdir()
+    out = _load_wildcard_only_actions(controls_dir)
+    # Cross-service entries are still present, but no malformed ":Action" entries.
+    assert all(":" in a and not a.startswith(":") for a in out), out
+
+
+def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
+    """When service_prefix is present, bare actions are qualified properly."""
+    from validate_pipeline_integrity import _load_wildcard_only_actions
+    assess_dir = tmp_path / "01-assess"
+    assess_dir.mkdir()
+    (assess_dir / "sar-facts.json").write_text(json.dumps({
+        "service_prefix": "datasync",
+        "wildcard_only_actions": ["DescribeAgent"],
+    }))
+    controls_dir = tmp_path / "05-generate"
+    controls_dir.mkdir()
+    out = _load_wildcard_only_actions(controls_dir)
+    assert "datasync:DescribeAgent" in out

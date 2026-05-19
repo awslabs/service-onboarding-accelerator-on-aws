@@ -24,11 +24,12 @@ All registered in `mcp.json`. Auto-loaded when the Power activates:
 | `terraform` | stdio (Docker) | Terraform provider details, module scaffolding |
 | `kb-search` | stdio | Amazon Bedrock Knowledge Base — optional, for customer-specific mitigations |
 
-No MCP server is optional for the hard rules. Rule 2 requires every capability claim, API parameter, and condition key be verified via `awsknowledge`, `aws-documentation`, or `awsiac`.
+No MCP server is optional. P1 enforces a minimum count (≥10) of MCP calls per pipeline run; the strict expectation that every capability claim, API parameter, and condition key is MCP-verified lives in `service-approval-enforcement.md`.
 
 ## Tools used by agents
 
-Each agent in `agents/sa-*.json` declares:
+Each agent — both CLI (`cli/agents/sa-*.json`) and IDE (`ide/agents/sa-*.md`)
+formats, generated from `agents-src/sa-*.yaml` — declares:
 - `tools: ["*"]` — access to all standard Kiro tools
 - `allowedTools: ["fs_read", "fs_write", "execute_bash"]` — explicit allowlist
 - `includeMcpJson: true` — sees workspace MCP config
@@ -84,7 +85,7 @@ Each agent in `agents/sa-*.json` declares:
 
 ## Schema contracts
 
-11 JSON schemas in `/schemas/` enforce the shape of every state file. The helper at `/tools/validate/_schemas.py` wraps them via `schema_errors(doc, schema_name)`. Wired into `validate_state.py`.
+Every pipeline state file has a matching `schemas/<name>.schema.json` enforcing its shape. The helper at `/tools/validate/_schemas.py` wraps them via `schema_errors(doc, schema_name)`. Wired into `validate_state.py`.
 
 ## Validators
 
@@ -93,7 +94,7 @@ Each agent in `agents/sa-*.json` declares:
 | `tools/validate/validate_state.py` | Schema + cross-file integrity for state files |
 | `tools/validate/validate_controls.py` | Generated artifact checks (SCP format, IaC parameterization) |
 | `tools/validate/validate_deployable.py` | Tier 1 (static) + Tier 2 (AWS API) deployability |
-| `tools/validate/validate_pipeline_integrity.py` | Stop-hook enforcement of the 7 hard rules |
+| `tools/validate/validate_pipeline_integrity.py` | Stop-hook enforcement of P1–P7 integrity checks |
 | `tools/validate/validate_kms_consumers.py` | KMS key policy ↔ consumer resource cross-check |
 
 ## CLI 2.0 features used

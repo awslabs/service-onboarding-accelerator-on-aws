@@ -11,12 +11,12 @@ alwaysApply: true
 ```
 /
 ├── skills/                           (canonical)
-│   └── <18 SKILL.md files>
+│   └── <one SKILL.md per skills/<slug>/>
 ├── tools/                            (canonical)
 │   ├── validate/                     Python validators + hooks
 │   └── kb-search-mcp/                Bedrock KB MCP server
 ├── schemas/                          (canonical)
-│   └── <11 JSON Schema files>
+│   └── <one *.schema.json per state file>
 ├── data/                             (canonical)
 ├── rules/                            (canonical)
 ├── .claude-plugin/                   (symlink) — Claude Code discovery
@@ -31,36 +31,30 @@ alwaysApply: true
 
 ```
 powers/service-approval/
-├── POWER.md                          Manifest + frontmatter + body
-├── steering/
-│   ├── product.md                    (this) — what and who
-│   ├── tech.md                       stack, MCP servers, validators
-│   ├── structure.md                  (this file) — layout and naming
-│   ├── pipeline.md                   phase-by-phase execution guide
-│   ├── phase-research.md             loads for research-* agents
-│   ├── phase-validate.md             loads for validate agent
-│   ├── phase-map.md                  loads for map-* agents
-│   ├── phase-generate.md             loads for generate-* agents
-│   └── headless.md                   CI / headless invocation
-├── agents/
-│   ├── sa-assess.json
-│   ├── sa-research-mitigations.json
-│   ├── sa-research-capabilities.json
-│   ├── sa-research-api-surface.json
-│   ├── sa-research-attack-surface.json
-│   ├── sa-validate.json
-│   ├── sa-map-parse-framework.json
-│   ├── sa-map-generate-controls.json
-│   ├── sa-map-framework-mapping.json
-│   ├── sa-map-assemble.json
-│   ├── sa-generate-preventive.json
-│   ├── sa-generate-detective.json
-│   └── sa-generate-iac.json
-├── mcp.json                          MCP server registrations
-└── hooks/
-    ├── post-tool-use.json            PostToolUse matcher=fs_write
-    ├── stop.json                     Stop matcher=*
-    └── README.md
+├── POWER.md                              Manifest + frontmatter + body
+├── README.md                             Overview, install, prerequisites
+├── mcp.json                              MCP server registrations
+├── steering/                             Always-on + fileMatch-loaded guidance
+│   ├── product.md                        what and who (always-on)
+│   ├── tech.md                           stack, MCP servers, validators (always-on)
+│   ├── structure.md                      (this file) — layout and naming (always-on)
+│   ├── pipeline.md                       phase-by-phase execution guide
+│   ├── phase-research.md                 loads for research-* state files
+│   ├── phase-validate.md                 loads for validated.json
+│   ├── phase-map.md                      loads for map-* state files
+│   ├── phase-generate.md                 loads for 05-generate/ artifacts
+│   ├── headless.md                       CI / headless invocation
+│   └── service-approval-enforcement.md   skill-based execution guardrail
+├── agents-src/                           source-of-truth YAML — one sa-<slug>.yaml per agent
+│   └── sa-*.yaml                         (one per sub-skill)
+├── cli/agents/                           generated CLI format (JSON)
+│   └── sa-*.json                         (run tools/generate-kiro-agents.py to regenerate)
+└── ide/                                  generated IDE artifacts
+    ├── agents/sa-*.md                    (markdown agents the IDE loads)
+    └── hooks/                            (Kiro IDE hooks)
+        ├── stop.kiro.hook                pipeline-integrity Stop hook
+        ├── post-tool-use.kiro.hook       state-file PostToolUse hook
+        └── block-direct-state-writes.kiro.hook   skill-based-execution PreToolUse hook
 ```
 
 ## File naming conventions
@@ -68,10 +62,11 @@ powers/service-approval/
 | Kind | Pattern | Example |
 |------|---------|---------|
 | Skill | `skills/<slug>/SKILL.md` | `skills/research-mitigations/SKILL.md` |
-| Agent | `agents/sa-<slug>.json` | `agents/sa-research-mitigations.json` |
+| Agent (CLI) | `cli/agents/sa-<slug>.json` | `cli/agents/sa-research-mitigations.json` |
+| Agent (IDE) | `ide/agents/sa-<slug>.md` | `ide/agents/sa-research-mitigations.md` |
 | Steering | `steering/<topic>.md` | `steering/phase-research.md` |
 | Schema | `schemas/<name>.schema.json` | `schemas/research.schema.json` |
-| Hook | `hooks/<event>.json` | `hooks/stop.json` |
+| Hook | `ide/hooks/<event>.kiro.hook` | `ide/hooks/stop.kiro.hook` |
 | Validator | `tools/validate/validate_<scope>.py` | `tools/validate/validate_state.py` |
 | Test | `tools/validate/test_<validator>.py` | `tools/validate/test_validate_state.py` |
 | Control artifact | `.service-approval/<slug>/05-generate/<category>/<CTRL-ID>.<ext>` | `.service-approval/<slug>/05-generate/preventive/CTRL-ORG-PRV-001.json` |

@@ -55,11 +55,20 @@ to get the action list and condition keys for validation.
 
 ## MCP Call Logging
 
-Log every MCP call to `.service-approval/<slug>/mcp-calls.log`:
+**Required: emit canonical `mcp:<server>:call` events to `pipeline.log` after EVERY MCP tool invocation.** The Stop hook's P1 check (`tools/validate/validate_pipeline_integrity.py` — see `_MCP_CALL_TOKEN_RE`) anchors on the `[mcp:<server>:call]` token; free-form `[Step N] [API-Surface] ...` lines are NOT counted. The `_hook_log` auto-mirror copies canonical events into `mcp-calls.log` for free.
+
+After each MCP call, run:
+
+```bash
+python3 -m tools.validate.log \
+    --slug <slug> \
+    --phase 02-research \
+    --source mcp:<server> \
+    --verdict call \
+    --message "<tool-name>: <one-line description of query>"
 ```
-[Step N] [API-Surface] <mcp-server> <tool-name> — <description> — <result-summary>
-```
-Append immediately after each call. Use `>>` mode.
+
+Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail.
 
 ---
 

@@ -84,15 +84,19 @@ The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipelin
 - NO: "unverified_count = 0" → YES: "all items verified"
 - Apply all terminology rules from CLAUDE.md (see Terminology Rules section)
 
-Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections:
+Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections.
+Section headings are H2 (`##`) — the report's top-level title `# Service Approval
+Report — {Service}` is H1, so all section headers under it are H2. Downstream
+consumers (`skills/evidence/SKILL.md` awk extraction, `validate_pipeline_integrity.py`
+P6 verdict-consistency check) anchor on H2; writing H3 here silently breaks both.
 
-### Verdict
+## Verdict
 [Verdict string with date, service name, resource count]
 
-### Executive Summary
+## Executive Summary
 [Coverage numbers: N controls generated, N framework objectives covered, N mitigations addressed, test result]
 
-### Security Posture Assessment
+## Security Posture Assessment
 **Include this section only if `assessment-summary.md` exists.**
 - Extract GAPS Summary from assessment-summary.md (total gaps, total customer actions)
 - List each domain's gap count: IAM ({N}), LOGGING ({N}), INFRA ({N}), DATA ({N}), INCIDENT ({N})
@@ -101,20 +105,24 @@ Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sect
 - Include checkpoint verification summary from checkpoint-results.json (if available):
   RCP: {Yes/No}, FIPS: {Yes/No}, Declarative Policies: {Yes/No}, RAM: {Yes/No}
 
-### Framework Coverage Matrix ({framework-name})
+## Framework Coverage Matrix ({framework-name})
 [Full table from Step 2 — all framework objectives, mapped or N/A]
 Use the framework name dynamically from `mapping-results.json.framework.name`:
-- Default (no input): "CSA CCMv4 Coverage Matrix"
-- Customer NIST file: "NIST 800-53 Coverage Matrix"
-- Customer CIS file: "CIS Benchmarks Coverage Matrix"
-- Customer ISO file: "ISO 27001 Coverage Matrix"
+- Default (no input, interactive intake): "CSA CCMv4 Coverage Matrix"
+- Customer NIST file (CLI `--framework=nist` only): "NIST 800-53 Coverage Matrix"
+- Customer CIS file (CLI `--framework=cis` only): "CIS Benchmarks Coverage Matrix"
+- Customer ISO file (CLI `--framework=iso` only): "ISO 27001 Coverage Matrix"
 - Customer custom file: "Custom Framework Coverage Matrix"
 
-### Mitigation Traceability
+> Note: as of 2026-05-16, interactive runs are narrowed to CCMv4 by intake.
+> The non-CCMv4 branches above are reachable only when an advanced operator
+> bypasses intake with `--framework=<type>`.
+
+## Mitigation Traceability
 [Full table from Step 3 — all customer mitigations with control and framework mappings]
 Include coverage summary: N/N mitigations fully covered, N partially covered, N uncovered.
 
-### Threat Model Coverage
+## Threat Model Coverage
 **Include this section only if `mapping-results.json` contains `attack_coverage`.**
 
 This section renders threat model coverage regardless of which threat model was used as input
@@ -159,19 +167,19 @@ STRIDE coverage summary showing which STRIDE categories have controls addressing
 [repeat for each STRIDE category]
 ```
 
-### Control Inventory
+## Control Inventory
 [Per-layer table from Step 4, organized by Controls Matrix cell]
 
-### Test Evidence
+## Test Evidence
 [Config rule finding count, Config compliance status, mitigation coverage %, framework coverage % — or "Test not run" if skipped]
 
-### UNVERIFIED Items
+## UNVERIFIED Items
 [List with reasons, or "None — all items verified" if unverified_count = 0]
 
-### Artifact Manifest
+## Artifact Manifest
 [Full file list from Step 5]
 
-### Evidence & Attestation
+## Evidence & Attestation
 **NEW:** If `.service-approval/<slug>/08-evidence/` exists, append this section:
 
 Runtime validation complete. Phase 7 Evidence runner executed CLI probes against deployed resources to verify each control is enforced. See:
@@ -183,14 +191,14 @@ Evidence coverage: {pass_count} / {total_controls} controls verified PASS, {not_
 
 Otherwise, omit this section (Evidence phase was not run).
 
-### Next Steps
+## Next Steps
 Deployment order:
 1. **Org level**: Apply SCPs, RCPs, tag policies via AWS Organizations
 2. **Account level**: Deploy Config conformance pack, Config rules, Access Analyzer
 3. **Service level**: Deploy CloudFormation Hooks, Config org rules
 4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `05-generate/iac/`
 
-### Manual Deploy Commands
+## Manual Deploy Commands
 
 **Render this section only when `intake-manifest.json.testing.mode == "manual-cli"`.**
 
@@ -266,6 +274,54 @@ PY
 
 Append the rendered blocks to `APPROVAL-REPORT.md` under this heading. Skip the
 entire section when `testing.mode` is anything other than `manual-cli`.
+
+## Pipeline-Complete Sentinel
+
+After APPROVAL-REPORT.md is written, emit a terminal-state sentinel to
+`pipeline.log`. This signals to the Stop hook (`validate_pipeline_integrity.py`
+P1 check) that the run is finalized — the file is frozen, and remediation-only
+checks like the MCP-call-count gate cannot be retroactively satisfied.
+Without this sentinel, the Stop hook re-fires forever on completed runs that
+happen to have a P1 violation in their pipeline.log.
+
+Emit AFTER the report file is closed and AFTER the print summary, only when
+Phase 7 Evidence is NOT in scope (Evidence's Step 11 owns the sentinel when
+it runs). Detect Phase 7-in-scope by `intake-manifest.json.testing.mode ==
+"full-deploy"`.
+
+```bash
+# Map verdict to sentinel form. Drop any parenthesized qualifier first so
+# "APPROVED (test not run)" canonicalizes to "APPROVED" (the qualifier is
+# audit-trail metadata, not a distinct verdict — see "Sentinel canonicalization"
+# note below). Then uppercase and fold spaces/hyphens to underscores.
+VERDICT_TAG=$(echo "<verdict>" \
+    | sed -E 's/ *\(.*\)$//' \
+    | tr '[:lower:]' '[:upper:]' | tr ' -' '__')
+# e.g., "APPROVED with exceptions" -> "APPROVED_WITH_EXCEPTIONS"
+# e.g., "APPROVED (test not run)"  -> "APPROVED"
+
+python3 -m tools.validate.log \
+    --slug <slug> \
+    --phase 07-summarize \
+    --source pipeline:complete \
+    --verdict "${VERDICT_TAG}" \
+    --message "summarize finalized; verdict=${VERDICT_TAG}"
+```
+
+**Sentinel canonicalization:** the validator's closed allowlist is
+`APPROVED | APPROVED_WITH_EXCEPTIONS | REQUIRES_REMEDIATION`. Parenthesized
+qualifiers in the verdict table (e.g., `APPROVED (test not run)`) are
+*informational metadata*, not distinct verdicts — they describe which
+subset of validation ran, not whether the run was approved. The sentinel
+canonicalizes them away so the gate stays binary; consumers needing the
+original qualifier read `APPROVAL-REPORT.md` directly, not the sentinel
+token. Adding new parenthesized variants does NOT require validator
+allowlist changes; adding a new bare verdict (e.g., a hypothetical
+`PENDING`) does.
+
+The validator anchors on the literal token `[pipeline:complete:<VERDICT>]`,
+where `<VERDICT>` is uppercase letters with underscores. Mid-flight runs
+without the sentinel still get the strict P1 check.
 
 Print:
 ```

@@ -1,6 +1,6 @@
 # Service Approval Plugin
 
-Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a 9-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) and maps everything to your control framework (CCMv4, NIST 800-53, CIS, ISO 27001).
+Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a 9-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) and maps everything to CCMv4. Other frameworks (NIST 800-53, CIS, ISO 27001) remain available behind the `--framework=<type>` CLI flag for advanced operators; the interactive intake narrows to CCMv4.
 
 ## What it produces
 
@@ -74,8 +74,8 @@ The pipeline runs as 21 discrete skills under [`skills/`](skills/). Each one is 
 | [`map-assemble`](skills/map-assemble/SKILL.md) | Deterministic assembly of map sub-skill outputs into final mapping-results.json, controls-catalog.md, and framework-mapping.md. Builds traceability, identifies coverage gaps, and runs comprehensive validation. No LLM reasoning required — pure data assembly. |
 | [`map-framework-mapping`](skills/map-framework-mapping/SKILL.md) | Map generated controls to framework objectives with per-objective analysis, confidence scoring, and strict quality gates. Produces map-framework-mapped.json consumed by map-assemble. The hardest sub-skill — requires careful per-objective reasoning, not batch keyword matching. |
 | [`map-generate-controls`](skills/map-generate-controls/SKILL.md) | Generate security controls from mitigations x capabilities, organized by Category x Scope matrix. Produces map-controls-generated.json with rich metadata for downstream framework mapping. Consumes validated.json. |
-| [`map-parse-framework`](skills/map-parse-framework/SKILL.md) | Parse a customer-provided control framework file (xlsx/json/md) into normalized framework_objectives[]. Produces map-framework-parsed.json consumed by map-assemble. Supports CCMv4, NIST 800-53, CIS Benchmarks, ISO 27001. |
-| [`map`](skills/map/SKILL.md) | Map verified service capabilities against customer-provided control framework and threat model. Produces mapping-results.json, controls-catalog.md, and framework-mapping.md. Supports pluggable frameworks: CCMv4, NIST 800-53, CIS Benchmarks, ISO 27001, etc. Split into 4 focused sub-skills for better accuracy; this skill orchestrates them. |
+| [`map-parse-framework`](skills/map-parse-framework/SKILL.md) | Parse a customer-provided control framework file (xlsx/json/md) into normalized framework_objectives[]. Produces map-framework-parsed.json consumed by map-assemble. Supports CCMv4, NIST 800-53, CIS Benchmarks, ISO 27001 (interactive intake is CCMv4-only; `--framework=<type>` CLI bypass for advanced operators). |
+| [`map`](skills/map/SKILL.md) | Map verified service capabilities against customer-provided control framework and threat model. Produces mapping-results.json, controls-catalog.md, and framework-mapping.md. Supports pluggable frameworks: CCMv4, NIST 800-53, CIS Benchmarks, ISO 27001, etc. (interactive intake is CCMv4-only; `--framework=<type>` CLI bypass for advanced operators). Split into 4 focused sub-skills for better accuracy; this skill orchestrates them. |
 | [`research-api-surface`](skills/research-api-surface/SKILL.md) | Discover the complete API surface for an AWS service — all operations (control-plane AND data-plane), parameters, and cross-reference validation against SAR condition keys. Produces research-api-surface.json consumed by the research merge step. |
 | [`research-attack-surface`](skills/research-attack-surface/SKILL.md) | Identify applicable MITRE ATT&CK Cloud techniques for the target service based on API surface analysis and customer STRIDE-based threat model. Produces research-attack-surface.json consumed by the research merge step. |
 | [`research-capabilities`](skills/research-capabilities/SKILL.md) | Discover AWS service security capabilities (IAM, encryption, network, logging, org-policies) using MCP servers and assessment artifacts. Produces research-capabilities.json consumed by the research merge step. |
@@ -97,7 +97,7 @@ Each phase consumes the previous phase's output — the pipeline is a strict DAG
 Input Files ──► Assess ──► Research ──► Validate ──► Map ──► Generate ──► Test ──► Summarize ──► Evidence
                   │           │            │          │         │           │          │              │
               sar-facts   research.json  validated  mapping  controls/  test-      APPROVAL-   attestation-
-              checkpoints  (merged from  .json      results  (85 files) results    REPORT.md   report.md
+              checkpoints  (merged from  .json      results  (per-svc)  results    REPORT.md   report.md
               assessment    4 sub-skills)           .json                          ARTIFACT-   attestation-
                                                                                   FLOW-MATRIX  results.json
 ```
@@ -164,7 +164,7 @@ See [`docs/INSTALL.md`](docs/INSTALL.md) for per-client notes. Windows needs Dev
 | Client | Prerequisite | Why |
 |--------|--------------|-----|
 | Claude Code / Copilot | none beyond the client itself | auto-discover from repo files |
-| Kiro CLI / IDE | `kiro-cli` or Kiro.app | installer wires both |
+| Kiro IDE | Kiro.app | manual Power install via the IDE Powers panel |
 | Any client using `aws-documentation` / `awsiac` MCP | [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH | MCP servers run via `uvx awslabs.*@latest` |
 | Any client using `terraform` MCP | Docker Desktop running | stdio MCP runs in a container |
 
@@ -261,7 +261,7 @@ Note: if you do not provide any values, or custom threat models / frameworks in 
 | `./input-folder` | Folder with input files (`.md`, `.json`, `.xlsx`, `.pdf`, `.docx`) | None |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`, `s3`, `kms`) | Required if no folder |
 | `--env=<profile>` | AWS CLI profile for Tester and Tier 2 validation | None (skips) |
-| `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | Auto-detect |
+| `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | `ccmv4` (asked at intake; flag bypasses the prompt) |
 | `--framework-file=<path>` | Explicit path to framework file | Auto-detect from input |
 | `--skip-test` | Skip deployment validation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
@@ -312,12 +312,11 @@ python3 tools/validate/validate_deployable.py --profile delegated-admin .service
 │   ├── post-process/              ← deterministic output post-processing
 │   ├── sync-ide-configs.py        ← regenerates per-client manifests from manifest.yaml
 │   └── generate-kiro-agents.py    ← emits IDE .md + CLI 2.0 .json from agents-src/*.yaml
-├── schemas/                       ← 11 JSON Schemas for pipeline state files
+├── schemas/                       ← one *.schema.json per pipeline state file
 ├── data/                          ← SAR slugs, ATT&CK matrix, KMS consumers
 ├── rules/                         ← safety rules
 ├── commands/                      ← Claude Code /service-approval slash command
 ├── hooks/                         ← Claude Code PostToolUse + Stop hooks
-├── schemas/                       ← JSON schemas for state files
 ├── plugin-docs/                   ← plugin quick-start reference
 │
 ├── .claude-plugin/                ← Claude Code plugin manifest (generated)

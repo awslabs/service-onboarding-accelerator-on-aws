@@ -13,7 +13,7 @@ version: 1.0.0
 description: >
   Generate AWS security controls and compliant IaC for any AWS service.
   Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate,
-  Test, Summarize, Evidence) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
+  Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).
 
 author:
   name: GFS PACE
@@ -182,12 +182,15 @@ clients:
     skills_discovery: symlink
   kiro:
     manifest: powers/service-approval/POWER.md
-    agents_dir: powers/service-approval/agents/
-    hooks_dir: powers/service-approval/hooks/
+    cli_agents_dir: powers/service-approval/cli/agents/
+    ide_agents_dir: powers/service-approval/ide/agents/
+    ide_hooks_dir: powers/service-approval/ide/hooks/
     steering_dir: powers/service-approval/steering/
     mcp_config: powers/service-approval/mcp.json
-    # Kiro CLI 2.0 uses JSON agent definitions (one per sub-skill)
-    agent_format: cli-2.0-json
+    agents_src_dir: powers/service-approval/agents-src/
+    # CLI consumes JSON; IDE consumes markdown. Both are generated from
+    # agents-src/ via tools/generate-kiro-agents.py.
+    agent_format: dual
   copilot:
     instructions: .github/copilot-instructions.md
     agents_dir: .github/agents/
@@ -208,7 +211,7 @@ integrity_checks:
     title: Unique verification notes
     max_duplication_pct: 50
   - id: P3
-    title: IAM policy logic (inverted SCPs, permissive boundaries)
+    title: IAM policy logic (mismatched StringEquals/StringNotEquals keys, broad Allow on Resource:* without Condition, SCP without Deny)
   - id: P4
     title: IaC parameterization (no placeholder accounts/ARNs)
   - id: P5
@@ -217,6 +220,8 @@ integrity_checks:
     min_rationale_chars: 30
   - id: P6
     title: Verdict consistency (no false APPROVED)
+  - id: P7
+    title: Phase-output completeness
 
 # ---------------------------------------------------------------------------
 # Test policy — what the sync tool's --check mode verifies.

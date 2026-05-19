@@ -1,7 +1,7 @@
 ---
 name: service-approval
 displayName: AWS Service Security Controls Generator
-description: Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 / NIST 800-53 / CIS / ISO frameworks.
+description: Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).
 keywords:
 - aws
 - security
@@ -34,10 +34,10 @@ version: 1.0.0
 
 ## Overview
 
-This Power drives a 9-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to a control framework (CCMv4, NIST 800-53, CIS, ISO), and produces a full set of deployable artifacts.
+This Power drives a 9-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to CCMv4 (other frameworks are deferred), and produces a full set of deployable artifacts.
 
 **Key capabilities:**
-- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 20 sub-skills
+- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 21 sub-skills
 - **Parallel execution** — 4 research sub-skills, 3 generate sub-skills run concurrently via Kiro's `/spawn` command
 - **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge`, `aws-documentation`, and `awsiac` MCPs. Hardcoded values from training data are banned.
 - **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks, CDK/CDKTF/Terraform/CloudFormation templates
@@ -67,12 +67,31 @@ Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"
 
 | Parameter | Description | Required |
 |-----------|-------------|----------|
-| `service` | AWS service ID (e.g., `s3`, `kms`, `bedrock-agentcore-control`) | Yes (unless input folder provided) |
-| input folder | Customer docs (.md, .json, .xlsx, .pdf, .docx) | No |
-| `env` | AWS CLI profile for Phase 5 | No (skips Test if absent) |
-| `framework` | `ccmv4`, `nist`, `cis`, `iso` | Auto-detected |
-| `skip-test` | Skip deployment validation | No |
-| `dry-run` | Lint only, no deployment | No |
+| `service` | AWS service ID (e.g., `s3`, `kms`, `bedrock-agentcore-control`) | Asked during Intake if not supplied as a flag |
+| input folder | Customer docs (.md, .json, .xlsx, .pdf, .docx) | No (Intake creates `./input/` if missing) |
+| `env` | AWS CLI profile for Phase 5 | Asked during Intake if Testing mode is `full-deploy` or `dry-run` |
+| `framework` | `ccmv4` for both Kiro Power and Claude Code (interactive intake is CCMv4-only). Multi-framework parsing remains available via the `--framework=<type>` CLI flag for advanced operators. | Asked during Intake if not supplied as a flag. **Not auto-detected silently.** |
+| `skip-test` | Skip deployment validation (equivalent to Testing mode `skip`) | Asked during Intake if not supplied as a flag |
+| `dry-run` | Lint only, no deployment (equivalent to Testing mode `dry-run`) | Asked during Intake if not supplied as a flag |
+
+### Intake is mandatory — defaults are NOT silently applied
+
+Intake's framework prompt and testing-mode prompt MUST run on every
+invocation unless the corresponding CLI flag was supplied (`--framework=`,
+`--skip-test`, `--dry-run`, `--from-intake=`). The absence of a flag is
+NOT permission to apply the documented default — it is a signal to ASK
+the user.
+
+The Power's intake agent (`agents-src/sa-intake.yaml`) is the source of
+truth for prompt behavior. It pins Branch B turn-taking (one question
+per turn, `>>> WAITING FOR YOUR REPLY` marker, no further tool calls in
+the same turn) because Kiro lacks an `AskUserQuestion`-style blocking
+primitive.
+
+Documented defaults (this file, `skills/intake/defaults.yaml`, the
+orchestrator's flag table) apply ONLY when the user's interactive reply
+to a specific prompt is literally empty/blank — never as a substitute
+for the prompt itself.
 
 ## Pipeline
 
@@ -101,27 +120,33 @@ Read `steering/pipeline.md` in full — that file is the authoritative phase-by-
 guide. For deep dives into specific phases, `steering/phase-*.md` loads contextually
 when Kiro routes the task.
 
-Agent definitions for each sub-skill live in `agents/sa-*.json`. Kiro CLI 2.0 loads
-these from `.kiro/agents/` at workspace scope after this Power is installed.
+Agent definitions live in `cli/agents/sa-*.json` (CLI format) and
+`ide/agents/sa-*.md` (IDE format), both generated from `agents-src/*.yaml`.
+Kiro IDE loads `.md` files from `.kiro/agents/`; the CLI consumes the `.json`
+form. Run `python3 tools/generate-kiro-agents.py` to regenerate after editing
+the source YAML.
 
 ## Hard rules — no shortcuts
 
-The Stop hook (`hooks/stop.json`) runs `tools/validate/hook_stop.py` which invokes
-`validate_pipeline_integrity.py`. The hook blocks the Stop event (exit code 2) on
-any of these violations:
+The Stop hook (`ide/hooks/stop.kiro.hook`) runs `tools/validate/hook_stop.py` which invokes
+`validate_pipeline_integrity.py`. The hook blocks the Stop event (exit code 2) on any of
+these P1–P7 failure signals (mirrors `validate_pipeline_integrity.py` module docstring):
 
-1. Never write a one-shot generator script that hardcodes state or controls. Run every phase through its `SKILL.md`.
-2. Every capability claim, API parameter, and condition key must be verified via MCP. Hardcoded values from training data are banned.
-3. Log every MCP call to `.service-approval/<slug>/mcp-calls.log`. Minimum 10 entries enforced.
-4. Every item in `validated.json` must have a unique `verification_note` specific to that item. Templated notes fail integrity checks.
-5. IaC templates must be parameterized. No hardcoded account IDs (`123456789012`) or placeholder ARNs.
-6. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals` in the same Condition must target the same key.
-7. Verdict matches integrity. Any integrity failure → verdict is `REQUIRES REMEDIATION`, not `APPROVED`.
+- **P1** — `pipeline.log` / `mcp-calls.log` missing or too few MCP calls (≥10 required, exempted by `[pipeline:complete:<VERDICT>]` terminal sentinel for finalized runs).
+- **P2** — `validated.json` has templated or empty verification notes (≥50% uniqueness required).
+- **P3** — IAM policy logic errors (mismatched `StringEquals`/`StringNotEquals` keys, broad Allow on `Resource:*` without Condition, SCP without Deny).
+- **P4** — IaC templates contain placeholder account IDs (`123456789012`, `000000000000`, `111111111111`) or placeholder ARNs.
+- **P5** — framework coverage below 15% with no per-objective rationale.
+- **P6** — verdict mismatch (`APPROVED` emitted despite integrity failures).
+- **P7** — phase-output completeness: every phase dir on disk must contain its declared outputs (`mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`, etc.) at min-size thresholds.
+
+Cultural rules (skill-based execution, no one-shot generator scripts) live in
+[`steering/service-approval-enforcement.md`](steering/service-approval-enforcement.md), not in this list.
 
 ## Output
 
 - `.service-approval/APPROVAL-REPORT.md` — final report + CCMv4 coverage matrix
-- `.service-approval/<slug>/05-generate/` — all generated artifacts (85+ files)
+- `.service-approval/<slug>/05-generate/` — all generated artifacts (per-service; see `steering/pipeline.md` for per-category ranges)
 - `.service-approval/<slug>/` — pipeline state files per phase (01-assess/, 02-research/, 03-validate/, 04-map/, 05-generate/, 06-test/)
 - `.service-approval/ARTIFACT-FLOW-MATRIX.md` — per-artifact input/output dependency graph
 
@@ -138,19 +163,15 @@ If `APPROVED` appears despite integrity failures, the Stop hook will force `REQU
 
 ### Headless mode
 
-For CI integration, set `KIRO_API_KEY` and invoke:
-```bash
-kiro-cli --no-interactive --trust-tools="aws-documentation,awsknowledge,awsiac,terraform" \
-  "run service approval for s3"
-```
-See `steering/headless.md` for the full CI recipe.
+For CI integration, run the Power through the Kiro IDE's headless harness or
+through Claude Code's CLI. See `steering/headless.md` for the full CI recipe.
 
 ## Resources
 
 - Agent Skills spec: https://agentskills.io
-- Kiro CLI docs: https://kiro.dev/docs/cli
+- Kiro docs: https://kiro.dev/docs
 - CCMv4 reference: https://cloudsecurityalliance.org/research/cloud-controls-matrix
 
 ---
 
-**License:** MIT
+**License:** Apache-2.0
