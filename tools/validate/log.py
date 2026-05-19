@@ -43,8 +43,8 @@ def main() -> int:
                         help="Source identifier (e.g. 'skill:map-assemble', 'mcp:awsknowledge', "
                              "'script:smoke-deploy-test', 'hook:post-tool-use')")
     parser.add_argument("--verdict", required=True,
-                        help="Status keyword (start|end|retry|halt|pass|fail|warn|reject|error|"
-                             "call|response)")
+                        help="Status keyword (start|end|retry|halt|pass|fail|warn|snoozed|"
+                             "reject|error|call|response)")
     parser.add_argument("--message", default="", help="Single-line message")
     parser.add_argument("--file-path", help="Artifact path (used to resolve slug/phase if not given)")
     parser.add_argument("--extra", action="append", default=[],
