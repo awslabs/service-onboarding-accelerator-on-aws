@@ -9,7 +9,6 @@ production code. It runs both a literal substring search AND a regex pass
 that catches dynamic constructions (Path("...") / "state", os.path.join, etc.).
 """
 import os
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -47,6 +46,7 @@ _ALLOWED_FILENAMES = (
     "tools/paths.py",               # W1 — legacy_state_dir() documents the path
     "hook_post_tool_use.py",        # legacy detection + migration warning text
     "generate-kiro-agents.py",      # W6 generator (only describes paths in prose comments)
+    "block-direct-state-writes.kiro.hook",  # Kiro guardrail prompt names the legacy paths it blocks
     "README.md",
     "CLAUDE.md",
     "AGENTS.md",
@@ -119,6 +119,19 @@ def _run_git_grep(pattern: str, root: Path, regex: bool = False) -> list[str]:
     return result.stdout.strip().split("\n")
 
 
+# R16 grep patterns — used by both the production gate and the
+# trip-case (test_r16_catches_dynamic_constructions). A future regex
+# tightening must update only these constants; both the production
+# pass and the trip-case re-resolve to the same pattern strings.
+_R16_STATE_PASS1 = r"\.service-approval/state[/\"']"
+_R16_STATE_PASS2 = r"\.service-approval[\"'][^\"']*[\"']state[\"']"
+_R16_STATE_PASS3 = r"\.service-approval/[^\"'/ ]+/state([-/]|[\"' ])"
+
+_R16_CONTROLS_PASS1 = r"\.service-approval/controls[/\"']"
+_R16_CONTROLS_PASS2 = r"\.service-approval[\"'][^\"']*[\"']controls[\"']"
+_R16_CONTROLS_PASS3 = r"\.service-approval/[^\"'/ ]+/controls([-/]|[\"' ])"
+
+
 def _violations(matches: list[str], extra_filter=None) -> list[str]:
     """Filter raw `git grep` output through the allowlist."""
     out = []
@@ -154,29 +167,22 @@ def test_no_legacy_state_refs():
     """
     root = _repo_root()
 
-    matches_literal = _run_git_grep(".service-approval/state/", root, regex=False)
+    # Pass 1: literal substring `.service-approval/state` followed by `/`, `"`,
+    # or `'` (close-quote). Catches both `.service-approval/state/` (path
+    # continuation) and `.service-approval/state"`/`.service-approval/state'`
+    # (single-string `Path(".service-approval/state")` form). Without this
+    # alternation, a single-quoted-literal with no trailing slash escapes Pass 1
+    # and (because there's no quote-comma split) Passes 2 and 3 too.
+    matches_literal = _run_git_grep(_R16_STATE_PASS1, root, regex=True)
     # Pass 2: Path("...") / "state", os.path.join("...", "state", ...)
     # Accepts any non-quote chars (whitespace, comma, slash, paren) between
     # the closing quote of ".service-approval" and the opening quote of "state".
-    # POSIX-extended regex: [^\"'] matches anything except a quote.
-    matches_construct = _run_git_grep(
-        r"\.service-approval[\"'][^\"']*[\"']state[\"']",
-        root,
-        regex=True,
-    )
+    matches_construct = _run_git_grep(_R16_STATE_PASS2, root, regex=True)
     # Pass 3: f-strings where 'state' is a path segment under
     # .service-approval/{anything}/state — the legacy flat layout.
-    # The legacy layout is `.service-approval/state/...`; the new per-slug
-    # layout has `state` only as a substring of `validate` phase suffix
-    # (`03-validate`), never as its own segment. So we match exactly:
-    #   .service-approval/{ANYTHING-not-containing-slash-or-quote}/state[-/]
-    # The `[-/"']` lookahead prevents matching `state` as part of a longer
-    # token (e.g. `state-machine.json` matches; `validated.json` doesn't).
-    matches_fstring = _run_git_grep(
-        r"\.service-approval/[^\"'/ ]+/state([-/]|[\"' ])",
-        root,
-        regex=True,
-    )
+    # The new per-slug layout has `state` only as a substring of `validate`
+    # phase suffix (`03-validate`), never as its own segment.
+    matches_fstring = _run_git_grep(_R16_STATE_PASS3, root, regex=True)
 
     all_matches = matches_literal[:]
     for m in matches_construct + matches_fstring:
@@ -200,18 +206,14 @@ def test_no_legacy_controls_refs():
     """
     root = _repo_root()
 
-    matches_literal = _run_git_grep(".service-approval/controls/", root, regex=False)
-    matches_construct = _run_git_grep(
-        r"\.service-approval[\"'][^\"']*[\"']controls[\"']",
-        root,
-        regex=True,
-    )
+    matches_literal = _run_git_grep(_R16_CONTROLS_PASS1, root, regex=True)
+    matches_construct = _run_git_grep(_R16_CONTROLS_PASS2, root, regex=True)
     # Same pattern as state: legacy `controls/` is a top-level segment.
     # The new layout puts `controls` only inside file names
     # (`controls-catalog.md`, `map-controls-generated.json`) or after a
     # longer prefix (`05-generate/...`), never as `<slug>/controls`.
     matches_fstring = _run_git_grep(
-        r"\.service-approval/[^\"'/ ]+/controls([-/]|[\"' ])",
+        _R16_CONTROLS_PASS3,
         root,
         regex=True,
     )
@@ -251,9 +253,7 @@ def test_r16_positive_trip(tmp_path, monkeypatch):
     Construct a tmp git repo with a single offending file; run the same
     `git grep` invocation; assert the result is non-empty.
     """
-    git = shutil.which("git")
-    if git is None:
-        pytest.skip("git not available on PATH")
+    git = _git_or_skip()
 
     # Initialize a tmp git repo
     subprocess.run([git, "init", "-q"], cwd=tmp_path, check=True)
@@ -286,22 +286,15 @@ def test_r16_positive_trip(tmp_path, monkeypatch):
     )
 
 
-@pytest.mark.parametrize("offending_line", [
-    # Literal substring (pass 1)
-    'OUTPUT = ".service-approval/state/output.json"',
-    # Path() / "state" (pass 2 — quote-comma-quote / Path-slash construction)
-    'OUTPUT = Path(".service-approval") / "state" / "output.json"',
-    'OUTPUT = os.path.join(".service-approval", "state", "output.json")',
-    # F-string with placeholder slug + state segment (pass 3 — the M1 evasion)
-    'OUTPUT = f".service-approval/{slug}/state/output.json"',
-    'OUTPUT = f".service-approval/{slug}/state-x/output.json"',
-])
-def test_r16_catches_dynamic_constructions(tmp_path, offending_line):
-    """R16 must catch all 5 dynamic-construction evasions, not just literal subdirs."""
-    git = shutil.which("git")
-    if git is None:
-        pytest.skip("git not available on PATH")
+def _exercise_r16_trip(tmp_path, offending_line: str, patterns: list[str]) -> None:
+    """Build a tmp git repo containing `offending_line` and assert that at
+    least one of the given R16 regex patterns matches via `git grep -E`.
 
+    Shared by the state-side and controls-side parametrized trip-cases so
+    both gates exercise the same fixture-build flow against the same
+    module-level constants the production tests use.
+    """
+    git = _git_or_skip()
     subprocess.run([git, "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run([git, "config", "user.email", "r16-test@example.com"], cwd=tmp_path, check=True)
     subprocess.run([git, "config", "user.name", "r16-test"], cwd=tmp_path, check=True)
@@ -313,23 +306,65 @@ def test_r16_catches_dynamic_constructions(tmp_path, offending_line):
     subprocess.run([git, "add", "."], cwd=tmp_path, check=True)
     subprocess.run([git, "commit", "-qm", "synthetic"], cwd=tmp_path, check=True)
 
-    # Each pattern in the production R16 test must catch the offending line.
-    # We invoke the actual production patterns to assert they fire.
-    p1 = subprocess.run([git, "grep", "-nF", ".service-approval/state/"], capture_output=True, text=True, cwd=tmp_path)
-    p2 = subprocess.run(
-        [git, "grep", "-nE", r"\.service-approval[\"'][^\"']*[\"']state[\"']"],
-        capture_output=True, text=True, cwd=tmp_path,
-    )
-    p3 = subprocess.run(
-        [git, "grep", "-nE", r"\.service-approval/[^\"'/ ]+/state([-/]|[\"' ])"],
-        capture_output=True, text=True, cwd=tmp_path,
-    )
-    matched = (p1.returncode == 0) or (p2.returncode == 0) or (p3.returncode == 0)
+    results = [
+        subprocess.run(
+            [git, "grep", "-nE", pat],
+            capture_output=True, text=True, cwd=tmp_path,
+        )
+        for pat in patterns
+    ]
+    matched = any(r.returncode == 0 for r in results)
     assert matched, (
         f"R16 failed to catch offending line: {offending_line}\n"
-        f"  p1 (literal):     rc={p1.returncode} {p1.stdout!r}\n"
-        f"  p2 (construct):   rc={p2.returncode} {p2.stdout!r}\n"
-        f"  p3 (f-string):    rc={p3.returncode} {p3.stdout!r}"
+        + "\n".join(
+            f"  {pat!r}: rc={r.returncode} {r.stdout!r}"
+            for pat, r in zip(patterns, results)
+        )
+    )
+
+
+@pytest.mark.parametrize("offending_line", [
+    # Literal substring (pass 1)
+    'OUTPUT = ".service-approval/state/output.json"',
+    # Path() / "state" (pass 2 — quote-comma-quote / Path-slash construction)
+    'OUTPUT = Path(".service-approval") / "state" / "output.json"',
+    'OUTPUT = os.path.join(".service-approval", "state", "output.json")',
+    # F-string with placeholder slug + state segment (pass 3 — the M1 evasion)
+    'OUTPUT = f".service-approval/{slug}/state/output.json"',
+    'OUTPUT = f".service-approval/{slug}/state-x/output.json"',
+    # PurePath / single-quoted Path construction (matches pass 2)
+    "OUTPUT = Path('.service-approval') / 'state' / 'a.json'",
+    # F-string with bare `state` segment, no trailing slash (matches pass 3
+    # via the [-/\"' ] character class)
+    'OUTPUT = f".service-approval/{slug}/state"  # bare segment',
+])
+def test_r16_state_catches_dynamic_constructions(tmp_path, offending_line):
+    """Every state-side parametrize case must trip _R16_STATE_PASS1/2/3."""
+    _exercise_r16_trip(
+        tmp_path, offending_line,
+        [_R16_STATE_PASS1, _R16_STATE_PASS2, _R16_STATE_PASS3],
+    )
+
+
+@pytest.mark.parametrize("offending_line", [
+    # Literal substring with trailing slash
+    'OUTPUT = ".service-approval/controls/output.json"',
+    # Path() / "controls" (quote-comma-quote / Path-slash construction)
+    'OUTPUT = Path(".service-approval") / "controls" / "output.json"',
+    'OUTPUT = os.path.join(".service-approval", "controls", "output.json")',
+    # F-string with placeholder slug + controls segment
+    'OUTPUT = f".service-approval/{slug}/controls/output.json"',
+    # PurePath / single-quoted Path construction
+    "OUTPUT = Path('.service-approval') / 'controls' / 'a.json'",
+    # F-string with bare `controls` segment, no trailing slash — matches
+    # PASS3 via the terminal `[\"' ]` char class
+    'OUTPUT = f".service-approval/{slug}/controls"  # bare segment',
+])
+def test_r16_controls_catches_dynamic_constructions(tmp_path, offending_line):
+    """Every controls-side parametrize case must trip _R16_CONTROLS_PASS1/2/3."""
+    _exercise_r16_trip(
+        tmp_path, offending_line,
+        [_R16_CONTROLS_PASS1, _R16_CONTROLS_PASS2, _R16_CONTROLS_PASS3],
     )
 
 

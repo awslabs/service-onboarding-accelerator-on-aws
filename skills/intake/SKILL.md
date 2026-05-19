@@ -31,13 +31,14 @@ AWS service. It produces:
 | **Detective controls** | AWS Config rules (with Lambda handlers), EventBridge rules, CloudWatch alarms, Access Analyzer configurations |
 | **Responsive controls** | Lambda auto-remediators, SSM runbooks, Step Functions remediation workflows |
 | **Compliant IaC templates** | Automatically determined based on provider support (CloudFormation, Terraform, CDK, CDKTF) |
-| **Framework mapping** | Controls mapped to CCMv4, NIST 800-53, CIS Benchmarks, or ISO 27001 objectives |
+| **Framework mapping** | Controls mapped to CCMv4 objectives (other frameworks are out of scope for now) |
 | **Threat model** | MITRE ATT&CK technique mapping with tactic coverage analysis (optional) |
 
 The pipeline verifies every claim via MCP servers (no hardcoded training data), maps controls
 to your chosen compliance framework, and produces deployable artifacts — not just documentation.
 
-**Typical output:** 85+ files across 5 control categories, a framework coverage matrix, and a
+**Typical output:** per-service files across 5 control categories (preventive,
+proactive, detective, responsive, IaC), a framework coverage matrix, and a
 final approval report with verdict.
 
 ---
@@ -412,7 +413,7 @@ Examples: s3, lambda, bedrock-agentcore-control, kms, ecs, dynamodb
 ```
 Are you providing any of the following? (select all that apply)
   [ ] Custom threat model (.md, .json, .pdf, .docx)
-  [ ] Custom control framework (.xlsx, .json — CCMv4, NIST, CIS, ISO)
+  [ ] Custom control framework (.xlsx, .json — CCMv4 only)
   [ ] Existing mitigation report (.md, .json)
   [ ] None — use MCP-only mode (research everything from scratch)
 ```
@@ -420,10 +421,10 @@ Are you providing any of the following? (select all that apply)
 - If custom inputs are provided, record the input folder path
 - If a custom control framework is provided, detect the framework type:
   - Filename contains "CCMv4" or "ccm" → `ccmv4`
-  - Filename contains "NIST" or "800-53" → `nist`
-  - Filename contains "CIS" → `cis`
-  - Filename contains "ISO" or "27001" → `iso`
-- If no framework file is provided, default to `ccmv4`
+  - Any other framework filename (NIST, CIS, ISO) → warn and ignore;
+    those frameworks are out of scope for the current pipeline.
+- If no framework file is provided, leave `framework_type` unset
+  (the user's intake reply determines whether CCMv4 is included).
 
 ### 3. Testing Requirements (required — default: `skip`)
 
@@ -514,7 +515,7 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "input_folder": "{path or null}",
     "has_custom_threat_model": true|false,
     "has_custom_framework": true|false,
-    "framework_type": "ccmv4|nist|cis|iso",
+    "framework_type": "ccmv4 | null",
     "framework_file": "{path or null}",
     "has_mitigation_report": true|false,
     "input_files": [

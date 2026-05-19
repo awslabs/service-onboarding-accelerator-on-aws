@@ -16,7 +16,7 @@ Where:
     phase    — 00-intake, 01-assess, ..., 08-evidence, or "tree" / "?"
     source   — hook (post-tool-use, stop, check-phase-complete, legacy-detected),
                mcp:<server>, skill:<skill-name>, script:<script-name>, etc.
-    verdict  — pass | fail | warn | reject | error | start | end | retry | call | response
+    verdict  — pass | fail | warn | snoozed | reject | error | halt | start | end | retry | call | response
     message  — single-line summary
     k=v      — optional structured tokens
 

@@ -1,5 +1,12 @@
 # Testing the service-approval Power in Kiro
 
+> **Update (2026-05-18):** the Kiro CLI 2.0 install code path was removed
+> from `install.sh`. The `kiro-cli power install --local` references below
+> describe a runtime path that is no longer wired automatically; for
+> current install guidance, see [`docs/INSTALL.md`](INSTALL.md). Whether
+> Kiro CLI 2.0 stays as a manually-installed runtime is being re-evaluated;
+> the Kiro IDE (desktop) flow is the supported path today.
+
 Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro IDE (desktop) and Kiro CLI 2.0.
 
 ## Prerequisites
@@ -99,9 +106,9 @@ Expect `service-approval` in the output.
 ### 2. `.kiro/` populated
 
 ```bash
-ls .kiro/agents/         # should list 13 sa-*.md files
-ls .kiro/hooks/          # should list post-tool-use.kiro.hook + stop.kiro.hook
-ls .kiro/steering/       # should list 9 *.md files
+ls .kiro/agents/         # should list sa-*.md files (matches powers/service-approval/ide/agents/)
+ls .kiro/hooks/          # should list *.kiro.hook files (matches powers/service-approval/ide/hooks/)
+ls .kiro/steering/       # should list *.md files (matches powers/service-approval/steering/)
 cat .kiro/settings/mcp.json | jq 'keys'   # should list 6 MCP servers
 ```
 

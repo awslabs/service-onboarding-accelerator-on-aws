@@ -65,7 +65,7 @@ Exact counts vary by service surface area. Observed ranges:
 
 ## PostToolUse hook behavior
 
-`hooks/post-tool-use.json` fires on `fs_write` to anything under `.service-approval/<slug>/05-generate/`. It runs:
+`ide/hooks/post-tool-use.kiro.hook` fires on `fs_write` to anything under `.service-approval/<slug>/05-generate/`. It runs:
 - JSON/YAML parse validation
 - Terraform `validate` + `fmt` on `.tf` files
 - cfn-lint on `.yaml`/`.json` CFN templates

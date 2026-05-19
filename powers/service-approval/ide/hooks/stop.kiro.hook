@@ -6,15 +6,24 @@ trigger: Agent Stop
 # Pipeline integrity check
 
 Run `python3 tools/validate/hook_stop.py` when the agent signals completion.
-This script wraps `validate_pipeline_integrity.py` and enforces the 7 hard
-rules:
+This script wraps `validate_pipeline_integrity.py` and enforces 7 numbered
+failure signals (P1-P7):
 
-1. No one-shot generator scripts — every phase runs through its SKILL.md
-2. Every claim MCP-verified (no training-data values)
-3. mcp-calls.log has >=10 entries
-4. validated.json notes unique (>=50% uniqueness)
-5. IaC parameterized — no 123456789012 or placeholder ARNs
-6. SCPs have >=1 Deny; StringEquals/StringNotEquals target same key
-7. Verdict matches integrity — no false APPROVED
+P1 — pipeline.log / mcp-calls.log missing or too few MCP calls (>=10)
+     (exempted by `[pipeline:complete:<VERDICT>]` terminal sentinel)
+P2 — validated.json has templated or empty verification notes
+     (>=50% uniqueness required)
+P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
+     keys, broad Allow on Resource:* without Condition, SCP without Deny)
+P4 — IaC templates contain placeholder account IDs (123456789012,
+     000000000000) or placeholder ARNs
+P5 — framework coverage below 15% with no per-objective rationale
+P6 — verdict mismatch (APPROVED emitted despite integrity failures)
+P7 — phase-output completeness: every phase dir on disk must contain
+     its declared outputs (mapping-results.json, controls-catalog.md,
+     framework-mapping.md, etc.) at min-size thresholds
+
+Cultural rules (no one-shot generator scripts, etc.) live in
+`steering/service-approval-enforcement.md`, not in this hook's list.
 
 Exit code 2 forces the verdict to REQUIRES REMEDIATION and blocks the Stop.
