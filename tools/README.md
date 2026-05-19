@@ -36,17 +36,17 @@ Body content (Kiro POWER.md body, Copilot plugin README) is NOT touched. Those a
 | `validate/validate_state.py` | Schema + cross-file integrity for state files | PostToolUse |
 | `validate/validate_controls.py` | Generated artifact checks (SCP format, IaC parameterization) | PostToolUse |
 | `validate/validate_deployable.py` | Tier 1 (static) + Tier 2 (AWS API) deployability | Stop, or manual |
-| `validate/validate_pipeline_integrity.py` | 7 hard rules (MCP count, unique notes, placeholder IDs, verdict) | Stop |
+| `validate/validate_pipeline_integrity.py` | P1–P7 (see module docstring for the full list) | Stop |
 | `validate/validate_kms_consumers.py` | KMS key policy ↔ consumer resource cross-check | PostToolUse |
 | `validate/validate_cross.py` | Cross-artifact consistency | Stop |
-| `validate/_schemas.py` | Shared JSON Schema helper (wraps the 11 schemas in `/schemas/`) | library |
+| `validate/_schemas.py` | Shared JSON Schema helper (wraps the schemas under `/schemas/`) | library |
 
 ### Entry points
 
 - `validate/hook_post_tool_use.py` — single entrypoint invoked by every client's PostToolUse hook
 - `validate/hook_stop.py` — single entrypoint invoked by every client's Stop/sessionEnd hook
 
-Client-specific hook configs (Claude Code `hooks.json`, Kiro `hooks/stop.json`, Copilot `.github/hooks/pipeline-integrity/validate.sh`) all call these same two scripts. One source of truth.
+Client-specific hook configs (Claude Code `hooks.json`, Kiro `ide/hooks/stop.kiro.hook`, Copilot `.github/hooks/pipeline-integrity/validate.sh`) all call these same two scripts. One source of truth.
 
 ## Running tests
 
@@ -54,4 +54,4 @@ Client-specific hook configs (Claude Code `hooks.json`, Kiro `hooks/stop.json`, 
 python3 -m pytest tools/validate/
 ```
 
-205 tests pass on the branch tip. Covers `_schemas.py`, `validate_state.py`, `validate_deployable.py`, `validate_controls.py`, `validate_botocore_enrichment.py`, and `validate_kms_consumers.py`.
+Run `python3 -m pytest tools/validate/ -q` for the current count (the `python3 -m` form is required so `tools/` is on `sys.path` for `test_paths.py` and `test_slug.py`). Covers `_schemas.py`, `validate_state.py`, `validate_deployable.py`, `validate_controls.py`, `validate_botocore_enrichment.py`, `validate_kms_consumers.py`, `validate_pipeline_integrity.py`, `_hook_log.py`, `hook_stop.py`, `log.py`, `slug.py`, `paths.py`, and `check_phase_complete.py`.

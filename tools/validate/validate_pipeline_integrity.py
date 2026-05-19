@@ -10,8 +10,12 @@ Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
     P1 — pipeline.log / mcp-calls.log missing or too few MCP calls
+         (exempted when pipeline.log carries the
+         `[pipeline:complete:<VERDICT>]` terminal sentinel — finalized
+         runs are immutable, retroactive remediation impossible)
     P2 — validated.json has templated or empty verification notes
-    P3 — IAM policy logic errors (inverted SCP, permissive boundaries)
+    P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
+         keys, broad Allow on Resource:* without Condition, SCP without Deny)
     P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
     P6 — verdict mismatch (APPROVED emitted despite integrity failures)
@@ -77,6 +81,17 @@ def _load_json(path: Path) -> dict | None:
 
 
 _MCP_CALL_TOKEN_RE = re.compile(r"\[mcp:[^\]]+:call\]")
+# Terminal-state sentinel emitted by summarize/evidence at end of pipeline.
+# Anchor at the source-tag column (3rd bracketed token of a pipeline.log
+# line) so a message body containing the literal text can't satisfy the
+# gate. Line shape: `<iso8601> [<phase>] [<source>:<verdict>]  <message>`.
+# Verdict allowlist is closed: APPROVED | APPROVED_WITH_EXCEPTIONS |
+# REQUIRES_REMEDIATION. Anything else does NOT close out the run.
+_PIPELINE_COMPLETE_RE = re.compile(
+    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:"
+    r"(APPROVED|APPROVED_WITH_EXCEPTIONS|REQUIRES_REMEDIATION)\]",
+    re.MULTILINE,
+)
 
 
 def check_mcp_log(service_root: Path) -> list[str]:
@@ -92,15 +107,27 @@ def check_mcp_log(service_root: Path) -> list[str]:
     Falls back to the legacy mcp-calls.log shadow file. Legacy lines start
     with literal "MCP CALL"; we anchor with `startswith` so a message
     containing "MCP CALL" mid-line doesn't inflate the count either.
+
+    Terminal-state exemption: if pipeline.log carries a
+    `[pipeline:complete:<verdict>]` sentinel, the run is finalized and the
+    file is frozen. P1 cannot be remediated retroactively, so the check
+    returns no error for sentinel-bearing files. Mid-flight runs (no
+    sentinel) still get the strict count.
     """
     errors: list[str] = []
     pipeline_log = service_root / "pipeline.log"
     mcp_shadow = service_root / "mcp-calls.log"
 
+    if pipeline_log.exists():
+        content = pipeline_log.read_text()
+        if _PIPELINE_COMPLETE_RE.search(content):
+            return []
+    else:
+        content = ""
+
     call_lines: list[str] = []
 
     if pipeline_log.exists():
-        content = pipeline_log.read_text()
         call_lines.extend(
             ln for ln in content.splitlines()
             if _MCP_CALL_TOKEN_RE.search(ln)
@@ -205,18 +232,129 @@ def check_validated_notes(validate_dir: Path) -> list[str]:
 
 
 def _iter_json_files(root: Path):
+    from validate_deployable import SKIP_DIRS
+
     if not root.exists():
         return
     for p in root.rglob("*.json"):
+        if any(part in SKIP_DIRS for part in p.parts):
+            continue
         data = _load_json(p)
         if isinstance(data, dict):
             yield p, data
+
+
+# Cross-service AWS-canonical wildcard-only actions. The validator only loads
+# the target service's SAR data (sar-facts.json / validated.json), so cross-
+# service actions like `logs:DescribeLogGroups` would otherwise always flag P3.
+# Each entry below is wildcard-only per its service's SAR page (`Resource types`
+# column empty in the Actions table). Keep this minimal — only add entries that
+# are demonstrably wildcard-only per AWS docs, with a citation.
+_CROSS_SERVICE_WILDCARD_ONLY = frozenset({
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatchlogs.html
+    "logs:DescribeLogGroups",
+    "logs:DescribeQueryDefinitions",
+    "logs:DescribeAccountPolicies",
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonec2.html — Describe*
+    # for cross-resource enumeration: ARN scoping is unsupported
+    "ec2:DescribeNetworkInterfaces",
+    "ec2:DescribeSecurityGroups",
+    "ec2:DescribeSubnets",
+    "ec2:DescribeVpcEndpoints",
+    "ec2:DescribeVpcs",
+    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssecretsmanager.html
+    "secretsmanager:ListSecrets",
+})
+
+
+def _load_wildcard_only_actions(controls_dir: Path) -> set[str]:
+    """Load the set of `<prefix>:<action>` strings AWS SAR marks wildcard-only.
+
+    `controls_dir` is `<slug>/05-generate`. Two per-service state files are
+    consulted in addition to the cross-service floor:
+      1. `<slug>/01-assess/sar-facts.json` — `wildcard_only_actions[]` enumerates
+         actions Phase 0 explicitly classified as wildcard-only (typically
+         Create* for resources that don't exist yet).
+      2. `<slug>/03-validate/validated.json` — `api_surface.operations[]` carries
+         per-op `resource_types` post-validation. An op with `resource_types`
+         empty or null is wildcard-only by AWS design (no ARN to scope to).
+
+    Always unions in `_CROSS_SERVICE_WILDCARD_ONLY` (cross-service AWS-canonical
+    actions — see the `_CROSS_SERVICE_WILDCARD_ONLY` constant defined above).
+    When per-service files are missing or malformed, the per-service additions
+    are skipped — the cross-service set is the floor, not an empty set. The
+    validator stays conservative: actions only earn an exemption when an
+    authoritative file positively says they are wildcard-only.
+    """
+    out: set[str] = set()
+
+    def _qualified(name: str, fallback_prefix: str) -> str | None:
+        """Return `prefix:Action`, or None if neither the action nor the
+        fallback prefix is usable. Bare `Action` strings with an empty
+        fallback would otherwise enter the set as `:Action` and silently
+        match nothing.
+        """
+        if ":" in name:
+            return name
+        if not fallback_prefix:
+            return None
+        return f"{fallback_prefix}:{name}"
+
+    sar_path = controls_dir.parent / "01-assess" / "sar-facts.json"
+    facts = _load_json(sar_path) or {}
+    prefix = facts.get("service_prefix") or ""
+    for a in facts.get("wildcard_only_actions") or []:
+        if isinstance(a, str):
+            qualified = _qualified(a, prefix)
+            if qualified:
+                out.add(qualified)
+    for a in facts.get("actions") or []:
+        if isinstance(a, dict) and not (a.get("resource_types") or []):
+            name = a.get("name") or a.get("action")
+            if isinstance(name, str):
+                qualified = _qualified(name, prefix)
+                if qualified:
+                    out.add(qualified)
+
+    val_path = controls_dir.parent / "03-validate" / "validated.json"
+    val = _load_json(val_path) or {}
+    val_prefix = (val.get("capabilities", {}).get("iam", {}).get("service_prefix")
+                  or val.get("service_prefix") or prefix)
+    for op in (val.get("api_surface") or {}).get("operations", []) or []:
+        if not isinstance(op, dict):
+            continue
+        rts = op.get("resource_types")
+        if rts:  # populated list — action IS scoped, not wildcard-only
+            continue
+        op_name = op.get("operation") or op.get("action")
+        if isinstance(op_name, str):
+            qualified = _qualified(op_name, val_prefix)
+            if qualified:
+                out.add(qualified)
+
+    out |= _CROSS_SERVICE_WILDCARD_ONLY
+    return out
+
+
+def _action_matches_wildcard_only(action: str, wildcard_only: set[str]) -> bool:
+    """True when `action` is a literal entry in the wildcard-only set.
+
+    Globs like `datasync:Describe*` are NOT exempted. Earlier glob-expansion
+    matched any wildcard-only action under the prefix and exempted the whole
+    glob, but SAR data is loaded from per-service state files and is often
+    incomplete — actions outside the SAR snapshot but matched by the glob
+    were silently allowed. Literal-only matching keeps the carve-out tight
+    against missing data.
+    """
+    return action in wildcard_only
 
 
 def check_iam_policies(controls_dir: Path) -> list[str]:
     errors: list[str] = []
     if not controls_dir.exists():
         return errors
+
+    wildcard_only = _load_wildcard_only_actions(controls_dir)
 
     for policy_file, data in _iter_json_files(controls_dir):
         if "Statement" not in data:
@@ -268,7 +406,24 @@ def check_iam_policies(controls_dir: Path) -> list[str]:
                         for v in principal.values()
                     )
                 )
-                if broad_actions and resources == ["*"] and not condition and not is_root_admin:
+                # SAR wildcard-only carve-out: an action whose SAR `resource_types`
+                # is empty (e.g., DataSync Describe*/List*, logs:DescribeLogGroups
+                # in the target service's API surface) CANNOT be ARN-scoped — it
+                # can only appear with `Resource: "*"`. Flagging it as
+                # exfiltration produces a false positive. Only exempt when
+                # EVERY broad action resolves to wildcard-only per SAR; if any
+                # action could be scoped, the original check still fires.
+                all_wildcard_only = bool(broad_actions) and all(
+                    _action_matches_wildcard_only(a, wildcard_only)
+                    for a in broad_actions
+                )
+                if (
+                    broad_actions
+                    and resources == ["*"]
+                    and not condition
+                    and not is_root_admin
+                    and not all_wildcard_only
+                ):
                     errors.append(
                         f"P3 {rel} Statement[{i}]: Allow {broad_actions} on "
                         f"Resource '*' with no Condition — exfiltration path."
@@ -286,11 +441,17 @@ def check_iam_policies(controls_dir: Path) -> list[str]:
 
 
 def check_iac_placeholders(iac_dir: Path) -> list[str]:
+    # Reuse the canonical exclude list from validate_deployable so adding a new
+    # vendored-dep dir doesn't require touching two places.
+    from validate_deployable import SKIP_DIRS
+
     errors: list[str] = []
     if not iac_dir.exists():
         return errors
     for path in iac_dir.rglob("*"):
         if not path.is_file():
+            continue
+        if any(part in SKIP_DIRS for part in path.parts):
             continue
         try:
             content = path.read_text()
@@ -313,16 +474,40 @@ def check_iac_placeholders(iac_dir: Path) -> list[str]:
 
 
 def check_framework_coverage(map_dir: Path) -> list[str]:
-    """Check framework coverage from 04-map/ phase dir."""
+    """Check framework coverage from 04-map/ phase dir.
+
+    Fails closed when 04-map/ exists but neither mapping-results.json nor
+    map-framework-mapped.json is loadable, OR when the loaded JSON lacks
+    a non-empty `framework_mapping` key. P7's size threshold is
+    content-blind (>=1024 bytes); a 1024-byte JSON without the
+    framework_mapping key would clear P7 and silently clear P5 too.
+    Same fail-closed pattern as check_validated_notes (P2) and
+    check_verdict_consistency (P6).
+    """
     errors: list[str] = []
-    mapping = _load_json(map_dir / "mapping-results.json")
+    mapping_path = map_dir / "mapping-results.json"
+    fallback_path = map_dir / "map-framework-mapped.json"
+    mapping = _load_json(mapping_path)
     if not mapping:
-        mapping = _load_json(map_dir / "map-framework-mapped.json")
+        mapping = _load_json(fallback_path)
     if not mapping:
+        # Both files missing or unparseable. P7 catches fully-missing/<1024
+        # cases; this branch fires when a file exists but failed to parse,
+        # or when neither is present (defense in depth).
+        errors.append(
+            f"P5 FAIL: neither {mapping_path} nor {fallback_path} loaded "
+            "as valid JSON. Phase 3 (Map) is mandatory when 04-map/ exists "
+            "— framework coverage cannot be verified."
+        )
         return errors
 
     fm = mapping.get("framework_mapping", [])
     if not fm:
+        errors.append(
+            f"P5 FAIL: {mapping_path} missing or empty `framework_mapping` "
+            "key. Phase 3 (Map) must produce per-objective mapping rows; "
+            "fail-closed against silent template/output drift."
+        )
         return errors
 
     total = len(fm)
@@ -486,14 +671,30 @@ def check_phase_outputs(service_root: Path) -> list[str]:
 
 
 def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) -> list[str]:
-    """Check verdict consistency from 07-summarize/ phase dir."""
+    """Check verdict consistency from 07-summarize/ phase dir.
+
+    Fails closed when APPROVAL-REPORT.md exists but the `## Verdict` H2
+    header is missing (e.g., template drift to H3, or report truncated).
+    Same pattern as `check_validated_notes` for P2 — silently returning
+    `[]` would let an APPROVED-with-integrity-failures run sneak past
+    when a future template change breaks the contract.
+    """
     errors: list[str] = []
     report = summarize_dir / "APPROVAL-REPORT.md"
     if not report.exists():
         return errors
     content = report.read_text()
-    match = re.search(r"##\s*Verdict\s*\n+([^\n]+)", content)
+    # Anchor on H2 only — `(?<!#)##(?!#)` enforces exactly two `#`s. Without
+    # the lookarounds, `##\s*Verdict` matches `### Verdict` as a substring,
+    # silently accepting H3 (the very drift the introducer note in
+    # skills/summarize/SKILL.md flags as broken).
+    match = re.search(r"(?<!#)##(?!#)\s*Verdict\s*\n+([^\n]+)", content)
     if not match:
+        errors.append(
+            f"P6 FAIL: {report} exists but no `## Verdict` H2 header found. "
+            "skills/summarize/SKILL.md template requires the section at H2; "
+            "verdict cannot be verified — fail-closed against silent template drift."
+        )
         return errors
     verdict = match.group(1).strip().upper()
     if integrity_errors_count > 0 and "APPROVED" in verdict and "EXCEPTION" not in verdict:
@@ -505,6 +706,22 @@ def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) 
     return errors
 
 
+# Validator contract: every check_*() must fail-closed when the artifact it
+# reads exists but is missing/malformed. Pass-7 audit (2026-05-19) confirmed:
+#   - P1, P2, P5, P6, P7 fail-closed with explicit `P{N}`-prefixed errors.
+#     P2/P5/P6 use the `P{N} FAIL: ...` shape on missing-artifact branches
+#     (the canonical pattern). P1 and P7 ALSO have missing-artifact branches
+#     (P1 line ~146 emits `P1 neither pipeline.log nor mcp-calls.log exists`;
+#     P7 emits `P7 ... MISSING` when a required output is absent) but use
+#     the older bare `P{N} ...` shape — `P{N} FAIL:` is the going-forward
+#     canonical pattern for new checks.
+#   - P3, P4 have `if not <dir>.exists(): return []` defensive branches that
+#     are unreachable in practice — `validate_pipeline()` below gates each
+#     call on `.exists()` before invocation.
+# When adding a new check_*(): match the P2/P5/P6 pattern (append a
+# `P{N} FAIL: ...` error and `return errors` rather than `return errors`
+# silently). Probe 33 (missing-artifact silently passes gate) was the source
+# of three earlier defects in this file; don't re-introduce.
 def validate_pipeline(root: Path) -> list[str]:
     """Validate pipeline integrity for all services in .service-approval/.
 

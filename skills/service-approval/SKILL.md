@@ -204,6 +204,13 @@ Do NOT block execution — continue with degraded coverage and note it in the fi
 
 **Kiro:**
 
+> **Update (2026-05-18):** the Kiro CLI 2.0 (`kiro-cli`) install path was
+> removed from `install.sh`. Path 1 below describes the legacy symlink
+> install that is no longer wired automatically; Path 2 (manual IDE install
+> via the Powers panel) is the supported flow today. Kiro CLI 2.0 may
+> remain as a manually-installed runtime — the runtime decision is being
+> re-evaluated.
+
 Kiro has two install paths (see `install.sh`); MCP-config handling differs between them.
 
 **Path 1 — Power install (CLI 2.0, recommended).** If the user installed via

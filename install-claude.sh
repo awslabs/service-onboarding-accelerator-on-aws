@@ -68,7 +68,26 @@ cat > "$REPO_DIR/.claude/settings.json" <<EOF
 EOF
 echo "  ✓ .claude/settings.json written (MCP allowlist from manifest.yaml; ${ENABLED_SERVERS} servers)"
 
-# 4. Check prerequisites
+# 4. Register the repo as a local marketplace so the plugin is available
+# from any working directory (not just when you open this repo).
+echo ""
+echo "Registering plugin marketplace..."
+if command -v claude >/dev/null 2>&1; then
+  if claude plugin marketplace add "$REPO_DIR" 2>/dev/null; then
+    echo "  ✓ Marketplace registered — plugin available from any directory"
+    claude plugin install service-approval@service-approval --scope user 2>/dev/null && \
+      echo "  ✓ Plugin installed (user scope)" || \
+      echo "  · Plugin may already be installed"
+  else
+    echo "  ⚠ Marketplace registration failed — plugin works only when repo is open"
+  fi
+else
+  echo "  ⚠ claude CLI not found — open Claude Code in this repo and run:"
+  echo "    /plugin marketplace add ./"
+  echo "    /plugin install service-approval@service-approval"
+fi
+
+# 5. Check prerequisites
 echo ""
 echo "Checking prerequisites..."
 
@@ -91,5 +110,8 @@ else
 fi
 
 echo ""
-echo "Done. Open this repo in Claude Code and run:"
+echo "Done. Start Claude Code from any working directory and run:"
+echo "  /service-approval --service=<name>"
+echo ""
+echo "Or with custom input files:"
 echo "  /service-approval ./input --service=<name>"

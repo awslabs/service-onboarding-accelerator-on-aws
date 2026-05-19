@@ -11,6 +11,11 @@ Map verified service capabilities against customer-provided inputs to produce se
 framework mappings, and traceability. This skill bridges the gap between capability discovery
 (Research/Validate) and artifact generation (Generate).
 
+> **Scope note (as of 2026-05-16):** the `intake` skill narrows interactive
+> runs to CCMv4-only. Multi-framework branches (NIST 800-53 / CIS / ISO 27001)
+> remain reachable via the `--framework=<type>` CLI flag for advanced
+> operators who bypass intake. See `skills/intake/SKILL.md` for the rationale.
+
 **Inputs:**
 - `validated.json` — verified capabilities, API surface, and existing mitigations
 - Customer control framework file (xlsx/json/md) from the input folder

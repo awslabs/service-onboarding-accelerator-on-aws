@@ -51,7 +51,7 @@ If you prefer to install the plugin manually without the script:
 2. **Install the plugin.** Run:
 
    ```
-   /plugin install service-approval@service-onboarding
+   /plugin install service-approval@service-approval
    ```
 
    Choose **Project scope** when prompted (installs for all collaborators on this repo).
@@ -83,23 +83,7 @@ Open the repo in VS Code. Copilot auto-discovers:
 
 Invoke from Copilot Chat in Agent mode: `@service-approval ./input --service=<name>`.
 
-### Kiro — Power install via CLI 2.0 (recommended)
-
-If you have `kiro-cli` installed, the easiest path is the symlink-based
-Power install — `git pull` auto-updates the registered Power without
-re-installing:
-
-```bash
-kiro-cli power install --local powers/service-approval
-```
-
-`./install.sh` runs this automatically when `kiro-cli` is on PATH; you only
-need to invoke it manually if you skipped `install.sh` or installed Kiro
-CLI later.
-
-### Kiro — manual Power install via IDE (fallback)
-
-If you don't have Kiro CLI 2.0 (or you're using Kiro IDE only):
+### Kiro — manual Power install via IDE
 
 1. Open **Kiro** IDE
 2. Open the **Powers** panel

@@ -63,12 +63,20 @@ Produce `.service-approval/<slug>/03-validate/validated.json`.
 
 ## MCP call logging
 
-Log every MCP call to `<slug>/mcp-calls.log` with format:
+**Required: emit canonical `mcp:<server>:call` events to `pipeline.log` after EVERY MCP tool invocation.** The Stop hook's P1 check (`tools/validate/validate_pipeline_integrity.py` — see `_MCP_CALL_TOKEN_RE`) anchors on the `[mcp:<server>:call]` token; free-form `[TIMESTAMP] [Validator] MCP CALL: ...` lines are NOT counted. The `_hook_log` auto-mirror copies canonical events into `mcp-calls.log` for free.
+
+After each MCP call, run:
+
+```bash
+python3 -m tools.validate.log \
+    --slug <slug> \
+    --phase 03-validate \
+    --source mcp:<server> \
+    --verdict call \
+    --message "<tool-name>: <one-line description>"
 ```
-[TIMESTAMP] [Validator] MCP CALL: <tool_name>
-  <parameters>
-  result: <summary>
-```
+
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `awsiac`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
 
 ## Verification note rules
 

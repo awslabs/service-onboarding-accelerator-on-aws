@@ -253,6 +253,46 @@ If false, write `_metadata.scp_gap` note and skip.
   in EVERY Deny statement. Only exception: `DenyProhibitedTagKeys` (PII patterns).
 - **AND-logic awareness**: Conditions in one block use AND. If exceptions should be
   independent (OR), use SEPARATE statements.
+- **Service-principal vs confused-deputy keys MUST live in separate statements**:
+  `aws:PrincipalServiceName` is set ONLY when an AWS service is the calling principal;
+  `aws:SourceAccount` / `aws:SourceArn` are cross-service confused-deputy keys set on
+  the target call FROM the service. They never co-occur in the same authorization
+  context, so AND-ing them in one Condition block makes the Deny unreachable. Split
+  into two statements: one keyed on `aws:PrincipalServiceName` for service-as-caller
+  paths, one keyed on `aws:SourceAccount`/`aws:SourceArn` for confused-deputy paths.
+
+  ```json
+  // WRONG — conditions AND together; deny never fires because the two keys
+  // are never present in the same authorization context.
+  {
+    "Effect": "Deny",
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals":    {"aws:PrincipalServiceName": "<service>.amazonaws.com"},
+      "StringNotEquals": {"aws:SourceAccount": "${aws:PrincipalAccount}"}
+    }
+  }
+
+  // RIGHT — two statements, each keyed on exactly one mechanism. The first
+  // covers the service-as-caller path; the second covers the confused-deputy
+  // path. Either path alone fires the Deny.
+  {
+    "Sid": "DenyServicePrincipalUnscoped",
+    "Effect": "Deny",
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringEquals": {"aws:PrincipalServiceName": "<service>.amazonaws.com"}
+    }
+  },
+  {
+    "Sid": "DenyConfusedDeputyAcrossAccount",
+    "Effect": "Deny",
+    "Action": "sts:AssumeRole",
+    "Condition": {
+      "StringNotEquals": {"aws:SourceAccount": "${aws:PrincipalAccount}"}
+    }
+  }
+  ```
 
 **No non-standard fields in Statements**: IAM policy Statements only accept standard
 keys (`Sid`, `Effect`, `Principal`, `NotPrincipal`, `Action`, `NotAction`, `Resource`,

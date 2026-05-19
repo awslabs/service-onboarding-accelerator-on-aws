@@ -113,18 +113,44 @@ trigger: Agent Stop
 # Pipeline integrity check
 
 Run `python3 tools/validate/hook_stop.py` when the agent signals completion.
-This script wraps `validate_pipeline_integrity.py` and enforces the 7 hard
-rules:
+This script wraps `validate_pipeline_integrity.py` and enforces 7 numbered
+failure signals (P1-P7):
 
-1. No one-shot generator scripts — every phase runs through its SKILL.md
-2. Every claim MCP-verified (no training-data values)
-3. mcp-calls.log has >=10 entries
-4. validated.json notes unique (>=50% uniqueness)
-5. IaC parameterized — no 123456789012 or placeholder ARNs
-6. SCPs have >=1 Deny; StringEquals/StringNotEquals target same key
-7. Verdict matches integrity — no false APPROVED
+P1 — pipeline.log / mcp-calls.log missing or too few MCP calls (>=10)
+     (exempted by `[pipeline:complete:<VERDICT>]` terminal sentinel)
+P2 — validated.json has templated or empty verification notes
+     (>=50% uniqueness required)
+P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
+     keys, broad Allow on Resource:* without Condition, SCP without Deny)
+P4 — IaC templates contain placeholder account IDs (123456789012,
+     000000000000) or placeholder ARNs
+P5 — framework coverage below 15% with no per-objective rationale
+P6 — verdict mismatch (APPROVED emitted despite integrity failures)
+P7 — phase-output completeness: every phase dir on disk must contain
+     its declared outputs (mapping-results.json, controls-catalog.md,
+     framework-mapping.md, etc.) at min-size thresholds
+
+Cultural rules (no one-shot generator scripts, etc.) live in
+`steering/service-approval-enforcement.md`, not in this hook's list.
 
 Exit code 2 forces the verdict to REQUIRES REMEDIATION and blocks the Stop.
+""",
+    "block-direct-state-writes.kiro.hook": """---
+title: Enforce skill-based pipeline execution
+trigger: Pre Tool Use
+toolTypes: ["write"]
+---
+
+# Block direct writes to pipeline state and controls
+
+You are about to write to a file. If this write targets the pipeline state
+or controls directories, confirm: are you executing through the power's
+defined sub-skills (`sa-intake`, `sa-assess`, `sa-research-*`,
+`sa-validate`, `sa-map-*`, `sa-generate-*`, `sa-evidence`) as specified
+in `steering/pipeline.md`?
+
+If not, STOP and follow the skill-based execution path. Do not write
+state files directly.
 """,
 }
 
@@ -136,12 +162,14 @@ def _write_or_check(path: Path, content: str, check: bool) -> bool:
     if existing == content:
         return False
     if check:
-        diff = "\n".join(difflib.unified_diff(
+        # difflib.unified_diff returns a generator — materialize before slicing.
+        diff_lines = list(difflib.unified_diff(
             existing.splitlines(), content.splitlines(),
             fromfile=str(path.relative_to(REPO)),
             tofile=f"{path.relative_to(REPO)} (generated)",
             lineterm="",
-        )[:12])
+        ))
+        diff = "\n".join(diff_lines[:12])
         print(f"DRIFT  {path.relative_to(REPO)}\n{diff}", file=sys.stderr)
         return True
     path.parent.mkdir(parents=True, exist_ok=True)

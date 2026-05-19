@@ -356,6 +356,51 @@ with open(evidence_dir / "attestation-results.json", "w") as f:
 A `failed` teardown is a non-blocking warning — evidence is still valid; only
 the cleanup step needs operator follow-up.
 
+### Step 11b: Pipeline-Complete Sentinel
+
+Phase 7 owns the terminal-state sentinel when Phase 5 ran in full-deploy mode
+(otherwise summarize emitted it). The sentinel signals to the Stop hook
+(`validate_pipeline_integrity.py` P1 check) that the run is finalized — the
+file is frozen, and remediation-only checks cannot be retroactively
+satisfied. Without this sentinel, the Stop hook re-fires forever on
+completed runs.
+
+Emit AFTER teardown completes (or is skipped) and AFTER attestation-results
+is rewritten with the final teardown_status:
+
+```bash
+# Read the verdict from APPROVAL-REPORT.md (Phase 6 wrote it). The actual
+# format is `## Verdict` H2 followed by a blank line and a bare bold line
+# `**APPROVED WITH EXCEPTIONS**`. Strip the bold markers, drop any
+# parenthesized qualifier (e.g., "APPROVED (test not run)" -> "APPROVED"
+# for sentinel purposes), uppercase, fold spaces and hyphens to underscores.
+VERDICT_TAG=$(awk '/^## Verdict/{getline; getline; print; exit}' \
+    .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md \
+    | sed -E 's/^\*+//; s/\*+$//; s/ *\(.*\)$//' \
+    | tr '[:lower:]' '[:upper:]' | tr ' -' '__')
+# e.g., "**APPROVED WITH EXCEPTIONS**" -> "APPROVED_WITH_EXCEPTIONS"
+# e.g., "**APPROVED (test not run)**" -> "APPROVED"
+
+# Defensive guard: empty VERDICT_TAG fails loudly rather than emitting a
+# malformed sentinel that the validator can't close P1 against.
+if [ -z "${VERDICT_TAG}" ]; then
+    echo "ERROR: could not extract verdict from APPROVAL-REPORT.md" >&2
+    exit 1
+fi
+
+python3 -m tools.validate.log \
+    --slug <slug> \
+    --phase 08-evidence \
+    --source pipeline:complete \
+    --verdict "${VERDICT_TAG}" \
+    --message "evidence finalized; teardown_status=${TEARDOWN_STATUS}; verdict=${VERDICT_TAG}"
+```
+
+The validator anchors on the literal token `[pipeline:complete:<VERDICT>]`.
+If summarize already emitted the sentinel for this run (full-deploy + Phase 7
+combination should not double-emit; intake-manifest gating prevents it), the
+duplicate is harmless — the validator only checks for presence.
+
 ## Outputs
 
 All written to `<slug>/08-evidence/`:

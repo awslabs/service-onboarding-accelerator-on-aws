@@ -15,13 +15,19 @@ canonical service slug from SAR.
 
 ## Hard rules (re-stated)
 
-1. Never write a one-shot generator script. Run every phase through its `SKILL.md`.
-2. Every capability claim, API parameter, and condition key must be verified via MCP.
-3. Log every MCP call to `.service-approval/<service-slug>/pipeline.log` (the consolidated debugging artifact, with `[mcp:<server>:call]` source tags). Lines are mirrored to `mcp-calls.log` for backward compatibility, but `pipeline.log` is the source of truth. Minimum 10 entries enforced by the Stop hook's P1 check.
-4. Every `validated.json` item needs a unique `verification_note`.
-5. IaC templates must be parameterized — no hardcoded accounts or ARNs.
-6. SCPs need at least one `Deny`. `StringEquals`/`StringNotEquals` must target the same key.
-7. Verdict = integrity. Any failure → `REQUIRES REMEDIATION`.
+The Stop hook enforces P1–P7 failure signals via `validate_pipeline_integrity.py`:
+
+- **P1** — too few MCP calls. Log every MCP call to `.service-approval/<service-slug>/pipeline.log` (the consolidated debugging artifact, with `[mcp:<server>:call]` source tags); lines are mirrored to `mcp-calls.log` for backward compatibility. Minimum 10 entries enforced. Exempted for finalized runs by the `[pipeline:complete:<VERDICT>]` terminal sentinel.
+- **P2** — `validated.json` items need unique `verification_note`s (≥50% uniqueness required).
+- **P3** — IAM policy logic errors: mismatched `StringEquals`/`StringNotEquals` keys, broad `Allow` on `Resource:*` without `Condition`, SCP without at least one `Deny`.
+- **P4** — IaC templates must be parameterized; no placeholder account IDs or placeholder ARNs.
+- **P5** — framework coverage below 15% with no per-objective rationale.
+- **P6** — verdict matches integrity. Any P1–P5/P7 failure → `REQUIRES REMEDIATION`, not `APPROVED`.
+- **P7** — phase-output completeness: every phase dir on disk must contain its declared outputs at min-size thresholds.
+
+**Cultural rules** (skill-based execution, no one-shot generator scripts, every claim
+MCP-verified) live in [`service-approval-enforcement.md`](service-approval-enforcement.md),
+not in the validator's P-check list.
 
 ## Entry point
 
@@ -45,6 +51,20 @@ in Phase 0 (Assess) from the SAR `service_prefix`. Therefore intake writes to a
 timestamped staging directory (`_staging/<ts>/`) rather than directly into the
 canonical `<slug>/` tree. Phase 0 atomically promotes the staging directory
 to `.service-approval/<slug>/` after slug derivation; see Phase 0 Step 0b.
+
+**Kiro Power note — this is a chat pane, not Claude Code.** The Power's
+`sa-intake` agent uses a trimmed, self-contained prompt: CCMv4 is opt-in,
+MITRE ATT&CK is always-on, and the NIST/CIS/ISO menu is hidden. The agent
+MUST stop and ask for every field — it must NEVER infer values from the
+user's opening prompt, prior chat turns, file contents, environment
+variables, or any other source. Branch B turn-taking (the literal
+`>>> WAITING FOR YOUR REPLY` marker, one question per turn, no further
+tool calls in the same turn) is inlined directly into the agent body
+because Kiro lacks an `AskUserQuestion`-style blocking primitive. The
+Claude Code interactive path (Branch A) uses the same CCMv4-only narrowing
+(see `skills/intake/SKILL.md` Step 2). Multi-framework parsing remains
+available behind the `--framework=<type>` CLI flag for advanced operators
+who bypass the interactive intake.
 
 Deployment intent (`testing.mode`) is captured here and consumed by Phase 5 via
 the orchestrator's flag-resolution rules. IaC format selection is NOT done here —
@@ -181,9 +201,9 @@ The verdict is one of:
 - `APPROVED (with exceptions)` — coverage gaps have rationale, no integrity failures
 - `REQUIRES REMEDIATION` — any integrity check failed
 
-The Stop hook (`hooks/stop.json`) enforces rule 7: if integrity failed, the
-verdict MUST be `REQUIRES REMEDIATION`. An `APPROVED` verdict with failures is
-rewritten by the hook.
+The Stop hook (`ide/hooks/stop.kiro.hook`) enforces P6: if any P1–P5/P7 check
+failed, the verdict MUST be `REQUIRES REMEDIATION`. An `APPROVED` verdict with
+failures is rewritten by the hook.
 
 ## Phase 7 — Evidence (optional, requires AWS credentials)
 

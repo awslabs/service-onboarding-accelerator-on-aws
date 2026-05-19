@@ -48,6 +48,25 @@ No hardcoded prerequisites — paths are derived dynamically.
 
 ---
 
+## MCP call logging
+
+**Required: emit canonical `mcp:<server>:call` events to `pipeline.log` after EVERY MCP tool invocation.** The Stop hook's P1 check (`tools/validate/validate_pipeline_integrity.py` — see `_MCP_CALL_TOKEN_RE`) anchors on the `[mcp:<server>:call]` token. The `_hook_log` auto-mirror copies canonical events into `mcp-calls.log` for free.
+
+After each MCP call, run:
+
+```bash
+python3 -m tools.validate.log \
+    --slug <slug> \
+    --phase 01-assess \
+    --source mcp:<server> \
+    --verdict call \
+    --message "<tool-name>: <one-line description>"
+```
+
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, etc.).
+
+---
+
 ## Step 0: SAR Pre-Read
 
 The Service Authorization Reference page is the definitive source for IAM actions, resource types, and condition keys.

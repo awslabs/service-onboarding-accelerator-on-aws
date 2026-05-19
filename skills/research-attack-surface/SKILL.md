@@ -85,6 +85,25 @@ test -f .service-approval/<slug>/01-assess/sar-facts.json && echo "sar-facts: OK
 
 ---
 
+## MCP call logging
+
+**Required: emit canonical `mcp:<server>:call` events to `pipeline.log` after EVERY MCP tool invocation** (including `mitre-attack` MCP calls). The Stop hook's P1 check anchors on the `[mcp:<server>:call]` token. The `_hook_log` auto-mirror copies canonical events into `mcp-calls.log` for free.
+
+After each MCP call, run:
+
+```bash
+python3 -m tools.validate.log \
+    --slug <slug> \
+    --phase 02-research \
+    --source mcp:<server> \
+    --verdict call \
+    --message "<tool-name>: <one-line description>"
+```
+
+Substitute `<server>` with the MCP server name (`mitre-attack`, `awsknowledge`, `kb-search`, etc.). When the bundled-snapshot fallback is used (per the fallback rule above), no MCP event is emitted — that is correct, but the agent should log a `skill:research-attack-surface:retry` event noting the fallback so the audit trail explains the gap.
+
+---
+
 ## Step 1: Parse Customer Threat Model (if provided)
 
 Scan input files for threat model content. Look for:

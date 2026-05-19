@@ -7,6 +7,14 @@ fileMatchPattern: "**/.gitlab-ci.yml"
 
 # Headless mode — service-approval in CI
 
+> **Update (2026-05-18):** the Kiro CLI 2.0 install path was removed from
+> `install.sh`. CI runners will need to install `kiro-cli` separately
+> (`curl -fsSL https://cli.kiro.dev/install | bash` or via Amazon Toolbox)
+> for the recipe below to work. Whether Kiro CLI 2.0 remains the supported
+> headless runtime is being re-evaluated; if you're starting a new CI
+> pipeline today, consider using Claude Code's CLI (see
+> `install-claude.sh`) instead.
+
 Kiro CLI 2.0 added `--no-interactive` mode (April 2026 release). Combined with
 `KIRO_API_KEY`, `--trust-tools`, and the `/spawn` command, the full pipeline
 runs in CI without user intervention.
@@ -88,7 +96,7 @@ Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
 
 ### `kiro-cli: Pipeline integrity failed`
 Read `.service-approval/APPROVAL-REPORT.md` for the verdict and root cause. The
-integrity script prints which of P1–P6 failed.
+integrity script prints which of P1–P7 failed.
 
 ### `Too few MCP calls in mcp-calls.log`
 The research phase didn't run — likely because `--trust-tools` omitted a server.
