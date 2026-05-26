@@ -401,14 +401,15 @@ Follow ALL instructions in `skills/research-api-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/<slug>/02-research/research-api-surface.json`.
 
-**Step 1d — Threat Attack Surface (optional but recommended):**
+**Step 1d — Threat Attack Surface (mandatory):**
 Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/<slug>/02-research/research-attack-surface.json`.
-**Auto-trigger rule:** Run this step if ANY file in the input folder matches threat model
-patterns: `*MITRE*`, `*ATT&CK*`, `*attack*`, `*STRIDE*`, `*threat*model*`, `*threat*catalog*`.
-Skip ONLY if no threat model file is present in the input folder AND no customer threat
-model input was provided.
+**Always runs.** MITRE ATT&CK threat analysis is mandatory for every service onboarding.
+If customer threat model files exist in the input folder (MITRE, STRIDE, custom), they
+enrich the analysis. If no customer files exist, the step uses the MITRE ATT&CK Cloud
+matrix (via MCP or bundled snapshot) to derive applicable techniques from the service's
+API surface.
 
 **Step 1e — Merge:**
 Run the merge step from `skills/research/SKILL.md` → "Merge Step" section.
@@ -594,21 +595,20 @@ Agent 3: research-api-surface (background)
   Prompt: Full text of skills/research-api-surface/SKILL.md + --service flag
   Output: research-api-surface.json
 
-Agent 4: research-attack-surface (background, recommended if threat model in input)
+Agent 4: research-attack-surface (background, mandatory)
   Prompt: Full text of skills/research-attack-surface/SKILL.md + --service flag
   Output: research-attack-surface.json
-  Note: Always dispatch if input folder contains threat model files (MITRE, STRIDE, custom).
-  Runs fast and enriches controls with threat traceability.
-  If it fails, pipeline continues without it (backward compatible).
+  Note: Always dispatched — MITRE ATT&CK analysis is mandatory for every service.
+  Uses customer threat model files if present, otherwise derives from MITRE ATT&CK Cloud matrix.
+  If it fails, halt the pipeline — attack surface analysis is required.
 ```
 
 **IMPORTANT:** Dispatch all 4 in a single message with 4 Agent tool calls.
 Do NOT set `model` parameter — let subagents inherit the caller's model.
 
-When all 4 complete (or 3 complete + Agent 4 fails gracefully), run the merge step
-from `skills/research/SKILL.md`:
-- Combine the 3 required partial JSONs into `research.json`
-- If `research-attack-surface.json` exists, merge its data into `attack_surface`
+When all 4 complete, run the merge step from `skills/research/SKILL.md`:
+- Combine the 4 required partial JSONs into `research.json`
+- Merge `research-attack-surface.json` data into `attack_surface`
 - Run the validation script
 - If CRITICAL cross-reference errors exist (actions missing from both operations[] and
   permission_only_actions[]), re-dispatch the api-surface agent with the missing action list

@@ -103,7 +103,7 @@ step that populates `iac-support.json`.
 ## Phase 1 — Research (parallel)
 
 **Sub-skills:** 4 parallel + 1 merge
-**Agents:** `sa-research-mitigations`, `sa-research-capabilities`, `sa-research-api-surface`, `sa-research-attack-surface` (optional)
+**Agents:** `sa-research-mitigations`, `sa-research-capabilities`, `sa-research-api-surface`, `sa-research-attack-surface`
 
 Use Kiro CLI 2.0 `/spawn` to run these in parallel:
 
@@ -111,7 +111,7 @@ Use Kiro CLI 2.0 `/spawn` to run these in parallel:
 /spawn sa-research-mitigations    (reads input mitigation docs)
 /spawn sa-research-capabilities   (queries awsknowledge for service capabilities)
 /spawn sa-research-api-surface    (queries awsknowledge + awsiac for API operations)
-/spawn sa-research-attack-surface (optional — queries ATT&CK enrichment data)
+/spawn sa-research-attack-surface (mandatory — queries MITRE ATT&CK enrichment data)
 ```
 
 After all complete, merge into `<slug>/02-research/research.json` per the

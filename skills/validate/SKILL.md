@@ -169,11 +169,12 @@ Call aws-documentation MCP:
 ```
 Set `declarative_policy_expressible: true/false`.
 
-## Step 2c: Verify ATT&CK attack surface (if present)
+## Step 2c: Verify ATT&CK attack surface
 
-Run only if `research.json` contains an `attack_surface` key (populated by the optional
-`research-attack-surface` sub-skill). If absent, skip this step entirely — the pipeline
-works without it.
+This step is mandatory — `research.json` must contain an `attack_surface` key (populated by
+the `research-attack-surface` sub-skill which always runs). If `attack_surface` is absent,
+this is a validation error — halt and report that the attack surface research step did not
+complete.
 
 ### 2c.1 Verify technique applicability
 

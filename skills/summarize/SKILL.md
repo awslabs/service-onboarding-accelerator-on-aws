@@ -123,7 +123,8 @@ Use the framework name dynamically from `mapping-results.json.framework.name`:
 Include coverage summary: N/N mitigations fully covered, N partially covered, N uncovered.
 
 ## Threat Model Coverage
-**Include this section only if `mapping-results.json` contains `attack_coverage`.**
+**Always included** — MITRE ATT&CK analysis is mandatory for every service onboarding.
+`mapping-results.json` always contains `attack_coverage`.
 
 This section renders threat model coverage regardless of which threat model was used as input
 (MITRE ATT&CK, custom STRIDE model, organizational threat catalog, etc.). The section title

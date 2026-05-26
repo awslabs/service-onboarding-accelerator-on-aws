@@ -3,7 +3,6 @@ description: "Map API surface to MITRE ATT&CK v16.1 Cloud techniques with STRIDE
 skill: research-attack-surface
 phase: 1
 parallel_group: research
-optional: true
 mcp_servers:
   - aws-documentation
   - awsknowledge

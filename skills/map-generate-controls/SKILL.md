@@ -372,17 +372,19 @@ For every `REQUIREMENT GAP` and `CUSTOMER ACTION REQUIRED` from `assessment_gaps
 - Generate at least one control that addresses the gap
 - Link via `assessment_gap_ids[]` on the control
 
-### 2.7 ATT&CK technique cross-reference (optional)
+### 2.7 ATT&CK technique cross-reference (mandatory)
 
-If `validated.json` contains `attack_surface.applicable_techniques[]`:
-1. For each control, check if any of its `actions[]` appear in a technique's `api_surface_evidence[]`
+`validated.json` always contains `attack_surface.applicable_techniques[]` (MITRE ATT&CK
+analysis is mandatory for every service onboarding). For each control:
+1. Check if any of its `actions[]` appear in a technique's `api_surface_evidence[]`
 2. If so, add that technique's ID to `attack_techniques[]` on the control
 3. Also check mechanism alignment:
    - SCP/IAM controls → relevant to T1078, T1098, T1548 (identity techniques)
    - Encryption controls → relevant to T1530, T1486 (data techniques)
    - Network controls → relevant to T1190, T1133 (access techniques)
    - Logging controls → relevant to T1562, T1070 (evasion techniques)
-4. If `attack_surface` is NOT present in validated.json, set `attack_techniques: []` on all controls
+4. Every control MUST have a non-empty `attack_techniques[]` — if no direct action match
+   exists, use mechanism alignment to identify relevant techniques
 
 ### 2.8 Compensating control documentation
 
