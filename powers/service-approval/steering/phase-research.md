@@ -26,7 +26,7 @@ Each research sub-skill writes its output to a file matching its schema in `/sch
 | `research-mitigations` | `<slug>/02-research/research-mitigations.json` | `schemas/research-mitigations.schema.json` |
 | `research-capabilities` | `<slug>/02-research/research-capabilities.json` | `schemas/research-capabilities.schema.json` |
 | `research-api-surface` | `<slug>/02-research/research-api-surface.json` | `schemas/research-api-surface.schema.json` |
-| `research-attack-surface` | `<slug>/02-research/research-attack-surface.json` | (optional, no schema) |
+| `research-attack-surface` | `<slug>/02-research/research-attack-surface.json` | (mandatory, MITRE ATT&CK) |
 
 The PostToolUse hook (`hook_post_tool_use.py`) validates the output against the schema on every `fs_write`.
 
@@ -38,10 +38,10 @@ Use Kiro CLI 2.0 `/spawn` to run the 4 research sub-skills concurrently:
 /spawn sa-research-mitigations     ./input/mitigation-report.md
 /spawn sa-research-capabilities    <service-name>
 /spawn sa-research-api-surface     <service-name>
-/spawn sa-research-attack-surface  (optional)
+/spawn sa-research-attack-surface  <service-name>
 ```
 
-Each subagent has its own context window. Kiro's main agent waits for all four
+All four sub-skills are mandatory. Each subagent has its own context window. Kiro's main agent waits for all four
 before proceeding to the merge step (Phase 1e in `skills/research/SKILL.md`).
 
 ## What triggers this steering

@@ -38,7 +38,7 @@ Phase 1: Research (4 parallel sub-skills + merge)
   1a: research-mitigations   → <slug>/02-research/research-mitigations.json
   1b: research-capabilities  → <slug>/02-research/research-capabilities.json
   1c: research-api-surface   → <slug>/02-research/research-api-surface.json
-  1d: research-attack-surface→ <slug>/02-research/research-attack-surface.json (optional, MITRE ATT&CK)
+  1d: research-attack-surface→ <slug>/02-research/research-attack-surface.json (MITRE ATT&CK, always runs)
   1e: merge                  → <slug>/02-research/research.json
 Phase 2: Validate            → <slug>/03-validate/validated.json
 Phase 3: Map (4 sub-skills)

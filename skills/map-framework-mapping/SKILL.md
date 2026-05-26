@@ -1,6 +1,6 @@
 ---
 name: map-framework-mapping
-description: Map generated controls to framework objectives with per-objective analysis, confidence scoring, and strict quality gates. Produces map-framework-mapped.json consumed by map-assemble. The hardest sub-skill — requires careful per-objective reasoning, not batch keyword matching.
+description: Map generated controls to framework objectives with per-objective analysis, coverage-level scoring, and strict quality gates. Produces map-framework-mapped.json consumed by map-assemble. The hardest sub-skill — requires careful per-objective reasoning, not batch keyword matching.
 disable-model-invocation: false
 argument-hint: '[--service=<name>]'
 ---
@@ -86,33 +86,33 @@ an initial candidate list. Then read each candidate's `security_rationale` to as
 - The rationale MUST mention the control's mechanism (SCP deny, Config rule check, KMS key policy, etc.)
 - The rationale MUST NOT be the objective title or a rephrasing of it
 
-**Step 4: Assign confidence based on specificity:**
-- **High**: The control's mechanism directly implements what the objective requires
+**Step 4: Assign coverage level based on how directly the control addresses the objective:**
+- **Full Coverage**: The control's mechanism directly implements what the objective requires
   (e.g., KMS key policy -> CEK-10 "Key Generation")
-- **Medium**: The control contributes to the objective but doesn't fully implement it
+- **Partial Coverage**: The control contributes to the objective but doesn't fully implement it
   (e.g., Config CMK check -> CEK-09 "Encryption Audit" — detects but doesn't enforce)
-- **Low**: The control is tangentially related through shared domain only
+- **Supportive**: The control is tangentially related through shared domain only
   (e.g., tag policy -> IAM-03 "Identity Inventory" — tags support inventory but aren't identity management)
 
 **Step 5: If no controls have a specific rationale**, mark the objective as:
 - **N/A** with a reason (e.g., "Managed by AWS under shared responsibility",
   "Organisational HR control", "No backup/DR API for this service")
 
-### 1.2 Coverage assignment (confidence-coverage consistency)
+### 1.2 Objective coverage rollup (coverage-level consistency)
 
-After mapping controls to an objective, assign coverage using these HARD RULES:
+After mapping controls to an objective, assign the objective's overall coverage using these HARD RULES:
 
-| Highest confidence among mapped controls | Maximum coverage level |
-|------------------------------------------|----------------------|
-| High                                      | FULL                 |
-| Medium (no High)                          | PARTIAL              |
-| Low (no Medium or High)                   | SUPPORTS             |
-| No controls                               | N/A                  |
+| Highest coverage_level among mapped controls | Objective coverage |
+|----------------------------------------------|-------------------|
+| Full Coverage                                 | Fully Covered     |
+| Partial Coverage (no Full Coverage)           | Partially Covered |
+| Supportive (no Partial or Full)               | Supportive Only   |
+| No controls                                   | N/A               |
 
-- `FULL` requires at least one `High` confidence control
-- `PARTIAL` requires at least one `Medium` confidence control
-- `SUPPORTS` is the maximum for objectives with only `Low` confidence controls
-- Never assign `FULL` when all controls are `Low` confidence
+- `Fully Covered` requires at least one `Full Coverage` control
+- `Partially Covered` requires at least one `Partial Coverage` control
+- `Supportive Only` is the maximum for objectives with only `Supportive` controls
+- Never assign `Fully Covered` when all controls are `Supportive`
 
 ---
 
@@ -121,7 +121,7 @@ After mapping controls to an objective, assign coverage using these HARD RULES:
 All rules below are HARD RULES — violations are validation failures that MUST be fixed before
 writing output.
 
-### Rule 1 — Confidence-coverage consistency
+### Rule 1 — Coverage-level consistency
 Already enforced in Phase 1 Step 5. Verify with validation script.
 
 ### Rule 2 — No domain-level spray mapping
@@ -176,9 +176,9 @@ MAPPED control, not a different control. After writing each mapping:
 4. Common error: mapping CTRL-RES-PRV-004 (VPC endpoint policy) but writing a rationale about
    aws:SecureTransport (which is CTRL-RES-PRV-003)
 
-### Rule 6 — Max controls per objective at High confidence
-If more than 5 controls map to a single objective at `High` confidence, review each individually.
-Bulk high-confidence mapping indicates overly broad keyword matching.
+### Rule 6 — Max controls per objective at Full Coverage
+If more than 5 controls map to a single objective at `Full Coverage`, review each individually.
+Bulk full-coverage mapping indicates overly broad keyword matching.
 
 ### Rule 7 — Orphaned control review
 After building the initial mapping, check for controls not mapped to any objective. For each:
@@ -223,12 +223,12 @@ Write `.service-approval/<slug>/04-map/map-framework-mapped.json`:
       "domain": "Identity & Access Management",
       "title": "Identity and Access Management Policy and Procedures",
       "status": "MAPPED",
-      "coverage": "FULL",
+      "coverage": "Fully Covered",
       "reason": "Multiple preventive and detective controls enforce IAM policies for this service",
       "controls": [
         {
           "control_id": "CTRL-ACC-PRV-001",
-          "confidence": "High",
+          "coverage_level": "Full Coverage",
           "rationale": "Permission boundary restricts service actions to approved set, directly implementing least-privilege access provisioning"
         }
       ]
@@ -253,12 +253,12 @@ Write `.service-approval/<slug>/04-map/map-framework-mapped.json`:
     }
   },
   "quality_gate_results": {
-    "rule_1_confidence_coverage": "PASS",
+    "rule_1_coverage_level_consistency": "PASS",
     "rule_2_no_spray": "PASS",
     "rule_3_max_15_per_control": "PASS",
     "rule_4_org_process_domains": "PASS",
     "rule_5_rationale_present": "PASS",
-    "rule_6_max_5_high_per_objective": "PASS",
+    "rule_6_max_5_full_per_objective": "PASS",
     "rule_7_orphan_review": "PASS",
     "orphaned_controls": []
   }
@@ -274,11 +274,10 @@ Write `.service-approval/<slug>/04-map/map-framework-mapped.json`:
   at line 263) count `status == "N/A"` verbatim for summary metrics and rationale-completeness
   checks; other tokens silently bypass those checks. `validate_state.py` also enum-validates
   `status` at CHECK-S13 — unknown values now fail fast.
-- `controls[]` MUST be array of `{control_id, confidence, rationale}` objects
-- `confidence` MUST be EXACTLY one of `"High"`, `"Medium"`, `"Low"` — PascalCase, case-sensitive.
-  Do NOT emit `"high"`, `"medium"`, `"low"` or any other variant; the schema's enum is tightened
-  to PascalCase only (MR-8 review). Every iter-14 through iter-18 archive uses PascalCase
-  exclusively, so this rule documents what the skill has always produced.
+- `coverage` MUST be one of `"Fully Covered"`, `"Partially Covered"`, `"Supportive Only"`, `"N/A"`
+- `controls[]` MUST be array of `{control_id, coverage_level, rationale}` objects
+- `coverage_level` MUST be EXACTLY one of `"Full Coverage"`, `"Partial Coverage"`, `"Supportive"`
+  — these are the only valid values. Do NOT emit `"High"`, `"Medium"`, `"Low"` or any other variant.
 - `rationale` is REQUIRED on every control mapping
 - `framework_coverage_summary` MUST be populated with per-domain breakdown
 - `quality_gate_results` MUST report PASS/FAIL for each rule
@@ -299,15 +298,15 @@ sub-skill. Supported formats:
 
 The mapping logic uses the objective's `description` and `control_specification` text
 to match against control `rationale` and `description`. No framework-specific keywords
-are hardcoded — the same confidence scoring works across all frameworks.
+are hardcoded — the same coverage-level scoring works across all frameworks.
 
 **Quality cap:** No control may map to more than 5 objectives. If a control matches >5,
-keep only the 5 highest-confidence matches. This prevents spray-mapping where generic
+keep only the 5 highest-coverage-level matches. This prevents spray-mapping where generic
 controls (like tagging) map to every objective.
 
 ## Validate Output
 
-Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on status / coverage / control_id drift per the enum details at "Schema rules". `validate_state.py::check_framework_mapped` retains the 7 quality-gate rules (Rule 1 confidence-coverage consistency, Rule 2 domain spray, Rule 3 ≤15 objectives per control, Rule 5 rationale required, Rule 6 ≤5 High per objective, Rule 7 orphaned controls) plus cross-file lookups against map-controls-generated and map-framework-parsed.
+Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on status / coverage / control_id drift per the enum details at "Schema rules". `validate_state.py::check_framework_mapped` retains the 7 quality-gate rules (Rule 1 coverage-level consistency, Rule 2 domain spray, Rule 3 ≤15 objectives per control, Rule 5 rationale required, Rule 6 ≤5 Full Coverage per objective, Rule 7 orphaned controls) plus cross-file lookups against map-controls-generated and map-framework-parsed.
 
 ## Print Summary
 
