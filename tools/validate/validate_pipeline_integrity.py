@@ -562,7 +562,13 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("research.json", 1024),
         # research-mitigations/capabilities/api-surface are merged into
         # research.json by the merge sub-skill; they may be cleaned up,
-        # so don't gate them. attack-surface is optional.
+        # so don't gate them. research-attack-surface.json is mandatory —
+        # MITRE ATT&CK is always-on (manifest.yaml dropped `optional: true`
+        # for sa-research-attack-surface; skills/research/SKILL.md raises
+        # FileNotFoundError on missing artifact; map-assemble raises
+        # ValueError on missing attack_surface). P7 closes the
+        # defense-in-depth loop.
+        ("research-attack-surface.json", 1024),
     ],
     "03-validate": [
         ("validated.json", 1024),

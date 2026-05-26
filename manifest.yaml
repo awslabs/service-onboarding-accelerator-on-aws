@@ -72,7 +72,6 @@ skills:
   - slug: research-attack-surface
     role: phase-1d
     parallel_group: research
-    optional: true
   - slug: validate
     role: phase-2
   - slug: map

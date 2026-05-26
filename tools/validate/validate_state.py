@@ -892,22 +892,26 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
                 f"CHECK-S12 {len(extra)} unexpected objective IDs: {sorted(extra)[:10]}"
             )
 
-    # Rule 1: Confidence-coverage consistency
+    # Rule 1: Coverage-level consistency (accepts both new and legacy values)
     for f in fm:
         if f.get("status") != "MAPPED":
             continue
         ctrls = f.get("controls", [])
         if not ctrls:
             continue
-        confs = [c.get("confidence", "Low") for c in ctrls]
+        # Accept both new (coverage_level) and legacy (confidence) field names
+        levels = [c.get("coverage_level", c.get("confidence", "Supportive")) for c in ctrls]
         cov = f.get("coverage", "")
-        if cov == "FULL" and "High" not in confs:
+        # Normalize: map old values to new for comparison
+        has_full = any(l in ("Full Coverage", "High") for l in levels)
+        has_partial = any(l in ("Partial Coverage", "Medium") for l in levels)
+        if cov in ("FULL", "Fully Covered") and not has_full:
             errors.append(
-                f"CHECK-S12 Rule1: {f['objective_id']}: FULL coverage but no High confidence"
+                f"CHECK-S12 Rule1: {f['objective_id']}: Fully Covered but no Full Coverage control"
             )
-        if cov == "PARTIAL" and "Medium" not in confs and "High" not in confs:
+        if cov in ("PARTIAL", "Partially Covered") and not has_partial and not has_full:
             errors.append(
-                f"CHECK-S12 Rule1: {f['objective_id']}: PARTIAL coverage but no Medium+ confidence"
+                f"CHECK-S12 Rule1: {f['objective_id']}: Partially Covered but no Partial Coverage+ control"
             )
 
     # Rule 2: No domain spray — consecutive same-domain same-controls
@@ -952,12 +956,15 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
     if missing_rationale > 0:
         errors.append(f"CHECK-S12 Rule5: {missing_rationale} control mappings missing rationale")
 
-    # Rule 6: Max 5 High per objective
+    # Rule 6: Max 5 Full Coverage per objective (accepts both new and legacy field names)
     for f in fm:
-        high_count = sum(1 for c in f.get("controls", []) if c.get("confidence") == "High")
-        if high_count > 5:
+        full_count = sum(
+            1 for c in f.get("controls", [])
+            if c.get("coverage_level", c.get("confidence")) in ("Full Coverage", "High")
+        )
+        if full_count > 5:
             errors.append(
-                f"CHECK-S12 Rule6: {f.get('objective_id')} has {high_count} High confidence (max 5)"
+                f"CHECK-S12 Rule6: {f.get('objective_id')} has {full_count} Full Coverage controls (max 5)"
             )
 
     # Rule 7: Orphaned controls
@@ -1018,17 +1025,18 @@ def check_mapping_results(data: dict) -> list[str]:
         errors.append(f"CHECK-S13 framework_mapping: only {len(fm)} entries — expected ~197+")
 
     # Quality gates re-check on assembled data
-    # Rule 1: Confidence-coverage consistency
+    # Rule 1: Coverage-level consistency (accepts both new and legacy values)
     for f in fm:
         if f.get("status") != "MAPPED":
             continue
         ctrls = f.get("controls", [])
         if not ctrls:
             continue
-        confs = [c.get("confidence", "Low") for c in ctrls]
+        levels = [c.get("coverage_level", c.get("confidence", "Supportive")) for c in ctrls]
         cov = f.get("coverage", "")
-        if cov == "FULL" and "High" not in confs:
-            errors.append(f"CHECK-S13 Rule1: {f['objective_id']}: FULL but no High confidence")
+        has_full = any(l in ("Full Coverage", "High") for l in levels)
+        if cov in ("FULL", "Fully Covered") and not has_full:
+            errors.append(f"CHECK-S13 Rule1: {f['objective_id']}: Fully Covered but no Full Coverage control")
 
     # Rule 3: No control >15 objectives
     ctrl_counts: Counter = Counter()

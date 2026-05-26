@@ -1,28 +1,33 @@
 ---
 name: research-attack-surface
-description: Identify applicable threat techniques for the target service based on API surface analysis and customer threat model input (MITRE ATT&CK, STRIDE, or custom). Produces research-attack-surface.json consumed by the research merge step.
+description: Identify applicable threat techniques for the target service based on API surface analysis and MITRE ATT&CK Cloud matrix (always runs). Enriched by customer threat model input (MITRE ATT&CK, STRIDE, or custom) when available. Produces research-attack-surface.json consumed by the research merge step.
 disable-model-invocation: false
 argument-hint: '[--service=<name>]'
 ---
 
 # Service Approval — Research: Threat Attack Surface
 
-Identify which threat techniques are applicable to the target AWS service. Supports
-multiple threat model formats:
+Identify which MITRE ATT&CK threat techniques are applicable to the target AWS service.
+This step is **mandatory** — it always runs for every service onboarding. Supports
+enrichment from multiple threat model formats:
 
 - **MITRE ATT&CK** (xlsx, json) — maps to ATT&CK Cloud techniques and tactics
 - **STRIDE** (md, docx) — maps customer STRIDE categories to techniques
 - **Custom threat catalogs** (xlsx, json, md) — any structured threat list with IDs and categories
 
-Uses the service's API surface, capabilities, and customer-provided threat model to
+When no customer threat model file is provided, the step uses the MITRE ATT&CK Cloud
+matrix (via the `mitre-attack` MCP or the bundled `data/attack-cloud-matrix.json` snapshot)
+to derive applicable techniques from the service's API surface.
+
+Uses the service's API surface, capabilities, and (optionally) customer-provided threat model to
 produce a prioritized list of applicable threat techniques.
 
-**Input:** SAR facts, customer threat model (from input folder), reference data
+**Input:** SAR facts, customer threat model (from input folder, if available), reference data
 **Output:** `.service-approval/<slug>/02-research/research-attack-surface.json`
 
 This is one of 4 focused research sub-skills. Each writes to a separate intermediate
-state file. This sub-skill is **optional** — the pipeline works without it, but when
-present it enriches controls with threat-based traceability.
+state file. This sub-skill is **mandatory** — the pipeline requires MITRE ATT&CK threat
+analysis for every service.
 
 ---
 
@@ -36,9 +41,16 @@ Scan the input folder for threat model files. Detection rules:
 | `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
 | `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
 | Mitigation report with STRIDE keywords | STRIDE (implicit) | Extract from mitigation context |
+| **No threat model files found** | **MITRE ATT&CK (default)** | **Use MITRE MCP or bundled `data/attack-cloud-matrix.json` — derive techniques from service API surface** |
 
 If multiple threat model files are found, merge them — MITRE ATT&CK provides technique IDs,
 STRIDE provides category alignment, custom catalogs provide organization-specific threats.
+
+**Default behavior (no customer files):** When no customer threat model file is detected,
+this step ALWAYS runs using the MITRE ATT&CK Cloud matrix as the source. The service's
+API surface (from SAR facts or `--service` flag) is analyzed against the full ATT&CK
+Cloud technique set to identify applicable threats. This is the baseline — customer
+files only enrich it.
 
 Record the detected threat model in the output:
 ```json

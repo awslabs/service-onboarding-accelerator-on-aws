@@ -32,7 +32,7 @@ AWS service. It produces:
 | **Responsive controls** | Lambda auto-remediators, SSM runbooks, Step Functions remediation workflows |
 | **Compliant IaC templates** | Automatically determined based on provider support (CloudFormation, Terraform, CDK, CDKTF) |
 | **Framework mapping** | Controls mapped to CCMv4 objectives (other frameworks are out of scope for now) |
-| **Threat model** | MITRE ATT&CK technique mapping with tactic coverage analysis (optional) |
+| **Threat model** | MITRE ATT&CK technique mapping with tactic coverage analysis (always included) |
 
 The pipeline verifies every claim via MCP servers (no hardcoded training data), maps controls
 to your chosen compliance framework, and produces deployable artifacts — not just documentation.
@@ -544,7 +544,6 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "dry_run": true|false,
     "keep": true|false,
     "timeout": 30,
-    "skip_attack_surface": true|false,
     "include_unverified": false,
     "clean": false
   }

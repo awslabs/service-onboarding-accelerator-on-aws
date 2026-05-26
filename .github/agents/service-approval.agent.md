@@ -17,7 +17,7 @@ it step by step. That file is the authoritative source for the pipeline — do n
 
 - **Intake (precursor):** collect service, inputs, framework, testing intent → `intake-manifest.json`
 - **Phase 0 — Assess:** 5-domain CAF security assessment + IaC provider discovery
-- **Phase 1 — Research:** mitigations, capabilities, API surface, optional MITRE ATT&CK
+- **Phase 1 — Research:** mitigations, capabilities, API surface, MITRE ATT&CK threat analysis
 - **Phase 2 — Validate:** cross-reference all research claims via MCP
 - **Phase 3 — Map:** parse framework, generate controls, map to objectives, assemble
 - **Phase 4 — Generate:** preventive, proactive, detective, responsive, IaC (4 formats)

@@ -155,58 +155,58 @@ this shape spec, then consumers — in that order.
 
 ---
 
-## Phase 2b: Build ATT&CK Coverage Summary (optional)
+## Phase 2b: Build ATT&CK Coverage Summary (mandatory)
 
-Run only if `validated.json` contains `attack_surface`. If absent, skip — backward compatible.
+MITRE ATT&CK analysis is mandatory — `validated.json` always contains `attack_surface`.
 
 ```python
 attack_surface = vj.get('attack_surface')
-attack_coverage = None
+if not attack_surface:
+    raise ValueError("attack_surface missing from validated.json — MITRE ATT&CK analysis is mandatory. Run research-attack-surface first.")
 
-if attack_surface:
-    techniques = attack_surface.get('applicable_techniques', [])
-    technique_ids = {t['technique_id'] for t in techniques}
+techniques = attack_surface.get('applicable_techniques', [])
+technique_ids = {t['technique_id'] for t in techniques}
 
-    # Build technique -> controls mapping
-    tech_to_ctrls = {}
-    for ctrl in controls:
-        for tid in ctrl.get('attack_techniques', []):
-            tech_to_ctrls.setdefault(tid, []).append(ctrl['id'])
+# Build technique -> controls mapping
+tech_to_ctrls = {}
+for ctrl in controls:
+    for tid in ctrl.get('attack_techniques', []):
+        tech_to_ctrls.setdefault(tid, []).append(ctrl['id'])
 
-    # Calculate coverage
-    covered_techniques = [t for t in techniques if t['technique_id'] in tech_to_ctrls]
-    uncovered_techniques = [t for t in techniques if t['technique_id'] not in tech_to_ctrls]
+# Calculate coverage
+covered_techniques = [t for t in techniques if t['technique_id'] in tech_to_ctrls]
+uncovered_techniques = [t for t in techniques if t['technique_id'] not in tech_to_ctrls]
 
-    # Build tactic-level summary
-    tactic_coverage = {}
-    for t in techniques:
-        tid = t['tactic_id']
-        if tid not in tactic_coverage:
-            tactic_coverage[tid] = {
-                'name': t['tactic_name'],
-                'total': 0, 'covered': 0, 'uncovered': 0,
-                'techniques_covered': [], 'techniques_uncovered': []
-            }
-        tactic_coverage[tid]['total'] += 1
-        if t['technique_id'] in tech_to_ctrls:
-            tactic_coverage[tid]['covered'] += 1
-            tactic_coverage[tid]['techniques_covered'].append(t['technique_id'])
-        else:
-            tactic_coverage[tid]['uncovered'] += 1
-            tactic_coverage[tid]['techniques_uncovered'].append(t['technique_id'])
+# Build tactic-level summary
+tactic_coverage = {}
+for t in techniques:
+    tid = t['tactic_id']
+    if tid not in tactic_coverage:
+        tactic_coverage[tid] = {
+            'name': t['tactic_name'],
+            'total': 0, 'covered': 0, 'uncovered': 0,
+            'techniques_covered': [], 'techniques_uncovered': []
+        }
+    tactic_coverage[tid]['total'] += 1
+    if t['technique_id'] in tech_to_ctrls:
+        tactic_coverage[tid]['covered'] += 1
+        tactic_coverage[tid]['techniques_covered'].append(t['technique_id'])
+    else:
+        tactic_coverage[tid]['uncovered'] += 1
+        tactic_coverage[tid]['techniques_uncovered'].append(t['technique_id'])
 
-    attack_coverage = {
-        'total_techniques': len(techniques),
-        'covered_by_controls': len(covered_techniques),
-        'uncovered': len(uncovered_techniques),
-        'uncovered_techniques': [
-            {'technique_id': t['technique_id'], 'technique_name': t['technique_name'],
-             'applicability': t['applicability']}
-            for t in uncovered_techniques
-        ],
-        'tactic_coverage': tactic_coverage,
-        'technique_to_controls': {tid: cids for tid, cids in tech_to_ctrls.items()}
-    }
+attack_coverage = {
+    'total_techniques': len(techniques),
+    'covered_by_controls': len(covered_techniques),
+    'uncovered': len(uncovered_techniques),
+    'uncovered_techniques': [
+        {'technique_id': t['technique_id'], 'technique_name': t['technique_name'],
+         'applicability': t['applicability']}
+        for t in uncovered_techniques
+    ],
+    'tactic_coverage': tactic_coverage,
+    'technique_to_controls': {tid: cids for tid, cids in tech_to_ctrls.items()}
+}
 ```
 
 ---
@@ -285,13 +285,13 @@ for t in threat_mitigation_map:
                     "recommendation": "Add controls for uncovered parameters"
                 })
 
-# 4. framework_gap: MAPPED objectives with only SUPPORTS coverage
+# 4. framework_gap: MAPPED objectives with only Supportive Only coverage
 for f in fw_mapped['framework_mapping']:
-    if f.get('status') == 'MAPPED' and f.get('coverage') == 'SUPPORTS':
+    if f.get('status') == 'MAPPED' and f.get('coverage') == 'Supportive Only':
         coverage_gaps.append({
             "type": "framework_gap",
             "id": f['objective_id'],
-            "description": f"Objective {f['objective_id']} has only Low confidence controls",
+            "description": f"Objective {f['objective_id']} has only Supportive controls (no Full or Partial Coverage)",
             "recommendation": "Implement stronger controls directly addressing this objective"
         })
 
@@ -305,16 +305,17 @@ for oid in orphaned:
         "recommendation": "Review if this control addresses any framework requirement"
     })
 
-# 6. attack_technique_gap: HIGH applicability techniques with no controls (optional)
-if attack_coverage:
-    for t in attack_coverage.get('uncovered_techniques', []):
-        if t['applicability'] == 'HIGH':
-            coverage_gaps.append({
-                "type": "attack_technique_gap",
-                "id": t['technique_id'],
-                "description": f"HIGH applicability technique {t['technique_id']} ({t['technique_name']}) has no covering controls",
-                "recommendation": "Generate controls targeting this attack technique"
-            })
+# 6. attack_technique_gap: HIGH applicability techniques with no controls
+# attack_coverage is built from attack_surface above (always present —
+# MITRE ATT&CK is mandatory); no guard needed.
+for t in attack_coverage.get('uncovered_techniques', []):
+    if t['applicability'] == 'HIGH':
+        coverage_gaps.append({
+            "type": "attack_technique_gap",
+            "id": t['technique_id'],
+            "description": f"HIGH applicability technique {t['technique_id']} ({t['technique_name']}) has no covering controls",
+            "recommendation": "Generate controls targeting this attack technique"
+        })
 ```
 
 ---
@@ -341,6 +342,7 @@ mapping_results = {
     "framework_mapping": fw_mapped['framework_mapping'],
     "framework_coverage_summary": fw_mapped['framework_coverage_summary'],
     "coverage_gaps": coverage_gaps,
+    "attack_coverage": attack_coverage,  # always present — MITRE ATT&CK is mandatory
     "control_summary": {
         "total_controls": len(controls),
         "by_scope": dict(scope_counts),
@@ -348,10 +350,6 @@ mapping_results = {
         "by_mechanism": dict(mech_counts)
     }
 }
-
-# Add ATT&CK coverage if available (optional — backward compatible)
-if attack_coverage:
-    mapping_results['attack_coverage'] = attack_coverage
 
 with open('.service-approval/<slug>/04-map/mapping-results.json', 'w') as f:
     json.dump(mapping_results, f, indent=2)
@@ -435,7 +433,7 @@ The responsive control completes the detect-respond loop. Typical responsive mec
 - **Step Functions workflow** — multi-step orchestration (detect → notify → remediate → verify)
 - **Systems Manager OpsItems** — create operational items for manual follow-up
 
-If `attack_coverage` is available, add after the Control Matrix Summary:
+After the Control Matrix Summary, always include the ATT&CK Technique Coverage section:
 
 ```markdown
 ## ATT&CK Technique Coverage
@@ -485,7 +483,21 @@ or service name in the template logic.
    A table cell with only "CTRL-005" is incomplete — always write
    `CTRL-005 — Enforce IAM authorizer for Gateways`.
 
-3. **Status values — use "Not Applicable" not "Not Mapped".** When a framework objective
+3. **Control descriptions are REQUIRED in MITRE mapping tables.** In the MITRE ATT&CK
+   Threat-to-Controls Mapping section, every control row MUST include BOTH the control's
+   `description` field AND the `security_rationale` from `map-controls-generated.json`.
+   The "How It Mitigates" column should contain the control's `description` (what it does
+   functionally, e.g., "SCP denies CreateMemory without KmsKeyArn, preventing unencrypted
+   memory creation") followed by the `security_rationale` (why this mechanism was chosen).
+   If space is tight, use the description as the primary content and append a condensed
+   rationale in parentheses.
+
+4. **MITRE technique names are REQUIRED.** Every MITRE technique reference MUST include
+   both the technique ID and its full name. Format: `{Technique-ID}: {Technique Name}`.
+   A reference with only "T1078" is incomplete — always write
+   `T1078: Valid Accounts` or `T1078.004: Cloud Accounts`.
+
+5. **Status values — use "Not Applicable" not "Not Mapped".** When a framework objective
    cannot be addressed by AWS service-level technical controls (e.g., organizational
    processes, HR policies, physical security, change management), the status MUST be
    `Not Applicable` with a reason explaining WHY it's not applicable to service-level
@@ -534,12 +546,12 @@ has mapped controls or is Not Applicable.
 #### {Objective-ID}: {Objective Full Title}
 
 **Status:** {MAPPED | Not Applicable}
-**Coverage:** {FULL | PARTIAL | SUPPORTS | N/A}
+**Coverage:** {Fully Covered | Partially Covered | Supportive Only | N/A}
 **Reason:** {1-sentence summary of why this coverage level was assigned, or why Not Applicable}
 
-| Control ID | Control Name | Category | Confidence | Rationale |
+| Control ID | Control Name | Category | Coverage Level | Rationale |
 |---|---|---|---|---|
-| {CTRL-ID} | {Full control name} | {Preventive/Proactive/Detective/Responsive} | {High/Medium/Low} | {1-sentence specific rationale connecting this control's mechanism to this objective's requirement} |
+| {CTRL-ID} | {Full control name} | {Preventive/Proactive/Detective/Responsive} | {Full Coverage/Partial Coverage/Supportive} | {1-sentence specific rationale connecting this control's mechanism to this objective's requirement} |
 
 If status is Not Applicable, the table is omitted and only the Reason line appears. Example:
 > **Status:** Not Applicable
@@ -572,7 +584,7 @@ Controls that were generated but do not map to any framework objective.
 
 ## Coverage Gaps
 
-Framework objectives where coverage is PARTIAL, SUPPORTS, or where no HIGH-confidence
+Framework objectives where coverage is Partially Covered, Supportive Only, or where no Full Coverage
 controls exist.
 
 | Objective ID | Objective Title | Domain | Gap Description | Recommendation |
@@ -588,6 +600,50 @@ Shows the full chain: Threat Mitigation → Service Controls → Framework Objec
 | Mitigation ID | Threat Description | Service Controls | Framework Objectives | Coverage |
 |---|---|---|---|---|
 | {MIT-ID} | {threat summary} | {CTRL-ID — Name, ...} | {OBJ-ID: Title, ...} | {FULL/PARTIAL/NONE} |
+
+---
+
+## MITRE ATT&CK Threat-to-Controls Mapping
+
+For each applicable MITRE ATT&CK technique, lists ALL service controls that mitigate it.
+This section is the primary deliverable for threat-based compliance review — reviewers look
+up any MITRE technique and immediately see which controls address it.
+
+Data source: `attack_coverage.technique_to_controls` from `mapping-results.json`, enriched
+with technique details from `validated.json.attack_surface.applicable_techniques[]` and
+control details from `map-controls-generated.json`.
+
+### {Tactic Name} ({Tactic ID})
+
+#### {Technique ID}: {Technique Name}
+
+**Applicability:** {HIGH/MEDIUM}
+**Applicability Reason:** {why this technique applies to this service — from applicable_techniques[].applicability_reason}
+**API Surface Evidence:** {comma-separated list of service actions that expose this technique}
+
+| Control ID | Control Name | Description | Category | Scope | Mechanism | Security Rationale |
+|---|---|---|---|---|---|---|
+| {CTRL-ID} | {Full control name} | {control description from map-controls-generated.json} | {PRV/PRO/DET/COR} | {ORG/ACC/RES} | {SCP/Config Rule/etc} | {security_rationale explaining why this mechanism was chosen and how it addresses this technique} |
+
+**[Repeat for every applicable technique within this tactic]**
+
+**[Repeat for every tactic that has applicable techniques]**
+
+### Uncovered MITRE Techniques
+
+Techniques with HIGH or MEDIUM applicability that have NO mitigating controls.
+
+| Technique ID | Technique Name | Tactic | Applicability | Recommendation |
+|---|---|---|---|---|
+| {T-ID} | {name} | {tactic} | {HIGH/MEDIUM} | {what control type should be implemented} |
+
+### MITRE Coverage Summary
+
+| Tactic ID | Tactic Name | Total Techniques | Covered | Uncovered | Coverage % |
+|---|---|---|---|---|---|
+| {TA-ID} | {name} | {N} | {N} | {N} | {N%} |
+
+**Overall MITRE ATT&CK Coverage:** {covered}/{total} techniques ({percentage}%)
 ```
 
 **Assembly rules for this phase:**
@@ -618,6 +674,23 @@ Shows the full chain: Threat Mitigation → Service Controls → Framework Objec
 9. For Threat-to-Framework Traceability, use `threat_mitigation_map` assembled in Phase 2
    of this skill. Include full control names and objective titles.
 
+10. For the MITRE ATT&CK Threat-to-Controls Mapping section, use `attack_coverage` assembled
+    in Phase 2b of this skill:
+    - Group techniques by tactic (using `tactic_id` from each technique in
+      `validated.json.attack_surface.applicable_techniques[]`)
+    - For each technique, look up its mitigating controls via
+      `attack_coverage.technique_to_controls[technique_id]`
+    - For each control ID, look up the full control details (name, description, category,
+      scope, mechanism, security_rationale) from `map-controls-generated.json`
+    - Write the "Description" column using the control's `description` field verbatim
+      (e.g., "SCP denies CreateMemory without KmsKeyArn")
+    - Write the "Security Rationale" column using the control's `security_rationale` field
+      (explains why this mechanism was chosen and how it addresses the technique)
+    - For uncovered techniques, use `attack_coverage.uncovered_techniques[]`
+    - For the coverage summary table, use `attack_coverage.tactic_coverage`
+    - Query the `mitre-attack` MCP for technique details (name, description, tactic) when
+      available; fall back to `validated.json.attack_surface.applicable_techniques[]` fields
+
 ---
 
 ## Phase 7: Final Validation
@@ -638,10 +711,11 @@ Map (Assemble) complete:
   Outputs:
     - mapping-results.json (final state)
     - controls-catalog.md (matrix: {O} org, {A} acc, {R} res x {P} pro, {V} prv, {D} det, {R} res)
-    - framework-mapping.md ({mapped} mapped, {na} N/A)
+    - framework-mapping.md ({mapped} mapped, {na} N/A, MITRE: {covered}/{total} techniques)
   Traceability:
     - Mitigations: {N}/{total} ({pct}%)
     - Framework objectives: {mapped}/{total} mapped, {na} N/A
+    - MITRE ATT&CK: {covered}/{total} techniques covered ({pct}%)
     - Coverage gaps: {N}
   Validation: PASS
 ```

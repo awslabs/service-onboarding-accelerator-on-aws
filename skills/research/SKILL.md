@@ -94,11 +94,11 @@ Follow ALL instructions in `skills/research-api-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/<slug>/02-research/research-api-surface.json`.
 
-### Step 3b (optional): Run research-attack-surface
+### Step 3b: Run research-attack-surface
 Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/<slug>/02-research/research-attack-surface.json`.
-This step is optional — skip if ATT&CK enrichment is not needed.
+This step is mandatory — MITRE ATT&CK threat analysis runs for every service.
 
 ### Step 4: Merge
 Run the merge step below.
@@ -300,17 +300,18 @@ merged_poa = sorted(set(cap_poa) | set(api_poa))
 if merged_poa:
     research['capabilities'].setdefault('iam', {})['permission_only_actions'] = merged_poa
 
-# Load ATT&CK attack surface (optional — backward compatible)
+# Load ATT&CK attack surface (mandatory)
 import os
 atk_path = '<slug>/02-research/research-attack-surface.json'
-if os.path.isfile(atk_path):
-    atk = json.load(open(atk_path))
-    research['attack_surface'] = {
-        'applicable_techniques': atk.get('applicable_techniques', []),
-        'stride_to_attack_bridge': atk.get('stride_to_attack_bridge', []),
-        'tactic_coverage_summary': atk.get('tactic_coverage_summary', {}),
-        'customer_stride_profile': atk.get('customer_stride_profile', {})
-    }
+if not os.path.isfile(atk_path):
+    raise FileNotFoundError(f"MITRE ATT&CK attack surface is mandatory but {atk_path} not found. Run research-attack-surface first.")
+atk = json.load(open(atk_path))
+research['attack_surface'] = {
+    'applicable_techniques': atk.get('applicable_techniques', []),
+    'stride_to_attack_bridge': atk.get('stride_to_attack_bridge', []),
+    'tactic_coverage_summary': atk.get('tactic_coverage_summary', {}),
+    'customer_stride_profile': atk.get('customer_stride_profile', {})
+}
 
 json.dump(research, open('.service-approval/<slug>/02-research/research.json', 'w'), indent=2)
 ```
