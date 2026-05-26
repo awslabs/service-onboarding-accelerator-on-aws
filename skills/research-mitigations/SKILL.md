@@ -251,31 +251,10 @@ Write `.service-approval/<slug>/02-research/research-mitigations.json`:
 
 Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on phase-const mismatch, missing `id` / `mitigation_goal` / `statement` on any mitigation, `assets_partial[].cfn_type` not matching `^AWS::`, or any assessment-gap `id` not matching `^GAP-`. `validate_state.py::check_research_mitigations` delegates entirely to the schema — no additional hand-rolled checks remain.
 
-## MITRE ATT&CK Threat Overlay (optional)
+## MITRE ATT&CK Threat Overlay
 
-If `data/attack-cloud-matrix.json` exists, enrich mitigations
-with MITRE ATT&CK technique mappings:
-
-1. Load the cloud matrix (Tactics: Initial Access → Impact, ~70 techniques)
-2. For each mitigation, match its `category` and `description` keywords against technique
-   names and descriptions
-3. Assign `mitre_technique_ids` (e.g., `["T1078", "T1190"]`) to each mitigation
-4. Add a `threat_overlay` section to the output:
-```json
-"threat_overlay": {
-  "techniques_mapped": 18,
-  "tactics_covered": ["Initial Access", "Execution", "Persistence", "Privilege Escalation"],
-  "technique_to_mitigation": {"T1078": ["MIT-001", "MIT-003"], ...}
-}
-```
-
-This is optional — if the matrix file is absent, skip silently. The threat overlay
-feeds into controls-catalog.md and the APPROVAL-REPORT.md threat coverage section.
-
-## MITRE ATT&CK Threat Overlay (optional)
-
-If `data/attack-cloud-matrix.json` exists, enrich mitigations
-with MITRE ATT&CK technique mappings:
+Enrich mitigations with MITRE ATT&CK technique mappings using `data/attack-cloud-matrix.json`
+or the `mitre-attack` MCP:
 
 1. Load the cloud matrix (Tactics: Initial Access → Impact, ~70 techniques)
 2. For each mitigation, match its `category` and `description` keywords against technique
@@ -290,8 +269,7 @@ with MITRE ATT&CK technique mappings:
 }
 ```
 
-This is optional — if the matrix file is absent, skip silently. The threat overlay
-feeds into controls-catalog.md and the APPROVAL-REPORT.md threat coverage section.
+The threat overlay feeds into controls-catalog.md and the APPROVAL-REPORT.md threat coverage section.
 
 ## Print Summary
 

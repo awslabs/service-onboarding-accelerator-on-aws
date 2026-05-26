@@ -53,7 +53,8 @@
         },
         "coverage": {
           "type": "string",
-          "enum": ["FULL", "PARTIAL", "SUPPORTS", "NONE", ""]
+          "enum": ["Fully Covered", "Partially Covered", "Supportive Only", "N/A", "FULL", "PARTIAL", "SUPPORTS", "NONE", ""],
+          "description": "Preferred values: 'Fully Covered', 'Partially Covered', 'Supportive Only', 'N/A'. Legacy values (FULL, PARTIAL, SUPPORTS, NONE) accepted for backward compatibility with archived runs."
         },
         "reason": {"type": "string"},
         "controls": {
@@ -67,10 +68,15 @@
                 "type": "string",
                 "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
               },
+              "coverage_level": {
+                "type": "string",
+                "enum": ["Full Coverage", "Partial Coverage", "Supportive", "High", "Medium", "Low"],
+                "description": "Preferred values: 'Full Coverage', 'Partial Coverage', 'Supportive'. Legacy values (High, Medium, Low) accepted for backward compatibility with archived runs."
+              },
               "confidence": {
                 "type": "string",
                 "enum": ["High", "Medium", "Low"],
-                "description": "PascalCase only. Skill map-framework-mapping emits PascalCase (High/Medium/Low); iter-14 through iter-18 archives all use PascalCase. Lowercase was previously tolerated as LLM-drift slack but never observed in practice — tightened per MR-8 review to prevent foot-gun."
+                "description": "DEPRECATED — use coverage_level instead. Retained for backward compatibility with archived state files from iter-14 through iter-18."
               },
               "rationale": {"type": "string", "minLength": 1}
             }

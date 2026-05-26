@@ -296,13 +296,20 @@ def test_check_s11_still_catches_scope_category_mismatch(tmp_path) -> None:
 
 
 # ------------------------------------------------------------------
-# map-framework-mapped confidence enum (MR-8 review: PascalCase-only)
+# map-framework-mapped coverage_level enum (renamed from confidence)
+# Accepts both new values (Full Coverage, Partial Coverage, Supportive)
+# and legacy values (High, Medium, Low) for backward compatibility.
 # ------------------------------------------------------------------
 
 
-def _minimal_mapped_doc(confidence: str) -> dict:
+def _minimal_mapped_doc(coverage_level: str, field_name: str = "coverage_level") -> dict:
     """Build a minimal map-framework-mapped.json that passes every schema
-    constraint except (potentially) the confidence enum."""
+    constraint except (potentially) the coverage_level/confidence enum."""
+    ctrl = {
+        "control_id": "CTRL-ORG-PRV-001",
+        field_name: coverage_level,
+        "rationale": "test rationale",
+    }
     return {
         "schema_version": "1.0",
         "service": "test",
@@ -312,34 +319,36 @@ def _minimal_mapped_doc(confidence: str) -> dict:
                 "domain": "TEST",
                 "title": "Test objective",
                 "status": "MAPPED",
-                "coverage": "FULL",
+                "coverage": "Fully Covered",
                 "reason": "test",
-                "controls": [
-                    {
-                        "control_id": "CTRL-ORG-PRV-001",
-                        "confidence": confidence,
-                        "rationale": "test rationale",
-                    }
-                ],
+                "controls": [ctrl],
             }
         ],
     }
 
 
+def test_coverage_level_accepts_new_values() -> None:
+    """The new enum must accept all three user-friendly values."""
+    for value in ["Full Coverage", "Partial Coverage", "Supportive"]:
+        doc = _minimal_mapped_doc(value, "coverage_level")
+        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "coverage_level" in e]
+        assert errs == [], f"New value {value!r} must validate; got: {errs}"
+
+
 def test_confidence_accepts_pascal_case() -> None:
-    """The tightened enum must still accept all three PascalCase values —
-    every iter-14..18 archive uses these."""
+    """Legacy PascalCase values must still be accepted for backward compatibility
+    with archived runs (iter-14..18)."""
     for value in ["High", "Medium", "Low"]:
-        doc = _minimal_mapped_doc(value)
+        doc = _minimal_mapped_doc(value, "confidence")
         errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
-        assert errs == [], f"PascalCase {value!r} must validate; got: {errs}"
+        assert errs == [], f"Legacy PascalCase {value!r} must validate; got: {errs}"
 
 
 def test_confidence_rejects_lowercase() -> None:
     """Lowercase was previously tolerated (foot-gun per reviewer). Must now
     fail the enum so downstream consumers can rely on exact string match."""
     for value in ["high", "medium", "low"]:
-        doc = _minimal_mapped_doc(value)
+        doc = _minimal_mapped_doc(value, "confidence")
         errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
         assert len(errs) == 1, f"lowercase {value!r} must be rejected; got: {errs}"
 
@@ -347,6 +356,6 @@ def test_confidence_rejects_lowercase() -> None:
 def test_confidence_rejects_other_variants() -> None:
     """Other casings and synonyms must also fail — the enum is a closed set."""
     for value in ["HIGH", "MED", "None", ""]:
-        doc = _minimal_mapped_doc(value)
+        doc = _minimal_mapped_doc(value, "confidence")
         errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
         assert len(errs) == 1, f"variant {value!r} must be rejected; got: {errs}"

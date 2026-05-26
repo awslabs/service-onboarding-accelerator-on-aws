@@ -21,7 +21,7 @@ Before this tool, generating compliant controls for a new AWS service required 2
 ## Non-goals
 
 - Not a deployment tool. Phase 5 (Test) can dry-run deployments but production rollout is out of scope.
-- Not a threat model. MITRE ATT&CK enrichment is optional; the Power assumes the threat model is an input, not an output.
+- Not a threat model authoring tool. MITRE ATT&CK analysis always runs to identify applicable threats, but the threat model itself (customer-specific risk context) is an input, not an output.
 - Not a framework authoring tool. Frameworks (CCMv4, NIST 800-53) are inputs; this Power maps to them.
 
 ## Success criteria

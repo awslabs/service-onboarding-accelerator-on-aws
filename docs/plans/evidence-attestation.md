@@ -58,7 +58,7 @@ These are coupled because Phase 7 consumes the new per-service tree (`05-generat
 │   │   ├── research-mitigations.json
 │   │   ├── research-capabilities.json
 │   │   ├── research-api-surface.json
-│   │   ├── research-attack-surface.json           # optional
+│   │   ├── research-attack-surface.json           # mandatory — MITRE ATT&CK
 │   │   ├── botocore-schema.json                   # transient — gitignored
 │   │   ├── botocore-mutability.json               # transient — gitignored
 │   │   ├── botocore-gateable.json                 # transient — gitignored
