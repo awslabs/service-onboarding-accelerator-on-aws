@@ -205,6 +205,51 @@ The Stop hook (`ide/hooks/stop.kiro.hook`) enforces P6: if any P1–P5/P7 check
 failed, the verdict MUST be `REQUIRES REMEDIATION`. An `APPROVED` verdict with
 failures is rewritten by the hook.
 
+## Self-Review Gate (mandatory, runs between Generate and Summarize)
+
+Before entering Phase 6 (Summarize), the orchestrator MUST perform a completeness
+and correctness review of all Phase 4 output. This step exists because Generate
+runs in parallel and gaps are easy to miss when subagents complete independently.
+
+### Checklist
+
+1. **Artifact count** — Count all files in `05-generate/` by category. Compare
+   against the ranges in `steering/phase-generate.md`. If below minimum for any
+   category, re-run that generator sub-skill.
+
+2. **IaC format coverage** — Read `01-assess/iac-support.json`. For every format
+   where `supported: true`, verify corresponding output exists in
+   `05-generate/iac/{cdk,cloudformation,cdktf,terraform}/`. Missing format = gap.
+
+3. **Policy engine coverage** — Every proactive control must exist in ALL THREE
+   engines: CFN Guard (`.guard`), OPA (`.rego`), and Checkov (`.py`). A control
+   in only one engine is incomplete.
+
+4. **SCP metadata** — Every file in `05-generate/preventive/` must have:
+   - `_metadata` with control_id, name, ccmv4_objectives, mitre_techniques
+   - `_simulation_tests` array with at least one DENY and one ALLOW scenario
+   - Control ID in the `Sid` field of each Statement
+
+5. **Control ID annotations** — Spot-check 3 random IaC files. Each resource
+   property that implements a control must have an inline comment with the
+   control ID (`# CTRL-*` in TF/Guard, `// CTRL-*` in CDK/CDKTF,
+   `Comment: CTRL-*` in CFN YAML).
+
+6. **Integrity pre-check** — Run P3 and P4 checks inline:
+   - P3: Every SCP has ≥1 Deny statement; no `StringEquals`/`StringNotEquals`
+     targeting different keys in the same Condition block
+   - P4: No placeholder account IDs (`123456789012`, `000000000000`, `111111111111`)
+     in any generated file
+
+7. **Directory structure** — Verify output matches the layout defined in
+   `steering/structure.md` (subdirectories, naming conventions).
+
+### Outcome
+
+- All checks pass → proceed to Phase 6 (Summarize)
+- Any check fails → fix the gap, then re-run this gate before proceeding
+- Document any fixes made in `pipeline.log` with tag `[self-review:fix]`
+
 ## Phase 7 — Evidence (optional, requires AWS credentials)
 
 **Sub-skill:** `skills/evidence/SKILL.md`

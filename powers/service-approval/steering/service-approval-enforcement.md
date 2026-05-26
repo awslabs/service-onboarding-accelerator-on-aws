@@ -25,3 +25,19 @@ Before writing `APPROVAL-REPORT.md`, verify all expected outputs exist:
 - `<slug>/04-map/controls-catalog.md`
 - `<slug>/04-map/framework-mapping.md`
 - All control artifacts under `<slug>/05-generate/` per the counts in `mapping-results.json`
+
+## Self-Review Gate (enforcement)
+
+After Phase 4 (Generate) completes and before Phase 6 (Summarize), the agent
+MUST perform a completeness review. Skipping this step is a cultural violation
+equivalent to skipping the Validator.
+
+Minimum checks:
+- Artifact count meets ranges defined in `steering/phase-generate.md`
+- All IaC formats from `iac-support.json` (where `supported: true`) have output
+- Proactive controls exist as Guard + OPA + Checkov (all three engines)
+- Every SCP has `_metadata`, `_simulation_tests`, and ≥1 Deny statement
+- No placeholder account IDs in any generated file
+
+Failure to self-review before summarizing produces incomplete reports and
+undermines the pipeline's integrity guarantees.
