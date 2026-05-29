@@ -1,4 +1,4 @@
-## My Project
+## Service Onboarding on AWS
 
 TODO: Fill this README out!
 
