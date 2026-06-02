@@ -74,3 +74,16 @@ Exact counts vary by service surface area. Observed ranges:
 - OPA `check` on `.rego` files
 
 Failures exit 2 → Kiro auto-retries the write with the error in context.
+
+## Post-Generate Completeness Contract
+
+Each generator sub-skill MUST produce output across ALL supported engines/formats.
+A single-format output is never acceptable. Specifically:
+
+- `sa-generate-preventive` → SCPs with `_metadata` + `_simulation_tests`
+- `sa-generate-detective` → Config Rules as BOTH CloudFormation YAML and Terraform
+- `sa-generate-iac` → One template per format in `iac-support.json` where `supported: true`
+- Proactive controls → MUST exist as Guard + OPA + Checkov (all three)
+
+If a generator completes without meeting this contract, the self-review gate
+(defined in `steering/pipeline.md`) will catch it and force re-generation.
