@@ -62,7 +62,7 @@ Or explicitly ask Kiro to use the Power:
 The Intake phase will ask you:
 
 1. **Service name** — which AWS service (e.g., `s3`, `kms`, `lambda`)
-2. **Framework** — which control framework to map against (CCMv4, NIST 800-53, CIS, ISO 27001)
+2. **Framework** — defaults to CCMv4 (always-on MITRE ATT&CK enrichment). NIST 800-53, CIS, ISO 27001 stay available behind `--framework=<type>` for advanced operators.
 3. **Testing mode** — whether to deploy and test (`full-deploy`, `dry-run`, `skip`)
 4. **Input files** — whether to seed from bundled CCMv4 or use your own
 
@@ -97,7 +97,9 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
   05-generate/        ← all generated artifacts (85+ files)
+  06-test/            ← test-results.json, deployed-resources.json (if --env)
   07-summarize/       ← APPROVAL-REPORT.md (final verdict)
+  08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
 ```
 
 The key deliverable is `07-summarize/APPROVAL-REPORT.md` — contains the approval

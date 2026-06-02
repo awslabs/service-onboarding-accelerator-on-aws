@@ -120,7 +120,9 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
   05-generate/        ← all generated artifacts (85+ files)
+  06-test/            ← test-results.json, deployed-resources.json (if --env)
   07-summarize/       ← APPROVAL-REPORT.md (final verdict)
+  08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
 ```
 
 The key deliverable is `07-summarize/APPROVAL-REPORT.md` — contains the approval
