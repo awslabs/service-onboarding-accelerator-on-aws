@@ -71,7 +71,7 @@ def _emit_legacy_migration_warning(norm: str, file_path: str) -> str | None:
                 "Legacy .service-approval/state/ or .service-approval/controls/ tree detected.\n"
                 f"Triggering write: {file_path}\n"
                 "\n"
-                "The pipeline migrated to a per-slug layout in MR !14. Old paths\n"
+                "The pipeline migrated to a per-slug layout. Old paths\n"
                 "are NOT auto-migrated. Run tools/migrate-legacy-state.py (planned)\n"
                 "or manually move files to .service-approval/<slug>/<NN>-<phase>/.\n"
                 "After 24 hours, this hook will start REJECTING writes to the\n"

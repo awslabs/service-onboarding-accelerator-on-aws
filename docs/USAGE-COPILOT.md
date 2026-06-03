@@ -17,16 +17,16 @@ Step-by-step guide to install and run the Service Approval Plugin with GitHub Co
 ## Step 1: Clone the repo
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
+git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 ```
 
 ## Step 2: Open the repo in VS Code
 
 ```bash
-code service-onboarding
+code service-onboarding-accelerator-on-aws
 ```
 
-Or: **File** → **Open Folder** → select `service-onboarding/`.
+Or: **File** → **Open Folder** → select `service-onboarding-accelerator-on-aws/`.
 
 Copilot auto-discovers the plugin — no install step required. It reads:
 - `.github/copilot-instructions.md` (repo-wide rules)
@@ -170,7 +170,7 @@ Copilot may need MCP tool approval. Check the Copilot output panel
 ## Updating
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 git pull
 ```
 

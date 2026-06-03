@@ -5,7 +5,7 @@ Shared scripts for validation, MCP integration, post-processing, and cross-IDE s
 | Dir / File | Purpose |
 |------------|---------|
 | `validate/` | Python validators for state files, controls, deployability, and pipeline integrity. Run at `PostToolUse` and `Stop` hook time. |
-| `kb-search-mcp/` | Local MCP server that proxies a Bedrock Knowledge Base (customer-specific mitigations lookup). |
+| `kb-search-mcp/` | Local MCP server that proxies a Bedrock Knowledge Base (optional — point at your organization's mitigations or threat-model knowledge base). |
 | `post-process/` | Deterministic post-processors that run after the pipeline (e.g., canonicalizing output JSON shapes). |
 | `sync-ide-configs.py` | Regenerates per-client manifests from `manifest.yaml`. |
 

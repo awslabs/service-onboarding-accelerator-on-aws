@@ -82,16 +82,16 @@ Pick the install path that matches your client.
 **Claude Code only (recommended for Claude Code users)** — uses `manifest.yaml` as the source of truth, skips the multi-client detection, fastest:
 
 ```bash
-git clone git@ssh.gitlab.aws.dev:lightninglane/service-onboarding.git
-cd service-onboarding
+git clone git@github.com:awslabs/service-onboarding-accelerator-on-aws.git
+cd service-onboarding-accelerator-on-aws
 ./install-claude.sh
 ```
 
 **All clients (Claude Code + Kiro + Copilot)** — auto-detects what's installed, wires up everything:
 
 ```bash
-git clone git@ssh.gitlab.aws.dev:lightninglane/service-onboarding.git
-cd service-onboarding
+git clone git@github.com:awslabs/service-onboarding-accelerator-on-aws.git
+cd service-onboarding-accelerator-on-aws
 ./install.sh        # macOS / Linux
 # or Windows PowerShell:
 .\install.ps1

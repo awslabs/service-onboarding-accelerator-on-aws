@@ -165,8 +165,8 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 | Name | Transport | Endpoint / Command |
 |------|-----------|-------------------|
 | `awsknowledge` | HTTP | `https://knowledge-mcp.global.api.aws` |
-| `aws-documentation` | HTTP | `https://mcp.awsdocs.amazon.com` |
-| `awsiac` | HTTP | `https://iac-mcp.global.api.aws` |
+| `aws-documentation` | stdio | `uvx awslabs.aws-documentation-mcp-server@latest` |
+| `awsiac` | stdio | `uvx awslabs.aws-iac-mcp-server@latest` |
 | `aws-cdk-mcp-server` | stdio | `npx -y @aws/cdk-mcp-server@latest` |
 
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
@@ -187,8 +187,8 @@ done
 For each MISSING entry, run the corresponding add command:
 ```bash
 claude mcp add --transport http awsknowledge https://knowledge-mcp.global.api.aws
-claude mcp add --transport http aws-documentation https://mcp.awsdocs.amazon.com
-claude mcp add --transport http awsiac https://iac-mcp.global.api.aws
+claude mcp add aws-documentation -- uvx awslabs.aws-documentation-mcp-server@latest
+claude mcp add awsiac -- uvx awslabs.aws-iac-mcp-server@latest
 claude mcp add aws-cdk-mcp-server -- npx -y @aws/cdk-mcp-server@latest
 ```
 After adding any MCP, inform the user: "Added missing MCP servers: <list>. They are now active."
@@ -245,8 +245,8 @@ For each missing MCP under Path 2, add it to `~/.kiro/settings/mcp.json`:
 {
   "mcpServers": {
     "awsknowledge":       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
-    "aws-documentation":  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" },
-    "awsiac":             { "type": "http", "url": "https://iac-mcp.global.api.aws" },
+    "aws-documentation":  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"], "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"} },
+    "awsiac":             { "command": "uvx", "args": ["awslabs.aws-iac-mcp-server@latest"], "env": {"FASTMCP_LOG_LEVEL": "ERROR"} },
     "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
   }
 }
@@ -288,8 +288,8 @@ Print instructions for each missing MCP and continue — do not block execution:
 ```
 Missing MCP servers detected. Add these to your IDE's MCP configuration:
   awsknowledge:       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" }
-  aws-documentation:  { "type": "http", "url": "https://mcp.awsdocs.amazon.com" }
-  awsiac:             { "type": "http", "url": "https://iac-mcp.global.api.aws" }
+  aws-documentation:  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"] }
+  awsiac:             { "command": "uvx", "args": ["awslabs.aws-iac-mcp-server@latest"] }
   aws-cdk-mcp-server: { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
 See: https://github.com/awslabs/mcp
 Continuing with degraded MCP coverage — some steps may fall back to web search.

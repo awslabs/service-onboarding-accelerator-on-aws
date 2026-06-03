@@ -16,8 +16,8 @@ Step-by-step guide to install and run the Service Approval Plugin with Claude Co
 ## Step 1: Clone the repo
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
-cd service-onboarding
+git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
+cd service-onboarding-accelerator-on-aws
 ```
 
 ## Step 2: Run the installer
@@ -152,7 +152,7 @@ verdict, coverage matrix, and artifact inventory.
 **`/service-approval` command not found**
 Run `./install-claude.sh` again from the repo, or manually:
 ```
-/plugin marketplace add /path/to/service-onboarding
+/plugin marketplace add /path/to/service-onboarding-accelerator-on-aws
 /plugin install service-approval@service-approval
 /reload-plugins
 ```
@@ -174,7 +174,7 @@ claude plugin install service-approval@service-approval --scope user
 ## Updating
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 git pull
 ./install-claude.sh
 ```

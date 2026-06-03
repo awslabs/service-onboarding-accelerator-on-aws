@@ -312,15 +312,14 @@ and offer [1], [2], or [4] only.
 #### Choice [3] — Seed bundled CCMv4
 
 ```bash
-cp "$PLUGIN_ROOT/input/CCMv4_LightningLane.xlsx" ./input/
+cp "$PLUGIN_ROOT/input/CCMv4-sample.xlsx" ./input/
 ```
 
-Print: `Copied CCMv4_LightningLane.xlsx → ./input/`. Set `inputs.input_folder = "./input"`
+Print: `Copied CCMv4-sample.xlsx → ./input/`. Set `inputs.input_folder = "./input"`
 and `inputs.framework_type = "ccmv4"` in the manifest.
 
-We deliberately do NOT copy the bundled mitigation report — that's customer-specific
-and would mislead downstream skills. The user supplies their own mitigation report
-(if any) by dropping it into `./input/` themselves.
+The user supplies their own mitigation report (if any) by dropping it into
+`./input/` themselves.
 
 #### Choice [4] — Auto-download CCMv4 from CSA
 
@@ -383,7 +382,7 @@ files are present, prefer the CSA download (it's likely newer). Tell the user:
 
 ```
 You have two CCMv4 files in ./input/:
-  - CCMv4_LightningLane.xlsx (bundled snapshot)
+  - CCMv4-sample.xlsx (bundled snapshot)
   - CCMv4-CSA-latest.xlsx (just downloaded)
 
 The Map phase will use CCMv4-CSA-latest.xlsx (newer). Delete the other file if

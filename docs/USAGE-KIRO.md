@@ -16,8 +16,8 @@ Step-by-step guide to install and run the Service Approval Plugin with Kiro IDE.
 ## Step 1: Clone the repo
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
-cd service-onboarding
+git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
+cd service-onboarding-accelerator-on-aws
 ```
 
 ## Step 2: Install the Power via Kiro IDE
@@ -131,7 +131,7 @@ your working directory for the first time.
 ## Updating
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 git pull
 ```
 

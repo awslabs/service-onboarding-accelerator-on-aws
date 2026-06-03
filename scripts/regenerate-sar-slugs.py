@@ -79,7 +79,7 @@ def fetch_sar_landing(url: str = SAR_LANDING_URL) -> str:
     scheme = urlparse(url).scheme.lower()
     if scheme != "https":
         raise ValueError(f"refusing to fetch non-https URL (scheme={scheme!r})")
-    req = urllib.request.Request(url, headers={"User-Agent": "service-onboarding-sar-slugs/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "service-approval-sar-slugs/1.0"})
     with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310  # noqa: S310 - scheme validated above
         return resp.read().decode("utf-8", errors="replace")
 

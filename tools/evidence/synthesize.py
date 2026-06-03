@@ -7,7 +7,7 @@ no hardcoded "lambda", "s3", "kms" identifiers anywhere.
 Core primitive: decode_parameter_path("$.lambda/CreateFunction.KMSKeyArn")
   -> ("lambda", "CreateFunction", "KMSKeyArn")
 
-Family dispatch rules (§4 of evidence-attestation.md):
+Family dispatch rules:
   F1 - Resource GET probe (describe API -> check property non-null)
   F2 - IAM simulate (simulate-principal-policy with context-entries)
   F3 - Config compliance (configservice describe-compliance-by-config-rule)

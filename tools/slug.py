@@ -8,7 +8,7 @@ The canonical slug is derived from the Service Authorization Reference (SAR)
 with rules to handle AWS umbrella services, multi-word product IDs, and
 disallowed characters.
 
-## Rules (authoritative — §2 of evidence-attestation.md):
+## Rules:
 
 1. Start from `sar_facts.service_prefix` (always lowercase IAM prefix).
 2. If prefix is a recognized AWS "umbrella" (e.g., `lambda`), prefix with `aws`

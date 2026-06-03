@@ -90,7 +90,7 @@
             "F5-cw-alarm",
             "F6-iac-time"
           ],
-          "description": "CLI synthesis family (see §4 of evidence-attestation.md)"
+          "description": "CLI synthesis family"
         },
         "synthesis_source": {
           "type": "string",

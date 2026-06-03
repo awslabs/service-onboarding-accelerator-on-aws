@@ -2,7 +2,7 @@
 
 After the evidence-attestation layout migration, no skill, validator, hook,
 or script should reference the old `.service-approval/state/` or
-`.service-approval/controls/` paths (except in docs/plans/ and git history).
+`.service-approval/controls/` paths (except in git history).
 
 This test greps the repo and fails if it finds hardcoded legacy paths in
 production code. It runs both a literal substring search AND a regex pass
@@ -28,16 +28,13 @@ def _repo_root() -> Path:
 
 # Production-code paths must NEVER reference the legacy layout. Allowlist is
 # narrow on purpose:
-# - docs/plans/ — historical design docs explaining the migration (read-only)
 # - tests + helpers that document the legacy path itself (paths.legacy_state_dir)
 # - this test file (it contains the literal pattern by definition)
 #
 # skills/, powers/, scripts/, rules/ have been removed from the allowlist —
 # any remaining legacy ref in those areas is a runtime bug because they
 # execute on the user's machine.
-_ALLOWED_PREFIXES = (
-    "docs/plans/",   # plan documents reference old layout (historical)
-)
+_ALLOWED_PREFIXES = ()
 
 _ALLOWED_FILENAMES = (
     "test_no_legacy_path_refs.py",  # this test (matches the literal in its allow rules)

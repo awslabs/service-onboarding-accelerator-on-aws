@@ -54,8 +54,8 @@ def repo_root() -> Path:
 
     Walks up from this file's location until it finds a directory containing
     `manifest.yaml` (the project-specific marker that uniquely identifies a
-    service-onboarding clone — anchoring on `.git` or `.service-approval/`
-    risked landing on a developer's home directory if either existed there).
+    project clone — anchoring on `.git` or `.service-approval/` risked landing
+    on a developer's home directory if either existed there).
 
     Returns:
         Path to repository root.

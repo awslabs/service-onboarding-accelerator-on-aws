@@ -8,7 +8,7 @@ Copilot, and Kiro.
 ## Install
 
 ```bash
-git clone <repo> && cd service-onboarding && ./install.sh
+git clone <repo> && cd service-onboarding-accelerator-on-aws && ./install.sh
 ```
 
 Windows: `./install.ps1` (requires Developer Mode for symlink installs).

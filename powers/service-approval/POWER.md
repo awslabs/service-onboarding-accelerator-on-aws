@@ -26,7 +26,7 @@ keywords:
 - detective-controls
 - proactive-controls
 - responsive-controls
-author: GFS PACE
+author: Service Onboarding on AWS Team
 version: 1.0.0
 ---
 

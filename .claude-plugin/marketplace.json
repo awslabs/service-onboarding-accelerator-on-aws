@@ -4,10 +4,6 @@
     "description": "AWS service security controls generator — proactive, preventive, detective, responsive",
     "version": "1.0.0"
   },
-  "owner": {
-    "name": "GFS PACE",
-    "email": "fsi-pace@amazon.com"
-  },
   "plugins": [
     {
       "name": "service-approval",

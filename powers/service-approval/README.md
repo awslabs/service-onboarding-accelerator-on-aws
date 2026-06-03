@@ -7,7 +7,7 @@ Kiro Power that generates AWS security controls for any AWS service via a 9-phas
 From a local checkout (this repo):
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 ./install.sh
 ```
 
@@ -16,7 +16,7 @@ The installer copies the Power's IDE files (agents, hooks, steering, MCP config)
 From GitHub (Kiro desktop app):
 1. Open the **Powers** panel
 2. Click **Add power from GitHub**
-3. Paste `https://gitlab.aws.dev/lightninglane/service-onboarding` and choose `/powers/service-approval` as the path
+3. Paste `https://github.com/awslabs/service-onboarding-accelerator-on-aws` and choose `/powers/service-approval` as the path
 
 ## Prerequisites
 
@@ -115,7 +115,7 @@ Kiro CLI 2.0 headless mode works with this Power when `kiro-cli` is installed ma
 ## Updating
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 git pull
 ```
 

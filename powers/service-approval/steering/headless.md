@@ -9,7 +9,7 @@ fileMatchPattern: "**/.gitlab-ci.yml"
 
 > **Update (2026-05-18):** the Kiro CLI 2.0 install path was removed from
 > `install.sh`. CI runners will need to install `kiro-cli` separately
-> (`curl -fsSL https://cli.kiro.dev/install | bash` or via Amazon Toolbox)
+> (`curl -fsSL https://cli.kiro.dev/install | bash`)
 > for the recipe below to work. Whether Kiro CLI 2.0 remains the supported
 > headless runtime is being re-evaluated; if you're starting a new CI
 > pipeline today, consider using Claude Code's CLI (see

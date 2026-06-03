@@ -51,7 +51,7 @@ If no framework file found and `--framework` is set, use built-in domain referen
 
 ## Step 1: Parse Framework File
 
-### For `.xlsx` files (e.g., CCMv4_LightningLane.xlsx):
+### For `.xlsx` files (e.g., CCMv4-sample.xlsx):
 
 ```bash
 python3 -c "

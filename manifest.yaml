@@ -16,10 +16,9 @@ description: >
   Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).
 
 author:
-  name: GFS PACE
-  email: fsi-pace@amazon.com
+  name: Service Onboarding on AWS Team
 
-repository: https://gitlab.aws.dev/lightninglane/service-onboarding
+repository: https://github.com/awslabs/service-onboarding-accelerator-on-aws
 license: Apache-2.0
 
 keywords:

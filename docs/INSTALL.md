@@ -5,15 +5,15 @@ Short version: `git clone && cd && ./install.sh`. That's it for most clients.
 ## Quick install
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
-cd service-onboarding
+git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
+cd service-onboarding-accelerator-on-aws
 ./install.sh
 ```
 
 Windows:
 ```powershell
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
-cd service-onboarding
+git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
+cd service-onboarding-accelerator-on-aws
 .\install.ps1
 ```
 

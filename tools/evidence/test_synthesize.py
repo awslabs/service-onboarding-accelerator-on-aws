@@ -1,7 +1,6 @@
 """Tests for CLI synthesis (tools/evidence/synthesize.py).
 
 Tests families F1-F6 synthesis correctness and 100% coverage invariant.
-Corresponds to regression tests R8-R11 from evidence-attestation.md §7.
 """
 from __future__ import annotations
 
