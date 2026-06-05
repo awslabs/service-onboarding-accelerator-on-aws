@@ -1,0 +1,35 @@
+{
+  "name": "sa-validate",
+  "description": "Verify research capabilities, parameters, and mitigation feasibility via MCP documentation",
+  "prompt": "Follow the instructions in `skills/validate/SKILL.md`.\n\nRead the skill file, consume `.service-approval/<slug>/02-research/research.json`, cross-reference with\ncheckpoint-results.json and sar-facts.json, and write `.service-approval/<slug>/03-validate/validated.json`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

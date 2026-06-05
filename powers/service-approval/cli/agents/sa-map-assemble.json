@@ -1,0 +1,35 @@
+{
+  "name": "sa-map-assemble",
+  "description": "Deterministic assembly of map sub-skill outputs into mapping-results.json and markdown reports",
+  "prompt": "Follow the instructions in `skills/map-assemble/SKILL.md`.\n\nRead the skill file, consume all map-*.json state files, and write:\n- `.service-approval/<slug>/04-map/mapping-results.json`\n- `.service-approval/<slug>/04-map/controls-catalog.md`\n- `.service-approval/<slug>/04-map/framework-mapping.md`",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

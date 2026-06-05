@@ -1,0 +1,35 @@
+{
+  "name": "sa-map-parse-framework",
+  "description": "Parse customer control framework file (xlsx/json/md) into normalized objectives",
+  "prompt": "Follow the instructions in `skills/map-parse-framework/SKILL.md`.\n\nRead the skill file, parse the framework file from `input/`, and write\n`.service-approval/<slug>/04-map/map-framework-parsed.json`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}
