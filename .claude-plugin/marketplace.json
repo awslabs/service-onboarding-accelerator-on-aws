@@ -1,5 +1,8 @@
 {
   "name": "service-approval",
+  "owner": {
+    "name": "service-onboarding team"
+  },
   "metadata": {
     "description": "AWS service security controls generator — proactive, preventive, detective, responsive",
     "version": "1.0.0"

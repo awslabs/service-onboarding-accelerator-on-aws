@@ -4,12 +4,15 @@ Generates AWS security controls and compliant IaC templates for any AWS service.
 
 ## What it produces
 
+- **Control mapping** - Maps threats and controls to security and compliance frameworks (e.g CCMv4, MITRE)
 - **Proactive controls** — CFN Guard rules, CloudFormation hooks, Checkov policies, OPA policies
 - **Preventive controls** — SCPs, RCPs, declarative policies, permission boundaries, tag policies, resource policies
 - **Detective controls** — Config rules (with Lambda handlers), EventBridge rules, CloudWatch alarms, Access Analyzer
 - **Auto-remediation** — Lambda remediators, SSM runbooks, Step Functions workflows
 - **Compliant IaC** — CDK (TypeScript), Terraform (modular), CloudFormation, CDK for Terraform
 - **Validation** — Tier 1 static checks + Tier 2 AWS API policy validation (automatic via hooks)
+- **Approval report** - Summaries the overall service onboarding accelerator on AWS
+
 
 Output lands in `.service-approval/<service-slug>/` (per-service layout) in your working directory:
 ```
