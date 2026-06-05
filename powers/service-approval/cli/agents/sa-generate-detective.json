@@ -1,0 +1,35 @@
+{
+  "name": "sa-generate-detective",
+  "description": "Generate detective and responsive controls (Config rules, CloudWatch, EventBridge, Lambda remediators, SSM)",
+  "prompt": "Follow the instructions in `skills/generate-detective/SKILL.md`.\n\nRead the skill file, consume `.service-approval/<slug>/04-map/mapping-results.json` and `.service-approval/<slug>/03-validate/validated.json`, and write outputs to `.service-approval/<slug>/05-generate/detective/` and `.service-approval/<slug>/05-generate/responsive/`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

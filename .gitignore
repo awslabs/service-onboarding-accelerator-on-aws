@@ -1,0 +1,66 @@
+# Hidden directories at any depth (e.g. .omc, .claude-flow, .DS_Store dirs)
+.*
+**/.*
+
+# Exceptions — tracked dotfiles and dirs that must stay
+!.gitignore
+!.claude-plugin
+!.claude-plugin/**
+!.github
+!.github/**
+!.vscode
+!.vscode/**
+!.agents
+!.agents/**
+!.gitlab-ci.yml
+!.githooks
+!.githooks/**
+
+# .kiro/ is generated from powers/service-approval/ by install.sh --sync —
+# never commit it. The source of truth is powers/.
+
+# Local files (generated or machine-specific)
+CLAUDE.md
+
+# Terraform provider binaries and local state (large, machine-specific)
+**/.terraform/
+*.tfplan
+*.tfstate
+*.tfstate.backup
+*.tfstate.lock.info
+
+# Git worktrees
+.worktrees
+
+# Smoke test — local-only validation scripts and skills (not part of plugin distribution).
+# Exception: smoke-deploy-test.sh is the canonical Phase 5 deploy driver invoked
+# by skills/test/SKILL.md, so it IS shipped (negate-pattern below).
+scripts/smoke-*.py
+scripts/smoke-*.sh
+!scripts/smoke-deploy-test.sh
+scripts/smoke-scan-inputs.sh
+service-approval-plugin/skills/smoke-test/
+service-approval-plugin/kiro/agents/smoke-*.md
+.service-approval/smoke-test-*.md
+.service-approval/controls/
+.service-approval/state/
+.service-approval/_staging/
+out/domains/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Node modules
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
+
+# Per-user intake config (filled in by the user before each pipeline run;
+# the plugin's intake template lives at skills/intake/intake-template.yaml).
+service-approval-intake.yaml

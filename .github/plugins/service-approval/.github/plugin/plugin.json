@@ -1,0 +1,51 @@
+{
+  "name": "service-approval",
+  "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).",
+  "version": "1.0.0",
+  "author": {
+    "name": "Service Onboarding on AWS Team"
+  },
+  "repository": "https://github.com/awslabs/service-onboarding-accelerator-on-aws",
+  "license": "Apache-2.0",
+  "keywords": [
+    "aws",
+    "security",
+    "controls",
+    "compliance",
+    "ccmv4",
+    "nist-800-53",
+    "cis",
+    "iso-27001",
+    "scp",
+    "rcp"
+  ],
+  "agents": [
+    "../../agents/service-approval.agent.md"
+  ],
+  "skills": [
+    "../../skills/service-approval",
+    "../../skills/intake",
+    "../../skills/assess",
+    "../../skills/research",
+    "../../skills/research-mitigations",
+    "../../skills/research-capabilities",
+    "../../skills/research-api-surface",
+    "../../skills/research-attack-surface",
+    "../../skills/validate",
+    "../../skills/map",
+    "../../skills/map-parse-framework",
+    "../../skills/map-generate-controls",
+    "../../skills/map-framework-mapping",
+    "../../skills/map-assemble",
+    "../../skills/generate",
+    "../../skills/generate-preventive",
+    "../../skills/generate-detective",
+    "../../skills/generate-iac",
+    "../../skills/test",
+    "../../skills/summarize",
+    "../../skills/evidence"
+  ],
+  "hooks": [
+    "../../hooks/pipeline-integrity"
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "sa-research-api-surface",
+  "description": "Research complete API operations and parameters for an AWS service",
+  "prompt": "Follow the instructions in `skills/research-api-surface/SKILL.md`.\n\nRead the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-api-surface.json`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

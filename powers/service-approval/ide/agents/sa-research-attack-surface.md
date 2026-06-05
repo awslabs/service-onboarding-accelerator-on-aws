@@ -1,0 +1,15 @@
+---
+name: sa-research-attack-surface
+description: Map API surface to MITRE ATT&CK v16.1 Cloud techniques with STRIDE bridge and NIST/CCMv4 crosswalk
+tools:
+- read
+- write
+- shell
+- '@aws-documentation'
+- '@awsknowledge'
+- '@awsiac'
+---
+
+Follow the instructions in `skills/research-attack-surface/SKILL.md`.
+
+Read the skill file and the ATT&CK reference data in `data/`. Execute all steps and write the output to `.service-approval/<slug>/02-research/research-attack-surface.json`.

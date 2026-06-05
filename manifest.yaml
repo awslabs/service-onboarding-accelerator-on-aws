@@ -1,0 +1,235 @@
+# Service Approval — canonical manifest
+#
+# Single source of truth for per-client config. The sync tool at
+# tools/sync-ide-configs.py reads this file and regenerates the manifests
+# for each supported client. A CI check re-runs the sync in --check mode
+# and fails if any generated file has drifted.
+#
+# Edit this file to change plugin metadata (name, version, description,
+# keywords), not the per-client manifests directly.
+
+name: service-approval
+version: 1.0.0
+description: >
+  Generate AWS security controls and compliant IaC for any AWS service.
+  Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate,
+  Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).
+
+author:
+  name: Service Onboarding on AWS Team
+
+repository: https://github.com/awslabs/service-onboarding-accelerator-on-aws
+license: Apache-2.0
+
+keywords:
+  - aws
+  - security
+  - controls
+  - compliance
+  - ccmv4
+  - nist-800-53
+  - cis
+  - iso-27001
+  - scp
+  - rcp
+  - config-rules
+  - cfn-guard
+  - checkov
+  - opa
+  - terraform
+  - cloudformation
+  - cdk
+  - cdktf
+  - mitre-attack
+  - preventive-controls
+  - detective-controls
+  - proactive-controls
+  - responsive-controls
+
+# ---------------------------------------------------------------------------
+# Skills — canonical list. Each skill lives at skills/<slug>/SKILL.md
+# and is discovered by every client via its own mechanism (symlinks, aliases).
+# ---------------------------------------------------------------------------
+skills:
+  - slug: service-approval
+    role: orchestrator
+  - slug: intake
+    role: phase-intake
+  - slug: assess
+    role: phase-0
+  - slug: research
+    role: phase-1-merge
+  - slug: research-mitigations
+    role: phase-1a
+    parallel_group: research
+  - slug: research-capabilities
+    role: phase-1b
+    parallel_group: research
+  - slug: research-api-surface
+    role: phase-1c
+    parallel_group: research
+  - slug: research-attack-surface
+    role: phase-1d
+    parallel_group: research
+  - slug: validate
+    role: phase-2
+  - slug: map
+    role: phase-3-root
+  - slug: map-parse-framework
+    role: phase-3a
+    parallel_group: map-early
+  - slug: map-generate-controls
+    role: phase-3b
+    parallel_group: map-early
+  - slug: map-framework-mapping
+    role: phase-3c
+  - slug: map-assemble
+    role: phase-3d
+  - slug: generate
+    role: phase-4-root
+  - slug: generate-preventive
+    role: phase-4a
+    parallel_group: generate
+  - slug: generate-detective
+    role: phase-4b
+    parallel_group: generate
+  - slug: generate-iac
+    role: phase-4c
+    parallel_group: generate
+  - slug: test
+    role: phase-5
+    optional: true
+  - slug: summarize
+    role: phase-6
+  - slug: evidence
+    role: phase-7
+    optional: true
+
+# ---------------------------------------------------------------------------
+# MCP servers — registered across every client's manifest.
+# ---------------------------------------------------------------------------
+mcp_servers:
+  # stdio MCP servers from https://github.com/awslabs/mcp — installed on
+  # demand via uvx. User needs `uv` on PATH:
+  # https://docs.astral.sh/uv/getting-started/installation/
+  aws-documentation:
+    type: stdio
+    command: uvx
+    args: ["awslabs.aws-documentation-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: ERROR
+      AWS_DOCUMENTATION_PARTITION: aws
+  awsknowledge:
+    type: http
+    url: https://knowledge-mcp.global.api.aws
+  awsiac:
+    type: stdio
+    command: uvx
+    args: ["awslabs.aws-iac-mcp-server@latest"]
+    env:
+      FASTMCP_LOG_LEVEL: ERROR
+  terraform:
+    type: stdio
+    command: docker
+    args: ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.5.1"]
+  kb-search:
+    type: stdio
+    command: python3
+    script: tools/kb-search-mcp/server.py
+    env:
+      AWS_PROFILE: claude-code
+      AWS_REGION: us-east-1
+    optional: true
+    # Kiro requires users to approve the ${workspaceRoot} template variable
+    # before spawn, and the approval UI is buried. Until Kiro makes this
+    # smoother, auto-registering kb-search causes "Connection closed" errors
+    # on every fresh install. Exclude it from the Kiro Power config so it
+    # doesn't break the Power out-of-the-box. Still ships to Claude Code,
+    # and VS Code (which don't have the approval gate).
+    skip_clients: [kiro]
+  iam:
+    type: stdio
+    command: uvx
+    args: ["awslabs.iam-mcp-server@latest"]
+    env:
+      AWS_PROFILE: claude-code
+      AWS_REGION: us-east-1
+      FASTMCP_LOG_LEVEL: ERROR
+    optional: true
+  # MITRE ATT&CK knowledge base MCP — used by research-attack-surface for
+  # technique/tactic lookups. Source: https://github.com/stoyky/mitre-attack-mcp
+  # Falls back to data/attack-cloud-matrix.json (bundled snapshot) when MCP
+  # is unavailable, so research-attack-surface continues to work even if the
+  # server fails to spawn.
+  mitre-attack:
+    type: stdio
+    command: uvx
+    args:
+      - "--from"
+      - "git+https://github.com/stoyky/mitre-attack-mcp"
+      - "mitre-attack-mcp"
+
+# ---------------------------------------------------------------------------
+# Clients — which files each client's sync generates.
+# ---------------------------------------------------------------------------
+clients:
+  claude-code:
+    manifest: .claude-plugin/plugin.json
+    # Symlink — Claude Code reads metadata only; skills are auto-discovered
+    # via the skills/ directory at repo root.
+    skills_discovery: symlink
+  kiro:
+    manifest: powers/service-approval/POWER.md
+    cli_agents_dir: powers/service-approval/cli/agents/
+    ide_agents_dir: powers/service-approval/ide/agents/
+    ide_hooks_dir: powers/service-approval/ide/hooks/
+    steering_dir: powers/service-approval/steering/
+    mcp_config: powers/service-approval/mcp.json
+    agents_src_dir: powers/service-approval/agents-src/
+    # CLI consumes JSON; IDE consumes markdown. Both are generated from
+    # agents-src/ via tools/generate-kiro-agents.py.
+    agent_format: dual
+  copilot:
+    instructions: .github/copilot-instructions.md
+    agents_dir: .github/agents/
+    prompts_dir: .github/prompts/
+    hooks_dir: .github/hooks/
+    plugin_manifest: .github/plugins/service-approval/.github/plugin/plugin.json
+    skills_discovery: symlink
+
+# ---------------------------------------------------------------------------
+# Pipeline-integrity checks — enforced at Stop hook time across every client
+# that supports hooks (Claude Code, Kiro, Copilot).
+# ---------------------------------------------------------------------------
+integrity_checks:
+  - id: P1
+    title: MCP log presence + call count
+    min_calls: 10
+  - id: P2
+    title: Unique verification notes
+    max_duplication_pct: 50
+  - id: P3
+    title: IAM policy logic (mismatched StringEquals/StringNotEquals keys, broad Allow on Resource:* without Condition, SCP without Deny)
+  - id: P4
+    title: IaC parameterization (no placeholder accounts/ARNs)
+  - id: P5
+    title: Framework coverage threshold + rationale
+    min_coverage_pct: 15
+    min_rationale_chars: 30
+  - id: P6
+    title: Verdict consistency (no false APPROVED)
+  - id: P7
+    title: Phase-output completeness
+
+# ---------------------------------------------------------------------------
+# Test policy — what the sync tool's --check mode verifies.
+# ---------------------------------------------------------------------------
+test_policy:
+  must_pass:
+    - pytest tools/validate/
+    - python3 tools/sync-ide-configs.py --check
+    - ./install.sh --check
+  must_not_drift:
+    - .claude-plugin/plugin.json
+    - powers/service-approval/POWER.md
+    - .github/plugins/service-approval/.github/plugin/plugin.json

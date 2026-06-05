@@ -1,0 +1,14 @@
+name: sa-research-api-surface
+description: "Research complete API operations and parameters for an AWS service"
+skill: research-api-surface
+phase: 1
+parallel_group: research
+optional: false
+mcp_servers:
+  - aws-documentation
+  - awsknowledge
+  - awsiac
+body: |
+  Follow the instructions in `skills/research-api-surface/SKILL.md`.
+
+  Read the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-api-surface.json`.

@@ -1,0 +1,33 @@
+{
+  "name": "sa-evidence",
+  "description": "Run live AWS CLI probes against deployed resources to prove each mapped control is enforced. Phase 7 of the pipeline.",
+  "prompt": "Follow the instructions in `skills/evidence/SKILL.md`.\n\nRead the skill file, execute all steps for the specified AWS service, and write outputs to:\n- `<slug>/08-evidence/attestation-report.md`\n- `<slug>/08-evidence/attestation-results.json`\n- `<slug>/08-evidence/cli-commands.json`\n- `<slug>/08-evidence/cli-outputs/*.log`\n- `<slug>/attestation.md`\n\nRequires AWS credentials and Phase 5 Test to have completed successfully.",
+  "mcpServers": [
+    "aws-documentation"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

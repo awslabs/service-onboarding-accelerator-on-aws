@@ -1,0 +1,14 @@
+name: sa-research-mitigations
+description: "Research mitigations, assets, and assessment gaps for an AWS service"
+skill: research-mitigations
+phase: 1
+parallel_group: research
+optional: false
+mcp_servers:
+  - aws-documentation
+  - awsknowledge
+  - awsiac
+body: |
+  Follow the instructions in `skills/research-mitigations/SKILL.md`.
+
+  Read the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-mitigations.json`.
