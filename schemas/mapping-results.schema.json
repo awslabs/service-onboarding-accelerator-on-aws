@@ -65,9 +65,15 @@
         "required": ["mitigation_id"],
         "properties": {
           "mitigation_id": {"type": "string", "pattern": "^M-.+"},
+          "threat_id": {"type": ["string", "null"], "description": "Native threat ID the mitigation addresses (e.g. 'T-0522'), forwarded from the mitigation's source_threat_id. Null when the mitigation has no source threat link (e.g. assessment-derived M-GAP-* mitigations). Completes the threat → mitigation → control → MITRE → framework-objective join."},
           "statement": {"type": "string"},
           "coverage": {"type": "string", "enum": ["FULL", "PARTIAL", "NONE"]},
           "control_ids": {"type": "array", "items": {"type": "string"}},
+          "attack_techniques": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Union of MITRE ATT&CK technique IDs (e.g. 'T1078') across the controls associated with this mitigation. Empty when no threat model / techniques are present."
+          },
           "framework_objectives": {
             "type": "array",
             "items": {"type": "string"},

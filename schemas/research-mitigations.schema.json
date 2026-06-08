@@ -60,7 +60,8 @@
         "source_mitigation": {"type": "string"},
         "applies_to_actions": {"type": "array", "items": {"type": "string"}},
         "request_parameters": {"type": "array", "items": {"type": "string"}},
-        "category": {"type": "string"}
+        "category": {"type": "string"},
+        "source_threat_id": {"type": "string", "description": "Optional native threat ID the mitigation addresses (e.g. 'T-0522'), preserved verbatim from the input threat model. Framework-agnostic — unconstrained string. Omitted when the source has no threat-to-mitigation link (e.g. assessment-derived M-GAP-* mitigations). Carried downstream by scripts/map-assemble.py into threat_mitigation_map[].threat_id."}
       }
     },
     "asset": {

@@ -48,15 +48,23 @@ Use the framework name dynamically from `mapping-results.json.framework.name`.
 
 Read `mapping-results.json` `threat_mitigation_map[]`. Build a table:
 
-| Mitigation ID | Statement | Resource Type | Controls | Framework Objectives | Coverage |
+| Threat ID | Mitigation ID | Statement | Resource Type | Controls | MITRE Techniques | Framework Objectives | Coverage |
 
+Where "Threat ID" = `threat_id` field — the native threat ID from the input threat model
+(e.g. `T-0522`). Render `—` when the field is null/absent (e.g. assessment-derived `M-GAP-*`
+mitigations with no source threat link).
 Where "Statement" = `statement` field.
 Where "Controls" = `control_ids[]` from the mitigation entry (joined, comma-separated).
+Where "MITRE Techniques" = `attack_techniques[]` from the mitigation entry (joined,
+comma-separated). Render `—` when empty. If this field is absent, derive it: for each control
+id in the mitigation's `control_ids[]`, look up that control in the top-level `controls[]` and
+collect its `attack_techniques[]`. Deduplicate and sort.
 Where "Framework Objectives" = `framework_objectives[]` from the mitigation entry. If this field
 is absent, derive it: for each control id in the mitigation's `control_ids[]`, look up that control
 in the top-level `controls[]` and collect its `framework_objectives[]`. Deduplicate and sort.
 
-This shows end-to-end traceability from customer mitigations through controls to framework objectives.
+This shows end-to-end traceability from the customer's native threat IDs through mitigations,
+controls, and MITRE ATT&CK techniques to framework objectives — a single consolidated join.
 
 ## Step 4: Build control inventory
 

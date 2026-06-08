@@ -112,12 +112,28 @@ def build_threat_mitigation_map(
             }
         )
 
+        # Union of MITRE ATT&CK techniques from every associated control, so the
+        # threat→mitigation→control→technique join is visible at the mitigation level
+        # (not only on controls[]). Empty when no threat model / techniques present.
+        attack_techniques = sorted(
+            {
+                tech
+                for c in associated_ctrls
+                for tech in c.get("attack_techniques", [])
+            }
+        )
+
         entry = {
             "mitigation_id": mid,
+            # Native threat ID from the input threat model (research-mitigations
+            # preserves it as source_threat_id). None when the mitigation has no
+            # source threat link (e.g. assessment-derived M-GAP-* mitigations).
+            "threat_id": mit.get("source_threat_id"),
             "statement": mit["statement"],
             "resource_type": mit.get("resource_type", ""),
             "coverage": coverage,
             "control_ids": sorted({c["id"] for c in associated_ctrls}),
+            "attack_techniques": attack_techniques,
             "framework_objectives": fw_objs,
             "layers": {
                 "preventive": sorted(
@@ -572,17 +588,19 @@ def write_framework_mapping(
     lines.append("## Mitigation Traceability\n")
     lines.append("")
     lines.append(
-        "| Mitigation ID | Resource Type | Coverage | Preventive | Detective | Responsive |"
+        "| Mitigation ID | Threat ID | Resource Type | Coverage | MITRE Techniques | Preventive | Detective | Responsive |"
     )
     lines.append(
-        "|---------------|---------------|----------|------------|-----------|------------|"
+        "|---------------|-----------|---------------|----------|------------------|------------|-----------|------------|"
     )
     for t in threat_mitigation_map:
         prev = len(t["layers"]["preventive"]) + len(t["layers"]["proactive"])
         det = len(t["layers"]["detective"])
         cor = len(t["layers"]["responsive"])
+        threat_id = t.get("threat_id") or "—"
+        techniques = ", ".join(t.get("attack_techniques", [])) or "—"
         lines.append(
-            f"| {t['mitigation_id']} | {t['resource_type']} | {t['coverage']} | {prev} | {det} | {cor} |"
+            f"| {t['mitigation_id']} | {threat_id} | {t['resource_type']} | {t['coverage']} | {techniques} | {prev} | {det} | {cor} |"
         )
     lines.append("")
 

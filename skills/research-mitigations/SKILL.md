@@ -50,6 +50,8 @@ for entity in data.get("entities", []):
     resource_type = entity.get("resource_type", "")
     for mit in entity.get("mitigations", []):
         # Extract: id, statement, mitigation_goal, request_parameters[], resource_type
+        # Also extract source_threat_id if the mitigation links to a native threat ID
+        # (e.g. a "for_threat_id" / "threat_id" key, or a "For threat ID: T-XXXX" field)
 ```
 
 ### Markdown files (Mitigation Report)
@@ -77,6 +79,7 @@ bolded label and column 2 as the value. Parse rows keyed by the bolded label:
 | `**Mitigation Goal**`  | `mitigation_goal`      | Full cell text, preserve sentences.                 |
 | `**Resource Type**`    | `resource_type`        | CFN type string (e.g. `AWS::Bedrock::Agent`).       |
 | `**Request Parameters**` | `request_parameters[]` | Split on commas or Markdown list bullets; strip whitespace; JSON paths like `$.encryptionKeyArn`. |
+| `**For threat ID**`    | `source_threat_id`     | Native threat ID the mitigation addresses (e.g. `T-0522`). Optional — emit only if the source links the mitigation to a threat. |
 
 Emit each parsed block as an `existing_mitigations[]` entry with the fields above
 plus `source: "<report-basename>"` (e.g. `"source": "<Service Name> — Mitigation Report.md"`) so downstream runs can trace provenance.
@@ -91,6 +94,7 @@ label_map = {
     "Mitigation Goal": "mitigation_goal",
     "Resource Type": "resource_type",
     "Request Parameters": "request_parameters",
+    "For threat ID": "source_threat_id",
 }
 row_fields = {label_map[m.group("label").strip()]: m.group("value").strip()
               for m in ROW_RE.finditer(block)
@@ -141,7 +145,8 @@ Compile all extracted mitigations into a structured array:
       "statement": "<full statement text — NOT truncated>",
       "mitigation_goal": "<full goal text — NOT truncated>",
       "request_parameters": ["$.encryptionKeyArn", "$.executionRoleArn"],
-      "resource_type": "AWS::<Service>::<Resource>"
+      "resource_type": "AWS::<Service>::<Resource>",
+      "source_threat_id": "<native-threat-id from input, e.g. T-0522 — omit if none>"
     }
   ]
 }
@@ -156,6 +161,13 @@ Compile all extracted mitigations into a structured array:
 - `request_parameters` must be JSON paths (starting with `$.`)
 - `resource_type` should use CloudFormation format (`AWS::<Service>::<Resource>`)
 - Preserve ALL mitigations — do not deduplicate or merge similar ones
+- **Native threat ID** (`source_threat_id`): when the input threat model links a mitigation
+  to a native threat ID (e.g. a "For threat ID: T-0522" row, or an equivalent
+  threat↔mitigation reference in the source), preserve that ID verbatim on the mitigation
+  record as the optional `source_threat_id` string field. This carries the native
+  threat→mitigation link downstream so the final mapping can join threat → mitigation →
+  control → MITRE → framework objective. Do NOT invent a value: omit the field entirely
+  for mitigations with no source threat link (e.g. assessment-derived `M-GAP-*` entries).
 
 ---
 
