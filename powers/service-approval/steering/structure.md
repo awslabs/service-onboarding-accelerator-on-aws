@@ -42,7 +42,7 @@ powers/service-approval/
 │   ├── phase-research.md                 loads for research-* state files
 │   ├── phase-validate.md                 loads for validated.json
 │   ├── phase-map.md                      loads for map-* state files
-│   ├── phase-generate.md                 loads for 05-generate/ artifacts
+│   ├── phase-generate.md                 loads for 05-generate-DRAFT/ artifacts
 │   ├── headless.md                       CI / headless invocation
 │   └── service-approval-enforcement.md   skill-based execution guardrail
 ├── agents-src/                           source-of-truth YAML — one sa-<slug>.yaml per agent
@@ -69,7 +69,7 @@ powers/service-approval/
 | Hook | `ide/hooks/<event>.kiro.hook` | `ide/hooks/stop.kiro.hook` |
 | Validator | `tools/validate/validate_<scope>.py` | `tools/validate/validate_state.py` |
 | Test | `tools/validate/test_<validator>.py` | `tools/validate/test_validate_state.py` |
-| Control artifact | `.service-approval/<slug>/05-generate/<category>/<CTRL-ID>.<ext>` | `.service-approval/<slug>/05-generate/preventive/CTRL-ORG-PRV-001.json` |
+| Control artifact | `.service-approval/<slug>/05-generate-DRAFT/<category>/<CTRL-ID>-DRAFT.<ext>` | `.service-approval/<slug>/05-generate-DRAFT/preventive-DRAFT/CTRL-ORG-PRV-001-DRAFT.json` |
 | State file | `.service-approval/<slug>/<phase>/<name>.json` | `.service-approval/<slug>/02-research/research.json` |
 
 Control ID format: `CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\d{3}`. Enforced by the schema at `schemas/map-controls-generated.schema.json`.

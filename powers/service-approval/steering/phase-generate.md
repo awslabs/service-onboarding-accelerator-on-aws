@@ -2,7 +2,7 @@
 name: phase-generate
 description: Rules for Phase 4 (Generate) sub-skills
 inclusion: fileMatch
-fileMatchPattern: "**/.service-approval/*/05-generate/**"
+fileMatchPattern: "**/.service-approval/*/05-generate-DRAFT/**"
 ---
 
 # Phase 4 — Generate
@@ -11,12 +11,12 @@ Applies to: `sa-generate-preventive`, `sa-generate-detective`, `sa-generate-iac`
 
 ## Parallel execution
 
-Use `/spawn` to run all three concurrently. Each writes to a disjoint subtree of `.service-approval/<slug>/05-generate/`:
+Use `/spawn` to run all three concurrently. Each writes to a disjoint subtree of `.service-approval/<slug>/05-generate-DRAFT/`:
 
 ```
-/spawn sa-generate-preventive    → 05-generate/preventive/, 05-generate/proactive/
-/spawn sa-generate-detective     → 05-generate/detective/, 05-generate/responsive/
-/spawn sa-generate-iac           → 05-generate/iac/{cdk,cloudformation,cdktf,terraform}/
+/spawn sa-generate-preventive    → 05-generate-DRAFT/preventive-DRAFT/, 05-generate-DRAFT/proactive-DRAFT/
+/spawn sa-generate-detective     → 05-generate-DRAFT/detective-DRAFT/, 05-generate-DRAFT/responsive-DRAFT/
+/spawn sa-generate-iac           → 05-generate-DRAFT/iac-DRAFT/{cdk-DRAFT,cloudformation-DRAFT,cdktf-DRAFT,terraform-DRAFT}/
 ```
 
 ## Hard rules
@@ -65,7 +65,7 @@ Exact counts vary by service surface area. Observed ranges:
 
 ## PostToolUse hook behavior
 
-`ide/hooks/post-tool-use.kiro.hook` fires on `fs_write` to anything under `.service-approval/<slug>/05-generate/`. It runs:
+`ide/hooks/post-tool-use.kiro.hook` fires on `fs_write` to anything under `.service-approval/<slug>/05-generate-DRAFT/`. It runs:
 - JSON/YAML parse validation
 - Terraform `validate` + `fmt` on `.tf` files
 - cfn-lint on `.yaml`/`.json` CFN templates

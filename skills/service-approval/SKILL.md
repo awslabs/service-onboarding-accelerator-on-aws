@@ -5,6 +5,8 @@ disable-model-invocation: false
 argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--questions=<file>] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
 ---
 
+> NOTE: Generate-phase outputs land under `05-generate-DRAFT/` with `-DRAFT` suffixes on all subdirectories and filenames, and are embedded with a non-production disclaimer. Orchestration must preserve these DRAFT markers downstream — do NOT strip the `-DRAFT` suffix or the embedded disclaimer when passing paths to subsequent phases.
+
 # Service Approval — Orchestrator v3
 
 Coordinate the service-approval agents to produce a complete set of AWS security controls
@@ -447,17 +449,17 @@ Verify these files exist before proceeding:
 **Step 4a — Preventive/Proactive:**
 Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
+Wait for `<slug>/05-generate-DRAFT/preventive-DRAFT/` and `<slug>/05-generate-DRAFT/proactive-DRAFT/` to be populated.
 
 **Step 4b — Detective/Responsive:**
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
+Wait for `<slug>/05-generate-DRAFT/detective-DRAFT/` and `<slug>/05-generate-DRAFT/responsive-DRAFT/` to be populated.
 
 **Step 4c — IaC Templates:**
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/iac/` to have all 4 formats.
+Wait for `<slug>/05-generate-DRAFT/iac-DRAFT/` to have all 4 formats.
 
 **Step 4d — Final Validation:**
 Run the final validation from `skills/generate/SKILL.md` → "Final Validation" section.
@@ -669,15 +671,15 @@ Dispatch all 3 generate sub-skills simultaneously as background subagents:
 ```
 Agent 4: generate-preventive (background)
   Prompt: Full text of skills/generate-preventive/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate/preventive/ + <slug>/05-generate/proactive/
+  Output: <slug>/05-generate-DRAFT/preventive-DRAFT/ + <slug>/05-generate-DRAFT/proactive-DRAFT/
 
 Agent 5: generate-detective (background)
   Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate/detective/ + <slug>/05-generate/responsive/
+  Output: <slug>/05-generate-DRAFT/detective-DRAFT/ + <slug>/05-generate-DRAFT/responsive-DRAFT/
 
 Agent 6: generate-iac (background)
   Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate/iac/
+  Output: <slug>/05-generate-DRAFT/iac-DRAFT/
 ```
 
 **IMPORTANT:** Dispatch all 3 in a single message with 3 Agent tool calls.
@@ -730,6 +732,6 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 ```
 Service Approval complete.
 Report: .service-approval/APPROVAL-REPORT.md
-Controls: .service-approval/<slug>/05-generate/
+Controls: .service-approval/<slug>/05-generate-DRAFT/
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 ```

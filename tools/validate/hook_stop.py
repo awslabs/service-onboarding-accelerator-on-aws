@@ -2,7 +2,7 @@
 """
 Stop hook: pipeline integrity + cross-artifact + deployability validation.
 
-Runs three validators against `.service-approval/<slug>/05-generate/` when
+Runs three validators against `.service-approval/<slug>/05-generate-DRAFT/` when
 the agent signals completion:
 
   - `validate_pipeline_integrity` (P1-P7) — strict-by-default; integrity
@@ -56,7 +56,7 @@ def _should_snooze(controls_dir: str, current_first_integrity: str | None) -> bo
     """Detect the N-identical-fires loop.
 
     Reads `pipeline.log` at `<controls_dir>/../pipeline.log` (controls_dir
-    is `<slug>/05-generate`; pipeline.log lives at `<slug>/pipeline.log`).
+    is `<slug>/05-generate-DRAFT`; pipeline.log lives at `<slug>/pipeline.log`).
 
     Returns True iff:
       1. Last `_SNOOZE_THRESHOLD` hook:stop entries are all `fail`.
@@ -130,12 +130,12 @@ def main():
         service_path = os.path.join(output_dir, item)
         if not os.path.isdir(service_path):
             continue
-        # Check for 05-generate/ with actual control files
-        controls_dir = os.path.join(service_path, "05-generate")
+        # Check for 05-generate-DRAFT/ with actual control files
+        controls_dir = os.path.join(service_path, "05-generate-DRAFT")
         if os.path.isdir(controls_dir):
             has_controls = any(
                 os.path.isdir(os.path.join(controls_dir, subdir))
-                for subdir in ("preventive", "detective", "responsive", "proactive")
+                for subdir in ("preventive-DRAFT", "detective-DRAFT", "responsive-DRAFT", "proactive-DRAFT")
             )
             if has_controls:
                 service_dirs.append(controls_dir)
@@ -171,7 +171,7 @@ def main():
         # Log a pass entry to each service's log so the audit trail isn't
         # silent on a clean run.
         for controls_dir in service_dirs:
-            # controls_dir = .../service-approval/<slug>/05-generate
+            # controls_dir = .../service-approval/<slug>/05-generate-DRAFT
             log_hook_fire(
                 "stop",
                 "pass",

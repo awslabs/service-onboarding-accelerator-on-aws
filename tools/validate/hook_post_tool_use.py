@@ -123,7 +123,7 @@ def main():
     norm = file_path.replace("\\", "/")
 
     # Dispatch based on path pattern
-    # New layout: .service-approval/<slug>/05-generate/ → controls validator
+    # New layout: .service-approval/<slug>/05-generate-DRAFT/ → controls validator
     #             .service-approval/<slug>/0[1-8]-*/ → state validator
     # Legacy (fallback): /controls/ or /state/ for migration only — emit
     # a one-time warning marker so users know to migrate; after a 24h
@@ -150,8 +150,8 @@ def main():
             )
             sys.exit(2)
 
-        # Check if it's in a 05-generate/ directory (controls)
-        if "/05-generate/" in norm or "/controls/" in norm:
+        # Check if it's in a 05-generate-DRAFT/ directory (controls)
+        if "/05-generate-DRAFT/" in norm or "/controls/" in norm:
             from validate_controls import validate_file
             errors = validate_file(file_path)
         # Check if it's in a numbered phase directory (state) — range(9) covers

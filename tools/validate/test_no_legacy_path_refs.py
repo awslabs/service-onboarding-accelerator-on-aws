@@ -199,7 +199,7 @@ def test_no_legacy_state_refs():
 def test_no_legacy_controls_refs():
     """Verify no hardcoded `.service-approval/controls/` refs in production code.
 
-    After migration, controls live at `<slug>/05-generate/`.
+    After migration, controls live at `<slug>/05-generate-DRAFT/`.
     """
     root = _repo_root()
 
@@ -208,7 +208,7 @@ def test_no_legacy_controls_refs():
     # Same pattern as state: legacy `controls/` is a top-level segment.
     # The new layout puts `controls` only inside file names
     # (`controls-catalog.md`, `map-controls-generated.json`) or after a
-    # longer prefix (`05-generate/...`), never as `<slug>/controls`.
+    # longer prefix (`05-generate-DRAFT/...`), never as `<slug>/controls`.
     matches_fstring = _run_git_grep(
         _R16_CONTROLS_PASS3,
         root,

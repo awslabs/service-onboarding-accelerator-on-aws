@@ -101,7 +101,7 @@ Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.jso
 Phase 1 Research     → <slug>/02-research/research.json (4 parallel sub-skills merged)
 Phase 2 Validate     → <slug>/03-validate/validated.json
 Phase 3 Map          → <slug>/04-map/mapping-results.json + framework-mapping.md
-Phase 4 Generate     → <slug>/05-generate/{preventive, proactive, detective, responsive, iac}/
+Phase 4 Generate     → <slug>/05-generate-DRAFT/{preventive-DRAFT, proactive-DRAFT, detective-DRAFT, responsive-DRAFT, iac-DRAFT}/
 Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (needs --env)
 Phase 6 Summarize    → <slug>/07-summarize/APPROVAL-REPORT.md
 Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
@@ -146,8 +146,8 @@ Cultural rules (skill-based execution, no one-shot generator scripts) live in
 ## Output
 
 - `.service-approval/APPROVAL-REPORT.md` — final report + CCMv4 coverage matrix
-- `.service-approval/<slug>/05-generate/` — all generated artifacts (per-service; see `steering/pipeline.md` for per-category ranges)
-- `.service-approval/<slug>/` — pipeline state files per phase (01-assess/, 02-research/, 03-validate/, 04-map/, 05-generate/, 06-test/)
+- `.service-approval/<slug>/05-generate-DRAFT/` — all generated artifacts (per-service; see `steering/pipeline.md` for per-category ranges)
+- `.service-approval/<slug>/` — pipeline state files per phase (01-assess/, 02-research/, 03-validate/, 04-map/, 05-generate-DRAFT/, 06-test/)
 - `.service-approval/ARTIFACT-FLOW-MATRIX.md` — per-artifact input/output dependency graph
 
 ## Troubleshooting

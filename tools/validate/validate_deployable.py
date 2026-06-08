@@ -775,7 +775,7 @@ def main():
         description="Validate deployability of generated security control artifacts.",
     )
     parser.add_argument(
-        "controls_dir", help="Path to .service-approval/<slug>/05-generate/"
+        "controls_dir", help="Path to .service-approval/<slug>/05-generate-DRAFT/"
     )
     parser.add_argument("--profile", help="AWS CLI profile for Tier 2 checks")
     parser.add_argument(

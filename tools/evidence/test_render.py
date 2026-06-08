@@ -168,7 +168,7 @@ def test_render_attestation_guide(
     assert "02-research/research.json" in content
     assert "03-validate/validated.json" in content
     assert "04-map/mapping-results.json" in content
-    assert "05-generate/" in content
+    assert "05-generate-DRAFT/" in content
     assert "06-test/test-results.json" in content
     assert "07-summarize/APPROVAL-REPORT.md" in content
     assert "08-evidence/" in content
@@ -208,7 +208,7 @@ def test_render_attestation_guide_structure(
         "### 02-research/research.json",
         "### 03-validate/validated.json",
         "### 04-map/mapping-results.json",
-        "### 05-generate/",
+        "### 05-generate-DRAFT/",
         "### 06-test/test-results.json",
         "### 07-summarize/APPROVAL-REPORT.md",
         "### 08-evidence/",

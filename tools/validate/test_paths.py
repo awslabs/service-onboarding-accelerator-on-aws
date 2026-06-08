@@ -74,13 +74,17 @@ class TestPhaseDir:
         assert path == expected
 
     def test_generate_phase(self):
-        """phase_dir('awslambda', 'generate') → .service-approval/awslambda/05-generate/"""
+        """phase_dir('awslambda', 'generate') → .service-approval/awslambda/05-generate-DRAFT/"""
         path = phase_dir("awslambda", "generate")
-        expected = repo_root() / ".service-approval" / "awslambda" / "05-generate"
+        expected = repo_root() / ".service-approval" / "awslambda" / "05-generate-DRAFT"
         assert path == expected
 
     def test_all_phases_map_correctly(self):
-        """Verify all 9 phase names map to correct numbers."""
+        """Verify all 9 phase names map to correct numbers.
+
+        The "generate" phase is special-cased to a `-DRAFT`-suffixed directory
+        because every artifact under it is a draft pending review.
+        """
         phase_map = {
             "intake": "00",
             "assess": "01",
@@ -94,8 +98,9 @@ class TestPhaseDir:
         }
         for phase_name, phase_num in phase_map.items():
             path = phase_dir("awslambda", phase_name)
+            dir_name = f"{phase_num}-{phase_name}-DRAFT" if phase_name == "generate" else f"{phase_num}-{phase_name}"
             expected = (
-                repo_root() / ".service-approval" / "awslambda" / f"{phase_num}-{phase_name}"
+                repo_root() / ".service-approval" / "awslambda" / dir_name
             )
             assert path == expected, f"Phase {phase_name} mismatch"
 

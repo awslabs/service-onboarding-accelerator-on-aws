@@ -18,13 +18,13 @@ Each numbered phase directory contains one layer of the chain of custody:
 ### 01-assess/sar-facts.json
 - **What:** Authoritative IAM facts scraped from the AWS Service Authorization Reference page.
 - **Upstream:** {{ sar_url }}
-- **Downstream:** 02-research/research-capabilities.json, 03-validate/validated.json, 04-map/map-generate-controls, 05-generate/preventive (IAM actions, condition keys).
+- **Downstream:** 02-research/research-capabilities.json, 03-validate/validated.json, 04-map/map-generate-controls, 05-generate-DRAFT/preventive-DRAFT (IAM actions, condition keys).
 - **Claim it substantiates:** "Every IAM action and condition key referenced in generated controls exists on the SAR page for this service."
 
 ### 01-assess/checkpoint-results.json
 - **What:** Factual checkpoint answers (RCP support, FIPS endpoints, Declarative policies, etc.).
 - **Upstream:** AWS documentation URLs (captured in file).
-- **Downstream:** 03-validate (SCP/RCP expressibility gates), 04-map, 05-generate.
+- **Downstream:** 03-validate (SCP/RCP expressibility gates), 04-map, 05-generate-DRAFT.
 - **Claim it substantiates:** "The service's capability boundary matches what AWS publicly documents."
 
 ### 01-assess/assessment-summary.md
@@ -42,16 +42,16 @@ Each numbered phase directory contains one layer of the chain of custody:
 ### 03-validate/validated.json
 - **What:** Post-MCP-verification view of research.json with per-item verification_note strings.
 - **Upstream:** 02-research/research.json.
-- **Downstream:** 04-map/map-controls-generated.json, 05-generate/* (condition keys, parameter paths, mutability).
+- **Downstream:** 04-map/map-controls-generated.json, 05-generate-DRAFT/* (condition keys, parameter paths, mutability).
 - **Claim it substantiates:** "Every downstream control is grounded in an MCP-confirmed fact, not model guesswork."
 
 ### 04-map/mapping-results.json
 - **What:** Final control inventory + threat-mitigation map + framework coverage.
 - **Upstream:** validated.json, map-framework-parsed.json, map-controls-generated.json, map-framework-mapped.json.
-- **Downstream:** 05-generate/* (each generator reads the control roster), 08-evidence (CLI synthesis reads controls[]).
+- **Downstream:** 05-generate-DRAFT/* (each generator reads the control roster), 08-evidence (CLI synthesis reads controls[]).
 - **Claim it substantiates:** "The control set maps deterministically onto the customer's compliance framework, with every mapping rationale captured."
 
-### 05-generate/{preventive,proactive,detective,responsive,iac}/
+### 05-generate-DRAFT/{preventive-DRAFT,proactive-DRAFT,detective-DRAFT,responsive-DRAFT,iac-DRAFT}/
 - **What:** Deployable artifacts — SCPs, Config rules, Lambda remediators, CFN/Terraform/CDK/CDKTF templates.
 - **Upstream:** mapping-results.json, validated.json, iac-support.json.
 - **Downstream:** 06-test (deployed), 08-evidence (validated via CLI probes).
@@ -59,7 +59,7 @@ Each numbered phase directory contains one layer of the chain of custody:
 
 ### 06-test/test-results.json + deploy-logs/
 - **What:** Phase 5 deployment outcome: deploy + verify + teardown cycle for each IaC format.
-- **Upstream:** 05-generate/iac/**.
+- **Upstream:** 05-generate-DRAFT/iac-DRAFT/**.
 - **Downstream:** 08-evidence (reads deployed-resources.json for ARNs).
 - **Claim it substantiates:** "The compliant-resource template actually deploys against a real AWS account and tears down cleanly."
 

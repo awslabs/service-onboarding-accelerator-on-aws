@@ -112,7 +112,7 @@ def _find_state_dir(file_path: str) -> dict[str, str] | None:
     """Walk up from file_path to find service root, return phase paths.
 
     In the new per-service-per-phase layout, controls live at
-    .service-approval/<slug>/05-generate/ and need to reference files in
+    .service-approval/<slug>/05-generate-DRAFT/ and need to reference files in
     sibling phases like 04-map/, 03-validate/, 01-assess/.
 
     Delegates to tools.paths.find_service_root_for_file (regex-anchored to
@@ -827,35 +827,46 @@ _SAR_DRIVEN_BASENAME_PATTERNS = (
 
 # Filename patterns CHECK-15 accepts under posture `preventative-request`.
 # Superset of _SAR_DRIVEN_BASENAME_PATTERNS because tag-policy lives in
-# preventive/ under the same posture but is not SAR-driven.
+# preventive-DRAFT/ under the same posture but is not SAR-driven.
 _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
     "tag-policy",
 )
 
 # Filename patterns CHECK-15 accepts under posture `reactive-detective`
-# when the artifact lives directly in `detective/` (outside
-# config-rule-lambdas/).
+# when the artifact lives directly in `detective-DRAFT/` (outside
+# config-rule-lambdas-DRAFT/). Match on stem so `-DRAFT` suffix variants
+# also match (e.g., `config-rules-DRAFT.json`).
 _REACTIVE_DETECTIVE_BASENAMES = (
     "config-rules.json",
     "access-analyzer.json",
     "eventbridge-rules.json",
     "cloudwatch-alarms.json",
+    "config-rules-DRAFT.json",
+    "access-analyzer-DRAFT.json",
+    "eventbridge-rules-DRAFT.json",
+    "cloudwatch-alarms-DRAFT.json",
 )
 
 # Filename patterns CHECK-15 accepts under posture `preventative-proactive`
-# when the artifact legitimately lives in `detective/` (cross-cutting
+# when the artifact legitimately lives in `detective-DRAFT/` (cross-cutting
 # documentation / gap remediation files).
 _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES = (
     "compensating-controls-documentation.json",
+    "compensating-controls-documentation-DRAFT.json",
 )
 
 
 def _is_sar_driven_artifact(file_path: str) -> bool:
-    """Return True if file_path is a SAR-driven preventive artifact."""
+    """Return True if file_path is a SAR-driven preventive artifact.
+
+    Matches both the canonical `preventive-DRAFT/` directory AND any path whose
+    basename includes a SAR-driven pattern (so unit tests can exercise the
+    check on tmp paths without recreating the full directory structure).
+    """
     norm = file_path.replace("\\", "/").lower()
-    if "/preventive/" not in norm and "preventive" not in os.path.basename(norm):
+    if "/preventive-draft/" not in norm and "/preventive/" not in norm and "preventive" not in os.path.basename(norm):
         # Also match files that live directly in tmp paths with SAR basenames
-        # (so unit tests can exercise the check without creating /preventive/ dirs)
+        # (so unit tests can exercise the check without creating /preventive-DRAFT/ dirs)
         pass
     basename = os.path.basename(norm)
     for pat in _SAR_DRIVEN_BASENAME_PATTERNS:
@@ -956,9 +967,9 @@ def check_sar_condition_keys_14a(
 # Check 14b: API-driven artifacts — enum literals must match parameters[].enum
 # ================================================================
 #
-# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-# responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-# responsive/lambda-remediator/**, iac/**), any enum-style literal list must reference
+# For API-driven artifact files (proactive-DRAFT/**, detective-DRAFT/config-rule-lambdas-DRAFT/**,
+# responsive-DRAFT/ssm-runbook*-DRAFT, responsive-DRAFT/stepfunctions-workflow-DRAFT.json,
+# responsive-DRAFT/lambda-remediator-DRAFT/**, iac-DRAFT/**), any enum-style literal list must reference
 # values from validated.json.api_surface.operations[].parameters[].enum.
 #
 # Patterns detected (a reasonable subset — language-agnostic literal scan):
@@ -974,6 +985,13 @@ _ENUM_LITERAL_LIST_PATTERN = re.compile(
 )
 _STRING_LITERAL_PATTERN = re.compile(r"[\"']([A-Z][A-Z0-9_]{1,63})[\"']")
 _API_DRIVEN_PATH_FRAGMENTS = (
+    "/proactive-DRAFT/",
+    "/detective-DRAFT/config-rule-lambdas-DRAFT/",
+    "/responsive-DRAFT/ssm-runbook",
+    "/responsive-DRAFT/stepfunctions-workflow",
+    "/responsive-DRAFT/lambda-remediator-DRAFT/",
+    "/iac-DRAFT/",
+    # Legacy non-DRAFT fragments kept so older fixtures still match.
     "/proactive/",
     "/detective/config-rule-lambdas/",
     "/responsive/ssm-runbook",
@@ -1024,9 +1042,9 @@ def check_api_driven_enum_literals_14b(
 ) -> list[str]:
     """CHECK-14b — Enum-style literal lists must reference parameters[].enum values.
 
-    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-    responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-    responsive/lambda-remediator/**, iac/**).
+    Scope: API-driven artifact files (proactive-DRAFT/**, detective-DRAFT/config-rule-lambdas-DRAFT/**,
+    responsive-DRAFT/ssm-runbook*-DRAFT, responsive-DRAFT/stepfunctions-workflow-DRAFT.json,
+    responsive-DRAFT/lambda-remediator-DRAFT/**, iac-DRAFT/**).
     Each SCREAMING_SNAKE literal in an `in [...]` / `AllowedValues: [...]` / similar
     enum-style list must appear in validated.json.api_surface.operations[].parameters[].enum.
     """
@@ -1070,12 +1088,12 @@ def check_api_driven_enum_literals_14b(
 #
 # Every generated artifact with `_metadata.posture` must live in a directory that
 # matches its posture:
-#   preventative-request   → preventive/{scp,rcp,iam-policies,permission-boundary,
-#                             resource-policy,vpce-policy,kms-key-policy}*.json
-#   preventative-proactive → proactive/** or iac/**
-#   reactive-detective     → detective/config-rule-lambdas/** or detective/config-rules.json
-#                             or detective/access-analyzer.json
-#   reactive-corrective    → responsive/**
+#   preventative-request   → preventive-DRAFT/{scp,rcp,iam-policies,permission-boundary,
+#                             resource-policy,vpce-policy,kms-key-policy}*-DRAFT.json
+#   preventative-proactive → proactive-DRAFT/** or iac-DRAFT/**
+#   reactive-detective     → detective-DRAFT/config-rule-lambdas-DRAFT/** or detective-DRAFT/config-rules-DRAFT.json
+#                             or detective-DRAFT/access-analyzer-DRAFT.json
+#   reactive-corrective    → responsive-DRAFT/**
 #
 # Artifacts without _metadata.posture are not subject to this check (opt-in during
 # Phase C rollout).
@@ -1089,27 +1107,44 @@ _VALID_POSTURES = {
 
 
 def _file_is_in_posture_family(file_path: str, posture: str) -> bool:
-    """Return True if file_path's directory matches posture's allowed family."""
+    """Return True if file_path's directory matches posture's allowed family.
+
+    The canonical layout is `<phase>-DRAFT/<category>-DRAFT/...` (lowercase the
+    path before matching, so `-DRAFT` becomes `-draft`). Legacy non-DRAFT
+    fragments are still accepted so older fixtures and migration paths keep
+    passing.
+    """
     norm = file_path.replace("\\", "/").lower()
     base = os.path.basename(norm)
     if posture == "preventative-request":
-        return "/preventive/" in norm and any(
+        return ("/preventive-draft/" in norm or "/preventive/" in norm) and any(
             pat in base for pat in _PREV_REQUEST_BASENAME_PATTERNS
         )
     if posture == "preventative-proactive":
-        if "/proactive/" in norm or "/iac/" in norm:
+        if (
+            "/proactive-draft/" in norm
+            or "/proactive/" in norm
+            or "/iac-draft/" in norm
+            or "/iac/" in norm
+        ):
             return True
-        if "/detective/" in norm and base in _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES:
+        if (
+            ("/detective-draft/" in norm or "/detective/" in norm)
+            and base in _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES
+        ):
             return True
         return False
     if posture == "reactive-detective":
-        if "/detective/config-rule-lambdas/" in norm:
+        if "/detective-draft/config-rule-lambdas-draft/" in norm or "/detective/config-rule-lambdas/" in norm:
             return True
-        if "/detective/" in norm and base in _REACTIVE_DETECTIVE_BASENAMES:
+        if (
+            ("/detective-draft/" in norm or "/detective/" in norm)
+            and base in _REACTIVE_DETECTIVE_BASENAMES
+        ):
             return True
         return False
     if posture == "reactive-corrective":
-        return "/responsive/" in norm
+        return "/responsive-draft/" in norm or "/responsive/" in norm
     return False
 
 
@@ -1133,13 +1168,13 @@ def check_posture_mechanism_consistency_15(
         errors.append(
             f"CHECK-15 posture_mismatch: {os.path.basename(file_path)} "
             f"declares _metadata.posture='{posture}' but lives outside the expected "
-            f"directory family. preventative-request→preventive/{{scp,rcp,iam-policies,"
-            f"permission-boundary,resource-policy,vpce-policy,kms-key-policy,tag-policy}}*.json; "
-            f"preventative-proactive→proactive/** or iac/** or "
-            f"detective/compensating-controls-documentation.json; "
-            f"reactive-detective→detective/config-rule-lambdas/** or one of "
-            f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
-            f"reactive-corrective→responsive/**."
+            f"directory family. preventative-request→preventive-DRAFT/{{scp,rcp,iam-policies,"
+            f"permission-boundary,resource-policy,vpce-policy,kms-key-policy,tag-policy}}*-DRAFT.json; "
+            f"preventative-proactive→proactive-DRAFT/** or iac-DRAFT/** or "
+            f"detective-DRAFT/compensating-controls-documentation-DRAFT.json; "
+            f"reactive-detective→detective-DRAFT/config-rule-lambdas-DRAFT/** or one of "
+            f"detective-DRAFT/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}-DRAFT.json; "
+            f"reactive-corrective→responsive-DRAFT/**."
         )
     return errors
 

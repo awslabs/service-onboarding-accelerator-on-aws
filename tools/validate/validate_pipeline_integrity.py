@@ -22,6 +22,7 @@ Failure signals:
     P7 — phase-output completeness: every phase dir on disk must contain
          its declared outputs (mapping-results.json, controls-catalog.md,
          framework-mapping.md, etc.) at min-size thresholds
+         (05-generate-DRAFT/ uses subdir-presence check instead of file list)
 """
 from __future__ import annotations
 
@@ -270,7 +271,7 @@ _CROSS_SERVICE_WILDCARD_ONLY = frozenset({
 def _load_wildcard_only_actions(controls_dir: Path) -> set[str]:
     """Load the set of `<prefix>:<action>` strings AWS SAR marks wildcard-only.
 
-    `controls_dir` is `<slug>/05-generate`. Two per-service state files are
+    `controls_dir` is `<slug>/05-generate-DRAFT`. Two per-service state files are
     consulted in addition to the cross-service floor:
       1. `<slug>/01-assess/sar-facts.json` — `wildcard_only_actions[]` enumerates
          actions Phase 0 explicitly classified as wildcard-only (typically
@@ -581,10 +582,10 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("controls-catalog.md", 3072),
         ("framework-mapping.md", 5120),
     ],
-    "05-generate": [
-        # 05-generate/ contains category subdirs, not single files.
-        # Existence of at least one of {preventive, proactive, detective,
-        # responsive, iac} signals the phase ran. Empty dir = incomplete.
+    "05-generate-DRAFT": [
+        # 05-generate-DRAFT/ contains category subdirs, not single files.
+        # Existence of at least one of {preventive-DRAFT, proactive-DRAFT, detective-DRAFT,
+        # responsive-DRAFT, iac-DRAFT} signals the phase ran. Empty dir = incomplete.
     ],
     "06-test": [
         ("test-results.json", 256),
@@ -641,13 +642,13 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                     f"truncated write. Re-run the {phase_name.split('-', 1)[1]} skill."
                 )
 
-    # 05-generate/: at least one category subdir must contain real files.
+    # 05-generate-DRAFT/: at least one category subdir must contain real files.
     # `any(cat_dir.rglob("*"))` would return True for an empty subdir tree
-    # (any directory entry counts), letting an empty `preventive/empty/`
+    # (any directory entry counts), letting an empty `preventive-DRAFT/empty/`
     # satisfy the gate. Require at least one actual file.
-    generate_dir = service_root / "05-generate"
+    generate_dir = service_root / "05-generate-DRAFT"
     if generate_dir.exists():
-        categories = ["preventive", "proactive", "detective", "responsive", "iac"]
+        categories = ["preventive-DRAFT", "proactive-DRAFT", "detective-DRAFT", "responsive-DRAFT", "iac-DRAFT"]
         any_populated = False
         for cat in categories:
             cat_dir = generate_dir / cat
@@ -656,7 +657,7 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                 break
         if not any_populated:
             errors.append(
-                f"P7 {service_root.name}/05-generate/: phase ran but produced "
+                f"P7 {service_root.name}/05-generate-DRAFT/: phase ran but produced "
                 f"NO files in any of {categories}. Re-run generate."
             )
 
@@ -779,11 +780,11 @@ def validate_pipeline(root: Path) -> list[str]:
         if validate_dir.exists():
             errors.extend(check_validated_notes(validate_dir))
 
-        # Check controls in 05-generate/
-        controls_dir = service_root / "05-generate"
+        # Check controls in 05-generate-DRAFT/
+        controls_dir = service_root / "05-generate-DRAFT"
         if controls_dir.exists():
             errors.extend(check_iam_policies(controls_dir))
-            iac_dir = controls_dir / "iac"
+            iac_dir = controls_dir / "iac-DRAFT"
             if iac_dir.exists():
                 errors.extend(check_iac_placeholders(iac_dir))
 

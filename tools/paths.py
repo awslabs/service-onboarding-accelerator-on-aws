@@ -134,7 +134,9 @@ def phase_dir(slug: str, phase: str) -> Path:
 
     Returns:
         Path to .service-approval/<slug>/<NN>-<phase>/ where NN is the
-        two-digit phase number.
+        two-digit phase number. The "generate" phase is special-cased to
+        return `<NN>-generate-DRAFT/` because every artifact under it is a
+        draft pending review (see README Disclaimer).
 
     Raises:
         PathResolutionError: If slug or phase name is invalid.
@@ -142,6 +144,8 @@ def phase_dir(slug: str, phase: str) -> Path:
     Examples:
         >>> phase_dir("awslambda", "assess")  # doctest: +SKIP
         PosixPath('/repo/.service-approval/awslambda/01-assess')
+        >>> phase_dir("awslambda", "generate")  # doctest: +SKIP
+        PosixPath('/repo/.service-approval/awslambda/05-generate-DRAFT')
     """
     if phase not in _PHASE_MAP:
         valid = ", ".join(sorted(_PHASE_MAP.keys()))
@@ -149,7 +153,8 @@ def phase_dir(slug: str, phase: str) -> Path:
             f"Invalid phase name: {phase!r}. Valid phases: {valid}"
         )
     phase_num = _PHASE_MAP[phase]
-    candidate = (service_root(slug) / f"{phase_num}-{phase}").resolve()
+    dir_name = f"{phase_num}-{phase}-DRAFT" if phase == "generate" else f"{phase_num}-{phase}"
+    candidate = (service_root(slug) / dir_name).resolve()
     _assert_under_service_approval(candidate)
     return candidate
 
@@ -172,10 +177,12 @@ _TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 
 # A canonical phase directory name is exactly NN-name where NN is one of
 # the two-digit numbers in _PHASE_MAP and name is the matching phase name.
+# The generate phase additionally permits a `-DRAFT` suffix because every
+# artifact it produces is a draft pending review.
 # Anchoring with this prevents `01-something-else` or `09-extra-phase`
 # from being mistaken for a phase dir.
 _PHASE_DIR_RE = re.compile(
-    r"^(0[0-8])-(intake|assess|research|validate|map|generate|test|summarize|evidence)$"
+    r"^(0[0-8])-(intake|assess|research|validate|map|generate|test|summarize|evidence)(?:-DRAFT)?$"
 )
 
 

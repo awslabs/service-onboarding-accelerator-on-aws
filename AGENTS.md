@@ -45,7 +45,7 @@ Phase 0 Assess      → <slug>/01-assess/{sar-facts,checkpoint-results,iac-suppo
 Phase 1 Research    → <slug>/02-research/research.json (4 parallel sub-skills merged)
 Phase 2 Validate    → <slug>/03-validate/validated.json
 Phase 3 Map         → <slug>/04-map/{mapping-results.json, framework-mapping.md}
-Phase 4 Generate    → <slug>/05-generate/{proactive,preventive,detective,responsive,iac}/
+Phase 4 Generate    → <slug>/05-generate-DRAFT/{proactive-DRAFT,preventive-DRAFT,detective-DRAFT,responsive-DRAFT,iac-DRAFT}/ (DRAFT artifacts — see README Disclaimer)
 Phase 5 Test        → <slug>/06-test/{test-results.json, deployed-resources.json} (mode set upfront in Intake: full-deploy | dry-run | skip | manual-cli)
 Phase 6 Summarize   → <slug>/07-summarize/APPROVAL-REPORT.md
 Phase 7 Evidence    → <slug>/08-evidence/{attestation-report.md, cli-outputs/} (requires AWS credentials)

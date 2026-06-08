@@ -158,13 +158,13 @@ threat → mitigation → control traceability. Phase 4 reads it.
 **Sub-skills:** 3 in parallel
 
 ```
-/spawn sa-generate-preventive  → <slug>/05-generate/preventive/, <slug>/05-generate/proactive/
-/spawn sa-generate-detective   → <slug>/05-generate/detective/, <slug>/05-generate/responsive/
-/spawn sa-generate-iac         → <slug>/05-generate/iac/ (4 formats + TF modules)
+/spawn sa-generate-preventive  → <slug>/05-generate-DRAFT/preventive-DRAFT/, <slug>/05-generate-DRAFT/proactive-DRAFT/
+/spawn sa-generate-detective   → <slug>/05-generate-DRAFT/detective-DRAFT/, <slug>/05-generate-DRAFT/responsive-DRAFT/
+/spawn sa-generate-iac         → <slug>/05-generate-DRAFT/iac-DRAFT/ (4 formats + TF modules)
 ```
 
 Each generator reads `<slug>/04-map/mapping-results.json` and emits artifacts to
-the right `<slug>/05-generate/` subdirectory. Artifact count ranges:
+the right `<slug>/05-generate-DRAFT/` subdirectory. Artifact count ranges:
 - Preventive: 9–12 files
 - Proactive: 12–15 files
 - Detective: 34–47 files
@@ -213,19 +213,19 @@ runs in parallel and gaps are easy to miss when subagents complete independently
 
 ### Checklist
 
-1. **Artifact count** — Count all files in `05-generate/` by category. Compare
+1. **Artifact count** — Count all files in `05-generate-DRAFT/` by category. Compare
    against the ranges in `steering/phase-generate.md`. If below minimum for any
    category, re-run that generator sub-skill.
 
 2. **IaC format coverage** — Read `01-assess/iac-support.json`. For every format
    where `supported: true`, verify corresponding output exists in
-   `05-generate/iac/{cdk,cloudformation,cdktf,terraform}/`. Missing format = gap.
+   `05-generate-DRAFT/iac-DRAFT/{cdk-DRAFT,cloudformation-DRAFT,cdktf-DRAFT,terraform-DRAFT}/`. Missing format = gap.
 
 3. **Policy engine coverage** — Every proactive control must exist in ALL THREE
    engines: CFN Guard (`.guard`), OPA (`.rego`), and Checkov (`.py`). A control
    in only one engine is incomplete.
 
-4. **SCP metadata** — Every file in `05-generate/preventive/` must have:
+4. **SCP metadata** — Every file in `05-generate-DRAFT/preventive-DRAFT/` must have:
    - `_metadata` with control_id, name, ccmv4_objectives, mitre_techniques
    - `_simulation_tests` array with at least one DENY and one ALLOW scenario
    - Control ID in the `Sid` field of each Statement

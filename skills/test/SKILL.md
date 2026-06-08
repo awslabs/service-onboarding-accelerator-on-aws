@@ -5,6 +5,8 @@ disable-model-invocation: false
 argument-hint: '[--env=<profile>] [--dry-run] [--timeout=<minutes>] [--no-evidence]'
 ---
 
+> NOTE: Generate-phase outputs are DRAFT artifacts (suffixed `-DRAFT`) embedded with a non-production disclaimer. When summarizing or testing, preserve the DRAFT markers in any references and surface the disclaimer text in any user-facing report. Do NOT strip the `-DRAFT` suffix or the embedded disclaimer.
+
 # Service Approval — Tester
 
 Deploy the generated compliant resource template and validate that it produces zero Config rule
@@ -31,8 +33,8 @@ It controls whether Phase 7 tears down at the end of evidence collection.
 - [ ] **Hard gate — verify upstream phases produced their outputs:**
   ```bash
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
-  # 05-generate has no flat-file outputs; check the dir is populated:
-  test -d .service-approval/<slug>/05-generate || { echo "ERROR: run generator first"; exit 2; }
+  # 05-generate-DRAFT has no flat-file outputs; check the dir is populated:
+  test -d .service-approval/<slug>/05-generate-DRAFT || { echo "ERROR: run generator first"; exit 2; }
   ```
   Without this gate, /test would deploy whatever IaC the agent left around
   (or fail silently if nothing exists), wasting AWS resources.
@@ -49,7 +51,7 @@ Run the deployability validator (Tier 1 + Tier 2 if credentials available):
 
 ```bash
 python3 tools/validate/validate_deployable.py \
-  [--profile {env}] [--tier1-only] .service-approval/<slug>/05-generate/
+  [--profile {env}] [--tier1-only] .service-approval/<slug>/05-generate-DRAFT/
 ```
 
 **Without `--env`**: Runs Tier 1 only (static checks — JSON, YAML, terraform validate/fmt,
@@ -111,7 +113,7 @@ AWS_PROFILE="{env}" bash scripts/smoke-deploy-test.sh \
 
 The script:
 1. Verifies AWS identity and refuses production-alias accounts.
-2. Auto-discovers slug from `.service-approval/*/05-generate/iac/` (or uses `--slug`).
+2. Auto-discovers slug from `.service-approval/*/05-generate-DRAFT/iac-DRAFT/` (or uses `--slug`).
 3. Resolves `${ACCOUNT_ID}` in `smoke-test-params.json` → a temp file.
 4. `aws cloudformation deploy` with `--capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM`.
 5. Verifies stack outputs inline.

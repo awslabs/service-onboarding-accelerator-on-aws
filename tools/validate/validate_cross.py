@@ -3,7 +3,7 @@
 Cross-artifact consistency validator.
 
 Runs after a generation phase completes to verify consistency across all
-generated control artifacts in .service-approval/<slug>/05-generate/.
+generated control artifacts in .service-approval/<slug>/05-generate-DRAFT/.
 
 Usage:
     python3 validate_cross.py <controls_dir>
@@ -34,14 +34,14 @@ def _load_json(path: str) -> dict | None:
 def _find_state_dir(controls_dir: str) -> dict[str, str] | None:
     """Find sibling phase directories relative to controls dir.
 
-    In the new layout, controls_dir is .service-approval/<slug>/05-generate/
+    In the new layout, controls_dir is .service-approval/<slug>/05-generate-DRAFT/
     and we need to find 04-map/ and 03-validate/ siblings.
 
     Returns:
         Dict with keys "map" and "validate" pointing to phase directories,
         or None if not found.
     """
-    # controls_dir is typically .service-approval/<slug>/05-generate/
+    # controls_dir is typically .service-approval/<slug>/05-generate-DRAFT/
     # Parent is the service root
     service_root = os.path.dirname(controls_dir.rstrip("/"))
     map_dir = os.path.join(service_root, "04-map")
@@ -104,7 +104,8 @@ def check_framework_header_consistency(controls_dir: str) -> list[str]:
 
     for fpath in _walk_json_files(controls_dir):
         # Skip iac/ directory (IaC templates don't have _metadata)
-        if "/iac/" in fpath.replace("\\", "/"):
+        norm_fpath = fpath.replace("\\", "/")
+        if "/iac-DRAFT/" in norm_fpath or "/iac/" in norm_fpath:
             continue
         data = _load_json(fpath)
         if not data:
@@ -154,7 +155,8 @@ def check_control_coverage(controls_dir: str, mapping: dict) -> list[str]:
 
     # Scan JSON _metadata and inline control_ids
     for fpath in _walk_json_files(controls_dir):
-        if "/iac/" in fpath.replace("\\", "/"):
+        norm_fpath = fpath.replace("\\", "/")
+        if "/iac-DRAFT/" in norm_fpath or "/iac/" in norm_fpath:
             continue
         data = _load_json(fpath)
         if not data:
@@ -252,7 +254,8 @@ def check_no_duplicate_names(controls_dir: str) -> list[str]:
     names: dict[str, list[str]] = {}  # name -> [source files]
 
     for fpath in _walk_json_files(controls_dir):
-        if "/iac/" in fpath.replace("\\", "/"):
+        norm_fpath = fpath.replace("\\", "/")
+        if "/iac-DRAFT/" in norm_fpath or "/iac/" in norm_fpath:
             continue
         data = _load_json(fpath)
         if not data:
@@ -319,7 +322,12 @@ def check_condition_key_consistency(controls_dir: str, validated: dict) -> list[
 
     for fpath in _walk_json_files(controls_dir):
         norm = fpath.replace("\\", "/")
-        if "/iac/" in norm or "/proactive/" in norm:
+        if (
+            "/iac-DRAFT/" in norm
+            or "/iac/" in norm
+            or "/proactive-DRAFT/" in norm
+            or "/proactive/" in norm
+        ):
             continue
         data = _load_json(fpath)
         if not data:
@@ -489,9 +497,17 @@ def check_terraform_variable_consistency(controls_dir: str) -> list[str]:
 # ================================================================
 
 def check_lambda_handler_completeness(controls_dir: str) -> list[str]:
-    """Verify every CUSTOM_LAMBDA Config rule has a corresponding handler.py."""
+    """Verify every CUSTOM_LAMBDA Config rule has a corresponding handler.py.
+
+    Resolves the detective category directory and the lambdas subdirectory
+    against both the canonical DRAFT layout and the legacy non-DRAFT layout —
+    whichever exists wins. Handler / requirements filenames are also accepted
+    in either form (`handler.py` or `handler-DRAFT.py`).
+    """
     errors = []
-    detective_dir = os.path.join(controls_dir, "detective")
+    detective_dir = os.path.join(controls_dir, "detective-DRAFT")
+    if not os.path.isdir(detective_dir):
+        detective_dir = os.path.join(controls_dir, "detective")
     if not os.path.isdir(detective_dir):
         return []
 
@@ -511,22 +527,34 @@ def check_lambda_handler_completeness(controls_dir: str) -> list[str]:
                 rule_name = rule.get("rule_name", key)
                 custom_rules.append(rule_name)
 
-    # Check each custom rule has handler.py and requirements.txt
-    lambdas_dir = os.path.join(detective_dir, "config-rule-lambdas")
+    # Check each custom rule has handler.py and requirements.txt — accept the
+    # DRAFT-suffixed form or the legacy form so existing fixtures still pass.
+    lambdas_dir = os.path.join(detective_dir, "config-rule-lambdas-DRAFT")
+    if not os.path.isdir(lambdas_dir):
+        lambdas_dir = os.path.join(detective_dir, "config-rule-lambdas")
     for rule_name in custom_rules:
-        handler_dir = os.path.join(lambdas_dir, rule_name)
-        handler_py = os.path.join(handler_dir, "handler.py")
-        requirements = os.path.join(handler_dir, "requirements.txt")
+        handler_candidates = [
+            os.path.join(lambdas_dir, rule_name, "handler-DRAFT.py"),
+            os.path.join(lambdas_dir, f"{rule_name}-DRAFT", "handler-DRAFT.py"),
+            os.path.join(lambdas_dir, rule_name, "handler.py"),
+            os.path.join(lambdas_dir, f"{rule_name}-DRAFT", "handler.py"),
+        ]
+        requirements_candidates = [
+            os.path.join(lambdas_dir, rule_name, "requirements-DRAFT.txt"),
+            os.path.join(lambdas_dir, f"{rule_name}-DRAFT", "requirements-DRAFT.txt"),
+            os.path.join(lambdas_dir, rule_name, "requirements.txt"),
+            os.path.join(lambdas_dir, f"{rule_name}-DRAFT", "requirements.txt"),
+        ]
 
-        if not os.path.isfile(handler_py):
+        if not any(os.path.isfile(p) for p in handler_candidates):
             errors.append(
                 f"CHECK-X8 lambda_handler: CUSTOM_LAMBDA rule '{rule_name}' "
-                f"has no handler.py"
+                f"has no handler.py / handler-DRAFT.py"
             )
-        if not os.path.isfile(requirements):
+        if not any(os.path.isfile(p) for p in requirements_candidates):
             errors.append(
                 f"CHECK-X8 lambda_requirements: rule '{rule_name}' "
-                f"missing requirements.txt"
+                f"missing requirements.txt / requirements-DRAFT.txt"
             )
 
     return errors

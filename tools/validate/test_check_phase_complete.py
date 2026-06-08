@@ -66,8 +66,8 @@ def test_complete_phase_returns_no_errors(fake_repo, phase):
 
 
 def test_05_generate_has_no_file_outputs():
-    """05-generate uses subdirs, not files; PHASE_REQUIRED_OUTPUTS empty entry."""
-    assert PHASE_REQUIRED_OUTPUTS["05-generate"] == []
+    """05-generate-DRAFT uses subdirs, not files; PHASE_REQUIRED_OUTPUTS empty entry."""
+    assert PHASE_REQUIRED_OUTPUTS["05-generate-DRAFT"] == []
 
 
 # ---------------------------------------------------------------------------

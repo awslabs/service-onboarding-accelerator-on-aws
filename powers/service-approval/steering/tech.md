@@ -63,12 +63,12 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── mapping-results.json
     │   ├── controls-catalog.md
     │   └── framework-mapping.md
-    ├── 05-generate/
-    │   ├── preventive/              (SCPs, RCPs, resource policies)
-    │   ├── proactive/               (CFN Guard, OPA, Checkov, CFN Hooks)
-    │   ├── detective/               (Config rules + Lambda handlers, EventBridge)
-    │   ├── responsive/              (Lambda remediators, SSM runbooks)
-    │   └── iac/                     (CDK, CloudFormation, CDKTF, modular Terraform)
+    ├── 05-generate-DRAFT/
+    │   ├── preventive-DRAFT/        (SCPs, RCPs, resource policies)
+    │   ├── proactive-DRAFT/         (CFN Guard, OPA, Checkov, CFN Hooks)
+    │   ├── detective-DRAFT/         (Config rules + Lambda handlers, EventBridge)
+    │   ├── responsive-DRAFT/        (Lambda remediators, SSM runbooks)
+    │   └── iac-DRAFT/               (CDK, CloudFormation, CDKTF, modular Terraform)
     ├── 06-test/
     │   ├── test-results.json
     │   ├── deployed-resources.json  ← stack ID + ARNs (consumed by Phase 7)

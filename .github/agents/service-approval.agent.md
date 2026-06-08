@@ -68,5 +68,5 @@ use `aws-documentation` and `awsiac`.
 ## Output
 
 - `.service-approval/APPROVAL-REPORT.md` — final report
-- `.service-approval/<slug>/05-generate/` — all generated artifacts
+- `.service-approval/<slug>/05-generate-DRAFT/` — all generated artifacts (DRAFT artifacts — see README Disclaimer)
 - `.service-approval/<slug>/` — intermediate JSON state files per phase

@@ -461,15 +461,15 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
 
     # Create phase directories
     (service / "03-validate").mkdir()
-    (service / "05-generate").mkdir()
-    (service / "05-generate" / "preventive").mkdir()
+    (service / "05-generate-DRAFT").mkdir()
+    (service / "05-generate-DRAFT" / "preventive-DRAFT").mkdir()
 
     # Trigger P1 (missing mcp-calls.log at service root)
     # No mcp-calls.log created → will fail P1
 
     # Trigger P3 (SCP without at least one Deny)
     _write_policy(
-        service / "05-generate",
+        service / "05-generate-DRAFT",
         "scp-baseline.json",
         {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]},
     )
@@ -570,7 +570,7 @@ def test_wildcard_only_loader_skips_bare_actions_when_prefix_empty(tmp_path: Pat
         "wildcard_only_actions": ["BareAction"],
         "actions": [{"name": "AnotherBare", "resource_types": []}],
     }))
-    controls_dir = tmp_path / "05-generate"
+    controls_dir = tmp_path / "05-generate-DRAFT"
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     # Cross-service entries are still present, but no malformed ":Action" entries.
@@ -586,7 +586,7 @@ def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
         "service_prefix": "datasync",
         "wildcard_only_actions": ["DescribeAgent"],
     }))
-    controls_dir = tmp_path / "05-generate"
+    controls_dir = tmp_path / "05-generate-DRAFT"
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     assert "datasync:DescribeAgent" in out

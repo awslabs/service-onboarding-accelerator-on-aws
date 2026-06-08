@@ -4,6 +4,8 @@ description: Produce final APPROVAL-REPORT.md with framework coverage matrix, mi
 disable-model-invocation: false
 ---
 
+> NOTE: Generate-phase outputs are DRAFT artifacts (suffixed `-DRAFT`) embedded with a non-production disclaimer. When summarizing or testing, preserve the DRAFT markers in any references and surface the disclaimer text in any user-facing report. Do NOT strip the `-DRAFT` suffix or the embedded disclaimer.
+
 # Service Approval — Summarizer v3
 
 Read all state files and generate the final approval report at `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md`.
@@ -15,7 +17,7 @@ Read all state files and generate the final approval report at `.service-approva
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 01-assess || exit 2
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
-  test -d .service-approval/<slug>/05-generate || { echo "ERROR: run generator first"; exit 2; }
+  test -d .service-approval/<slug>/05-generate-DRAFT || { echo "ERROR: run generator first"; exit 2; }
   ```
   Phase 6 (Test) is OPTIONAL — proceed even if 06-test/ is absent (mark test
   as NOT RUN in the report). The summarize skill must NOT pre-gate Phase 6
@@ -60,7 +62,7 @@ This shows end-to-end traceability from customer mitigations through controls to
 
 ## Step 4: Build control inventory
 
-For each file in `.service-approval/<slug>/05-generate/`, read its `_metadata` or header comments
+For each file in `.service-approval/<slug>/05-generate-DRAFT/`, read its `_metadata` or header comments
 (lines starting with `# SCOPE:`, `# LAYER:`, `# CONTROLS:`, `# FRAMEWORK:`).
 
 Build a table per layer:
@@ -69,7 +71,7 @@ Build a table per layer:
 ## Step 5: Build artifact manifest
 
 ```bash
-find .service-approval/<slug>/05-generate -type f | sort
+find .service-approval/<slug>/05-generate-DRAFT -type f | sort
 ```
 
 ## Step 6: Write APPROVAL-REPORT.md
@@ -197,14 +199,14 @@ Deployment order:
 1. **Org level**: Apply SCPs, RCPs, tag policies via AWS Organizations
 2. **Account level**: Deploy Config conformance pack, Config rules, Access Analyzer
 3. **Service level**: Deploy CloudFormation Hooks, Config org rules
-4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `05-generate/iac/`
+4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `05-generate-DRAFT/iac-DRAFT/`
 
 ## Manual Deploy Commands
 
 **Render this section only when `intake-manifest.json.testing.mode == "manual-cli"`.**
 
 The user opted out of automated Phase 5 testing and asked for per-format deploy
-commands. Inspect `.service-approval/<slug>/05-generate/iac/` and emit only the commands that
+commands. Inspect `.service-approval/<slug>/05-generate-DRAFT/iac-DRAFT/` and emit only the commands that
 match formats actually present. Always use placeholders (`<STACK_NAME>`,
 `<AWS_PROFILE>`, `<AWS_REGION>`) — never substitute a real profile name.
 
@@ -220,7 +222,7 @@ mode = json.loads(manifest.read_text()).get("testing", {}).get("mode")
 if mode != "manual-cli":
     raise SystemExit(0)
 
-iac = Path(f".service-approval/{slug}/05-generate/iac")
+iac = Path(f".service-approval/{slug}/05-generate-DRAFT/iac-DRAFT")
 has_cfn       = any(iac.glob("*.cfn.yaml")) or any(iac.glob("*.yaml"))
 has_terraform = (iac / "modules").exists()
 has_cdk       = any(iac.rglob("*.ts")) and not (iac / "cdktf").exists()
@@ -231,7 +233,7 @@ if has_cfn:
     blocks.append(f"""**CloudFormation:**
 ```bash
 aws cloudformation deploy \\
-  --template-file .service-approval/{slug}/05-generate/iac/compliant-resource.cfn.yaml \\
+  --template-file .service-approval/{slug}/05-generate-DRAFT/iac-DRAFT/compliant-resource-DRAFT.cfn.yaml \\
   --stack-name <STACK_NAME> \\
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \\
   --profile <AWS_PROFILE>
@@ -239,7 +241,7 @@ aws cloudformation deploy \\
 if has_terraform:
     blocks.append(f"""**Terraform:**
 ```bash
-cd .service-approval/{slug}/05-generate/iac
+cd .service-approval/{slug}/05-generate-DRAFT/iac-DRAFT
 terraform init
 terraform plan -out tfplan
 terraform apply tfplan
@@ -247,7 +249,7 @@ terraform apply tfplan
 if has_cdk:
     blocks.append(f"""**CDK TypeScript:**
 ```bash
-cd .service-approval/{slug}/05-generate/iac
+cd .service-approval/{slug}/05-generate-DRAFT/iac-DRAFT
 npm install
 npx cdk bootstrap --profile <AWS_PROFILE>
 npx cdk deploy --profile <AWS_PROFILE>
@@ -255,15 +257,15 @@ npx cdk deploy --profile <AWS_PROFILE>
 if has_cdktf:
     blocks.append(f"""**CDK for Terraform:**
 ```bash
-cd .service-approval/{slug}/05-generate/iac/cdktf
+cd .service-approval/{slug}/05-generate-DRAFT/iac-DRAFT/cdktf-DRAFT
 npm install
 npx cdktf deploy
 ```""")
-if (Path(f".service-approval/{slug}/05-generate/responsive/lambda-remediator/template.yaml")).exists():
+if (Path(f".service-approval/{slug}/05-generate-DRAFT/responsive-DRAFT/lambda-remediator/template.yaml")).exists():
     blocks.append(f"""**Detective controls stack (deploy after compliant resource):**
 ```bash
 aws cloudformation deploy \\
-  --template-file .service-approval/{slug}/05-generate/responsive/lambda-remediator/template.yaml \\
+  --template-file .service-approval/{slug}/05-generate-DRAFT/responsive-DRAFT/lambda-remediator/template.yaml \\
   --stack-name <STACK_NAME>-detective \\
   --capabilities CAPABILITY_IAM \\
   --profile <AWS_PROFILE>
