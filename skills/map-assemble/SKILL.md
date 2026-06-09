@@ -95,6 +95,33 @@ for ctrl in cg['controls']:
 
 ---
 
+## Phase 1b: Propagate native threat IDs onto controls + objectives
+
+**Canonical implementation:** `scripts/map-assemble.py` →
+`propagate_threat_ids(mitigations, controls, fw_mapped)`. Call the script;
+do not reimplement inline.
+
+The input threat model links each mitigation to a native threat ID
+(`source_threat_id`, e.g. `T-0522`), preserved by `research-mitigations`.
+Controls reference mitigations via `mitigation_ids`; framework objectives
+reference controls. This step walks mitigation → control → objective and
+materializes the native-threat-ID join onto BOTH:
+
+- `controls[].source_threat_ids` — union of native threat IDs across the
+  control's `mitigation_ids`.
+- `framework_mapping[].threat_ids` — union across the objective's mapped
+  controls' `source_threat_ids` (MAPPED objectives only).
+
+This puts the customer's native threat IDs on the central control mapping
+itself (`controls-catalog.md` per-control "Threat IDs" line; each
+`framework-mapping.md` objective's `*Threat IDs*` line), not only in
+`threat_mitigation_map[]`. The complete join is then readable from any
+entry point: native threat → mitigation → control → MITRE technique →
+framework objective. Both fields are empty when no contributing mitigation
+carries a native threat ID (e.g. assessment-derived `M-GAP-*` only).
+
+---
+
 ## Phase 2: Build Threat-Mitigation-Control Map
 
 **Canonical implementation:** `scripts/map-assemble.py` →

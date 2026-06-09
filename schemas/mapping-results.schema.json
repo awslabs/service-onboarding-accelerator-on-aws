@@ -49,6 +49,7 @@
           "scope": {"type": "string", "enum": ["ORG", "ACC", "RES"]},
           "category": {"type": "string", "enum": ["PRO", "PRV", "DET", "COR"]},
           "framework_objectives": {"type": "array", "items": {"type": "string"}},
+          "source_threat_ids": {"type": "array", "items": {"type": "string"}, "description": "Native threat IDs (e.g. 'T-0522') derived by scripts/map-assemble.py from the control's mitigation_ids via each mitigation's source_threat_id. Empty when no linked mitigation carries a native threat ID. Materializes the threat → control join on the control itself."},
           "posture": {
             "type": "string",
             "enum": ["preventative-proactive", "preventative-request", "reactive-detective", "reactive-corrective"]
@@ -92,7 +93,8 @@
         "required": ["objective_id", "status"],
         "properties": {
           "objective_id": {"type": "string"},
-          "status": {"type": "string", "enum": ["MAPPED", "N/A"]}
+          "status": {"type": "string", "enum": ["MAPPED", "N/A"]},
+          "threat_ids": {"type": "array", "items": {"type": "string"}, "description": "Native threat IDs (e.g. 'T-0522') derived by scripts/map-assemble.py — union across the objective's mapped controls' source_threat_ids. Materializes the threat → framework-objective join on the central control mapping. Present on MAPPED objectives; empty when no contributing control carries a native threat ID."}
         }
       }
     },

@@ -64,6 +64,50 @@ def build_reverse_index(fw_mapped: dict, controls: list[dict]) -> dict[str, list
 
 
 # ---------------------------------------------------------------------------
+# Phase 1b: Propagate native threat IDs onto controls and framework objectives
+# ---------------------------------------------------------------------------
+def propagate_threat_ids(
+    mitigations: list[dict], controls: list[dict], fw_mapped: dict
+) -> None:
+    """Materialize the native-threat-ID join onto controls[] and framework_mapping[].
+
+    The threat model links each mitigation to a native threat ID (source_threat_id,
+    e.g. T-0522). Controls reference mitigations via mitigation_ids; framework
+    objectives reference controls. This walks mitigation -> control -> objective and
+    writes the derived native threat IDs onto BOTH controls[].source_threat_ids and
+    framework_mapping[].threat_ids, so the central control mapping itself carries the
+    Canopy threat IDs (not only threat_mitigation_map[]). Mutates in place.
+    """
+    mit_to_threat = {
+        m["id"]: m.get("source_threat_id")
+        for m in mitigations
+        if m.get("source_threat_id")
+    }
+
+    # Controls: union of native threat IDs across the control's mitigations.
+    ctrl_threats: dict[str, list[str]] = {}
+    for ctrl in controls:
+        threats = sorted(
+            {mit_to_threat[m] for m in ctrl.get("mitigation_ids", []) if m in mit_to_threat}
+        )
+        ctrl["source_threat_ids"] = threats
+        ctrl_threats[ctrl["id"]] = threats
+
+    # Framework objectives: union of native threat IDs across the objective's controls.
+    for f in fw_mapped.get("framework_mapping", []):
+        if f.get("status") != "MAPPED":
+            continue
+        threats = sorted(
+            {
+                t
+                for cm in f.get("controls", [])
+                for t in ctrl_threats.get(cm.get("control_id"), [])
+            }
+        )
+        f["threat_ids"] = threats
+
+
+# ---------------------------------------------------------------------------
 # Phase 2: Build Threat-Mitigation-Control Map
 # ---------------------------------------------------------------------------
 def build_threat_mitigation_map(
@@ -403,6 +447,14 @@ def write_controls_catalog(controls: list[dict], path: Path) -> None:
                 lines.append(
                     f"- **Mitigations**: {', '.join(ctrl.get('mitigation_ids', []))}"
                 )
+                if ctrl.get("source_threat_ids"):
+                    lines.append(
+                        f"- **Threat IDs**: {', '.join(ctrl['source_threat_ids'])}"
+                    )
+                if ctrl.get("attack_techniques"):
+                    lines.append(
+                        f"- **MITRE Techniques**: {', '.join(ctrl['attack_techniques'])}"
+                    )
                 if ctrl.get("framework_objectives"):
                     lines.append(
                         f"- **Framework Objectives**: {', '.join(ctrl['framework_objectives'])}"
@@ -502,6 +554,11 @@ def write_framework_mapping(
             for obj in mapped_objs:
                 lines.append(f"**{obj['objective_id']}: {obj['title']}** -- Coverage: {obj['coverage']}\n")
                 lines.append("")
+                if obj.get("threat_ids"):
+                    lines.append(
+                        f"*Threat IDs*: {', '.join(obj['threat_ids'])}\n"
+                    )
+                    lines.append("")
                 if obj.get("controls"):
                     lines.append(
                         "| Control ID | Title | Category | Scope | Confidence | Rationale |"
@@ -794,6 +851,18 @@ def main() -> int:
     mapped_ctrl_count = sum(1 for c in controls if c["framework_objectives"])
     orphan_ctrl_count = sum(1 for c in controls if not c["framework_objectives"])
     print(f"  {mapped_ctrl_count} controls mapped to objectives, {orphan_ctrl_count} orphaned")
+    print()
+
+    # Phase 1b: Propagate native threat IDs onto controls and framework objectives
+    print("Phase 1b: Propagating native threat IDs onto controls + objectives...")
+    propagate_threat_ids(mitigations, controls, fw_mapped)
+    ctrls_with_threats = sum(1 for c in controls if c.get("source_threat_ids"))
+    objs_with_threats = sum(
+        1 for f in fw_mapped["framework_mapping"]
+        if f.get("status") == "MAPPED" and f.get("threat_ids")
+    )
+    print(f"  {ctrls_with_threats}/{num_controls} controls carry native threat IDs; "
+          f"{objs_with_threats} mapped objectives carry native threat IDs")
     print()
 
     # Phase 2: Build threat-mitigation-control map
