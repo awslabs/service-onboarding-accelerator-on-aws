@@ -238,7 +238,7 @@ for op in ops:
         if resource_name.lower() in op_name.lower():
             if 'entry_points' not in asset:
                 asset['entry_points'] = []
-            if op_name.startswith(('Create', 'Update', 'Delete', 'Invoke', 'Put')):
+            if op_name.startswith(('Create', 'Update', 'Delete', 'Invoke', 'Put', 'Add', 'Remove', 'Publish')):
                 if op_name not in asset['entry_points']:
                     asset['entry_points'].append(op_name)
 

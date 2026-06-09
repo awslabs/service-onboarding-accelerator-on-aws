@@ -242,6 +242,24 @@ If false, write `_metadata.scp_gap` note and skip.
   Without this, mandatory tags can be removed after resource creation. Add a separate Deny
   statement: `"Action": "<prefix>:UntagResource"` with
   `"Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": ["Owner", "CostCenter", "Environment", "DataClassification"]}}`.
+- **Multi-valued condition keys MUST use a set operator**: when a `Condition` matches a
+  condition key whose SAR/`validated.json` `condition_keys[].type` is `ArrayOfString` (i.e.
+  the request supplies multiple values — e.g. `<prefix>:SubnetIds`, `<prefix>:SecurityGroupIds`),
+  the comparison operator MUST be qualified with `ForAllValues:` or `ForAnyValue:` (e.g.
+  `"ForAnyValue:StringNotEquals"`, `"ForAllValues:StringEquals"`). A bare operator
+  (`StringEquals`/`StringNotEquals`) against a multi-valued key is rejected by IAM and IAM
+  Access Analyzer: *"The request context key X has multiple values. Use the ForAllValues or
+  ForAnyValue condition key qualifiers."* Choose the qualifier by control intent, and reason about
+  the set semantics carefully — the wrong qualifier passes the linter but creates a security hole:
+  - To **Deny when any supplied value is NOT in the approved set** (the common allow-list / VPC
+    case — a request mixing one approved and one rogue value must still be denied), use
+    `"ForAnyValue:StringNotEquals"` against the approved list. `ForAllValues:StringNotEquals` would
+    fire only when *every* supplied value is unapproved, letting mixed requests slip through — do
+    NOT use it for allow-list denies.
+  - To **Allow only when every supplied value is in the approved set**, use `ForAllValues:StringEquals`.
+  State the chosen semantics in the statement's rationale. Read the `type` from
+  `validated.json`/`sar-facts` `condition_keys[]`; do NOT assume cardinality from the key name.
+  Scalar keys (`String`, `ARN`, `Bool`, etc.) use the bare operator.
 - Use `"NotAction"` only for region-restriction controls
 - Use `"Principal": "*"` only in resource-based policies, NOT in SCPs
 - Track the **minified policy body size** (Version + Statement, excluding
