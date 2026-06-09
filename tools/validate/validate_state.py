@@ -879,7 +879,7 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
     # All objectives present
     if fw:
         expected_ids = {
-            o.get("objective_id", o.get("id"))
+            (o.get("objective_id") or o.get("id"))
             for o in fw.get("framework_objectives", [])
             if o.get("objective_id") or o.get("id")
         }

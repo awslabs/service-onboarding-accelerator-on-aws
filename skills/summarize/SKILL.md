@@ -39,9 +39,15 @@ Note: `passed: null` (dry-run) is treated the same as `skipped: true`.
 
 Read `mapping-results.json` `framework_mapping[]`. Build a table:
 
-| {Framework} Objective ID | Title | Domain | Satisfied By | Coverage |
+| {Framework} Objective ID | Title | Domain | Satisfied By | Threat IDs | Coverage |
 
 Where "Satisfied By" = comma-separated control IDs that map to this framework objective.
+Where "Threat IDs" = `threat_ids[]` on the objective entry (the native threat IDs from the
+input threat model, e.g. `T-0522`, that trace to this objective via its controls). Joined,
+comma-separated; render `—` when empty (e.g. objectives covered only by assessment-derived
+`M-GAP-*` controls with no source threat link). This puts the customer's native threat IDs on
+the central framework matrix itself, so a reviewer can read objective → threat directly without
+pivoting through the mitigation traceability table.
 Use the framework name dynamically from `mapping-results.json.framework.name`.
 
 ## Step 3: Build mitigation traceability matrix

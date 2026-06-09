@@ -14,6 +14,7 @@ from validate_pipeline_integrity import (
     check_iac_placeholders,
     check_iam_policies,
     check_mcp_log,
+    check_phase_outputs,
     check_validated_notes,
     check_verdict_consistency,
     validate_pipeline,
@@ -590,3 +591,28 @@ def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     assert "datasync:DescribeAgent" in out
+
+
+# ---------- P7: phase-skipped.json carve-out ----------
+
+
+def test_p7_phase_skipped_artifact_passes(tmp_path: Path) -> None:
+    """A phase dir containing phase-skipped.json is intentionally skipped — P7 must
+    NOT demand the full-run outputs (regression for dry-run leaving 08-evidence with
+    only a skip artifact)."""
+    ev = tmp_path / "08-evidence"
+    ev.mkdir()
+    (ev / "phase-skipped.json").write_text(json.dumps({"skipped": True, "phase": "evidence"}))
+    errors = check_phase_outputs(tmp_path)
+    # No P7 errors about the missing attestation-results.json / cli-commands.json etc.
+    assert [e for e in errors if e.startswith("P7") and "08-evidence" in e] == []
+
+
+def test_p7_phase_dir_without_skip_marker_still_demands_outputs(tmp_path: Path) -> None:
+    """A phase dir that exists but lacks both the skip marker and its required outputs
+    still fails P7 — the carve-out must not weaken the normal gate."""
+    ev = tmp_path / "08-evidence"
+    ev.mkdir()
+    (ev / "stray.txt").write_text("not a skip marker")
+    errors = check_phase_outputs(tmp_path)
+    assert any(e.startswith("P7") and "08-evidence" in e for e in errors)
