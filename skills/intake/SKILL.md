@@ -414,6 +414,7 @@ Are you providing any of the following? (select all that apply)
   [ ] Custom threat model (.md, .json, .pdf, .docx)
   [ ] Custom control framework (.xlsx, .json — CCMv4 only)
   [ ] Existing mitigation report (.md, .json)
+  [ ] Canopy service-security report (*canopy*.json)
   [ ] None — use MCP-only mode (research everything from scratch)
 ```
 
@@ -424,6 +425,37 @@ Are you providing any of the following? (select all that apply)
     those frameworks are out of scope for the current pipeline.
 - If no framework file is provided, leave `framework_type` unset
   (the user's intake reply determines whether CCMv4 is included).
+
+#### Canopy auto-detection
+
+Independent of the user's selections, scan `./input/` for any file matching
+`*canopy*.json`:
+
+```bash
+canopy_files=()
+for f in ./input/*canopy*.json; do
+  [ -f "$f" ] && canopy_files+=("$f")
+done
+```
+
+For each match, validate the shape using the loader (must have top-level
+`metadata`, `threats`, `mitigations`, `implementations` keys):
+
+```python
+import sys
+sys.path.insert(0, 'scripts')
+from canopy_loader import is_canopy_file
+canopy_present = any(is_canopy_file(p) for p in canopy_files)
+```
+
+If a Canopy file is present:
+- Set `inputs.canopy_present = true`
+- Set `inputs.canopy_file = "<path>"` (first match if multiple)
+- Add an `input_files[]` entry with `type: "canopy"`
+- Inform the user that Canopy supersedes the AWS-doc-derived control
+  generator: controls come from `canopy.implementations[]`, threats and
+  MITRE techniques come from `canopy.threats[]`. Preventive (PRV) and
+  corrective (COR) layers will surface as `coverage_gaps.posture_gap[]`.
 
 ### 3. Testing Requirements (required — default: `skip`)
 
@@ -517,8 +549,10 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "framework_type": "ccmv4 | null",
     "framework_file": "{path or null}",
     "has_mitigation_report": true|false,
+    "canopy_present": true|false,
+    "canopy_file": "{path or null}",
     "input_files": [
-      {"path": "...", "type": "threat_model|framework|mitigation_report|context"}
+      {"path": "...", "type": "threat_model|framework|mitigation_report|context|canopy"}
     ]
   },
   "testing": {

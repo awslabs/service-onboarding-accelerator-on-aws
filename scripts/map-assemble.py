@@ -78,6 +78,7 @@ def build_threat_mitigation_map(
     threat_mitigation_map = []
     for mit in mitigations:
         mid = mit["id"]
+        mit_source = mit.get("source", "")
         associated_ctrls = mit_to_ctrls.get(mid, [])
 
         # Determine coverage layers
@@ -116,6 +117,7 @@ def build_threat_mitigation_map(
             "mitigation_id": mid,
             "statement": mit["statement"],
             "resource_type": mit.get("resource_type", ""),
+            "source": mit_source,
             "coverage": coverage,
             "control_ids": sorted({c["id"] for c in associated_ctrls}),
             "framework_objectives": fw_objs,
@@ -319,9 +321,9 @@ CATEGORY_LABELS = {
 }
 
 
-def write_controls_catalog(controls: list[dict], path: Path) -> None:
+def write_controls_catalog(controls: list[dict], path: Path, *, service: str = "service") -> None:
     lines = []
-    lines.append("# Controls Catalog -- Bedrock AgentCore\n")
+    lines.append(f"# Controls Catalog -- {service}\n")
     lines.append("")
     lines.append(f"**Total Controls**: {len(controls)}\n")
     lines.append("")
@@ -400,6 +402,150 @@ def write_controls_catalog(controls: list[dict], path: Path) -> None:
 # ---------------------------------------------------------------------------
 # Phase 6: Write framework-mapping.md
 # ---------------------------------------------------------------------------
+SOURCE_LABELS = {
+    "canopy": "Canopy",
+    "aws-docs": "AWS Docs",
+    "mitre-mcp": "MITRE MCP",
+    "customer-threat-model": "Customer TM",
+    "mitigation-report": "Mitigation Report",
+    "customer-upload": "Customer Upload",
+    "ccmv4-default": "CCMv4 Default",
+}
+
+
+def _label_source(value: str) -> str:
+    return SOURCE_LABELS.get(value, value or "?")
+
+
+def _normalize_techniques(raw: list) -> list[tuple[str, str]]:
+    """Accept either bare-string or {technique_id, source} forms.
+
+    Returns a list of (technique_id, source) tuples; source defaults to
+    'mitre-mcp' for legacy bare-string entries since pre-canopy archives
+    only ever pulled from the MITRE MCP.
+    """
+    out: list[tuple[str, str]] = []
+    for entry in raw or []:
+        if isinstance(entry, str):
+            out.append((entry, "mitre-mcp"))
+        elif isinstance(entry, dict) and "technique_id" in entry:
+            out.append((entry["technique_id"], entry.get("source", "mitre-mcp")))
+    return out
+
+
+def _technique_name_index(controls: list[dict]) -> dict[str, str]:
+    """Best-effort technique_id -> human name lookup from validated.attack_surface.
+
+    Caller passes attack_surface in via threading; this helper walks any
+    `_attack_technique_names` sidecar that map-assemble may stash on controls.
+    Returns empty dict if no name data is available — renderer falls back to
+    the bare technique ID.
+    """
+    out: dict[str, str] = {}
+    for c in controls:
+        for entry in c.get("_attack_technique_names", []) or []:
+            tid = entry.get("technique_id")
+            name = entry.get("name")
+            if tid and name:
+                out[tid] = name
+    return out
+
+
+def render_crosswalk(
+    fw_mapped: dict,
+    controls: list[dict],
+    threat_mitigation_map: list[dict],
+    framework_source: str,
+    technique_names: dict[str, str],
+) -> list[str]:
+    """Build the flat Crosswalk table lines.
+
+    One row per objective. Multi-line cells use <br> for soft line breaks.
+    Schema matches the agreed shape:
+      | Control Objective (source) | Controls (source) | Threats (source) | MITRE Techniques (source) |
+    """
+    ctrl_index = {c["id"]: c for c in controls}
+    mit_index = {t["mitigation_id"]: t for t in threat_mitigation_map}
+
+    lines: list[str] = []
+    lines.append("## Crosswalk\n")
+    lines.append("")
+    lines.append(
+        "| Control Objective | Controls (source) | Threats (source) | MITRE Techniques (source) |"
+    )
+    lines.append(
+        "|-------------------|-------------------|------------------|----------------------------|"
+    )
+
+    fw_src = _label_source(framework_source) if framework_source else "?"
+
+    for obj in fw_mapped["framework_mapping"]:
+        obj_id = obj.get("objective_id", "?")
+        title = obj.get("title", "")
+        obj_label = f"**{obj_id}**: {title}<br>_({fw_src})_"
+
+        if obj.get("status") == "N/A":
+            reason = obj.get("reason", "Not applicable")
+            lines.append(f"| {obj_label} | _{_md_escape(reason)}_ | | |")
+            continue
+
+        ctrl_cells: list[str] = []
+        threat_cells: list[str] = []
+        tech_cells: list[str] = []
+
+        seen_threats: set[str] = set()
+        seen_techs: set[str] = set()
+
+        for cm in obj.get("controls", []):
+            cid = cm.get("control_id", "?")
+            ctrl = ctrl_index.get(cid, {})
+            ctrl_name = ctrl.get("name", "?")
+            ctrl_provenance = _label_source(ctrl.get("provenance", "aws-docs"))
+            ctrl_cells.append(
+                f"`{cid}` — {_md_escape(ctrl_name)}<br>_({ctrl_provenance})_"
+            )
+
+            for mid in ctrl.get("mitigation_ids", []):
+                if mid in seen_threats:
+                    continue
+                seen_threats.add(mid)
+                t = mit_index.get(mid, {})
+                statement = t.get("statement", "(no statement)")
+                msrc = _label_source(t.get("source", "mitigation-report"))
+                threat_cells.append(
+                    f"`{mid}`: {_md_escape(_truncate(statement, 140))}<br>_({msrc})_"
+                )
+
+            for tid, tsrc in _normalize_techniques(ctrl.get("attack_techniques", [])):
+                if tid in seen_techs:
+                    continue
+                seen_techs.add(tid)
+                name = technique_names.get(tid, "")
+                tech_str = f"{tid}" + (f" — {_md_escape(name)}" if name else "")
+                tech_cells.append(f"{tech_str}<br>_({_label_source(tsrc)})_")
+
+        ctrl_md = "<br><br>".join(ctrl_cells) if ctrl_cells else "—"
+        threat_md = "<br><br>".join(threat_cells) if threat_cells else "—"
+        tech_md = "<br><br>".join(tech_cells) if tech_cells else "—"
+
+        lines.append(f"| {obj_label} | {ctrl_md} | {threat_md} | {tech_md} |")
+
+    lines.append("")
+    return lines
+
+
+def _md_escape(text: str) -> str:
+    """Escape markdown table-breaking characters."""
+    return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
+def _truncate(text: str, limit: int) -> str:
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 def write_framework_mapping(
     fw_mapped: dict,
     controls: list[dict],
@@ -407,15 +553,20 @@ def write_framework_mapping(
     coverage_gaps: dict,
     threat_mitigation_map: list[dict],
     path: Path,
+    *,
+    framework_source: str = "",
+    technique_names: dict[str, str] | None = None,
+    framework_name: str = "framework",
+    service: str = "service",
 ) -> None:
-    ctrl_index = {c["id"]: c for c in controls}
-    lines = []
-    lines.append("# Framework Mapping -- CCMv4 x Bedrock AgentCore\n")
+    technique_names = technique_names or _technique_name_index(controls)
+    lines: list[str] = []
+    lines.append(f"# Framework Mapping -- {framework_name} x {service}\n")
     lines.append("")
 
     # Framework coverage summary from the mapped file
     summary = fw_mapped.get("framework_coverage_summary", {})
-    total_obj = summary.get("total_objectives", 197)
+    total_obj = summary.get("total_objectives", len(fw_mapped["framework_mapping"]))
     mapped_count = summary.get("mapped", 0)
     na_count = summary.get("not_applicable", 0)
 
@@ -461,61 +612,16 @@ def write_framework_mapping(
         )
     lines.append("")
 
-    # Detailed mappings by domain
-    lines.append("## Detailed Mappings by Domain\n")
-    lines.append("")
-
-    # Group mappings by domain
-    domain_mappings: dict[str, list[dict]] = defaultdict(list)
-    for f in fw_mapped["framework_mapping"]:
-        domain_mappings[f["domain"]].append(f)
-
-    for domain in sorted(domain_mappings):
-        mappings = domain_mappings[domain]
-        mapped_objs = [m for m in mappings if m["status"] == "MAPPED"]
-        na_objs = [m for m in mappings if m["status"] != "MAPPED"]
-
-        lines.append(f"### {domain}\n")
-        lines.append("")
-        lines.append(
-            f"*{len(mapped_objs)} mapped, {len(na_objs)} not applicable*\n"
+    # Flat crosswalk table (replaces the prior per-domain detail section)
+    lines.extend(
+        render_crosswalk(
+            fw_mapped,
+            controls,
+            threat_mitigation_map,
+            framework_source,
+            technique_names,
         )
-        lines.append("")
-
-        if mapped_objs:
-            for obj in mapped_objs:
-                lines.append(f"**{obj['objective_id']}: {obj['title']}** -- Coverage: {obj['coverage']}\n")
-                lines.append("")
-                if obj.get("controls"):
-                    lines.append(
-                        "| Control ID | Title | Category | Scope | Confidence | Rationale |"
-                    )
-                    lines.append(
-                        "|------------|-------|----------|-------|------------|-----------|"
-                    )
-                    for cm in obj["controls"]:
-                        cid = cm["control_id"]
-                        ctrl = ctrl_index.get(cid, {})
-                        cat = CATEGORY_LABELS.get(
-                            ctrl.get("category", ""), ctrl.get("category", "?")
-                        )
-                        scope = SCOPE_LABELS.get(
-                            ctrl.get("scope", ""), ctrl.get("scope", "?")
-                        )
-                        title = ctrl.get("name", "?")
-                        conf = cm.get("confidence", "?")
-                        rat = cm.get("rationale", "")
-                        lines.append(
-                            f"| {cid} | {title} | {cat} | {scope} | {conf} | {rat} |"
-                        )
-                    lines.append("")
-
-                lines.append(f"*Reason*: {obj.get('reason', '')}\n")
-                lines.append("")
-
-        if na_objs:
-            lines.append(f"**Not Applicable Objectives**: {', '.join(o['objective_id'] for o in na_objs)}\n")
-            lines.append("")
+    )
 
     # Unmapped controls section
     orphans = coverage_gaps.get("control_orphan", [])
@@ -568,21 +674,35 @@ def write_framework_mapping(
             )
         lines.append("")
 
+    posture_gaps = coverage_gaps.get("posture_gap", [])
+    if posture_gaps:
+        lines.append(f"### Posture Gaps ({len(posture_gaps)})\n")
+        lines.append("")
+        lines.append("| Mitigation | Missing Posture | Reason |")
+        lines.append("|------------|-----------------|--------|")
+        for pg in posture_gaps:
+            reason = _md_escape(_truncate(pg.get("reason", ""), 120))
+            lines.append(
+                f"| {pg['mitigation_id']} | {pg['posture']} | {reason} |"
+            )
+        lines.append("")
+
     # Mitigation traceability table
     lines.append("## Mitigation Traceability\n")
     lines.append("")
     lines.append(
-        "| Mitigation ID | Resource Type | Coverage | Preventive | Detective | Responsive |"
+        "| Mitigation ID | Source | Resource Type | Coverage | Preventive | Detective | Responsive |"
     )
     lines.append(
-        "|---------------|---------------|----------|------------|-----------|------------|"
+        "|---------------|--------|---------------|----------|------------|-----------|------------|"
     )
     for t in threat_mitigation_map:
         prev = len(t["layers"]["preventive"]) + len(t["layers"]["proactive"])
         det = len(t["layers"]["detective"])
         cor = len(t["layers"]["responsive"])
+        msrc = _label_source(t.get("source", ""))
         lines.append(
-            f"| {t['mitigation_id']} | {t['resource_type']} | {t['coverage']} | {prev} | {det} | {cor} |"
+            f"| {t['mitigation_id']} | {msrc} | {t['resource_type']} | {t['coverage']} | {prev} | {det} | {cor} |"
         )
     lines.append("")
 
@@ -814,14 +934,29 @@ def main() -> int:
     # Phase 5: Write controls-catalog.md
     print("Phase 5: Writing controls-catalog.md...")
     catalog_path = map_dir / "controls-catalog.md"
-    write_controls_catalog(controls, catalog_path)
+    write_controls_catalog(controls, catalog_path, service=service)
     print()
 
     # Phase 6: Write framework-mapping.md
     print("Phase 6: Writing framework-mapping.md...")
     fw_mapping_path = map_dir / "framework-mapping.md"
+    framework = fw_parsed.get("framework", {})
+    technique_names = {
+        t.get("technique_id"): t.get("technique_name", "")
+        for t in (validated.get("attack_surface", {}) or {}).get("applicable_techniques", [])
+        if t.get("technique_id")
+    }
     write_framework_mapping(
-        fw_mapped, controls, ctrl_to_objs, coverage_gaps, threat_mitigation_map, fw_mapping_path
+        fw_mapped,
+        controls,
+        ctrl_to_objs,
+        coverage_gaps,
+        threat_mitigation_map,
+        fw_mapping_path,
+        framework_source=framework.get("source", ""),
+        technique_names=technique_names,
+        framework_name=framework.get("name", "framework"),
+        service=service,
     )
     print()
 

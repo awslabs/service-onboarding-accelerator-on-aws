@@ -28,7 +28,12 @@
         "name": {"type": "string"},
         "version": {"type": "string"},
         "source_file": {"type": "string"},
-        "total_objectives": {"type": "integer", "minimum": 0}
+        "total_objectives": {"type": "integer", "minimum": 0},
+        "source": {
+          "type": "string",
+          "enum": ["customer-upload", "ccmv4-default"],
+          "description": "'customer-upload' = a framework file was supplied in ./input/; 'ccmv4-default' = no file present, the bundled CCMv4 reference table was used. Drives the (source) tag on objective rows in framework-mapping.md crosswalk."
+        }
       }
     },
     "framework_header_canonical": {
@@ -53,7 +58,29 @@
             "type": "string",
             "enum": ["preventative-proactive", "preventative-request", "reactive-detective", "reactive-corrective"]
           },
-          "source": {"type": "string", "enum": ["sar", "api", "both"]}
+          "source": {"type": "string", "enum": ["sar", "api", "both"]},
+          "provenance": {
+            "type": "string",
+            "enum": ["canopy", "aws-docs"],
+            "description": "Where the control came from. Mirrors map-controls-generated.controls[].provenance."
+          },
+          "attack_techniques": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {"type": "string"},
+                {
+                  "type": "object",
+                  "required": ["technique_id", "source"],
+                  "properties": {
+                    "technique_id": {"type": "string"},
+                    "source": {"type": "string", "enum": ["canopy", "mitre-mcp"]}
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
         }
       }
     },
@@ -67,6 +94,11 @@
           "mitigation_id": {"type": "string", "pattern": "^M-.+"},
           "statement": {"type": "string"},
           "coverage": {"type": "string", "enum": ["FULL", "PARTIAL", "NONE"]},
+          "source": {
+            "type": "string",
+            "enum": ["canopy", "customer-threat-model", "mitigation-report"],
+            "description": "Provenance of the underlying mitigation. Mirrors research-mitigations existing_mitigations[].source."
+          },
           "control_ids": {"type": "array", "items": {"type": "string"}},
           "framework_objectives": {
             "type": "array",

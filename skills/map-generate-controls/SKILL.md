@@ -27,6 +27,47 @@ test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: 
 mkdir -p .service-approval/<slug>/04-map
 ```
 
+---
+
+## Phase 0: Canopy supersedes (highest priority)
+
+If `intake-manifest.json::inputs.canopy_present` is `true`, **skip the
+mitigations × capabilities generator entirely**. Canopy ships pre-built
+controls in `canopy.implementations[]` that are authoritative for the
+service. Generating additional AWS-doc-derived controls in this case
+risks duplicate or conflicting controls with mismatched provenance.
+
+```python
+import sys, json
+sys.path.insert(0, "scripts")
+from canopy_loader import (
+    parse_canopy,
+    get_implementations_as_controls,
+    detect_posture_gaps,
+)
+
+manifest = json.load(open(".service-approval/_staging/<ts>/00-intake/intake-manifest.json"))
+if manifest["inputs"].get("canopy_present"):
+    canopy = parse_canopy(manifest["inputs"]["canopy_file"])
+    controls = get_implementations_as_controls(canopy)   # provenance="canopy" pre-tagged
+    coverage_gaps = detect_posture_gaps(canopy)          # PRV+COR layers per mitigation
+
+    # Skip Phase 1-3 below. Jump to Phase 4: Write Output.
+```
+
+**Posture coverage when Canopy is the source:**
+
+Canopy provides only DETECTIVE (Config rules → `CTRL-RES-DET-NNN`) and
+PROACTIVE (CFN Hooks → `CTRL-RES-PRO-NNN`) implementations. Preventive
+(PRV — SCPs/IAM/key policy) and corrective (COR — runbooks/Lambda)
+controls are NOT generated. Per the service-approval design decision,
+these layers surface as `coverage_gaps[].posture_gap` entries — emitted
+verbatim by `detect_posture_gaps()` — so the downstream `map-assemble`
+phase shows them in `framework-mapping.md → Coverage Gaps → Posture Gaps`.
+
+This is intentional: it makes the trade-off visible (Canopy speed
+vs. AWS-doc completeness) instead of silently backfilling.
+
 Load validated.json and extract:
 ```bash
 python3 -c "
@@ -302,6 +343,7 @@ Every control MUST include these fields:
   "description": "SCP denies <prefix>:Create<Resource> unless encryption condition key is present",
   "posture": "preventative-request",
   "source": "sar",
+  "provenance": "aws-docs",
   "scope": "ORG",
   "category": "PRV",
   "mechanism": "SCP",
@@ -312,7 +354,10 @@ Every control MUST include these fields:
   "resource_types": ["AWS::<Service>::<Resource>"],
   "assessment_gap_ids": [],
   "security_rationale": "The mitigation requires encryption key enforcement at creation time. An SCP is the strongest mechanism because it operates at the organization level, denying any Create call that lacks the encryption key parameter regardless of the caller's IAM permissions. This ensures no resource can be created without customer-managed encryption.",
-  "attack_techniques": ["T1530", "T1486"],
+  "attack_techniques": [
+    {"technique_id": "T1530", "source": "mitre-mcp"},
+    {"technique_id": "T1486", "source": "mitre-mcp"}
+  ],
   "framework_keywords": ["encryption", "key management", "data protection", "policy enforcement"]
 }
 ```
@@ -334,6 +379,12 @@ Every control MUST include these fields:
   artifact's `_metadata.posture` so CHECK-15 can enforce posture ↔ directory consistency.
 - `source`: One of `sar`, `api`, `both` — derived from the parameter's `gateable_by[]`.
   Indicates which data source authoritatively drives the mechanism's contents.
+- `provenance`: One of `canopy`, `aws-docs`. Tags where the control originated.
+  When this skill runs the mitigations × capabilities generator (the default
+  Phase 1-3 path), every emitted control gets `provenance: "aws-docs"`. When
+  Phase 0 short-circuits with Canopy as the source, controls inherit
+  `provenance: "canopy"` from `canopy_loader.get_implementations_as_controls()`.
+  Drives the `(source)` tag rendered in `framework-mapping.md` crosswalk.
 - `scope`: Abbreviated code: `ORG`, `ACC`, `RES`
 - `category`: Abbreviated code: `PRV`, `PRO`, `DET`, `COR`
 - `mechanism`: AWS enforcement mechanism (SCP, CloudFormation Hook, AWS Config Rule, VPC Endpoint Policy, IAM Permission Boundary, Resource Policy, IAM Trust Policy, IaC Template, CloudTrail, CloudWatch Alarm, CloudWatch Logs, Kinesis Data Streams, SSM Automation, Lambda Remediation, EventBridge + Step Functions, Tag Policy, OPA Policy, CloudFormation Guard, Compensating Control Documentation)
@@ -377,14 +428,19 @@ For every `REQUIREMENT GAP` and `CUSTOMER ACTION REQUIRED` from `assessment_gaps
 `validated.json` always contains `attack_surface.applicable_techniques[]` (MITRE ATT&CK
 analysis is mandatory for every service onboarding). For each control:
 1. Check if any of its `actions[]` appear in a technique's `api_surface_evidence[]`
-2. If so, add that technique's ID to `attack_techniques[]` on the control
+2. If so, add that technique to `attack_techniques[]` on the control as
+   `{"technique_id": "<id>", "source": "<source>"}` — copy `source` verbatim
+   from the matched `applicable_techniques[]` entry. (Canopy-sourced techniques
+   are tagged `source: "canopy"`; MITRE-MCP-sourced ones are `source: "mitre-mcp"`.)
 3. Also check mechanism alignment:
    - SCP/IAM controls → relevant to T1078, T1098, T1548 (identity techniques)
    - Encryption controls → relevant to T1530, T1486 (data techniques)
    - Network controls → relevant to T1190, T1133 (access techniques)
    - Logging controls → relevant to T1562, T1070 (evasion techniques)
 4. Every control MUST have a non-empty `attack_techniques[]` — if no direct action match
-   exists, use mechanism alignment to identify relevant techniques
+   exists, use mechanism alignment to identify relevant techniques. For
+   mechanism-aligned additions, look up the technique in `applicable_techniques[]`
+   to inherit its `source` tag; if absent, default to `source: "mitre-mcp"`.
 
 ### 2.8 Compensating control documentation
 

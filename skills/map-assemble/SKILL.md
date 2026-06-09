@@ -456,240 +456,109 @@ After the Control Matrix Summary, always include the ATT&CK Technique Coverage s
 
 Write `.service-approval/<slug>/04-map/framework-mapping.md`.
 
-**CRITICAL REQUIREMENT:** The framework-mapping.md MUST be organized so that EVERY individual
-control objective from the parsed framework has its own entry showing which service controls
-satisfy it. This is the primary deliverable for compliance reviewers — they need to look up
-any framework objective and immediately see which controls address it.
+**Format:** the document is a single flat **Crosswalk** table — one row per
+framework objective — with framework, control, threat, and MITRE technique
+provenance tagged inline. This replaces the legacy per-domain
+`Detailed Mappings by Domain` layout. Reviewers can scan top-to-bottom and
+immediately see, for each objective, which controls satisfy it, what threats
+those controls counter, and which MITRE ATT&CK techniques apply — together
+with a `(source)` tag per cell so they can tell whether the data came from
+Canopy, AWS docs, the customer's threat model, or the MITRE MCP.
 
-Do NOT group controls by domain and then list objectives as a flat bullet list. Do NOT
-produce a document organized by service control categories. The document MUST be organized
-by framework objective.
+The document MUST be service-agnostic and framework-agnostic in its
+structure. Use `framework.name`, `framework.source`, domain names, and
+objective IDs from `map-framework-parsed.json`. Use the service name from
+`map-controls-generated.json` and per-control `provenance` from the same
+file. Per-mitigation `source` flows from `validated.existing_mitigations[]`
+through `threat_mitigation_map[]`. Per-technique `source` flows from
+`validated.attack_surface.applicable_techniques[].source`.
 
-The document MUST be service-agnostic and framework-agnostic in its structure — it works for
-any AWS service and any compliance framework provided as input.
-Use the framework name, domain names, and objective IDs from `map-framework-parsed.json`.
-Use the service name from `map-controls-generated.json`. Never hardcode a specific framework
-or service name in the template logic.
-
-### Naming Requirements (CRITICAL)
-
-1. **Objective names are REQUIRED.** Every framework objective MUST include its full title
-   from `map-framework-parsed.json`, not just the ID. Format: `{Objective-ID}: {Full Title}`.
-   A table row or section header with only an ID (e.g., "AIS-01") is incomplete — always
-   write `AIS-01: Application and Interface Security Policy`.
-
-2. **Control names are REQUIRED.** Every control reference MUST include its full name from
-   `map-controls-generated.json`, not just the ID. Format: `{CTRL-ID} — {Control Name}`.
-   A table cell with only "CTRL-005" is incomplete — always write
-   `CTRL-005 — Enforce IAM authorizer for Gateways`.
-
-3. **Control descriptions are REQUIRED in MITRE mapping tables.** In the MITRE ATT&CK
-   Threat-to-Controls Mapping section, every control row MUST include BOTH the control's
-   `description` field AND the `security_rationale` from `map-controls-generated.json`.
-   The "How It Mitigates" column should contain the control's `description` (what it does
-   functionally, e.g., "SCP denies CreateMemory without KmsKeyArn, preventing unencrypted
-   memory creation") followed by the `security_rationale` (why this mechanism was chosen).
-   If space is tight, use the description as the primary content and append a condensed
-   rationale in parentheses.
-
-4. **MITRE technique names are REQUIRED.** Every MITRE technique reference MUST include
-   both the technique ID and its full name. Format: `{Technique-ID}: {Technique Name}`.
-   A reference with only "T1078" is incomplete — always write
-   `T1078: Valid Accounts` or `T1078.004: Cloud Accounts`.
-
-5. **Status values — use "Not Applicable" not "Not Mapped".** When a framework objective
-   cannot be addressed by AWS service-level technical controls (e.g., organizational
-   processes, HR policies, physical security, change management), the status MUST be
-   `Not Applicable` with a reason explaining WHY it's not applicable to service-level
-   controls. The value "Not Mapped" is BANNED — it implies the mapping was incomplete
-   rather than intentionally excluded. Valid statuses:
-   - `MAPPED` — one or more service controls address this objective
-   - `Not Applicable` — this objective is about non-technical controls (organizational,
-     physical, HR, process) that cannot be enforced at the AWS service level
+### Document outline
 
 ```markdown
-# {Framework Name} Control Mapping — {service-name}
+# Framework Mapping -- {framework_name} x {service}
 
-**Framework:** {name} v{version}
-**Source:** {source_file}
-**Date Generated:** {date}
-**Total Service Controls:** {count}
-**Framework Objectives Total:** {total}
-**Objectives Mapped:** {mapped}
-**Objectives Not Applicable:** {na}
-**Domains Covered:** {domains_covered} / {total_domains}
-```
+## Coverage Summary
+| Metric | Count |
+| ...   | ...   |
 
-Where `{Framework Name}` and `{name}` come from `map-framework-parsed.json.framework.name`.
-Examples of rendered titles:
-- "CSA CCMv4 Control Mapping — Amazon S3" (default, no framework file provided)
-- "NIST 800-53 Control Mapping — Amazon ECS" (customer uploaded NIST file)
-- "Custom Framework Control Mapping — AWS KMS" (customer uploaded unrecognized framework)
-
-```markdown
 ## Domain Coverage Summary
+| Domain | Total | Mapped | N/A | Coverage % |
+| ...   | ...   | ...    | ... | ...        |
 
-| Domain | Objectives in Domain | Mapped | Not Applicable | Coverage % | Notes |
-|---|---|---|---|---|---|
-| {domain} | N | N | N | N% | {note} |
+## Crosswalk
+| Control Objective | Controls (source) | Threats (source) | MITRE Techniques (source) |
+| ...               | ...               | ...              | ...                       |
 
----
-
-## Objective-to-Controls Mapping
-
-For EVERY framework objective, list the service controls that satisfy it. This section is
-the core of the document. Each objective gets its own subsection regardless of whether it
-has mapped controls or is Not Applicable.
-
-### {Domain Name}
-
-#### {Objective-ID}: {Objective Full Title}
-
-**Status:** {MAPPED | Not Applicable}
-**Coverage:** {Fully Covered | Partially Covered | Supportive Only | N/A}
-**Reason:** {1-sentence summary of why this coverage level was assigned, or why Not Applicable}
-
-| Control ID | Control Name | Category | Coverage Level | Rationale |
-|---|---|---|---|---|
-| {CTRL-ID} | {Full control name} | {Preventive/Proactive/Detective/Responsive} | {Full Coverage/Partial Coverage/Supportive} | {1-sentence specific rationale connecting this control's mechanism to this objective's requirement} |
-
-If status is Not Applicable, the table is omitted and only the Reason line appears. Example:
-> **Status:** Not Applicable
-> **Reason:** This objective addresses organizational change management processes which cannot be enforced at the AWS service level.
-
-[Repeat for EVERY objective in the domain, then repeat for EVERY domain]
-
----
-
-## Not Applicable Objectives
-
-Framework objectives that are not addressable via AWS service-level technical controls.
-Each entry MUST explain WHY it is not applicable.
-
-| Objective ID | Objective Title | Domain | Reason Not Applicable |
-|---|---|---|---|
-| {obj-id} | {Full objective title} | {domain} | {why this is a non-technical/organizational control} |
-
----
-
-## Unmapped Service Controls
-
-Controls that were generated but do not map to any framework objective.
-
-| Control ID | Control Name | Category | Reason |
-|---|---|---|---|
-| {CTRL-ID} | {Full control name} | {category} | {reason why no framework objective applies} |
-
----
-
+## Unmapped Controls
 ## Coverage Gaps
-
-Framework objectives where coverage is Partially Covered, Supportive Only, or where no Full Coverage
-controls exist.
-
-| Objective ID | Objective Title | Domain | Gap Description | Recommendation |
-|---|---|---|---|---|
-| {obj-id} | {Full title} | {domain} | {what is missing} | {what to implement} |
-
----
-
-## Threat-to-Framework Traceability
-
-Shows the full chain: Threat Mitigation → Service Controls → Framework Objectives.
-
-| Mitigation ID | Threat Description | Service Controls | Framework Objectives | Coverage |
-|---|---|---|---|---|
-| {MIT-ID} | {threat summary} | {CTRL-ID — Name, ...} | {OBJ-ID: Title, ...} | {FULL/PARTIAL/NONE} |
-
----
-
-## MITRE ATT&CK Threat-to-Controls Mapping
-
-For each applicable MITRE ATT&CK technique, lists ALL service controls that mitigate it.
-This section is the primary deliverable for threat-based compliance review — reviewers look
-up any MITRE technique and immediately see which controls address it.
-
-Data source: `attack_coverage.technique_to_controls` from `mapping-results.json`, enriched
-with technique details from `validated.json.attack_surface.applicable_techniques[]` and
-control details from `map-controls-generated.json`.
-
-### {Tactic Name} ({Tactic ID})
-
-#### {Technique ID}: {Technique Name}
-
-**Applicability:** {HIGH/MEDIUM}
-**Applicability Reason:** {why this technique applies to this service — from applicable_techniques[].applicability_reason}
-**API Surface Evidence:** {comma-separated list of service actions that expose this technique}
-
-| Control ID | Control Name | Description | Category | Scope | Mechanism | Security Rationale |
-|---|---|---|---|---|---|---|
-| {CTRL-ID} | {Full control name} | {control description from map-controls-generated.json} | {PRV/PRO/DET/COR} | {ORG/ACC/RES} | {SCP/Config Rule/etc} | {security_rationale explaining why this mechanism was chosen and how it addresses this technique} |
-
-**[Repeat for every applicable technique within this tactic]**
-
-**[Repeat for every tactic that has applicable techniques]**
-
-### Uncovered MITRE Techniques
-
-Techniques with HIGH or MEDIUM applicability that have NO mitigating controls.
-
-| Technique ID | Technique Name | Tactic | Applicability | Recommendation |
-|---|---|---|---|---|
-| {T-ID} | {name} | {tactic} | {HIGH/MEDIUM} | {what control type should be implemented} |
-
-### MITRE Coverage Summary
-
-| Tactic ID | Tactic Name | Total Techniques | Covered | Uncovered | Coverage % |
-|---|---|---|---|---|---|
-| {TA-ID} | {name} | {N} | {N} | {N} | {N%} |
-
-**Overall MITRE ATT&CK Coverage:** {covered}/{total} techniques ({percentage}%)
+   ### Mitigations Without Controls
+   ### Single-Layer Coverage
+   ### Framework Objectives with SUPPORTS-Only Coverage
+   ### Posture Gaps                  ← surfaces canopy_loader.detect_posture_gaps()
+## Mitigation Traceability
 ```
 
-**Assembly rules for this phase:**
+### Crosswalk row contract
 
-1. Iterate over `map-framework-mapped.json` `framework_mapping[]` array. Each entry has
-   `objective_id`, `domain`, `title`, `status`, `coverage`, `reason`, and `controls[]`.
+One row per objective. Multi-line cells use `<br>` for soft line breaks and
+`<br><br>` between distinct entries within a cell. The `_( ... )_` italics
+hold the source tag.
 
-2. Group objectives by domain. Within each domain, sort by objective_id.
+```
+| **{OBJ-ID}**: {Title}<br>_({framework_source})_ | `{CTRL-ID}` — {name}<br>_({ctrl_provenance})_<br><br>... | `{MIT-ID}`: {statement…}<br>_({mit_source})_<br><br>... | {T-ID} — {name}<br>_({tech_source})_<br><br>... |
+```
 
-3. For each objective, write the subsection header INCLUDING the full title from
-   `map-framework-parsed.json`. The header format is `#### {ID}: {Title}`.
+**Source labels** (rendered values shown in italics inside cells):
 
-4. For each control in the objective's controls table, look up the control's `name` and
-   `category` from `map-controls-generated.json`. Write the full name, not just the ID.
+| Field             | Source value             | Rendered label   |
+|-------------------|--------------------------|------------------|
+| Objective         | `customer-upload`        | Customer Upload  |
+| Objective         | `ccmv4-default`          | CCMv4 Default    |
+| Control           | `canopy`                 | Canopy           |
+| Control           | `aws-docs`               | AWS Docs         |
+| Threat/Mitigation | `canopy`                 | Canopy           |
+| Threat/Mitigation | `customer-threat-model`  | Customer TM      |
+| Threat/Mitigation | `mitigation-report`      | Mitigation Report|
+| MITRE technique   | `canopy`                 | Canopy           |
+| MITRE technique   | `mitre-mcp`              | MITRE MCP        |
 
-5. For objectives with `status: "NOT_MAPPED"` or `status: "N/A"`, write status as
-   "Not Applicable" and include the reason from `map-framework-mapped.json`.
+**N/A objectives:** the row still appears. The Controls cell holds the
+italicized reason (e.g., `_Physical datacenter security is managed by AWS
+under the shared responsibility model_`); Threats and MITRE Techniques
+cells are empty.
 
-6. For the Not Applicable Objectives section, collect all objectives where status is NOT
-   "MAPPED" and list them with their full titles and reasons.
+### MITRE branching (where the source tags come from)
 
-7. For the Unmapped Service Controls section, use `quality_gate_results.orphaned_controls`
-   from `map-framework-mapped.json`.
+The MITRE technique source is set upstream in `research-attack-surface`,
+not at render time:
 
-8. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to
-   `framework_gap` type entries.
+- `canopy` — set when `inputs.canopy_present = true`. Techniques are
+  extracted from `canopy.threats[].mappings[type=FRAMEWORK,
+  frameworkName="MITRE ATT&CK"]`. The MITRE MCP is NOT called.
+- `customer-threat-model` — set when a STRIDE / custom threat catalog is
+  parsed (without Canopy).
+- `mitre-mcp` — set when the MITRE ATT&CK MCP is queried (no Canopy, no
+  customer threat model).
 
-9. For Threat-to-Framework Traceability, use `threat_mitigation_map` assembled in Phase 2
-   of this skill. Include full control names and objective titles.
+`map-assemble` does NOT re-derive these tags; it copies them from the
+control's `attack_techniques[].source` field verbatim.
 
-10. For the MITRE ATT&CK Threat-to-Controls Mapping section, use `attack_coverage` assembled
-    in Phase 2b of this skill:
-    - Group techniques by tactic (using `tactic_id` from each technique in
-      `validated.json.attack_surface.applicable_techniques[]`)
-    - For each technique, look up its mitigating controls via
-      `attack_coverage.technique_to_controls[technique_id]`
-    - For each control ID, look up the full control details (name, description, category,
-      scope, mechanism, security_rationale) from `map-controls-generated.json`
-    - Write the "Description" column using the control's `description` field verbatim
-      (e.g., "SCP denies CreateMemory without KmsKeyArn")
-    - Write the "Security Rationale" column using the control's `security_rationale` field
-      (explains why this mechanism was chosen and how it addresses the technique)
-    - For uncovered techniques, use `attack_coverage.uncovered_techniques[]`
-    - For the coverage summary table, use `attack_coverage.tactic_coverage`
-    - Query the `mitre-attack` MCP for technique details (name, description, tactic) when
-      available; fall back to `validated.json.attack_surface.applicable_techniques[]` fields
+### Implementation
+
+The renderer lives at `scripts/map-assemble.py::render_crosswalk()` and is
+called from `write_framework_mapping()`. It accepts:
+
+- `fw_mapped` — the framework_mapping[] array (every objective, MAPPED + N/A)
+- `controls` — controls[] with `provenance` and `attack_techniques[].source` populated
+- `threat_mitigation_map` — with `source` populated from validated mitigations
+- `framework_source` — from `map-framework-parsed.json::framework.source`
+- `technique_names` — derived from `validated.attack_surface.applicable_techniques[].technique_name`
+
+The legacy fields (`controls_catalog → MITRE ATT&CK Threat-to-Controls
+Mapping`, per-domain Detailed Mappings, etc.) are intentionally removed.
+The same data lives in `mapping-results.json` for downstream consumers
+that need machine-readable traceability.
 
 ---
 

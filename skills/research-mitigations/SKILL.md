@@ -35,7 +35,28 @@ will be empty). If no --service is provided, ask the user.
 
 ## Step 1: Parse Input Files
 
-For each file in the input folder:
+**Canopy short-circuit:** before walking the input folder, check
+`intake-manifest.json` for `inputs.canopy_present`. If true, the Canopy
+report supersedes mitigation-report parsing — load it via
+`scripts/canopy_loader.py::get_mitigations()`, emit each entry with
+`source: "canopy"` (already set by the loader), and skip Steps 1.1–1.3
+below. Other input files (frameworks, threat models) still need to be
+processed for their downstream phases, but mitigation extraction is
+canonical from Canopy.
+
+```python
+import sys
+sys.path.insert(0, "scripts")
+from canopy_loader import parse_canopy, get_mitigations
+
+if manifest["inputs"].get("canopy_present"):
+    canopy = parse_canopy(manifest["inputs"]["canopy_file"])
+    existing_mitigations = get_mitigations(canopy)  # source="canopy" pre-tagged
+else:
+    existing_mitigations = []  # fall through to file-by-file parsing below
+```
+
+For each file in the input folder (when `canopy_present` is false):
 
 ### JSON files (Mitigation Report)
 Look for `entities` key containing mitigation arrays. For each entity:
@@ -79,7 +100,15 @@ bolded label and column 2 as the value. Parse rows keyed by the bolded label:
 | `**Request Parameters**` | `request_parameters[]` | Split on commas or Markdown list bullets; strip whitespace; JSON paths like `$.encryptionKeyArn`. |
 
 Emit each parsed block as an `existing_mitigations[]` entry with the fields above
-plus `source: "<report-basename>"` (e.g. `"source": "<Service Name> — Mitigation Report.md"`) so downstream runs can trace provenance.
+plus:
+- `source: "mitigation-report"` (the new schema enum value)
+- `source_mitigation: "<report-basename>"` (the original report filename, e.g.
+  `"<Service Name> — Mitigation Report.md"`) for downstream provenance.
+
+If the document is a customer-supplied STRIDE / threat catalog rather than a
+mitigation report, set `source: "customer-threat-model"` instead. Detection
+follows the same filename heuristics as `research-attack-surface`
+(`*STRIDE*`, `*threat*model*`, `*threat*catalog*`, `*threat*register*`).
 
 **Row parsing pseudocode:**
 

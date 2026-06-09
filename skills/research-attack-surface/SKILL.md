@@ -37,6 +37,7 @@ Scan the input folder for threat model files. Detection rules:
 
 | File Pattern | Threat Model Type | Processing |
 |---|---|---|
+| **`*canopy*.json`** | **Canopy** | **Walk `canopy.threats[].mappings[type=FRAMEWORK, frameworkName=MITRE ATT&CK]`. MITRE techniques are pre-mapped per threat — no MCP call needed.** |
 | `*MITRE*`, `*ATT&CK*`, `*attack*` (xlsx/json) | MITRE ATT&CK | Parse enterprise/cloud matrix techniques |
 | `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
 | `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
@@ -51,6 +52,53 @@ this step ALWAYS runs using the MITRE ATT&CK Cloud matrix as the source. The ser
 API surface (from SAR facts or `--service` flag) is analyzed against the full ATT&CK
 Cloud technique set to identify applicable threats. This is the baseline — customer
 files only enrich it.
+
+### Canopy short-circuit (highest priority)
+
+If `intake-manifest.json::inputs.canopy_present` is `true`, skip the MITRE MCP /
+bundled-snapshot path entirely. Canopy already maps every threat to its MITRE
+ATT&CK techniques inside `canopy.threats[].mappings[type=FRAMEWORK]`, so calling
+the MCP would duplicate (or contradict) authoritative data.
+
+```python
+import sys
+sys.path.insert(0, "scripts")
+from canopy_loader import parse_canopy, get_threats_with_mitre
+
+if manifest["inputs"].get("canopy_present"):
+    canopy = parse_canopy(manifest["inputs"]["canopy_file"])
+    canopy_threats = get_threats_with_mitre(canopy)
+    # Each threat already carries mitre_techniques[].source = "canopy"
+    # Convert into applicable_techniques[] entries; tag every technique
+    # with source="canopy" so map-assemble's renderer can label it.
+    applicable_techniques = [
+        {
+            "technique_id": t["technique_id"],
+            "technique_name": "",   # Canopy doesn't ship names; fill via MCP only if needed
+            "applicability": "HIGH",
+            "applicability_reason": f"Mapped from Canopy threat {th['alias']}",
+            "api_surface_evidence": [],
+            "stride_categories": [],
+            "framework_controls": [],
+            "framework_objectives": [],
+            "source": "canopy",
+        }
+        for th in canopy_threats
+        for t in th["mitre_techniques"]
+    ]
+else:
+    applicable_techniques = []  # fall through to STRIDE / MCP / bundled paths below
+```
+
+When Canopy is the source, set `attack_matrix_source: "canopy"`,
+`threat_model_type: "canopy"`, and `threat_model_name: "Canopy"`.
+
+**Customer threat model still enriches:** if BOTH a Canopy file and a
+customer STRIDE/custom threat model are present, run the customer parsing
+on top of Canopy's technique set. Customer entries get `source:
+"customer-threat-model"`; Canopy entries keep `source: "canopy"`. The
+union goes into `applicable_techniques[]`. Do NOT call the MITRE MCP in
+this combined case — Canopy's mappings already satisfy the lookup.
 
 Record the detected threat model in the output:
 ```json
@@ -303,7 +351,8 @@ Write `.service-approval/<slug>/02-research/research-attack-surface.json`:
       "api_surface_evidence": ["Create<Resource>", "Update<Resource>"],
       "stride_categories": ["Spoofing", "Elevation of Privilege"],
       "framework_controls": ["AC-2", "AC-3", "AC-6", "IA-2", "IA-5", "IA-8"],
-      "framework_objectives": ["IAM-01", "IAM-02", "IAM-03", "IAM-04", "IAM-05", "IAM-06", "IAM-12"]
+      "framework_objectives": ["IAM-01", "IAM-02", "IAM-03", "IAM-04", "IAM-05", "IAM-06", "IAM-12"],
+      "source": "mitre-mcp"
     }
   ],
   "tactic_coverage_summary": {
@@ -321,9 +370,13 @@ Write `.service-approval/<slug>/02-research/research-attack-surface.json`:
 **Schema rules:**
 - `phase` MUST be `"research-attack-surface"`
 - `applicable_techniques` MUST be a non-empty array
-- Every technique MUST have: `technique_id`, `technique_name`, `tactic_id`, `tactic_name`, `applicability`, `applicability_reason`, `api_surface_evidence`
+- Every technique MUST have: `technique_id`, `technique_name`, `tactic_id`, `tactic_name`, `applicability`, `applicability_reason`, `api_surface_evidence`, `source`
 - `technique_id` MUST match pattern `T\d{4}(\.\d{3})?`
 - `applicability` MUST be `"HIGH"` or `"MEDIUM"` (LOW is filtered out)
+- `source` MUST be `"canopy"` or `"mitre-mcp"` — surfaces in framework-mapping.md
+  crosswalk as the (source) tag on MITRE technique cells. Drives the MITRE
+  branching logic: when Canopy is present, every technique is `"canopy"` and
+  the MITRE MCP is NOT called.
 - `framework_controls` and `framework_objectives` come from the active crosswalk data file (default: `data/attack-nist-ccm-crosswalk.json` for MITRE→CCMv4/NIST)
 - `stride_categories` lists which STRIDE categories this technique maps to (from bridge)
 

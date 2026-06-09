@@ -23,7 +23,12 @@
         "version": {"type": "string"},
         "source_file": {"type": "string"},
         "file": {"type": "string"},
-        "total_objectives": {"type": "integer", "minimum": 0}
+        "total_objectives": {"type": "integer", "minimum": 0},
+        "source": {
+          "type": "string",
+          "enum": ["customer-upload", "ccmv4-default"],
+          "description": "'customer-upload' = a framework file was supplied in ./input/ and parsed; 'ccmv4-default' = no file present, the bundled CCMv4 reference table was used. Surfaces in framework-mapping.md crosswalk as the (source) tag on objective rows."
+        }
       }
     },
     "framework_objectives": {

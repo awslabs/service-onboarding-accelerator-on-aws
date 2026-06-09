@@ -56,7 +56,11 @@
         "mitigation_goal": {"type": "string", "minLength": 1},
         "statement": {"type": "string", "minLength": 1},
         "resource_type": {"type": "string"},
-        "source": {"type": "string"},
+        "source": {
+          "type": "string",
+          "enum": ["canopy", "customer-threat-model", "mitigation-report"],
+          "description": "Provenance tag. 'canopy' = ingested from a Canopy report; 'customer-threat-model' = parsed from a customer-supplied STRIDE/custom threat model; 'mitigation-report' = parsed from a vanilla mitigation report. Drives the (source) tag rendered in framework-mapping.md crosswalk."
+        },
         "source_mitigation": {"type": "string"},
         "applies_to_actions": {"type": "array", "items": {"type": "string"}},
         "request_parameters": {"type": "array", "items": {"type": "string"}},
