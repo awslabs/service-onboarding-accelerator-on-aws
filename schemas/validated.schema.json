@@ -50,6 +50,34 @@
     "verification": {"type": "object", "additionalProperties": true},
     "_validation": {"type": "object", "additionalProperties": true},
     "botocore_enrichment": {"type": "object", "additionalProperties": true},
+    "attack_surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "MITRE ATT&CK attack surface carried forward from research.json with Phase 2c verification overlays. Mandatory per validate/SKILL.md Step 2c. Per-field content is checked by validate_state.py, not this schema."
+    },
+    "scp_expressible": {
+      "type": "boolean",
+      "description": "Copied from capabilities.organization_policies to the root per validate/SKILL.md Step 2b; downstream Map/Generate read it here, not from nested capabilities."
+    },
+    "rcp_expressible": {
+      "type": "boolean",
+      "description": "Copied from capabilities.organization_policies to the root per validate/SKILL.md Step 2b; downstream Map/Generate read it here, not from nested capabilities."
+    },
+    "enrichment_opportunities": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": true},
+      "description": "Verified enrichment opportunities per validate/SKILL.md Step 5."
+    },
+    "unverified_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of items with verified:false across all sections per validate/SKILL.md Step 6."
+    },
+    "unverified_items": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": true},
+      "description": "Items with verified:false per validate/SKILL.md Step 6."
+    },
     "_metadata": {"type": "object", "additionalProperties": true}
   }
 }

@@ -837,9 +837,11 @@ _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
 # config-rule-lambdas/).
 _REACTIVE_DETECTIVE_BASENAMES = (
     "config-rules.json",
+    "config-org-rules.json",
     "access-analyzer.json",
     "eventbridge-rules.json",
     "cloudwatch-alarms.json",
+    "cloudtrail-org-config.json",
 )
 
 # Filename patterns CHECK-15 accepts under posture `preventative-proactive`

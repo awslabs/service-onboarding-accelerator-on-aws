@@ -59,8 +59,11 @@ artifact implements. For Python, use comment block at top.
 
 **CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
 directory family:
-- `reactive-detective` → `detective/config-rule-lambdas/**`, `detective/config-rules.json`,
-  or `detective/access-analyzer.json`
+- `reactive-detective` → `detective/config-rule-lambdas/**`, or one of
+  `detective/{config-rules,config-org-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}.json`,
+  or `detective/cloudtrail-org-config.json` (org-scoped detective artifacts use the canonical
+  `_metadata.posture: reactive-detective` like account-scoped ones — do NOT use a `layer_posture`
+  side channel)
 - `reactive-corrective` → `responsive/ssm-runbook*.yaml`,
   `responsive/stepfunctions-workflow.json`, or `responsive/lambda-remediator/**`
 
