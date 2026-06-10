@@ -11,9 +11,9 @@
 name: service-approval
 version: 1.0.0
 description: >
-  Generate AWS security controls and compliant IaC for any AWS service.
-  Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate,
-  Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).
+  Generate AWS security control mappings and compliance assessments for any AWS service.
+  Runs a 6-phase pipeline (Intake, Assess, Research, Validate, Map, Summarize)
+  mapped to CCMv4 (other frameworks deferred).
 
 author:
   name: Service Onboarding on AWS Team
@@ -30,21 +30,8 @@ keywords:
   - nist-800-53
   - cis
   - iso-27001
-  - scp
-  - rcp
-  - config-rules
-  - cfn-guard
-  - checkov
-  - opa
-  - terraform
-  - cloudformation
-  - cdk
-  - cdktf
   - mitre-attack
-  - preventive-controls
-  - detective-controls
-  - proactive-controls
-  - responsive-controls
+  - control-mapping
 
 # ---------------------------------------------------------------------------
 # Skills — canonical list. Each skill lives at skills/<slug>/SKILL.md
@@ -85,25 +72,8 @@ skills:
     role: phase-3c
   - slug: map-assemble
     role: phase-3d
-  - slug: generate
-    role: phase-4-root
-  - slug: generate-preventive
-    role: phase-4a
-    parallel_group: generate
-  - slug: generate-detective
-    role: phase-4b
-    parallel_group: generate
-  - slug: generate-iac
-    role: phase-4c
-    parallel_group: generate
-  - slug: test
-    role: phase-5
-    optional: true
   - slug: summarize
-    role: phase-6
-  - slug: evidence
-    role: phase-7
-    optional: true
+    role: phase-4
 
 # ---------------------------------------------------------------------------
 # MCP servers — registered across every client's manifest.
@@ -208,10 +178,6 @@ integrity_checks:
   - id: P2
     title: Unique verification notes
     max_duplication_pct: 50
-  - id: P3
-    title: IAM policy logic (mismatched StringEquals/StringNotEquals keys, broad Allow on Resource:* without Condition, SCP without Deny)
-  - id: P4
-    title: IaC parameterization (no placeholder accounts/ARNs)
   - id: P5
     title: Framework coverage threshold + rationale
     min_coverage_pct: 15

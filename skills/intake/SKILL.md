@@ -619,10 +619,7 @@ Proceed? (Y/n)
 | Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface` |
 | Phase 2 (Validate) | `service` |
 | Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
-| Phase 4 (Generate) | Reads `<slug>/01-assess/iac-support.json` (from Phase 0), NOT intake |
-| Phase 5 (Test) | `testing.mode`, `testing.aws_profile`, `testing.region`, `testing.timeout_minutes` (orchestrator translates to `--env` / `--skip-test` / `--dry-run`). Note: Phase 5 always passes `--keep` to smoke-deploy-test.sh when Phase 7 is in scope; `testing.keep` itself is consumed by Phase 7, not Phase 5. |
-| Phase 6 (Summarize) | Full manifest for report metadata; `testing.mode` drives the manual-cli cheat-sheet render when mode == `manual-cli` |
-| Phase 7 (Evidence) | `testing.keep` — when `true`, Phase 7 skips its end-of-run teardown (stack stays alive for manual debugging); when `false` (default), Phase 7 tears down the stack from `06-test/deployed-resources.json` after evidence collection completes. |
+| Phase 4 (Summarize) | Full manifest for report metadata |
 
 ---
 

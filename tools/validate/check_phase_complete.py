@@ -18,11 +18,8 @@ Exit codes:
     2 — at least one required output missing or under-sized
 
 Examples:
-    # At the start of /generate, verify Map produced everything:
+    # At the start of /summarize, verify Map produced everything:
     python3 -m tools.validate.check_phase_complete --slug awslambda --phase 04-map
-
-    # Before /summarize, verify Generate, Test (if ran), Map all complete:
-    python3 -m tools.validate.check_phase_complete --slug awslambda --phase 05-generate
 """
 from __future__ import annotations
 
@@ -64,8 +61,7 @@ def check_phase(slug: str, phase: str) -> list[str]:
 
     required = PHASE_REQUIRED_OUTPUTS[phase]
     if not required:
-        # Phase has no JSON/MD outputs to check (e.g., 05-generate uses
-        # subdirs; that gate lives in validate_pipeline_integrity directly).
+        # Phase has no JSON/MD outputs to check.
         return errors
 
     try:

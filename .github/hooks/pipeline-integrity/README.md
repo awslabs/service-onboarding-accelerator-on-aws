@@ -1,13 +1,11 @@
 # Pipeline Integrity Hook
 
-Runs at `sessionEnd` — after every GitHub Copilot coding-agent session — to run the P1–P7 pipeline-integrity checks.
+Runs at `sessionEnd` — after every GitHub Copilot coding-agent session — to run the pipeline-integrity checks.
 
 ## What it does
 
 Invokes `tools/validate/hook_stop.py` which runs:
-- `validate_pipeline_integrity.py` — P1–P7 checks (MCP call count, unique verification notes, IAM policy logic, IaC parameterization, framework coverage rationale, verdict consistency, phase-output completeness)
-- `validate_cross.py` — cross-artifact integrity
-- `validate_deployable.py` — Tier 1 static validation
+- `validate_pipeline_integrity.py` — P1, P2, P5, P6, P7 checks (MCP call count, unique verification notes, framework coverage rationale, verdict consistency, phase-output completeness)
 
 Exit code 2 on any failure. Copilot surfaces the failure and can self-correct in the next turn.
 

@@ -1,7 +1,7 @@
 # Service Approval — Agents Guide
 
-This repo generates AWS security controls for any AWS service via a 9-phase pipeline
-(Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence). It runs
+This repo generates AWS security control mappings and compliance assessments for any AWS service via a 6-phase pipeline
+(Intake, Assess, Research, Validate, Map, Summarize). It runs
 on any [Agent Skills](https://agentskills.io)-compatible client: Claude Code, GitHub
 Copilot, and Kiro.
 
@@ -40,15 +40,12 @@ Agents should:
 ## Pipeline summary
 
 ```
-Precursor Intake    → _staging/<ts>/00-intake/intake-manifest.json (service, inputs, testing intent)
+Precursor Intake    → _staging/<ts>/00-intake/intake-manifest.json (service, inputs)
 Phase 0 Assess      → <slug>/01-assess/{sar-facts,checkpoint-results,iac-support}.json
 Phase 1 Research    → <slug>/02-research/research.json (4 parallel sub-skills merged)
 Phase 2 Validate    → <slug>/03-validate/validated.json
 Phase 3 Map         → <slug>/04-map/{mapping-results.json, framework-mapping.md}
-Phase 4 Generate    → <slug>/05-generate/{proactive,preventive,detective,responsive,iac}/
-Phase 5 Test        → <slug>/06-test/{test-results.json, deployed-resources.json} (mode set upfront in Intake: full-deploy | dry-run | skip | manual-cli)
-Phase 6 Summarize   → <slug>/07-summarize/APPROVAL-REPORT.md
-Phase 7 Evidence    → <slug>/08-evidence/{attestation-report.md, cli-outputs/} (requires AWS credentials)
+Phase 4 Summarize   → <slug>/05-summarize/APPROVAL-REPORT.md
 ```
 
 Intake runs first (unnumbered) and writes to a staging directory because the
@@ -67,11 +64,7 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
 3. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. Minimum 10 entries.
 4. Every item in `validated.json` must have a unique `verification_note`. Templated
    notes fail the integrity check.
-5. IaC templates must be parameterized. No hardcoded account IDs (`123456789012`) or
-   placeholder ARNs.
-6. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals`
-   in the same Condition must target the same key.
-7. Verdict matches integrity. If any pipeline integrity check fails, the verdict is
+5. Verdict matches integrity. If any pipeline integrity check fails, the verdict is
    `REQUIRES REMEDIATION`, not `APPROVED`.
 
 The Stop hook runs `tools/validate/validate_pipeline_integrity.py` and blocks violations.
@@ -81,7 +74,7 @@ See [`rules/service-approval-safety.md`](rules/service-approval-safety.md) for t
 
 | Path | What's in it |
 |------|--------------|
-| `skills/` | 18 `SKILL.md` skill definitions (canonical, agentskills.io format) |
+| `skills/` | 14 `SKILL.md` skill definitions (canonical, agentskills.io format) |
 | `.agents/skills/` | Symlink to `skills/` (cross-tool compatibility alias) |
 | `schemas/` | 11 JSON Schemas for pipeline state files |
 | `tools/validate/` | Python validators + hooks (runs at PostToolUse + Stop) |

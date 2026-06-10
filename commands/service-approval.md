@@ -1,11 +1,11 @@
 ---
-description: Run the AWS service-approval pipeline — generates security controls + compliant IaC for a specified AWS service
-argument-hint: "[./input-folder] [--service=<name>] [--env=<profile>] [--framework=<ccmv4|nist|cis|iso>] [--skip-test] [--dry-run] [--clean] [--from-intake=<file>] [--interactive]"
+description: Run the AWS service-approval pipeline — generates security control mappings and compliance assessments for a specified AWS service
+argument-hint: "[./input-folder] [--service=<name>] [--framework=<ccmv4|nist|cis|iso>] [--clean] [--from-intake=<file>] [--interactive]"
 ---
 
 # Service Approval — Orchestrator
 
-Invokes the full 9-phase pipeline defined at `skills/service-approval/SKILL.md`.
+Invokes the full 6-phase pipeline defined at `skills/service-approval/SKILL.md`.
 
 ## Parse arguments
 
@@ -18,10 +18,9 @@ Expect arguments in `$ARGUMENTS`. Extract:
   - If `./input/` is missing, the Intake skill creates it and offers to seed it with the bundled
     CCMv4 framework xlsx and/or auto-download the latest CCMv4 from CSA. See
     `skills/intake/SKILL.md` "Step 0" for the full bootstrap flow.
-- AWS profile — optional `--env=<profile>` (required only for Phase 5 Test)
 - Framework — optional `--framework=<ccmv4|nist|cis|iso>`; auto-detected from input if absent
 - Intake controls — `--from-intake=<file>`, `--interactive`
-- Flags: `--skip-test`, `--dry-run`, `--clean`
+- Flags: `--clean`
 
 If no service name can be determined and `--from-intake` is not provided, defer to the Intake phase — it will prompt interactively.
 
@@ -44,24 +43,18 @@ Intake always runs. Its prompt behavior depends on what it finds:
    - Phase 1: `skills/research-mitigations/`, `research-capabilities/`, `research-api-surface/`, `research-attack-surface/` (parallel), then `skills/research/` (merge)
    - Phase 2: `skills/validate/`
    - Phase 3: `skills/map-parse-framework/`, `map-generate-controls/` (parallel), then `map-framework-mapping/`, `map-assemble/`
-   - Phase 4: `skills/generate-preventive/`, `generate-detective/`, `generate-iac/` (parallel)
-   - Phase 5: `skills/test/` (only if `--env` provided and not `--skip-test`)
-   - Phase 6: `skills/summarize/`
-   - Phase 7: `skills/evidence/` (only if Phase 5 Test completed successfully)
+   - Phase 4: `skills/summarize/`
 3. Use MCP servers (`awsknowledge`, `aws-documentation`, `awsiac`) for every capability, API parameter, and condition key. Each call appends to the consolidated `.service-approval/<service-slug>/pipeline.log` (the primary debugging artifact, with `[mcp:<server>:call]` source tags) and is mirrored to `.service-approval/<service-slug>/mcp-calls.log` for backward compatibility (minimum 10 entries enforced by the Stop hook's P1 check).
 4. Pipeline integrity is enforced automatically by the `Stop` hook at `hooks/hooks.json`, which invokes `tools/validate/hook_stop.py`. Exit code 2 blocks the stop and forces verdict `REQUIRES REMEDIATION`.
 
 ## Output
 
-- `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md` — final verdict + CCMv4 coverage matrix
-- `.service-approval/<service-slug>/05-generate/` — all 78–111 generated artifacts
+- `.service-approval/<service-slug>/05-summarize/APPROVAL-REPORT.md` — final verdict + CCMv4 coverage matrix
 - `.service-approval/<service-slug>/` — pipeline state files (per-phase subdirectories)
-- `.service-approval/<service-slug>/08-evidence/` — CLI attestation results (if Phase 7 runs)
 
 ## Report back
 
 After the pipeline completes, summarize:
 - Final verdict (APPROVED / APPROVED with exceptions / REQUIRES REMEDIATION)
-- Path to `.service-approval/APPROVAL-REPORT.md`
-- Artifact count per category (preventive, proactive, detective, responsive, IaC)
+- Path to `.service-approval/<service-slug>/05-summarize/APPROVAL-REPORT.md`
 - Any phases that failed or were skipped, and why

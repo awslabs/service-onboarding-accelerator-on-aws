@@ -13,7 +13,7 @@ Line format (single-line, multi-line input \\n-escaped):
     <UTC-iso8601> [<phase>] [<source>:<verdict>]  <message> [k=v ...]
 
 Where:
-    phase    — 00-intake, 01-assess, ..., 08-evidence, or "tree" / "?"
+    phase    — 00-intake, 01-assess, ..., 05-summarize, or "tree" / "?"
     source   — hook (post-tool-use, stop, check-phase-complete, legacy-detected),
                mcp:<server>, skill:<skill-name>, script:<script-name>, etc.
     verdict  — pass | fail | warn | snoozed | reject | error | halt | start | end | retry | call | response
@@ -47,7 +47,7 @@ from pathlib import Path
 # Phase-dir regex (mirrors tools.paths._PHASE_DIR_RE; we don't import to
 # avoid circular dependencies during hook execution).
 _PHASE_DIR_RE = re.compile(
-    r"^(0[0-8])-(intake|assess|research|validate|map|generate|test|summarize|evidence)$"
+    r"^(0[0-5])-(intake|assess|research|validate|map|summarize)$"
 )
 
 PIPELINE_LOG_NAME = "pipeline.log"

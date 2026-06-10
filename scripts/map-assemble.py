@@ -261,9 +261,8 @@ def build_framework_header_canonical(fw_parsed: dict, fw_mapped: dict) -> str:
     """Compute the canonical full-union framework header string.
 
     Every generated artifact's `_metadata.framework` / `# FRAMEWORK:` header
-    MUST be this string verbatim. CHECK-X1 in validate_cross.py enforces
-    header identity across artifacts; computing the union here once lets
-    the 3 generate skills read+copy rather than re-derive.
+    MUST be this string verbatim. Computing the union here once ensures
+    consistency across all downstream consumers.
     """
     framework = fw_parsed.get("framework", {}) or {}
     name = framework.get("name", "framework")

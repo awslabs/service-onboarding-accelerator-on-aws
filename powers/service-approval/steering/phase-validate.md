@@ -21,7 +21,7 @@ verification evidence.
 
 2. **Minimum note length**: 40 characters for `verification.summary` field. Shorter summaries look templated.
 
-3. **UNVERIFIED items must be excluded from Phase 4.** If a claim can't be verified via MCP, mark it `UNVERIFIED` in `validated.json`. Phase 4 (Generate) reads only `VERIFIED` items.
+3. **UNVERIFIED items must be excluded from Phase 3 (Map).** If a claim can't be verified via MCP, mark it `UNVERIFIED` in `validated.json`. Phase 3 (Map) reads only `VERIFIED` items.
 
 4. **Validator integration**: `validate_state.py::check_validated` runs the 11 schemas against this file. Shape errors block.
 

@@ -199,7 +199,7 @@ def test_no_legacy_state_refs():
 def test_no_legacy_controls_refs():
     """Verify no hardcoded `.service-approval/controls/` refs in production code.
 
-    After migration, controls live at `<slug>/05-generate/`.
+    After migration, controls live at `<slug>/04-map/`.
     """
     root = _repo_root()
 
@@ -208,7 +208,7 @@ def test_no_legacy_controls_refs():
     # Same pattern as state: legacy `controls/` is a top-level segment.
     # The new layout puts `controls` only inside file names
     # (`controls-catalog.md`, `map-controls-generated.json`) or after a
-    # longer prefix (`05-generate/...`), never as `<slug>/controls`.
+    # longer prefix (`04-map/...`), never as `<slug>/controls`.
     matches_fstring = _run_git_grep(
         _R16_CONTROLS_PASS3,
         root,
@@ -216,9 +216,6 @@ def test_no_legacy_controls_refs():
     )
 
     def _migration_fallback_filter(file_path: str, line: str) -> bool:
-        # validate_kms_consumers.py has legacy fallback for migration
-        if "validate_kms_consumers.py" in file_path and "/controls/iac/" in line:
-            return True
         # hook_post_tool_use.py has legacy dispatch for migration
         if "hook_post_tool_use.py" in file_path and "/controls/" in line:
             return True

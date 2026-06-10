@@ -73,24 +73,21 @@ class TestPhaseDir:
         expected = repo_root() / ".service-approval" / "awslambda" / "01-assess"
         assert path == expected
 
-    def test_generate_phase(self):
-        """phase_dir('awslambda', 'generate') → .service-approval/awslambda/05-generate/"""
-        path = phase_dir("awslambda", "generate")
-        expected = repo_root() / ".service-approval" / "awslambda" / "05-generate"
+    def test_summarize_phase(self):
+        """phase_dir('awslambda', 'summarize') → .service-approval/awslambda/05-summarize/"""
+        path = phase_dir("awslambda", "summarize")
+        expected = repo_root() / ".service-approval" / "awslambda" / "05-summarize"
         assert path == expected
 
     def test_all_phases_map_correctly(self):
-        """Verify all 9 phase names map to correct numbers."""
+        """Verify all 6 phase names map to correct numbers."""
         phase_map = {
             "intake": "00",
             "assess": "01",
             "research": "02",
             "validate": "03",
             "map": "04",
-            "generate": "05",
-            "test": "06",
-            "summarize": "07",
-            "evidence": "08",
+            "summarize": "05",
         }
         for phase_name, phase_num in phase_map.items():
             path = phase_dir("awslambda", phase_name)
