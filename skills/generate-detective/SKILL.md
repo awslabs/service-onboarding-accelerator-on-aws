@@ -99,8 +99,11 @@ failure.
 
 **CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
 directory family:
-- `reactive-detective` → `detective-DRAFT/config-rule-lambdas-DRAFT/**`, `detective-DRAFT/config-rules-DRAFT.json`,
-  or `detective-DRAFT/access-analyzer-DRAFT.json`
+- `reactive-detective` → `detective-DRAFT/config-rule-lambdas-DRAFT/**`, or one of
+  `detective-DRAFT/{config-rules,config-org-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}-DRAFT.json`,
+  or `detective-DRAFT/cloudtrail-org-config-DRAFT.json` (org-scoped detective artifacts use the canonical
+  `_metadata.posture: reactive-detective` like account-scoped ones — do NOT use a `layer_posture`
+  side channel)
 - `reactive-corrective` → `responsive-DRAFT/ssm-runbook*-DRAFT.yaml`,
   `responsive-DRAFT/stepfunctions-workflow-DRAFT.json`, or `responsive-DRAFT/lambda-remediator-DRAFT/**`
 

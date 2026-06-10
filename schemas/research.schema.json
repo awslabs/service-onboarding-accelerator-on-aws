@@ -51,6 +51,23 @@
     "threat_model_summary": {"type": ["object", "null"]},
     "sar_cross_reference": {"type": "object", "additionalProperties": true},
     "completeness": {"type": "object", "additionalProperties": true},
+    "attack_surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "MITRE ATT&CK attack surface, merged from research-attack-surface.json by research/SKILL.md. Mandatory — research-attack-surface always runs. Per-field content (applicable_techniques non-empty, applicability in HIGH/MEDIUM) is enforced by validate_state.py CHECK-S9.",
+      "properties": {
+        "applicable_techniques": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": true}
+        },
+        "stride_to_attack_bridge": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": true}
+        },
+        "tactic_coverage_summary": {"type": "object", "additionalProperties": true},
+        "customer_stride_profile": {"type": "object", "additionalProperties": true}
+      }
+    },
     "_metadata": {"type": "object", "additionalProperties": true}
   },
 

@@ -588,6 +588,22 @@ def test_15_cloudwatch_alarms_valid_for_reactive_detective() -> None:
     assert errors == []
 
 
+def test_15_config_org_rules_valid_for_reactive_detective() -> None:
+    # Org-scoped detective artifact: must carry canonical _metadata.posture, not a
+    # layer_posture side channel. Regression for the allowlist that omitted org files.
+    data = {"_metadata": {"posture": "reactive-detective"}}
+    target = "/tmp/fake-controls/detective/config-org-rules.json"
+    errors = check_posture_mechanism_consistency_15(target, data)
+    assert errors == []
+
+
+def test_15_cloudtrail_org_config_valid_for_reactive_detective() -> None:
+    data = {"_metadata": {"posture": "reactive-detective"}}
+    target = "/tmp/fake-controls/detective/cloudtrail-org-config.json"
+    errors = check_posture_mechanism_consistency_15(target, data)
+    assert errors == []
+
+
 def test_15_compensating_controls_doc_valid_for_preventative_proactive() -> None:
     """compensating-controls-documentation.json is a cross-cutting gap-coverage
     artifact that lives in detective/ despite carrying a preventative-proactive

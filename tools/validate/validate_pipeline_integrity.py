@@ -623,6 +623,13 @@ def check_phase_outputs(service_root: Path) -> list[str]:
         if not phase_dir.exists():
             continue  # phase did not run — OK
 
+        # A phase that wrote phase-skipped.json was intentionally skipped
+        # (e.g. testing.mode=skip/dry-run leaves 08-evidence with only a
+        # skip artifact, per skills/service-approval/SKILL.md). The skip
+        # artifact IS the documented output — don't demand the full-run files.
+        if (phase_dir / "phase-skipped.json").exists():
+            continue
+
         for filename, min_size in required:
             artifact = phase_dir / filename
             if not artifact.exists():

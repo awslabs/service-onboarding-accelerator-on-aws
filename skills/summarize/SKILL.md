@@ -41,24 +41,38 @@ Note: `passed: null` (dry-run) is treated the same as `skipped: true`.
 
 Read `mapping-results.json` `framework_mapping[]`. Build a table:
 
-| {Framework} Objective ID | Title | Domain | Satisfied By | Coverage |
+| {Framework} Objective ID | Title | Domain | Satisfied By | Threat IDs | Coverage |
 
 Where "Satisfied By" = comma-separated control IDs that map to this framework objective.
+Where "Threat IDs" = `threat_ids[]` on the objective entry (the native threat IDs from the
+input threat model, e.g. `T-0522`, that trace to this objective via its controls). Joined,
+comma-separated; render `—` when empty (e.g. objectives covered only by assessment-derived
+`M-GAP-*` controls with no source threat link). This puts the customer's native threat IDs on
+the central framework matrix itself, so a reviewer can read objective → threat directly without
+pivoting through the mitigation traceability table.
 Use the framework name dynamically from `mapping-results.json.framework.name`.
 
 ## Step 3: Build mitigation traceability matrix
 
 Read `mapping-results.json` `threat_mitigation_map[]`. Build a table:
 
-| Mitigation ID | Statement | Resource Type | Controls | Framework Objectives | Coverage |
+| Threat ID | Mitigation ID | Statement | Resource Type | Controls | MITRE Techniques | Framework Objectives | Coverage |
 
+Where "Threat ID" = `threat_id` field — the native threat ID from the input threat model
+(e.g. `T-0522`). Render `—` when the field is null/absent (e.g. assessment-derived `M-GAP-*`
+mitigations with no source threat link).
 Where "Statement" = `statement` field.
 Where "Controls" = `control_ids[]` from the mitigation entry (joined, comma-separated).
+Where "MITRE Techniques" = `attack_techniques[]` from the mitigation entry (joined,
+comma-separated). Render `—` when empty. If this field is absent, derive it: for each control
+id in the mitigation's `control_ids[]`, look up that control in the top-level `controls[]` and
+collect its `attack_techniques[]`. Deduplicate and sort.
 Where "Framework Objectives" = `framework_objectives[]` from the mitigation entry. If this field
 is absent, derive it: for each control id in the mitigation's `control_ids[]`, look up that control
 in the top-level `controls[]` and collect its `framework_objectives[]`. Deduplicate and sort.
 
-This shows end-to-end traceability from customer mitigations through controls to framework objectives.
+This shows end-to-end traceability from the customer's native threat IDs through mitigations,
+controls, and MITRE ATT&CK techniques to framework objectives — a single consolidated join.
 
 ## Step 4: Build control inventory
 

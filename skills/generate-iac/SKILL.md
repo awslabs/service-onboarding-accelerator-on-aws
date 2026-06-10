@@ -845,7 +845,14 @@ Use `awsiac` MCP for resource schema. If CFN type not registered, use custom res
        at create time. Only add these if `validated.json` indicates container-based execution.
    (j) **Enum values from CLI help** — the CLI help shows valid enum values for each parameter.
        Use ONLY values listed there — SDK documentation may show different or additional values.
-       If only one value exists, hardcode it and document.
+       If only one value exists, hardcode it and document. **EXCEPTION — never hardcode AWS
+       account IDs or account-bearing ARNs.** The "hardcode single value" guidance does NOT apply
+       to account IDs: never emit a literal or placeholder account ID (`000000000000`,
+       `123456789012`, `111111111111`, etc.) as a value OR as a CFN parameter `Default` — not even
+       as a stand-in. Use the pseudo-parameter `${AWS::AccountId}` / `!Sub` for the current account,
+       or a CFN parameter with NO default (force the deployer to supply it) for a foreign account.
+       The P4 pipeline-integrity check (`validate_pipeline_integrity.py`) hard-fails on any
+       placeholder account ID or ARN fragment under `iac/`, so pre-empt it.
 
    (k) **CFN custom resource Lambda handlers — parameter validation**: When generating CloudFormation
        custom resource Lambda handlers that call service APIs (via boto3), only pass parameters the

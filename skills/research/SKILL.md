@@ -228,35 +228,62 @@ for cfn, asset in assets_by_cfn.items():
         if not matched:
             asset['data_classification'] = 'Internal — service-managed resource'
 
-# Enrich assets with entry_points from API surface
+# Enrich assets with entry_points from API surface.
+# MAXIMAL-TOKEN attachment: a CFN-leaf token (e.g. "Permission") is a substring of
+# longer sibling tokens (e.g. "LayerVersionPermission"), so a naive `token in op_name`
+# test over-attaches — AddLayerVersionPermission would land on Permission, LayerVersion
+# AND LayerVersionPermission. Attach an op only to assets whose matched token is MAXIMAL:
+# not a proper substring of another asset's token that also matched this op. This routes
+# AddLayerVersionPermission to LayerVersionPermission only, AddPermission to Permission, etc.
 ops = api.get('api_surface', {}).get('operations', [])
 for op in ops:
     op_name = op.get('operation', '')
-    # Find matching asset and add to entry_points
-    for cfn, asset in assets_by_cfn.items():
-        resource_name = cfn.split('::')[-1] if '::' in cfn else ''
-        if resource_name.lower() in op_name.lower():
-            if 'entry_points' not in asset:
-                asset['entry_points'] = []
-            if op_name.startswith(('Create', 'Update', 'Delete', 'Invoke', 'Put')):
-                if op_name not in asset['entry_points']:
-                    asset['entry_points'].append(op_name)
+    if not op_name.startswith(('Create', 'Update', 'Delete', 'Invoke', 'Put', 'Add', 'Remove', 'Publish')):
+        continue
+    # All assets whose CFN-leaf token appears in this op name.
+    matched = [(cfn, cfn.split('::')[-1]) for cfn in assets_by_cfn
+               if (cfn.split('::')[-1] if '::' in cfn else '').lower() in op_name.lower()
+               and (cfn.split('::')[-1] if '::' in cfn else '')]
+    # Keep only maximal tokens (drop any token that is a proper substring of a co-matched token).
+    for cfn, token in matched:
+        if any(other_token != token and token.lower() in other_token.lower()
+               for _, other_token in matched):
+            continue  # non-maximal — a more specific sibling asset owns this op
+        asset = assets_by_cfn[cfn]
+        asset.setdefault('entry_points', [])
+        if op_name not in asset['entry_points']:
+            asset['entry_points'].append(op_name)
 
 # Deduplicate assets: merge assets with overlapping entry_points (same resource, different name)
 # e.g., "Runtime" and "AgentRuntime" both have CreateAgentRuntime → keep one
 # IMPORTANT: Exclude generic shared operations from overlap calculation —
 # TagResource, UntagResource, ListTagsForResource, PutResourcePolicy, etc.
 # are shared across all resource types and would cause false dedup merges.
+# VARIANT GUARD: only merge when the two CFN-leaf tokens are substring-variants of
+# each other (one token is a substring of the other — Runtime/AgentRuntime, the case
+# this dedup is FOR). Distinct nouns that merely share an op-name substring must NOT
+# merge: e.g. Function and Url both carry CreateFunctionUrlConfig (it contains "Function"),
+# giving Url 100% overlap with Function — but they are different resources. Without this
+# guard the dedup silently drops Url, LayerVersionPermission, and similar distinct assets.
 GENERIC_OPS = {'TagResource', 'UntagResource', 'ListTagsForResource',
                'PutResourcePolicy', 'DeleteResourcePolicy', 'GetResourcePolicy'}
+
+def _tokens_are_variants(cfn_a, cfn_b):
+    a = (cfn_a.split('::')[-1] if '::' in cfn_a else cfn_a).lower()
+    b = (cfn_b.split('::')[-1] if '::' in cfn_b else cfn_b).lower()
+    return a in b or b in a
+
 deduped = {}
 for cfn, asset in assets_by_cfn.items():
     eps = frozenset(asset.get('entry_points', [])) - GENERIC_OPS
     merged = False
     for existing_cfn, existing_asset in deduped.items():
         existing_eps = frozenset(existing_asset.get('entry_points', [])) - GENERIC_OPS
-        # If >50% overlap in non-generic entry_points, these are the same resource
-        if eps and existing_eps and len(eps & existing_eps) > min(len(eps), len(existing_eps)) * 0.5:
+        # If >50% overlap in non-generic entry_points AND the leaf tokens are
+        # substring-variants, these are the same resource under two names.
+        if (eps and existing_eps
+                and len(eps & existing_eps) > min(len(eps), len(existing_eps)) * 0.5
+                and _tokens_are_variants(cfn, existing_cfn)):
             # Keep the one with more entry_points; merge the other's data
             if len(eps) > len(existing_eps):
                 deduped[cfn] = asset
