@@ -94,14 +94,14 @@ IDE_HOOKS_TEMPLATES = {
     "post-tool-use.kiro.hook": """---
 title: Validate state files after write
 trigger: File Save
-filePattern: ".service-approval/**/*.json|.service-approval/**/05-generate-DRAFT/**/*"
+filePattern: ".service-approval/**/*.json"
 ---
 
 # Post-write validation
 
 Run `python3 tools/validate/hook_post_tool_use.py` after any write to
-`.service-approval/<slug>/<phase>/` or `.service-approval/<slug>/05-generate-DRAFT/`. The validator
-checks schema shape, JSON validity, and cross-file references.
+`.service-approval/<slug>/<phase>/`. The validator checks schema shape,
+JSON validity, and cross-file references.
 
 Exit code 2 blocks the write.
 """,
@@ -113,17 +113,13 @@ trigger: Agent Stop
 # Pipeline integrity check
 
 Run `python3 tools/validate/hook_stop.py` when the agent signals completion.
-This script wraps `validate_pipeline_integrity.py` and enforces 7 numbered
-failure signals (P1-P7):
+This script wraps `validate_pipeline_integrity.py` and enforces 5 numbered
+failure signals (P1, P2, P5, P6, P7):
 
 P1 — pipeline.log / mcp-calls.log missing or too few MCP calls (>=10)
      (exempted by `[pipeline:complete:<VERDICT>]` terminal sentinel)
 P2 — validated.json has templated or empty verification notes
      (>=50% uniqueness required)
-P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
-     keys, broad Allow on Resource:* without Condition, SCP without Deny)
-P4 — IaC templates contain placeholder account IDs (123456789012,
-     000000000000) or placeholder ARNs
 P5 — framework coverage below 15% with no per-objective rationale
 P6 — verdict mismatch (APPROVED emitted despite integrity failures)
 P7 — phase-output completeness: every phase dir on disk must contain

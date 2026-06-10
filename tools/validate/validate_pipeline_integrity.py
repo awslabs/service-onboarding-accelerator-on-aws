@@ -2,9 +2,9 @@
 """
 Pipeline integrity validator.
 
-Detects agents that skip the 9-phase pipeline (Intake → Assess → Research →
-Validate → Map → Generate → Test → Summarize → Evidence) and emit hardcoded
-artifacts instead of running real MCP-driven research/validation/generation.
+Detects agents that skip the 6-phase pipeline (Intake → Assess → Research →
+Validate → Map → Summarize) and emit hardcoded artifacts instead of running
+real MCP-driven research/validation.
 
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
@@ -14,9 +14,6 @@ Failure signals:
          `[pipeline:complete:<VERDICT>]` terminal sentinel — finalized
          runs are immutable, retroactive remediation impossible)
     P2 — validated.json has templated or empty verification notes
-    P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
-         keys, broad Allow on Resource:* without Condition, SCP without Deny)
-    P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
     P6 — verdict mismatch (APPROVED emitted despite integrity failures)
     P7 — phase-output completeness: every phase dir on disk must contain
@@ -35,43 +32,6 @@ from pathlib import Path
 
 MIN_MCP_CALLS = 10
 MIN_FRAMEWORK_COVERAGE_PCT = 15
-PLACEHOLDER_ACCOUNTS = {"123456789012", "000000000000", "111111111111"}
-PLACEHOLDER_ARN_FRAGMENTS = (
-    "arn:aws:kms:us-east-1:123456789012:key/example",
-    "arn:aws:iam::123456789012:role/lambda-exec",
-)
-
-# Base positive/negative IAM condition operator pairs.
-# Source: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html
-# AWS has not added a new base pair in years; if they do, extend this list.
-_BASE_CONDITION_OPERATOR_PAIRS = (
-    ("StringEquals", "StringNotEquals"),
-    ("StringEqualsIgnoreCase", "StringNotEqualsIgnoreCase"),
-    ("StringLike", "StringNotLike"),
-    ("NumericEquals", "NumericNotEquals"),
-    ("DateEquals", "DateNotEquals"),
-    ("ArnEquals", "ArnNotEquals"),
-    ("ArnLike", "ArnNotLike"),
-    ("IpAddress", "NotIpAddress"),
-)
-
-# IAM allows ForAllValues: / ForAnyValue: prefixes (set operators) and an
-# IfExists suffix. Every base pair is valid under each combination, so we
-# expand the cartesian product up front.
-_SET_PREFIXES = ("", "ForAllValues:", "ForAnyValue:")
-_EXISTS_SUFFIXES = ("", "IfExists")
-
-
-def _expand_operator_pairs() -> tuple[tuple[str, str], ...]:
-    pairs: list[tuple[str, str]] = []
-    for pos, neg in _BASE_CONDITION_OPERATOR_PAIRS:
-        for prefix in _SET_PREFIXES:
-            for suffix in _EXISTS_SUFFIXES:
-                pairs.append((f"{prefix}{pos}{suffix}", f"{prefix}{neg}{suffix}"))
-    return tuple(pairs)
-
-
-CONDITION_OPERATOR_PAIRS = _expand_operator_pairs()
 
 
 def _load_json(path: Path) -> dict | None:
@@ -232,246 +192,6 @@ def check_validated_notes(validate_dir: Path) -> list[str]:
     return errors
 
 
-def _iter_json_files(root: Path):
-    from validate_deployable import SKIP_DIRS
-
-    if not root.exists():
-        return
-    for p in root.rglob("*.json"):
-        if any(part in SKIP_DIRS for part in p.parts):
-            continue
-        data = _load_json(p)
-        if isinstance(data, dict):
-            yield p, data
-
-
-# Cross-service AWS-canonical wildcard-only actions. The validator only loads
-# the target service's SAR data (sar-facts.json / validated.json), so cross-
-# service actions like `logs:DescribeLogGroups` would otherwise always flag P3.
-# Each entry below is wildcard-only per its service's SAR page (`Resource types`
-# column empty in the Actions table). Keep this minimal — only add entries that
-# are demonstrably wildcard-only per AWS docs, with a citation.
-_CROSS_SERVICE_WILDCARD_ONLY = frozenset({
-    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatchlogs.html
-    "logs:DescribeLogGroups",
-    "logs:DescribeQueryDefinitions",
-    "logs:DescribeAccountPolicies",
-    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazonec2.html — Describe*
-    # for cross-resource enumeration: ARN scoping is unsupported
-    "ec2:DescribeNetworkInterfaces",
-    "ec2:DescribeSecurityGroups",
-    "ec2:DescribeSubnets",
-    "ec2:DescribeVpcEndpoints",
-    "ec2:DescribeVpcs",
-    # https://docs.aws.amazon.com/service-authorization/latest/reference/list_awssecretsmanager.html
-    "secretsmanager:ListSecrets",
-})
-
-
-def _load_wildcard_only_actions(controls_dir: Path) -> set[str]:
-    """Load the set of `<prefix>:<action>` strings AWS SAR marks wildcard-only.
-
-    `controls_dir` is `<slug>/05-generate-DRAFT`. Two per-service state files are
-    consulted in addition to the cross-service floor:
-      1. `<slug>/01-assess/sar-facts.json` — `wildcard_only_actions[]` enumerates
-         actions Phase 0 explicitly classified as wildcard-only (typically
-         Create* for resources that don't exist yet).
-      2. `<slug>/03-validate/validated.json` — `api_surface.operations[]` carries
-         per-op `resource_types` post-validation. An op with `resource_types`
-         empty or null is wildcard-only by AWS design (no ARN to scope to).
-
-    Always unions in `_CROSS_SERVICE_WILDCARD_ONLY` (cross-service AWS-canonical
-    actions — see the `_CROSS_SERVICE_WILDCARD_ONLY` constant defined above).
-    When per-service files are missing or malformed, the per-service additions
-    are skipped — the cross-service set is the floor, not an empty set. The
-    validator stays conservative: actions only earn an exemption when an
-    authoritative file positively says they are wildcard-only.
-    """
-    out: set[str] = set()
-
-    def _qualified(name: str, fallback_prefix: str) -> str | None:
-        """Return `prefix:Action`, or None if neither the action nor the
-        fallback prefix is usable. Bare `Action` strings with an empty
-        fallback would otherwise enter the set as `:Action` and silently
-        match nothing.
-        """
-        if ":" in name:
-            return name
-        if not fallback_prefix:
-            return None
-        return f"{fallback_prefix}:{name}"
-
-    sar_path = controls_dir.parent / "01-assess" / "sar-facts.json"
-    facts = _load_json(sar_path) or {}
-    prefix = facts.get("service_prefix") or ""
-    for a in facts.get("wildcard_only_actions") or []:
-        if isinstance(a, str):
-            qualified = _qualified(a, prefix)
-            if qualified:
-                out.add(qualified)
-    for a in facts.get("actions") or []:
-        if isinstance(a, dict) and not (a.get("resource_types") or []):
-            name = a.get("name") or a.get("action")
-            if isinstance(name, str):
-                qualified = _qualified(name, prefix)
-                if qualified:
-                    out.add(qualified)
-
-    val_path = controls_dir.parent / "03-validate" / "validated.json"
-    val = _load_json(val_path) or {}
-    val_prefix = (val.get("capabilities", {}).get("iam", {}).get("service_prefix")
-                  or val.get("service_prefix") or prefix)
-    for op in (val.get("api_surface") or {}).get("operations", []) or []:
-        if not isinstance(op, dict):
-            continue
-        rts = op.get("resource_types")
-        if rts:  # populated list — action IS scoped, not wildcard-only
-            continue
-        op_name = op.get("operation") or op.get("action")
-        if isinstance(op_name, str):
-            qualified = _qualified(op_name, val_prefix)
-            if qualified:
-                out.add(qualified)
-
-    out |= _CROSS_SERVICE_WILDCARD_ONLY
-    return out
-
-
-def _action_matches_wildcard_only(action: str, wildcard_only: set[str]) -> bool:
-    """True when `action` is a literal entry in the wildcard-only set.
-
-    Globs like `datasync:Describe*` are NOT exempted. Earlier glob-expansion
-    matched any wildcard-only action under the prefix and exempted the whole
-    glob, but SAR data is loaded from per-service state files and is often
-    incomplete — actions outside the SAR snapshot but matched by the glob
-    were silently allowed. Literal-only matching keeps the carve-out tight
-    against missing data.
-    """
-    return action in wildcard_only
-
-
-def check_iam_policies(controls_dir: Path) -> list[str]:
-    errors: list[str] = []
-    if not controls_dir.exists():
-        return errors
-
-    wildcard_only = _load_wildcard_only_actions(controls_dir)
-
-    for policy_file, data in _iter_json_files(controls_dir):
-        if "Statement" not in data:
-            continue
-        statements = data["Statement"]
-        if not isinstance(statements, list):
-            statements = [statements]
-
-        rel = policy_file.relative_to(controls_dir)
-        for i, stmt in enumerate(statements):
-            if not isinstance(stmt, dict):
-                continue
-
-            condition = stmt.get("Condition") or {}
-            for pos_op, neg_op in CONDITION_OPERATOR_PAIRS:
-                pos_keys = set((condition.get(pos_op) or {}).keys())
-                neg_keys = set((condition.get(neg_op) or {}).keys())
-                if pos_keys and neg_keys and not (pos_keys & neg_keys):
-                    errors.append(
-                        f"P3 {rel} Statement[{i}]: {pos_op} and {neg_op} target "
-                        f"different keys ({sorted(pos_keys)} vs {sorted(neg_keys)}). "
-                        f"Conditions AND together — this statement cannot fire correctly."
-                    )
-
-            if stmt.get("Effect") == "Allow":
-                actions = stmt.get("Action", [])
-                if isinstance(actions, str):
-                    actions = [actions]
-                resources = stmt.get("Resource", [])
-                if isinstance(resources, str):
-                    resources = [resources]
-                broad_actions = [a for a in actions if "*" in a or a.startswith("logs:")]
-                # KMS key-admin carve-out: `kms:*` on `*` to account-root is the
-                # canonical AWS-recommended key-administrator statement. Resource `*`
-                # in a KMS key policy scopes to the enclosing key, not all resources.
-                # See https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html
-                principal = stmt.get("Principal") or {}
-                is_kms_key_policy = "kms-key-policy" in policy_file.name.lower()
-                is_root_admin = (
-                    is_kms_key_policy
-                    and broad_actions == ["kms:*"]
-                    and isinstance(principal, dict)
-                    and any(
-                        v == "*" or (isinstance(v, str) and v.endswith(":root"))
-                        or (isinstance(v, list) and all(
-                            isinstance(x, str) and (x == "*" or x.endswith(":root"))
-                            for x in v
-                        ))
-                        for v in principal.values()
-                    )
-                )
-                # SAR wildcard-only carve-out: an action whose SAR `resource_types`
-                # is empty (e.g., DataSync Describe*/List*, logs:DescribeLogGroups
-                # in the target service's API surface) CANNOT be ARN-scoped — it
-                # can only appear with `Resource: "*"`. Flagging it as
-                # exfiltration produces a false positive. Only exempt when
-                # EVERY broad action resolves to wildcard-only per SAR; if any
-                # action could be scoped, the original check still fires.
-                all_wildcard_only = bool(broad_actions) and all(
-                    _action_matches_wildcard_only(a, wildcard_only)
-                    for a in broad_actions
-                )
-                if (
-                    broad_actions
-                    and resources == ["*"]
-                    and not condition
-                    and not is_root_admin
-                    and not all_wildcard_only
-                ):
-                    errors.append(
-                        f"P3 {rel} Statement[{i}]: Allow {broad_actions} on "
-                        f"Resource '*' with no Condition — exfiltration path."
-                    )
-
-        if "scp" in policy_file.name.lower() and not any(
-            (s.get("Effect") == "Deny") for s in statements if isinstance(s, dict)
-        ):
-            errors.append(
-                f"P3 {rel}: SCP has no Deny statement — per safety rules, "
-                f"SCPs must include at least one Deny."
-            )
-
-    return errors
-
-
-def check_iac_placeholders(iac_dir: Path) -> list[str]:
-    # Reuse the canonical exclude list from validate_deployable so adding a new
-    # vendored-dep dir doesn't require touching two places.
-    from validate_deployable import SKIP_DIRS
-
-    errors: list[str] = []
-    if not iac_dir.exists():
-        return errors
-    for path in iac_dir.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        try:
-            content = path.read_text()
-        except (OSError, UnicodeDecodeError):
-            continue
-        rel = path.relative_to(iac_dir)
-        for acct in PLACEHOLDER_ACCOUNTS:
-            if acct in content:
-                errors.append(
-                    f"P4 {rel}: contains placeholder account ID {acct}. "
-                    f"Use parameters or Sub references, not hardcoded accounts."
-                )
-        for fragment in PLACEHOLDER_ARN_FRAGMENTS:
-            if fragment in content:
-                errors.append(
-                    f"P4 {rel}: contains placeholder ARN '{fragment}'. "
-                    f"IaC must be parameterized."
-                )
-    return errors
 
 
 def check_framework_coverage(map_dir: Path) -> list[str]:
@@ -582,23 +302,8 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("controls-catalog.md", 3072),
         ("framework-mapping.md", 5120),
     ],
-    "05-generate-DRAFT": [
-        # 05-generate-DRAFT/ contains category subdirs, not single files.
-        # Existence of at least one of {preventive-DRAFT, proactive-DRAFT, detective-DRAFT,
-        # responsive-DRAFT, iac-DRAFT} signals the phase ran. Empty dir = incomplete.
-    ],
-    "06-test": [
-        ("test-results.json", 256),
-        # deployed-resources.json only required for full-deploy (where
-        # Phase 7 will run); checked separately below.
-    ],
-    "07-summarize": [
+    "05-summarize": [
         ("APPROVAL-REPORT.md", 2048),
-    ],
-    "08-evidence": [
-        ("cli-commands.json", 256),
-        ("attestation-results.json", 256),
-        ("attestation-report.md", 1024),
     ],
 }
 
@@ -608,13 +313,7 @@ def check_phase_outputs(service_root: Path) -> list[str]:
 
     Walks each phase dir under service_root and asserts that every required
     output exists and meets its minimum size threshold. A phase dir not
-    present is considered "phase did not run" and skipped silently — the
-    user may have set testing.mode=skip, --dry-run, etc.
-
-    The full-deploy → Phase 7 contract gets an extra check: if 06-test/
-    exists with deployed-resources.json AND 08-evidence/ exists, the linkage
-    is sound; if 06-test/test-results.json says full-deploy succeeded but
-    deployed-resources.json is missing, Phase 7 cannot run.
+    present is considered "phase did not run" and skipped silently.
     """
     errors: list[str] = []
 
@@ -649,43 +348,11 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                     f"truncated write. Re-run the {phase_name.split('-', 1)[1]} skill."
                 )
 
-    # 05-generate-DRAFT/: at least one category subdir must contain real files.
-    # `any(cat_dir.rglob("*"))` would return True for an empty subdir tree
-    # (any directory entry counts), letting an empty `preventive-DRAFT/empty/`
-    # satisfy the gate. Require at least one actual file.
-    generate_dir = service_root / "05-generate-DRAFT"
-    if generate_dir.exists():
-        categories = ["preventive-DRAFT", "proactive-DRAFT", "detective-DRAFT", "responsive-DRAFT", "iac-DRAFT"]
-        any_populated = False
-        for cat in categories:
-            cat_dir = generate_dir / cat
-            if cat_dir.exists() and any(p.is_file() for p in cat_dir.rglob("*")):
-                any_populated = True
-                break
-        if not any_populated:
-            errors.append(
-                f"P7 {service_root.name}/05-generate-DRAFT/: phase ran but produced "
-                f"NO files in any of {categories}. Re-run generate."
-            )
-
-    # full-deploy → Phase 7 contract: if 08-evidence/ exists, then
-    # 06-test/deployed-resources.json must also exist (Phase 7 reads it).
-    evidence_dir = service_root / "08-evidence"
-    if evidence_dir.exists() and not (evidence_dir / "phase-skipped.json").exists():
-        deployed_resources = service_root / "06-test" / "deployed-resources.json"
-        if not deployed_resources.exists():
-            errors.append(
-                f"P7 {service_root.name}/06-test/deployed-resources.json: MISSING "
-                f"but 08-evidence/ exists. Phase 7 needs deployed-resources.json "
-                f"to know which stack/ARNs to probe; without it, every CLI verdict "
-                f"will be ERROR. Re-run Phase 5 with full-deploy mode."
-            )
-
     return errors
 
 
 def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) -> list[str]:
-    """Check verdict consistency from 07-summarize/ phase dir.
+    """Check verdict consistency from 05-summarize/ phase dir.
 
     Fails closed when APPROVAL-REPORT.md exists but the `## Verdict` H2
     header is missing (e.g., template drift to H3, or report truncated).
@@ -787,21 +454,13 @@ def validate_pipeline(root: Path) -> list[str]:
         if validate_dir.exists():
             errors.extend(check_validated_notes(validate_dir))
 
-        # Check controls in 05-generate-DRAFT/
-        controls_dir = service_root / "05-generate-DRAFT"
-        if controls_dir.exists():
-            errors.extend(check_iam_policies(controls_dir))
-            iac_dir = controls_dir / "iac-DRAFT"
-            if iac_dir.exists():
-                errors.extend(check_iac_placeholders(iac_dir))
-
         # Check framework coverage in 04-map/
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
 
-        # Check verdict consistency in 07-summarize/
-        summarize_dir = service_root / "07-summarize"
+        # Check verdict consistency in 05-summarize/
+        summarize_dir = service_root / "05-summarize"
         if summarize_dir.exists():
             errors.extend(check_verdict_consistency(summarize_dir, len(errors)))
 

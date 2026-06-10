@@ -1,24 +1,18 @@
 ---
 name: service-approval-v3
-description: Orchestrate all 9 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) to generate AWS security controls and compliant resource templates for any AWS service
+description: Orchestrate all 6 service-approval agents (Intake → Assess → Research → Validate → Map → Summarize) to produce AWS security control mappings and compliance assessments for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--questions=<file>] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
+argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
 ---
 
 > NOTE: Generate-phase outputs land under `05-generate-DRAFT/` with `-DRAFT` suffixes on all subdirectories and filenames, and are embedded with a non-production disclaimer. Orchestration must preserve these DRAFT markers downstream — do NOT strip the `-DRAFT` suffix or the embedded disclaimer when passing paths to subsequent phases.
 
 # Service Approval — Orchestrator v3
 
-Coordinate the service-approval agents to produce a complete set of AWS security controls
-and a compliant resource template for any AWS service.
+Coordinate the service-approval agents to produce a complete set of AWS security control
+mappings and compliance assessment for any AWS service.
 
-**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Generate (3 sub-skills) → Test → Summarize → Evidence
-
-Deployment intent (full-deploy / dry-run / skip / manual-cli) is captured upfront in
-the Intake phase via `testing.mode` in `intake-manifest.json`. There is no separate
-human-in-the-loop gate between Generate and Test — whatever Intake recorded is what
-Phase 5 does. Phase 7 Evidence runs after Summarize when `testing.mode == full-deploy`
-and Phase 5 succeeded.
+**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Summarize
 
 ## Flags
 
@@ -26,12 +20,6 @@ and Phase 5 succeeded.
 |------|-------------|---------|
 | `./input-folder` | Path to folder with input files (.md, .json, .xlsx, .pdf, .docx) | None (MCP-only mode) |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`) | Required if no folder |
-| `--env=<profile>` | AWS CLI profile for Tester | None (skips Tester) |
-| `--skip-test` | Skip Tester agent | false |
-| `--dry-run` | Lint artifacts, do not deploy | false |
-| `--timeout=<minutes>` | Config evaluation timeout | 30 |
-| `--keep` | Keep deployed resources alive after Phase 7 Evidence completes (default: Phase 7 tears down). Phase 5 always defers teardown to Phase 7 when Phase 7 is in scope. | false |
-| `--include-unverified` | Allow unverified items in generation | false |
 | `--questions=<file>` | Path to SITCO Bar Questions file (.docx or .txt) — passed to Phase 0 | None |
 | `--clean` | Delete existing .service-approval/ state before run | false |
 | `--framework=<type>` | Control framework type (ccmv4, nist, cis, iso) — passed to Map phase | auto-detect |
@@ -200,7 +188,7 @@ If any MCP is listed but shows "Failed to connect" or is unreachable, warn the u
 ```
 MCP degraded coverage:
   aws-documentation UNREACHABLE — Research and Validate will fall back to web search.
-  awsiac UNREACHABLE — Generate will use best-effort generation.
+  awsiac UNREACHABLE — Map will use best-effort mapping.
 ```
 Do NOT block execution — continue with degraded coverage and note it in the final report.
 
@@ -346,15 +334,13 @@ Run each phase in order. Pass all relevant flags through.
 ### Intake (Precursor — Mandatory)
 Follow ALL instructions in `skills/intake/SKILL.md` exactly.
 Pass: `--service`, `--from-intake` if provided, `--interactive` if provided,
-and any of `--env`, `--framework`, `--framework-file`, `--skip-test`, `--dry-run`,
-`--keep`, `--timeout` the user supplied at the orchestrator level (Intake uses
-them to pre-fill its form / intake manifest).
+and any of `--framework`, `--framework-file` the user supplied at the orchestrator level
+(Intake uses them to pre-fill its form / intake manifest).
 
 When done: verify `.service-approval/_staging/<ts>/00-intake/intake-manifest.json`
 exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0
 Step 0b after slug derivation). From that manifest, resolve the effective `--service`, `--framework`,
-`--framework-file`, input folder, and Phase 5 intent (CLI flags still override;
-see Phase 5 resolution below).
+`--framework-file`, and input folder.
 
 **Intake always runs.** The intake skill itself decides whether to prompt
 interactively or short-circuit:
@@ -444,107 +430,9 @@ Verify these files exist before proceeding:
 - `.service-approval/<slug>/04-map/controls-catalog.md`
 - `.service-approval/<slug>/04-map/framework-mapping.md`
 
-### Phase 4: Generate (3 sub-skills, sequential in this mode)
-
-**Step 4a — Preventive/Proactive:**
-Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
-Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate-DRAFT/preventive-DRAFT/` and `<slug>/05-generate-DRAFT/proactive-DRAFT/` to be populated.
-
-**Step 4b — Detective/Responsive:**
-Follow ALL instructions in `skills/generate-detective/SKILL.md`.
-Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate-DRAFT/detective-DRAFT/` and `<slug>/05-generate-DRAFT/responsive-DRAFT/` to be populated.
-
-**Step 4c — IaC Templates:**
-Follow ALL instructions in `skills/generate-iac/SKILL.md`.
-Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate-DRAFT/iac-DRAFT/` to have all 4 formats.
-
-**Step 4d — Final Validation:**
-Run the final validation from `skills/generate/SKILL.md` → "Final Validation" section.
-
-### Phase 5: Test
-
-Resolve Phase 5 intent in this order (CLI flags > intake > default):
-
-1. If `--skip-test` was passed on the command line → skip.
-2. Else if `--dry-run` was passed → run `skills/test/SKILL.md` with `--dry-run`
-   (use `--env` if provided, else Tier 1 only).
-3. Else if `--env=<profile>` was passed → run `skills/test/SKILL.md` in full mode
-   with that profile.
-4. Else read `.service-approval/<slug>/00-intake/intake-manifest.json` → `testing.mode`
-   (or the staging path if Phase 0 hasn't yet promoted):
-   - `skip` or `manual-cli` → skip Phase 5. (Summarize handles the manual-cli
-     cheat-sheet render.)
-   - `dry-run` → run `skills/test/SKILL.md` with `--dry-run`; pass `--env` if
-     `testing.aws_profile` is set.
-   - `full-deploy` → run `skills/test/SKILL.md` in full mode with
-     `--env=<testing.aws_profile>` and `--timeout=<testing.timeout_minutes>`.
-     **Do NOT pass `--keep` to Phase 5.** Phase 5 always leaves the stack
-     alive when Phase 7 will run; the user's `testing.keep` preference is
-     consumed by Phase 7 (which tears down at the end of evidence collection
-     unless `keep == true`). If Phase 7 is being skipped (e.g. orchestrator
-     was invoked with `--no-evidence` or `--env` is missing for Phase 7),
-     pass `--no-evidence` to Phase 5 so it reverts to the legacy
-     deploy-and-teardown behavior.
-5. If `intake-manifest.json` is missing (orchestrator invoked without Intake)
-   and no CLI flags were provided → skip Phase 5 with a warning.
-
-### Phase 6: Summarize
+### Phase 4: Summarize
 Follow ALL instructions in `skills/summarize/SKILL.md` exactly.
 Report the final verdict to the user.
-
-### Phase 7: Evidence (Optional — requires AWS credentials)
-**NEW:** If `--env` was provided AND Phase 5 Test deployed resources successfully (not --dry-run):
-Run the Evidence skill to perform AWS CLI attestation against deployed resources.
-
-Follow ALL instructions in `skills/evidence/SKILL.md` exactly.
-Pass: `--env`, `--service=<slug>` flags.
-
-If `--skip-test` or `--dry-run` or Phase 5 was skipped: skip this phase entirely
-AND write a skip artifact so the audit trail isn't a hole:
-
-```python
-import json
-from datetime import datetime, timezone
-from tools.paths import phase_dir
-
-evidence_dir = phase_dir(slug, "evidence")
-evidence_dir.mkdir(parents=True, exist_ok=True)
-skip_reason = (
-    "Phase 5 Test was skipped or did not deploy resources. "
-    "Phase 7 requires a live deployed stack (06-test/deployed-resources.json) "
-    "to probe via AWS CLI. Re-run with --env=<profile> in full-deploy mode "
-    "to enable Phase 7."
-)
-skip_artifact = {
-    "schema_version": "1.0",
-    "phase": "evidence",
-    "skipped": True,
-    "skipped_at": datetime.now(timezone.utc).isoformat(),
-    "skip_reason": skip_reason,
-    "preconditions_failed": [
-        "phase_5_test_run",
-        "deployed_resources_present",
-    ],
-}
-(evidence_dir / "phase-skipped.json").write_text(json.dumps(skip_artifact, indent=2))
-```
-
-**Stack lifecycle:** Phase 5 left the stack alive (`teardown_status:
-"deferred_to_phase_7"` in `06-test/test-results.json`). Phase 7 reads
-`06-test/deployed-resources.json`, probes the stack via AWS CLI, then tears
-it down at the end of Step 11 — UNLESS `intake-manifest.json.testing.keep ==
-true`, in which case Phase 7 leaves the stack alive for manual debugging and
-records `teardown_status: "skipped_keep_true"`. See skills/evidence/SKILL.md
-Step 11 for the exact teardown procedure.
-
-Evidence produces:
-- `<slug>/08-evidence/attestation-report.md` — control x CLI x verdict matrix
-- `<slug>/08-evidence/attestation-results.json` — machine-readable verdicts (includes `teardown_status`)
-- `<slug>/08-evidence/summary.md` — top-level triage digest
-- `<slug>/attestation.md` — reviewer's audit guide (service tree manifest)
 
 ---
 
@@ -563,8 +451,7 @@ short-circuit (see "Discovery Rules" in `skills/intake/SKILL.md`):
 
 Dispatch Intake as a foreground subagent with the full text of
 `skills/intake/SKILL.md`, plus `--service`, `--from-intake`, `--interactive`, and
-any pre-Intake CLI flags the user passed (`--env`, `--framework`, `--framework-file`,
-`--skip-test`, `--dry-run`, `--keep`, `--timeout`).
+any pre-Intake CLI flags the user passed (`--framework`, `--framework-file`).
 Wait for `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` (Intake's pre-promotion landing zone).
 
 Plugin-repo files (`skills/intake/intake-template.yaml`,
@@ -664,36 +551,7 @@ Agent 3d: map-assemble (foreground)
 
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
 
-### Phase 4: Generate (3 sub-skills in parallel)
-
-Dispatch all 3 generate sub-skills simultaneously as background subagents:
-
-```
-Agent 4: generate-preventive (background)
-  Prompt: Full text of skills/generate-preventive/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate-DRAFT/preventive-DRAFT/ + <slug>/05-generate-DRAFT/proactive-DRAFT/
-
-Agent 5: generate-detective (background)
-  Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate-DRAFT/detective-DRAFT/ + <slug>/05-generate-DRAFT/responsive-DRAFT/
-
-Agent 6: generate-iac (background)
-  Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate-DRAFT/iac-DRAFT/
-```
-
-**IMPORTANT:** Dispatch all 3 in a single message with 3 Agent tool calls.
-
-When all 3 complete, run the final validation from `skills/generate/SKILL.md`.
-If any IaC templates are missing, re-dispatch the generate-iac agent.
-
-### Phase 5: Test
-
-Apply the same resolution as Sequential Mode (CLI flags > intake.testing.mode >
-default skip). If the resolution produces a run, dispatch Tester as a foreground
-subagent with the resolved `--env` / `--dry-run` / `--keep` / `--timeout` flags.
-
-### Phase 6: Summarize
+### Phase 4: Summarize
 Dispatch Summarizer as foreground subagent.
 Wait for `APPROVAL-REPORT.md`.
 
@@ -714,16 +572,11 @@ Phase 3: Map              (2 agents in parallel, then 2 sequential)
   3b: Generate Controls   (background) ─┤
                                         ├─ 3c: Framework Mapping (foreground)
                                         └─ 3d: Assemble          (foreground)
-Phase 4: Generate         (3 agents in parallel, then validate)
-Phase 5: Test             (1 agent, foreground — gated by intake.testing.mode)
-Phase 6: Summarize        (1 agent, foreground)
+Phase 4: Summarize        (1 agent, foreground)
 ```
 
-Total agents: up to 14 (vs 8 in monolithic mode), but with 3 parallelization windows
+Total agents: up to 10 (vs 6 in monolithic mode), but with 2 parallelization windows
 that significantly reduce wall-clock time.
-
-If any agent exceeds `--timeout` minutes, proceed to Summarizer with partial results.
-Summarizer marks the timed-out agent as INCOMPLETE in the report.
 
 ---
 
@@ -731,7 +584,6 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 
 ```
 Service Approval complete.
-Report: .service-approval/APPROVAL-REPORT.md
-Controls: .service-approval/<slug>/05-generate-DRAFT/
+Report: .service-approval/<slug>/05-summarize/APPROVAL-REPORT.md
 Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 ```

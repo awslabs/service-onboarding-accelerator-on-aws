@@ -93,7 +93,7 @@ Click **Allow** for each. These are read-only research tools.
 
 ## Step 7: Follow the pipeline
 
-The plugin runs 9 phases:
+The plugin runs 6 phases:
 
 1. **Intake** — collects service name, framework choice, testing preferences
 2. **Assess** — security posture assessment against 5 CAF domains
@@ -119,14 +119,11 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   02-research/        ← research.json
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
-  05-generate-DRAFT/  ← all generated artifacts (85+ files) (DRAFT artifacts — see README Disclaimer)
-  06-test/            ← test-results.json, deployed-resources.json (if --env)
-  07-summarize/       ← APPROVAL-REPORT.md (final verdict)
-  08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
+  05-summarize/       ← APPROVAL-REPORT.md (final verdict)
 ```
 
-The key deliverable is `07-summarize/APPROVAL-REPORT.md` — contains the approval
-verdict, coverage matrix, and artifact inventory. Open it directly in VS Code to review.
+The key deliverable is `05-summarize/APPROVAL-REPORT.md` — contains the approval
+verdict and coverage matrix. Open it directly in VS Code to review.
 
 ---
 

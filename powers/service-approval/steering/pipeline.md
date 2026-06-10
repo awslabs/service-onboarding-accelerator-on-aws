@@ -5,24 +5,22 @@ inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/**"
 ---
 
-# Pipeline — 9 service-approval agents (1 precursor + 8 numbered phases), 21 sub-skills
+# Pipeline — 6 service-approval agents (1 precursor + 5 numbered phases), 14 sub-skills
 
-The pipeline runs as 9 agents total: an unnumbered **Intake** precursor that
+The pipeline runs as 6 agents total: an unnumbered **Intake** precursor that
 gathers customer inputs and writes a candidate slug to a staging directory,
-followed by 8 numbered phases (0 Assess → 7 Evidence). Phase 0 (Assess) atomically
+followed by 5 numbered phases (0 Assess → 4 Summarize). Phase 0 (Assess) atomically
 promotes the staging dir to `.service-approval/<slug>/` after deriving the
 canonical service slug from SAR.
 
 ## Hard rules (re-stated)
 
-The Stop hook enforces P1–P7 failure signals via `validate_pipeline_integrity.py`:
+The Stop hook enforces P1, P2, P5, P6, P7 failure signals via `validate_pipeline_integrity.py`:
 
 - **P1** — too few MCP calls. Log every MCP call to `.service-approval/<service-slug>/pipeline.log` (the consolidated debugging artifact, with `[mcp:<server>:call]` source tags); lines are mirrored to `mcp-calls.log` for backward compatibility. Minimum 10 entries enforced. Exempted for finalized runs by the `[pipeline:complete:<VERDICT>]` terminal sentinel.
 - **P2** — `validated.json` items need unique `verification_note`s (≥50% uniqueness required).
-- **P3** — IAM policy logic errors: mismatched `StringEquals`/`StringNotEquals` keys, broad `Allow` on `Resource:*` without `Condition`, SCP without at least one `Deny`.
-- **P4** — IaC templates must be parameterized; no placeholder account IDs or placeholder ARNs.
 - **P5** — framework coverage below 15% with no per-objective rationale.
-- **P6** — verdict matches integrity. Any P1–P5/P7 failure → `REQUIRES REMEDIATION`, not `APPROVED`.
+- **P6** — verdict matches integrity. Any P1/P2/P5/P7 failure → `REQUIRES REMEDIATION`, not `APPROVED`.
 - **P7** — phase-output completeness: every phase dir on disk must contain its declared outputs at min-size thresholds.
 
 **Cultural rules** (skill-based execution, no one-shot generator scripts, every claim
@@ -39,12 +37,10 @@ orchestrator; do not deviate from the steps it prescribes.
 **Sub-skill:** `skills/intake/SKILL.md`
 **Agent:** `sa-intake`
 **Inputs:** `--service`, `--from-intake=<file>`, `--interactive`, plus any
-orchestrator-level CLI flags (`--env`, `--framework`, `--framework-file`,
-`--skip-test`, `--dry-run`, `--keep`, `--timeout`)
+orchestrator-level CLI flags (`--framework`, `--framework-file`)
 **Outputs:**
 - `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json` — service identity, input folder, framework
-  selection, testing intent (`full-deploy`/`dry-run`/`skip`/`manual-cli`),
-  `service.candidate_slug`, `staging_timestamp`
+  selection, `service.candidate_slug`, `staging_timestamp`
 
 Intake runs BEFORE the canonical service slug is known — that slug is derived
 in Phase 0 (Assess) from the SAR `service_prefix`. Therefore intake writes to a
@@ -66,8 +62,7 @@ Claude Code interactive path (Branch A) uses the same CCMv4-only narrowing
 available behind the `--framework=<type>` CLI flag for advanced operators
 who bypass the interactive intake.
 
-Deployment intent (`testing.mode`) is captured here and consumed by Phase 5 via
-the orchestrator's flag-resolution rules. IaC format selection is NOT done here —
+IaC format selection is NOT done here —
 that happens in Phase 0 (Assess) Step 2b and lands in `iac-support.json`.
 
 If the user has an existing `./service-approval-intake.yaml` (the per-user
@@ -151,50 +146,14 @@ sa-map-assemble           → <slug>/04-map/mapping-results.json         (sequen
 
 `mapping-results.json` is the richest state file — it has every control, every
 mitigation, every framework objective, the coverage matrix, and the
-threat → mitigation → control traceability. Phase 4 reads it.
+threat → mitigation → control traceability.
 
-## Phase 4 — Generate (parallel)
-
-**Sub-skills:** 3 in parallel
-
-```
-/spawn sa-generate-preventive  → <slug>/05-generate-DRAFT/preventive-DRAFT/, <slug>/05-generate-DRAFT/proactive-DRAFT/
-/spawn sa-generate-detective   → <slug>/05-generate-DRAFT/detective-DRAFT/, <slug>/05-generate-DRAFT/responsive-DRAFT/
-/spawn sa-generate-iac         → <slug>/05-generate-DRAFT/iac-DRAFT/ (4 formats + TF modules)
-```
-
-Each generator reads `<slug>/04-map/mapping-results.json` and emits artifacts to
-the right `<slug>/05-generate-DRAFT/` subdirectory. Artifact count ranges:
-- Preventive: 9–12 files
-- Proactive: 12–15 files
-- Detective: 34–47 files
-- Responsive: 6 files
-- IaC: 17–31 files
-
-Total: 78–111 files depending on service surface area.
-
-## Phase 5 — Test (optional)
-
-**Sub-skill:** `skills/test/SKILL.md`
-Runs only if `--env=<profile>` is provided. Two tiers:
-- Tier 1 (always): static validation via cfn-lint, tflint, cfn-guard parse, OPA check
-- Tier 2 (with creds): AWS API — cfn validate-template, Access Analyzer validate-policy
-
-Output: `<slug>/06-test/test-results.json` plus `<slug>/06-test/deployed-resources.json` (stack ID + ARNs consumed by Phase 7) and `<slug>/06-test/deploy-logs/*.log`.
-
-**Stack lifecycle:** When Phase 7 is in scope (default), Phase 5 leaves the
-deployed CFN stack alive (`smoke-deploy-test.sh --keep`) and records
-`teardown_status: "deferred_to_phase_7"` in `test-results.json`. Phase 7 owns
-teardown. When invoked with `--no-evidence`, Phase 5 reverts to the legacy
-deploy-and-teardown behavior.
-
-## Phase 6 — Summarize
+## Phase 4 — Summarize
 
 **Sub-skill:** `skills/summarize/SKILL.md`
 
 Produces:
-- `<slug>/07-summarize/APPROVAL-REPORT.md` — the customer-facing verdict
-- `<slug>/07-summarize/ARTIFACT-FLOW-MATRIX.md` — per-artifact dependency graph
+- `<slug>/05-summarize/APPROVAL-REPORT.md` — the customer-facing verdict
 
 The verdict is one of:
 - `APPROVED` — all integrity checks passed, framework coverage above threshold
@@ -204,80 +163,3 @@ The verdict is one of:
 The Stop hook (`ide/hooks/stop.kiro.hook`) enforces P6: if any P1–P5/P7 check
 failed, the verdict MUST be `REQUIRES REMEDIATION`. An `APPROVED` verdict with
 failures is rewritten by the hook.
-
-## Self-Review Gate (mandatory, runs between Generate and Summarize)
-
-Before entering Phase 6 (Summarize), the orchestrator MUST perform a completeness
-and correctness review of all Phase 4 output. This step exists because Generate
-runs in parallel and gaps are easy to miss when subagents complete independently.
-
-### Checklist
-
-1. **Artifact count** — Count all files in `05-generate-DRAFT/` by category. Compare
-   against the ranges in `steering/phase-generate.md`. If below minimum for any
-   category, re-run that generator sub-skill.
-
-2. **IaC format coverage** — Read `01-assess/iac-support.json`. For every format
-   where `supported: true`, verify corresponding output exists in
-   `05-generate-DRAFT/iac-DRAFT/{cdk-DRAFT,cloudformation-DRAFT,cdktf-DRAFT,terraform-DRAFT}/`. Missing format = gap.
-
-3. **Policy engine coverage** — Every proactive control must exist in ALL THREE
-   engines: CFN Guard (`.guard`), OPA (`.rego`), and Checkov (`.py`). A control
-   in only one engine is incomplete.
-
-4. **SCP metadata** — Every file in `05-generate-DRAFT/preventive-DRAFT/` must have:
-   - `_metadata` with control_id, name, ccmv4_objectives, mitre_techniques
-   - `_simulation_tests` array with at least one DENY and one ALLOW scenario
-   - Control ID in the `Sid` field of each Statement
-
-5. **Control ID annotations** — Spot-check 3 random IaC files. Each resource
-   property that implements a control must have an inline comment with the
-   control ID (`# CTRL-*` in TF/Guard, `// CTRL-*` in CDK/CDKTF,
-   `Comment: CTRL-*` in CFN YAML).
-
-6. **Integrity pre-check** — Run P3 and P4 checks inline:
-   - P3: Every SCP has ≥1 Deny statement; no `StringEquals`/`StringNotEquals`
-     targeting different keys in the same Condition block
-   - P4: No placeholder account IDs (`123456789012`, `000000000000`, `111111111111`)
-     in any generated file
-
-7. **Directory structure** — Verify output matches the layout defined in
-   `steering/structure.md` (subdirectories, naming conventions).
-
-### Outcome
-
-- All checks pass → proceed to Phase 6 (Summarize)
-- Any check fails → fix the gap, then re-run this gate before proceeding
-- Document any fixes made in `pipeline.log` with tag `[self-review:fix]`
-
-## Phase 7 — Evidence (optional, requires AWS credentials)
-
-**Sub-skill:** `skills/evidence/SKILL.md`
-**Agent:** `sa-evidence`
-
-Runs AWS CLI probes against deployed resources from Phase 5 Test to prove each
-mapped control is actually enforced at runtime. Produces:
-- `<slug>/08-evidence/attestation-report.md` — control × verdict matrix
-- `<slug>/08-evidence/attestation-results.json` — machine-readable results
-- `<slug>/08-evidence/cli-outputs/*.log` — raw stdout/stderr per probe
-- `<slug>/attestation.md` — reviewer's audit guide
-
-**Preconditions:**
-- Phase 5 Test must have run successfully with `--env=<profile>`
-- `<slug>/06-test/deployed-resources.json` must exist with stack ID + resource ARNs
-
-**Skip condition:** Phase 7 is skipped if Phase 5 was not run or failed.
-
-**Teardown ownership:** Phase 7 Step 11 tears down the deployed CFN stack at
-the end of evidence collection. The stack ARN is read from
-`06-test/deployed-resources.json.stack_id`. If
-`intake-manifest.json.testing.keep == true`, teardown is skipped and the stack
-remains alive (intended for manual debugging — operator must clean up
-manually). The outcome is recorded in
-`08-evidence/attestation-results.json.teardown_status` (one of: `completed`,
-`skipped_keep_true`, `failed`, `not_attempted`).
-
-Runs sequentially after Phase 6. Uses service-agnostic CLI synthesis rules (6 families)
-to map each control in `mapping-results.json` to an AWS CLI probe. Controls that
-cannot be CLI-validated (e.g., IaC-time-only CFN Guard rules) are marked as
-`NOT_CLI_VALIDATABLE` with supplemental evidence from `iac-time-evidence/`.

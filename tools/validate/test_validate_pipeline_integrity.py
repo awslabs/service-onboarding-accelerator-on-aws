@@ -7,12 +7,9 @@ from pathlib import Path
 import pytest
 
 from validate_pipeline_integrity import (
-    CONDITION_OPERATOR_PAIRS,
     MIN_FRAMEWORK_COVERAGE_PCT,
     MIN_MCP_CALLS,
     check_framework_coverage,
-    check_iac_placeholders,
-    check_iam_policies,
     check_mcp_log,
     check_phase_outputs,
     check_validated_notes,
@@ -152,171 +149,6 @@ def test_validated_notes_short_summary_fails(tmp_path: Path) -> None:
     (tmp_path / "validated.json").write_text(json.dumps(data))
     errors = check_validated_notes(tmp_path)
     assert any("P2" in e and "summary is too short" in e for e in errors)
-
-
-# ---------- P3: IAM policy logic ----------
-
-
-def _write_policy(tmp_path: Path, name: str, policy: dict) -> None:
-    (tmp_path / name).write_text(json.dumps(policy))
-
-
-def test_iam_inverted_string_equals_fails(tmp_path: Path) -> None:
-    policy = {
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::bucket/*",
-                "Condition": {
-                    "StringEquals": {"aws:PrincipalOrgID": "o-abc"},
-                    "StringNotEquals": {"aws:ResourceTag/Env": "prod"},
-                },
-            }
-        ]
-    }
-    _write_policy(tmp_path, "policy.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert any("P3" in e and "StringEquals" in e and "cannot fire" in e for e in errors)
-
-
-def test_iam_overlapping_keys_pass(tmp_path: Path) -> None:
-    # Same key in both StringEquals and StringNotEquals is a legitimate pattern
-    # (allow one value but exclude a subset), so the inverted-key check must not trip.
-    policy = {
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::bucket/*",
-                "Condition": {
-                    "StringEquals": {"aws:ResourceTag/Env": "prod"},
-                    "StringNotEquals": {"aws:ResourceTag/Env": "prod-readonly"},
-                },
-            }
-        ]
-    }
-    _write_policy(tmp_path, "policy.json", policy)
-    # The check may still flag exfil-path issues, but never an inverted-keys P3.
-    errors = check_iam_policies(tmp_path)
-    assert not any("cannot fire correctly" in e for e in errors)
-
-
-@pytest.mark.parametrize("pos_op,neg_op", CONDITION_OPERATOR_PAIRS)
-def test_iam_inverted_logic_detected_for_all_operator_pairs(
-    tmp_path: Path, pos_op: str, neg_op: str
-) -> None:
-    policy = {
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": "s3:GetObject",
-                "Resource": "arn:aws:s3:::bucket/*",
-                "Condition": {
-                    pos_op: {"aws:PrincipalOrgID": "o-abc"},
-                    neg_op: {"aws:ResourceTag/Env": "prod"},
-                },
-            }
-        ]
-    }
-    _write_policy(tmp_path, "policy.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert any(
-        "P3" in e and pos_op in e and neg_op in e and "cannot fire" in e for e in errors
-    ), f"expected inverted-logic finding for {pos_op} vs {neg_op}, got: {errors}"
-
-
-def test_iam_allow_star_without_condition_fails(tmp_path: Path) -> None:
-    policy = {
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": "logs:*",
-                "Resource": "*",
-            }
-        ]
-    }
-    _write_policy(tmp_path, "policy.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert any("P3" in e and "exfiltration path" in e for e in errors)
-
-
-def test_iam_allow_star_with_condition_passes(tmp_path: Path) -> None:
-    policy = {
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Action": "logs:*",
-                "Resource": "*",
-                "Condition": {"StringEquals": {"aws:PrincipalOrgID": "o-abc"}},
-            }
-        ]
-    }
-    _write_policy(tmp_path, "policy.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert not any("exfiltration path" in e for e in errors)
-
-
-def test_scp_without_deny_fails(tmp_path: Path) -> None:
-    policy = {
-        "Statement": [
-            {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "*"}
-        ]
-    }
-    _write_policy(tmp_path, "scp-baseline.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert any("P3" in e and "SCP has no Deny" in e for e in errors)
-
-
-def test_scp_with_deny_passes(tmp_path: Path) -> None:
-    policy = {
-        "Statement": [
-            {"Effect": "Deny", "Action": "s3:DeleteBucket", "Resource": "*"}
-        ]
-    }
-    _write_policy(tmp_path, "scp-guardrail.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert not any("SCP has no Deny" in e for e in errors)
-
-
-def test_non_scp_without_deny_passes(tmp_path: Path) -> None:
-    # The SCP Deny requirement should only apply to files named like SCPs.
-    policy = {
-        "Statement": [
-            {"Effect": "Allow", "Action": "s3:GetObject", "Resource": "arn:aws:s3:::b/*"}
-        ]
-    }
-    _write_policy(tmp_path, "resource-policy.json", policy)
-    errors = check_iam_policies(tmp_path)
-    assert not any("SCP has no Deny" in e for e in errors)
-
-
-# ---------- P4: IaC placeholders ----------
-
-
-def test_iac_placeholder_account_fails(tmp_path: Path) -> None:
-    (tmp_path / "template.yaml").write_text(
-        "Resources:\n  Role:\n    Arn: arn:aws:iam::123456789012:role/foo\n"
-    )
-    errors = check_iac_placeholders(tmp_path)
-    assert any("P4" in e and "123456789012" in e for e in errors)
-
-
-def test_iac_placeholder_arn_fragment_fails(tmp_path: Path) -> None:
-    (tmp_path / "stack.ts").write_text(
-        'const kmsArn = "arn:aws:kms:us-east-1:123456789012:key/example";\n'
-    )
-    errors = check_iac_placeholders(tmp_path)
-    # Both the account ID and the ARN fragment should trigger; at least one P4 required.
-    assert any("P4" in e for e in errors)
-
-
-def test_iac_parameterized_passes(tmp_path: Path) -> None:
-    (tmp_path / "template.yaml").write_text(
-        "Parameters:\n  AccountId:\n    Type: String\nResources:\n"
-        '  Role:\n    Arn: !Sub "arn:aws:iam::${AccountId}:role/foo"\n'
-    )
-    assert check_iac_placeholders(tmp_path) == []
 
 
 # ---------- P5: framework coverage ----------
@@ -462,22 +294,12 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
 
     # Create phase directories
     (service / "03-validate").mkdir()
-    (service / "05-generate-DRAFT").mkdir()
-    (service / "05-generate-DRAFT" / "preventive-DRAFT").mkdir()
 
-    # Trigger P1 (missing mcp-calls.log at service root)
-    # No mcp-calls.log created → will fail P1
-
-    # Trigger P3 (SCP without at least one Deny)
-    _write_policy(
-        service / "05-generate-DRAFT",
-        "scp-baseline.json",
-        {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]},
-    )
+    # Trigger P1 (missing pipeline.log / mcp-calls.log at service root)
+    # No log files created → will fail P1
 
     errors = validate_pipeline(tmp_path)
     assert any("P1" in e for e in errors)
-    assert any("P3" in e and "SCP has no Deny" in e for e in errors)
 
 
 # ---------- P1 sentinel anchoring ----------
@@ -489,7 +311,7 @@ def test_pipeline_complete_sentinel_in_message_does_not_close_p1(tmp_path: Path)
     counts. This protects against the validator getting tricked by skill prose
     that happens to quote the sentinel."""
     leaked = (
-        "2026-05-14T18:32:01Z [07-summarize] [skill:summarize:end]  "
+        "2026-05-14T18:32:01Z [05-summarize] [skill:summarize:end]  "
         "wrote `[pipeline:complete:APPROVED]` reference to docs only\n"
     )
     (tmp_path / "pipeline.log").write_text(leaked)
@@ -502,7 +324,7 @@ def test_pipeline_complete_sentinel_at_source_tag_closes_p1(tmp_path: Path) -> N
     """The real sentinel format closes out P1 retroactively — finalized runs
     are exempt because the file is frozen at that point."""
     line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:APPROVED]  "
+        "2026-05-14T18:32:01Z [05-summarize] [pipeline:complete:APPROVED]  "
         "summarize finalized; verdict=APPROVED\n"
     )
     (tmp_path / "pipeline.log").write_text(line)
@@ -513,7 +335,7 @@ def test_pipeline_complete_sentinel_with_underscored_verdict(tmp_path: Path) -> 
     """All three closed-set verdicts close out P1."""
     for verdict in ("APPROVED", "APPROVED_WITH_EXCEPTIONS", "REQUIRES_REMEDIATION"):
         line = (
-            f"2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:{verdict}]  "
+            f"2026-05-14T18:32:01Z [05-summarize] [pipeline:complete:{verdict}]  "
             f"finalized; verdict={verdict}\n"
         )
         (tmp_path / "pipeline.log").write_text(line)
@@ -524,7 +346,7 @@ def test_pipeline_complete_sentinel_with_unknown_verdict_is_ignored(tmp_path: Pa
     """A sentinel with an out-of-set verdict (e.g., a typo or future verdict)
     should NOT close P1 — fail closed against unknown values."""
     line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:UNCLEAR]  "
+        "2026-05-14T18:32:01Z [05-summarize] [pipeline:complete:UNCLEAR]  "
         "weird state\n"
     )
     (tmp_path / "pipeline.log").write_text(line)
@@ -532,87 +354,3 @@ def test_pipeline_complete_sentinel_with_unknown_verdict_is_ignored(tmp_path: Pa
     assert errors and "P1" in errors[0]
 
 
-# ---------- P3 wildcard-only literal-only matching ----------
-
-
-def test_action_matches_wildcard_only_literal_match() -> None:
-    """A literal action present in the wildcard-only set is exempt."""
-    from validate_pipeline_integrity import _action_matches_wildcard_only
-    wildcard_only = {"datasync:DescribeAgent", "datasync:DescribeTask"}
-    assert _action_matches_wildcard_only("datasync:DescribeAgent", wildcard_only)
-
-
-def test_action_matches_wildcard_only_glob_no_longer_exempted() -> None:
-    """Globs (`Describe*`) are NOT exempted — even if some matching actions
-    are wildcard-only. SAR data is incomplete; literal-only matching keeps
-    the carve-out tight."""
-    from validate_pipeline_integrity import _action_matches_wildcard_only
-    wildcard_only = {"datasync:DescribeAgent"}
-    assert not _action_matches_wildcard_only("datasync:Describe*", wildcard_only)
-
-
-def test_action_matches_wildcard_only_unknown_action_not_exempted() -> None:
-    """An action not in the set is not exempted regardless of prefix overlap."""
-    from validate_pipeline_integrity import _action_matches_wildcard_only
-    wildcard_only = {"datasync:DescribeAgent"}
-    assert not _action_matches_wildcard_only("datasync:CreateTask", wildcard_only)
-
-
-# ---------- _load_wildcard_only_actions empty-prefix guard (F11) ----------
-
-
-def test_wildcard_only_loader_skips_bare_actions_when_prefix_empty(tmp_path: Path) -> None:
-    """When sar-facts.json omits service_prefix and an action has no prefix,
-    the loader must NOT emit `:Action` (which silently matches nothing)."""
-    from validate_pipeline_integrity import _load_wildcard_only_actions
-    assess_dir = tmp_path / "01-assess"
-    assess_dir.mkdir()
-    (assess_dir / "sar-facts.json").write_text(json.dumps({
-        "wildcard_only_actions": ["BareAction"],
-        "actions": [{"name": "AnotherBare", "resource_types": []}],
-    }))
-    controls_dir = tmp_path / "05-generate-DRAFT"
-    controls_dir.mkdir()
-    out = _load_wildcard_only_actions(controls_dir)
-    # Cross-service entries are still present, but no malformed ":Action" entries.
-    assert all(":" in a and not a.startswith(":") for a in out), out
-
-
-def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
-    """When service_prefix is present, bare actions are qualified properly."""
-    from validate_pipeline_integrity import _load_wildcard_only_actions
-    assess_dir = tmp_path / "01-assess"
-    assess_dir.mkdir()
-    (assess_dir / "sar-facts.json").write_text(json.dumps({
-        "service_prefix": "datasync",
-        "wildcard_only_actions": ["DescribeAgent"],
-    }))
-    controls_dir = tmp_path / "05-generate-DRAFT"
-    controls_dir.mkdir()
-    out = _load_wildcard_only_actions(controls_dir)
-    assert "datasync:DescribeAgent" in out
-
-
-# ---------- P7: phase-skipped.json carve-out ----------
-
-
-def test_p7_phase_skipped_artifact_passes(tmp_path: Path) -> None:
-    """A phase dir containing phase-skipped.json is intentionally skipped — P7 must
-    NOT demand the full-run outputs (regression for dry-run leaving 08-evidence with
-    only a skip artifact)."""
-    ev = tmp_path / "08-evidence"
-    ev.mkdir()
-    (ev / "phase-skipped.json").write_text(json.dumps({"skipped": True, "phase": "evidence"}))
-    errors = check_phase_outputs(tmp_path)
-    # No P7 errors about the missing attestation-results.json / cli-commands.json etc.
-    assert [e for e in errors if e.startswith("P7") and "08-evidence" in e] == []
-
-
-def test_p7_phase_dir_without_skip_marker_still_demands_outputs(tmp_path: Path) -> None:
-    """A phase dir that exists but lacks both the skip marker and its required outputs
-    still fails P7 — the carve-out must not weaken the normal gate."""
-    ev = tmp_path / "08-evidence"
-    ev.mkdir()
-    (ev / "stray.txt").write_text("not a skip marker")
-    errors = check_phase_outputs(tmp_path)
-    assert any(e.startswith("P7") and "08-evidence" in e for e in errors)

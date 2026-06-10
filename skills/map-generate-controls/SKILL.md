@@ -369,8 +369,8 @@ Every control MUST include these fields:
   **Do NOT** use service-prefixed variants (`S3-RES-PRO-01`, `ATH-ORG-PRV-01`,
   `LAMBDA-ACC-DET-03`). The service identity lives in `_metadata.service` and
   `validated.service` — duplicating it inside the control ID creates drift that
-  fails `validate_state.py` CHECK-S11 and `validate_controls.py` CHECK-13 body
-  scans. Service-agnostic uniformity lets every downstream check be a literal
+  fails `validate_state.py` CHECK-S11.
+  Service-agnostic uniformity lets every downstream check be a literal
   string match rather than "strip prefix, then compare". Validator CHECK-S11
   enforces this regex enum; non-conforming IDs fail state validation.
 - `posture`: One of `preventative-request`, `preventative-proactive`, `reactive-detective`,

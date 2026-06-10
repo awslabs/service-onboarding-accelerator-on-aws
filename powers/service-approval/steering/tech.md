@@ -10,7 +10,7 @@ alwaysApply: true
 
 - **Python 3.9+** for validators, hooks, and the KB search MCP server
 - **Docker** for `hashicorp/terraform-mcp-server:0.5.1` (stdio transport)
-- **AWS CLI** optional — required only for Phase 5 (Test) and Tier 2 validation
+- **AWS CLI** optional
 
 ## MCP servers
 
@@ -63,24 +63,8 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── mapping-results.json
     │   ├── controls-catalog.md
     │   └── framework-mapping.md
-    ├── 05-generate-DRAFT/
-    │   ├── preventive-DRAFT/        (SCPs, RCPs, resource policies)
-    │   ├── proactive-DRAFT/         (CFN Guard, OPA, Checkov, CFN Hooks)
-    │   ├── detective-DRAFT/         (Config rules + Lambda handlers, EventBridge)
-    │   ├── responsive-DRAFT/        (Lambda remediators, SSM runbooks)
-    │   └── iac-DRAFT/               (CDK, CloudFormation, CDKTF, modular Terraform)
-    ├── 06-test/
-    │   ├── test-results.json
-    │   ├── deployed-resources.json  ← stack ID + ARNs (consumed by Phase 7)
-    │   └── deploy-logs/*.log
-    ├── 07-summarize/
-    │   ├── APPROVAL-REPORT.md
-    │   └── ARTIFACT-FLOW-MATRIX.md
-    └── 08-evidence/
-        ├── attestation-report.md
-        ├── attestation-results.json
-        ├── cli-commands.json
-        └── cli-outputs/*.log
+    └── 05-summarize/
+        └── APPROVAL-REPORT.md
 ```
 
 ## Schema contracts
@@ -92,14 +76,11 @@ Every pipeline state file has a matching `schemas/<name>.schema.json` enforcing 
 | Script | Scope |
 |--------|-------|
 | `tools/validate/validate_state.py` | Schema + cross-file integrity for state files |
-| `tools/validate/validate_controls.py` | Generated artifact checks (SCP format, IaC parameterization) |
-| `tools/validate/validate_deployable.py` | Tier 1 (static) + Tier 2 (AWS API) deployability |
-| `tools/validate/validate_pipeline_integrity.py` | Stop-hook enforcement of P1–P7 integrity checks |
-| `tools/validate/validate_kms_consumers.py` | KMS key policy ↔ consumer resource cross-check |
+| `tools/validate/validate_pipeline_integrity.py` | Stop-hook enforcement of P1, P2, P5, P6, P7 integrity checks |
 
 ## CLI 2.0 features used
 
-- `/spawn` — parallel subagent execution for Research (4), Map (2), Generate (3)
+- `/spawn` — parallel subagent execution for Research (4), Map (2)
 - Hooks with `${workspaceRoot}` — paths work regardless of install location (symlink vs copy)
 - Headless mode — `--no-interactive` + `KIRO_API_KEY` for CI runs
 

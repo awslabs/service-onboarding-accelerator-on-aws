@@ -46,9 +46,6 @@ def _phase_dir_of(file_path: str) -> str:
     document intent ("the phase dir of this file") rather than spelling out
     dirname inline.
 
-    This is distinct from validate_controls.py's `_find_state_dir`, which
-    walks UP from the controls dir to locate the service root. Different
-    purpose, different return shape — they are not interchangeable.
     """
     return os.path.dirname(os.path.abspath(file_path))
 

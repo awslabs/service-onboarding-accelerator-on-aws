@@ -26,13 +26,13 @@ def test_snooze_triggers_on_three_identical_fails(tmp_path: Path) -> None:
     integrity = "P1 too few MCP calls"
     encoded = json.dumps(integrity)
     lines = [
-        f"2026-05-14T18:32:0{i}Z [07-summarize] [hook:stop:fail]  "
+        f"2026-05-14T18:32:0{i}Z [05-summarize] [hook:stop:fail]  "
         f"integrity=1 cross=0 deploy=0 first_integrity={encoded} first_cross=null first_deploy=null"
         for i in range(3)
     ]
     _write_log(log, lines)
-    controls_dir = str(tmp_path / "05-generate-DRAFT")
-    assert _should_snooze(controls_dir, integrity)
+    service_dir = str(tmp_path)
+    assert _should_snooze(service_dir, integrity)
 
 
 def test_no_snooze_below_threshold(tmp_path: Path) -> None:
@@ -45,11 +45,11 @@ def test_no_snooze_below_threshold(tmp_path: Path) -> None:
     integrity = "P1 too few MCP calls"
     encoded = json.dumps(integrity)
     lines = [
-        f"2026-05-14T18:32:0{i}Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}"
+        f"2026-05-14T18:32:0{i}Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}"
         for i in range(2)  # only 2 fails — below threshold of 3
     ]
     _write_log(log, lines)
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), integrity)
+    assert not _should_snooze(str(tmp_path), integrity)
 
 
 def test_no_snooze_when_first_integrity_differs(tmp_path: Path) -> None:
@@ -58,12 +58,12 @@ def test_no_snooze_when_first_integrity_differs(tmp_path: Path) -> None:
     log = tmp_path / "pipeline.log"
     encoded = json.dumps("OLD failure")
     lines = [
-        f"2026-05-14T18:32:0{i}Z [07-summarize] [hook:stop:fail]  "
+        f"2026-05-14T18:32:0{i}Z [05-summarize] [hook:stop:fail]  "
         f"first_integrity={encoded}"
         for i in range(3)
     ]
     _write_log(log, lines)
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), "NEW failure")
+    assert not _should_snooze(str(tmp_path), "NEW failure")
 
 
 def test_no_snooze_when_progress_event_follows_all_fails(tmp_path: Path) -> None:
@@ -75,14 +75,14 @@ def test_no_snooze_when_progress_event_follows_all_fails(tmp_path: Path) -> None
     integrity = "P1 too few MCP calls"
     encoded = json.dumps(integrity)
     lines = [
-        f"2026-05-14T18:32:00Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
-        f"2026-05-14T18:32:01Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
-        f"2026-05-14T18:32:02Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:00Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:01Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:02Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
         # Progress event AFTER all 3 fails — agent moved on:
         "2026-05-14T18:32:03Z [04-map] [skill:map-assemble:start]  beginning",
     ]
     _write_log(log, lines)
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), integrity)
+    assert not _should_snooze(str(tmp_path), integrity)
 
 
 def test_no_snooze_when_progress_event_intervenes(tmp_path: Path) -> None:
@@ -91,14 +91,14 @@ def test_no_snooze_when_progress_event_intervenes(tmp_path: Path) -> None:
     integrity = "P1 too few MCP calls"
     encoded = json.dumps(integrity)
     lines = [
-        f"2026-05-14T18:32:00Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
-        f"2026-05-14T18:32:01Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:00Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:01Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
         # Progress event — a real fix-and-retry cycle:
         "2026-05-14T18:32:02Z [04-map] [skill:map-assemble:end]  outputs=4",
-        f"2026-05-14T18:32:03Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:03Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
     ]
     _write_log(log, lines)
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), integrity)
+    assert not _should_snooze(str(tmp_path), integrity)
 
 
 def test_no_snooze_when_pass_in_tail(tmp_path: Path) -> None:
@@ -107,25 +107,25 @@ def test_no_snooze_when_pass_in_tail(tmp_path: Path) -> None:
     integrity = "P1"
     encoded = json.dumps(integrity)
     lines = [
-        f"2026-05-14T18:32:00Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
-        f"2026-05-14T18:32:01Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
-        "2026-05-14T18:32:02Z [07-summarize] [hook:stop:pass]  ok",
-        f"2026-05-14T18:32:03Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:00Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        f"2026-05-14T18:32:01Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
+        "2026-05-14T18:32:02Z [05-summarize] [hook:stop:pass]  ok",
+        f"2026-05-14T18:32:03Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}",
     ]
     _write_log(log, lines)
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), integrity)
+    assert not _should_snooze(str(tmp_path), integrity)
 
 
 def test_no_snooze_when_log_missing(tmp_path: Path) -> None:
     """No pipeline.log → can't snooze (no history to suppress against)."""
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), "any")
+    assert not _should_snooze(str(tmp_path), "any")
 
 
 def test_no_snooze_when_current_first_integrity_is_none(tmp_path: Path) -> None:
     """Current run has no integrity error → nothing to suppress."""
     log = tmp_path / "pipeline.log"
-    log.write_text("2026-05-14T18:32:00Z [07-summarize] [hook:stop:fail]  first_integrity=\"x\"\n")
-    assert not _should_snooze(str(tmp_path / "05-generate-DRAFT"), None)
+    log.write_text("2026-05-14T18:32:00Z [05-summarize] [hook:stop:fail]  first_integrity=\"x\"\n")
+    assert not _should_snooze(str(tmp_path), None)
 
 
 def test_snooze_handles_json_escaped_values(tmp_path: Path) -> None:
@@ -135,8 +135,8 @@ def test_snooze_handles_json_escaped_values(tmp_path: Path) -> None:
     raw = 'P1 "templated" verification\nnote'
     encoded = json.dumps(raw)
     lines = [
-        f"2026-05-14T18:32:0{i}Z [07-summarize] [hook:stop:fail]  first_integrity={encoded}"
+        f"2026-05-14T18:32:0{i}Z [05-summarize] [hook:stop:fail]  first_integrity={encoded}"
         for i in range(3)
     ]
     _write_log(log, lines)
-    assert _should_snooze(str(tmp_path / "05-generate-DRAFT"), raw)
+    assert _should_snooze(str(tmp_path), raw)
