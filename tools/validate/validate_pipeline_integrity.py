@@ -22,6 +22,10 @@ Failure signals:
     P7 — phase-output completeness: every phase dir on disk must contain
          its declared outputs (mapping-results.json, controls-catalog.md,
          framework-mapping.md, etc.) at min-size thresholds
+    P8 — reference-anchor enforcement: every preventive policy artifact under
+         05-generate/preventive/ must carry a _metadata.reference resolving to
+         a real entry in data/reference-repos/index.yaml (gap/skip stubs and
+         documentation files exempt)
 """
 from __future__ import annotations
 
@@ -712,6 +716,22 @@ def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) 
     return errors
 
 
+def check_reference_anchors(service_root: Path) -> list[str]:
+    """P8: every preventive policy artifact must carry a resolvable anchor.
+
+    Delegates to validate_reference_anchor.check_service. Imported lazily so a
+    missing module degrades gracefully (returns []) rather than breaking the
+    whole Stop hook — the dedicated PostToolUse path still surfaces anchor
+    failures per-file in that case.
+    """
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validate_reference_anchor import check_service  # type: ignore
+    except ImportError:
+        return []
+    return check_service(service_root)
+
+
 # Validator contract: every check_*() must fail-closed when the artifact it
 # reads exists but is missing/malformed. Pass-7 audit (2026-05-19) confirmed:
 #   - P1, P2, P5, P6, P7 fail-closed with explicit `P{N}`-prefixed errors.
@@ -786,6 +806,8 @@ def validate_pipeline(root: Path) -> list[str]:
             iac_dir = controls_dir / "iac"
             if iac_dir.exists():
                 errors.extend(check_iac_placeholders(iac_dir))
+            # P8: every preventive policy artifact must anchor to a reference.
+            errors.extend(check_reference_anchors(service_root))
 
         # Check framework coverage in 04-map/
         map_dir = service_root / "04-map"

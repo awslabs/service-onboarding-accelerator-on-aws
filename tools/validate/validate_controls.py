@@ -1314,12 +1314,41 @@ def check_js_literals_in_python_16(file_path: str) -> list[str]:
 # Main dispatcher
 # ================================================================
 
-def _categorize_file(file_path: str) -> str:
-    """Determine artifact category from file path."""
+def _check_reference_anchor_preventive(file_path: str) -> list[str]:
+    """P8 per-file: a preventive policy artifact must carry a resolvable anchor.
+
+    Only fires for files genuinely under a preventive/ directory (real
+    05-generate/preventive/ or legacy controls/preventive/), so tmp test files
+    that merely share a SAR basename are not gated. Imported lazily so a missing
+    module degrades to no-op rather than breaking the hook.
+    """
     norm = file_path.replace("\\", "/")
-    if "/controls/preventive/" in norm:
+    if "/05-generate/preventive/" not in norm and "/controls/preventive/" not in norm:
+        return []
+    try:
+        from validate_reference_anchor import check_artifact  # type: ignore
+    except ImportError:
+        return []
+    return check_artifact(file_path)
+
+
+def _categorize_file(file_path: str) -> str:
+    """Determine artifact category from file path.
+
+    Recognizes both the current state layout (`05-generate/<category>/`,
+    written since the <slug>/<NN>-<phase>/ reorg) and the legacy
+    `controls/<category>/` layout (kept for migration-window compatibility).
+    Matching is on the `<category>/` segment so both `05-generate/preventive/`
+    and `controls/preventive/` resolve identically.
+    """
+    norm = file_path.replace("\\", "/")
+
+    def _in(category: str) -> bool:
+        return f"/05-generate/{category}/" in norm or f"/controls/{category}/" in norm
+
+    if _in("preventive"):
         return "preventive"
-    if "/controls/detective/" in norm:
+    if _in("detective"):
         if "/config-rule-lambdas/" in norm:
             return "lambda_handler"
         if "eventbridge" in os.path.basename(norm).lower():
@@ -1327,15 +1356,15 @@ def _categorize_file(file_path: str) -> str:
         if "config-rules" in os.path.basename(norm).lower():
             return "config_rules"
         return "detective"
-    if "/controls/responsive/" in norm:
+    if _in("responsive"):
         if "stepfunctions" in os.path.basename(norm).lower():
             return "stepfunctions"
         if "ssm-runbook" in os.path.basename(norm).lower():
             return "ssm_runbook"
         return "responsive"
-    if "/controls/proactive/" in norm:
+    if _in("proactive"):
         return "proactive"
-    if "/controls/iac/" in norm:
+    if _in("iac"):
         return "iac"
     return "unknown"
 
@@ -1428,6 +1457,10 @@ def validate_file(file_path: str) -> list[str]:
         # from api_surface ∪ permission_only_actions, never synthesized by analogy.
         if validated:
             errors.extend(check_iam_action_sourcing_17(file_path, data, validated))
+        # P8: reference-anchor enforcement — every preventive policy artifact
+        # must trace to a reference example in data/reference-repos/index.yaml.
+        # Fires at write time here and again at Stop via validate_pipeline_integrity.
+        errors.extend(_check_reference_anchor_preventive(file_path))
         # Check 6: Null-key denial
         errors.extend(check_null_key_denial(file_path, data))
 
