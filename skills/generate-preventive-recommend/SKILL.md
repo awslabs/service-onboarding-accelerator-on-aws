@@ -25,6 +25,10 @@ reference, or route the objective to a detective/proactive control instead.
 
 **Output:** `.service-approval/<slug>/05-generate/preventive-plan.json` — the per-control
 decision plan consumed by `generate-preventive-scp`, `-rcp`, and `-iam`.
+**Schema:** `schemas/preventive-plan.schema.json` — enforces the decision enum, the
+`CTRL-<SCOPE>-<CAT>-NNN` id pattern, and the rules that every `GENERATE_*` decision
+carries a non-null `anchor.example_id` and every `ROUTE_DETECTIVE` carries a `route_to`.
+Validated at write time by `validate_controls.py`.
 
 > This output lives in the `05-generate/` root, NOT in `preventive/`, so it is a
 > plan, not a policy artifact (the reference-anchor gate scans `preventive/*.json`).

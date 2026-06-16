@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/preventive-plan.schema.json",
+  "title": "preventive-plan.json",
+  "description": "Authoritative shape for the preventive recommender's decision plan. Produced by skills/generate-preventive-recommend at .service-approval/<slug>/05-generate/preventive-plan.json. Consumed by the preventive authoring sub-skills (generate-preventive-scp/-rcp/-iam) and the root-cause critic. The plan is the gate: each GENERATE_* decision MUST carry a non-null anchor; ROUTE_DETECTIVE / REFER_TO_REFERENCE decisions carry no anchor. additionalProperties:false at top level and inside decisions[] to catch drift; permissive inside _metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_metadata", "decisions"],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["service"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "generated": {"type": "string"},
+        "reference_index_version": {"type": "integer"}
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/decision"}
+    }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_id", "mechanism", "preventable", "decision"],
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
+        },
+        "mechanism": {"type": "string", "minLength": 1},
+        "preventable": {"type": "boolean"},
+        "enforcing_condition_keys": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "GENERATE_SCP",
+            "GENERATE_RCP",
+            "GENERATE_IAM",
+            "REFER_TO_REFERENCE",
+            "ROUTE_DETECTIVE"
+          ]
+        },
+        "anchor": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["example_id"],
+              "properties": {
+                "example_id": {"type": "string", "minLength": 1},
+                "repo": {"type": "string"},
+                "url": {"type": "string"}
+              }
+            }
+          ]
+        },
+        "route_to": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "enum": ["detective", "proactive"]}
+          ]
+        },
+        "rationale": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "$comment": "Every GENERATE_* decision MUST carry a non-null anchor with an example_id — the repo-anchor gate.",
+          "if": {
+            "properties": {
+              "decision": {"enum": ["GENERATE_SCP", "GENERATE_RCP", "GENERATE_IAM"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "anchor": {
+                "type": "object",
+                "required": ["example_id"]
+              },
+              "preventable": {"const": true}
+            },
+            "required": ["anchor"]
+          }
+        },
+        {
+          "$comment": "ROUTE_DETECTIVE means not preventable and routed; no anchor.",
+          "if": {
+            "properties": {"decision": {"const": "ROUTE_DETECTIVE"}}
+          },
+          "then": {
+            "properties": {
+              "route_to": {"type": "string", "enum": ["detective", "proactive"]}
+            },
+            "required": ["route_to"]
+          }
+        }
+      ]
+    }
+  }
+}
