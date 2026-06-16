@@ -1,0 +1,15 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "s3:CreateBucket",
+      "Effect": "Deny",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "s3:x-amz-object-ownership": "BucketOwnerEnforced"
+        }
+      }
+    }
+  ]
+}

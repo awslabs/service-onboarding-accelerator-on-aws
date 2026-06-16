@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:AddRoleToDBCluster",
+        "rds:ApplyPendingMaintenanceAction",
+        "rds:DeleteDBCluster"
+      ],
+      "Resource": "arn:aws:rds:*:*:cluster:MyNotSensitiveClusterName"
+    }
+  ]
+}

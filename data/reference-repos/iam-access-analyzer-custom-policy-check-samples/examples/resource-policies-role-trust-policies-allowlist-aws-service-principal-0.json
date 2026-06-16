@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowThisSetOfServicePrincipals",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": [
+          "ec2.amazonaws.com",
+          "lambda.amazonaws.com",
+          "ecs-tasks.amazonaws.com"
+        ]
+      },
+      "Action": "sts:AssumeRole"
+    },
+    {
+      "Sid": "AllowOtherSTSActions",
+      "Effect": "Allow",
+      "Principal": "*",
+      "NotAction": "sts:AssumeRole"
+    }
+  ]
+}

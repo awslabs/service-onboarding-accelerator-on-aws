@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DeleteAssociation",
+        "ssm:DeleteDocument",
+        "ssm:SendCommand"
+      ],
+      "Resource": "arn:aws:ssm:*:*:document/MyNotSensitiveDocumentName"
+    }
+  ]
+}

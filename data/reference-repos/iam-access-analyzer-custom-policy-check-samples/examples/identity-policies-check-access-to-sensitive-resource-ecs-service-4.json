@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "ecs:DeleteService",
+      "Resource": "arn:aws:ecs:*:*:service/MyCluster/*Sensitive*"
+    }
+  ]
+}

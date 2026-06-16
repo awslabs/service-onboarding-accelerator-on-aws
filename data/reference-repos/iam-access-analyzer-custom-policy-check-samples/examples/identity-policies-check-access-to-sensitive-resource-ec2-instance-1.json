@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StopInstances",
+        "ec2:TerminateInstances",
+        "ec2:CreateImage"
+      ],
+      "Resource": "arn:aws:ec2:*:*:i-not-sensitive"
+    }
+  ]
+}

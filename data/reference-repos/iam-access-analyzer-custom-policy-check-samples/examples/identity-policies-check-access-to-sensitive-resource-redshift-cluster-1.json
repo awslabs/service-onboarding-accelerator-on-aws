@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "redshift:DeleteCluster",
+        "redshift:DisableLogging",
+        "redshift:ModifyCluster"
+      ],
+      "Resource": "arn:aws:redshift:*:*:cluster:MyNotSensitiveClusterName"
+    }
+  ]
+}

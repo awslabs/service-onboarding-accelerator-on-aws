@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Resource": "*",
+      "Condition": {
+        "StringNotLikeIfExists": {
+          "token.actions.githubusercontent.com:sub": "repo:<octo-org>/*"
+        },
+        "Null": {
+          "token.actions.githubusercontent.com:sub": "false"
+        }
+      }
+    }
+  ]
+}

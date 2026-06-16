@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:UpdateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:RollbackStack"
+      ],
+      "Resource": "arn:aws:cloudformation:*:*:stack/NotMySensitiveStack/*"
+    }
+  ]
+}
