@@ -114,6 +114,15 @@ def test_documentation_file_exempt(tmp_path):
     assert vra.check_artifact(path, KNOWN) == []
 
 
+def test_rootcause_report_exempt(tmp_path):
+    """The root-cause critic's report is a findings document, not a policy."""
+    path = _write(
+        tmp_path / "rootcause-report.json",
+        {"_metadata": {"service": "lambda"}, "anchored": True, "enforcing": True},
+    )
+    assert vra.check_artifact(path, KNOWN) == []
+
+
 def test_non_json_skipped(tmp_path):
     p = tmp_path / "notes.txt"
     p.write_text("not json")

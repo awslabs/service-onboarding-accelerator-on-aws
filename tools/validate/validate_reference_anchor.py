@@ -26,7 +26,9 @@ reference index. An artifact with no resolvable anchor is a hard failure.
 Exempt (no anchor required) — these emit no enforcing policy:
   - gap/skip stubs: _metadata.status == "NOT_APPLICABLE", or a *_gap note
     (scp_gap / rcp_gap / etc.) is present and the policy body is empty.
-  - documentation-only files: compensating-controls-documentation.json.
+  - documentation-only files: compensating-controls-documentation.json and
+    rootcause-report.json (the root-cause critic's report — a findings document,
+    not an enforcing policy).
   - non-JSON files (the policy artifacts under preventive/ are JSON).
 
 CLI:
@@ -53,6 +55,7 @@ except Exception:  # pragma: no cover - import guard
 # Files under preventive/ that are documentation, not enforcing policy.
 _DOC_ONLY_BASENAMES = {
     "compensating-controls-documentation.json",
+    "rootcause-report.json",
 }
 
 

@@ -23,9 +23,9 @@ complete:
 - `.service-approval/<slug>/03-validate/validated.json`, `04-map/mapping-results.json`
 
 **Output:** `.service-approval/<slug>/05-generate/preventive/rootcause-report.json`
-(a report, exempt from the anchor gate as a documentation file) and, when a
-not-preventable objective slipped through, a routing note for the detective
-generator.
+(a report, exempt from the anchor gate as a documentation file — its basename is
+in `validate_reference_anchor._DOC_ONLY_BASENAMES`) and, when a not-preventable
+objective slipped through, a routing note for the detective generator.
 
 ---
 
