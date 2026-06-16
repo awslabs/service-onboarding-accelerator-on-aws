@@ -125,6 +125,14 @@ For every such artifact:
    registry. Fabricated actions pass JSON-syntax checks but fail deploy-time policy
    validation.
 
+   Validator CHECK-17 enforces this rule at hook time: every `Action`/`NotAction`
+   string whose prefix matches the target service is checked against
+   `validated.json.api_surface.operations[].operation` and
+   `capabilities.iam.permission_only_actions[]`. An action with the service prefix
+   that is absent from both sets fails the hook. Cross-service actions (a different
+   prefix) and wildcards are not checked — only target-service action names are
+   gated, because those are the ones the LLM is tempted to synthesize by analogy.
+
 Validator CHECK-14a enforces rule 1 at hook time. A condition-block key that is not a
 SAR/global/KMS key fails the hook with a remediation message. The #1 failure mode this
 prevents is an agent treating an API parameter as if it were a condition key — a class

@@ -953,6 +953,120 @@ def check_sar_condition_keys_14a(
 
 
 # ================================================================
+# Check 17: IAM action names must be sourced, never synthesized
+# ================================================================
+#
+# Every IAM `Action` string in a SAR-driven preventive artifact (SCP, RCP, IAM
+# policy, permission boundary, resource policy, VPCE policy, KMS key policy)
+# whose prefix matches the TARGET service MUST be a real action — present in
+# validated.json.api_surface.operations[].operation or
+# capabilities.iam.permission_only_actions[]. This catches actions invented by
+# analogy (e.g. `<prefix>:SearchRecords` when the real action is
+# `<prefix>:RetrieveRecords`): they pass JSON-syntax checks but fail at deploy
+# time when IAM Access Analyzer validates against the live action registry.
+#
+# Scoping rule (mirrors CHECK-1's service-scoping): only actions whose prefix
+# equals the target service prefix are validated. Cross-service guardrail
+# actions (sts:AssumeRole, organizations:LeaveOrganization, kms:* in an SCP)
+# are legitimately not in this service's api_surface — flagging them would be a
+# false positive. Wildcard actions (`*`, `<prefix>:*`, `<prefix>:Create*`) are
+# structural, not invented names, so they are skipped too.
+
+
+def _collect_statement_actions(data: dict) -> list[tuple[str, str]]:
+    """Return [(action, sid)] for every Action/NotAction across all Statements."""
+    out: list[tuple[str, str]] = []
+    statements = data.get("Statement", [])
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return out
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            continue
+        sid = stmt.get("Sid", "unknown")
+        for field in ("Action", "NotAction"):
+            val = stmt.get(field)
+            if isinstance(val, str):
+                val = [val]
+            if isinstance(val, list):
+                for a in val:
+                    if isinstance(a, str):
+                        out.append((a, sid))
+    return out
+
+
+def _valid_action_set(validated: dict, prefix: str) -> set[str]:
+    """Build the set of real `<prefix>:Operation` strings for the target service.
+
+    Sourced from api_surface.operations[].operation and
+    capabilities.iam.permission_only_actions[] — never templated from operation
+    names. Returns fully-qualified `prefix:Action` strings (case-sensitive).
+    """
+    valid: set[str] = set()
+    for op in validated.get("api_surface", {}).get("operations", []):
+        name = op.get("operation", "")
+        if name:
+            valid.add(f"{prefix}:{name}")
+    poa = validated.get("capabilities", {}).get("iam", {}).get(
+        "permission_only_actions", []
+    )
+    for a in poa:
+        if not isinstance(a, str):
+            continue
+        # permission_only_actions are stored bare (e.g. "InvokeFunctionUrl") but
+        # tolerate an already-prefixed form just in case.
+        valid.add(a if a.startswith(f"{prefix}:") else f"{prefix}:{a}")
+    return valid
+
+
+def check_iam_action_sourcing_17(
+    file_path: str, data: dict, validated: dict
+) -> list[str]:
+    """CHECK-17 — target-service IAM actions must be sourced, not synthesized.
+
+    Scope: SAR-driven preventive artifacts (same set as CHECK-14a).
+    Pass:  action prefix ≠ target service prefix (cross-service); wildcard
+           action; or `<prefix>:Op` present in the valid action set.
+    Fail:  `<prefix>:Op` not in api_surface.operations ∪ permission_only_actions.
+    """
+    errors: list[str] = []
+    if not _is_sar_driven_artifact(file_path):
+        return errors
+    if not isinstance(data, dict):
+        return errors
+    prefix = (validated.get("service_prefix") or validated.get("service") or "").strip()
+    # A human display name ("Amazon ECS") is not a usable prefix — skip rather
+    # than emit nonsense, same guard as CHECK-1.
+    if not prefix or " " in prefix or any(c.isupper() for c in prefix):
+        return errors
+
+    valid = _valid_action_set(validated, prefix)
+    # If the surface is empty there is nothing authoritative to check against.
+    if not valid:
+        return errors
+
+    for action, sid in _collect_statement_actions(data):
+        if action == "*" or "*" in action:
+            continue  # structural wildcard, not an invented action name
+        if ":" not in action:
+            continue
+        act_prefix = action.split(":", 1)[0]
+        if act_prefix != prefix:
+            continue  # cross-service action — not in this service's surface
+        if action not in valid:
+            errors.append(
+                f"CHECK-17 iam_action_sourcing: {os.path.basename(file_path)} "
+                f"Statement '{sid}' uses action '{action}' which is not in "
+                f"validated.json.api_surface.operations[].operation nor "
+                f"capabilities.iam.permission_only_actions[]. IAM action names "
+                f"must be sourced from the service authorization reference, never "
+                f"synthesized by analogy from an operation name."
+            )
+    return errors
+
+
+# ================================================================
 # Check 14b: API-driven artifacts — enum literals must match parameters[].enum
 # ================================================================
 #
@@ -1310,6 +1424,10 @@ def validate_file(file_path: str) -> list[str]:
         # than CHECK-3; catches API parameter paths used as condition keys).
         if validated:
             errors.extend(check_sar_condition_keys_14a(file_path, data, validated))
+        # Check 17: SAR-driven — target-service IAM action names must be sourced
+        # from api_surface ∪ permission_only_actions, never synthesized by analogy.
+        if validated:
+            errors.extend(check_iam_action_sourcing_17(file_path, data, validated))
         # Check 6: Null-key denial
         errors.extend(check_null_key_denial(file_path, data))
 
