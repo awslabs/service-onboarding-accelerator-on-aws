@@ -62,6 +62,14 @@
       ],
       "conditions_hint": "StringEquals aws:SourceAccount"
     },
+    "AWS::Lambda::EventSourceMapping": {
+      "terraform": "aws_lambda_event_source_mapping",
+      "principal": "lambda.amazonaws.com",
+      "required_actions": [
+        "kms:Decrypt"
+      ],
+      "conditions_hint": "StringEquals aws:SourceAccount; Lambda encrypts/decrypts the event source mapping FilterCriteria object with the customer-managed key (kms:Decrypt required to view plaintext via GetEventSourceMapping)"
+    },
     "AWS::ECS::Cluster": {
       "terraform": "aws_ecs_cluster",
       "principal": "ecs.amazonaws.com",

@@ -49,6 +49,17 @@
       "items": {"type": "object", "additionalProperties": true}
     },
     "threat_model_summary": {"type": ["object", "null"]},
+    "attack_surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "MITRE ATT&CK attack surface merged from research-attack-surface sub-skill. Semantics enforced by validate_state.py CHECK-S9 (applicable_techniques non-empty; applicability HIGH|MEDIUM).",
+      "properties": {
+        "applicable_techniques": {"type": "array"},
+        "stride_to_attack_bridge": {"type": "array"},
+        "tactic_coverage_summary": {"type": "object", "additionalProperties": true},
+        "customer_stride_profile": {"type": "object", "additionalProperties": true}
+      }
+    },
     "sar_cross_reference": {"type": "object", "additionalProperties": true},
     "completeness": {"type": "object", "additionalProperties": true},
     "_metadata": {"type": "object", "additionalProperties": true}
