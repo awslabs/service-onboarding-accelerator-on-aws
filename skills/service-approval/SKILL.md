@@ -444,8 +444,14 @@ Verify these files exist before proceeding:
 
 ### Phase 4: Generate (3 sub-skills, sequential in this mode)
 
-**Step 4a — Preventive/Proactive:**
-Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
+**Step 4a — Preventive/Proactive (gated sub-pipeline, run in order):**
+1. `skills/generate-preventive-recommend/SKILL.md` — mechanism + anchor decision per
+   objective → `<slug>/05-generate/preventive-plan.json` (the gate).
+2. The authors for each `GENERATE_*` row: `skills/generate-preventive-scp/SKILL.md`,
+   `skills/generate-preventive-rcp/SKILL.md`, `skills/generate-preventive-iam/SKILL.md`
+   (these also emit proactive artifacts per `skills/generate-preventive/SKILL.md`).
+3. `skills/generate-preventive-rootcause/SKILL.md` — prove anchored + enforcing; route
+   non-preventable objectives to detective.
 Pass: `--service`, `--include-unverified` if set.
 Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
 
@@ -662,13 +668,23 @@ Agent 3d: map-assemble (foreground)
 
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
 
-### Phase 4: Generate (3 sub-skills in parallel)
+### Phase 4: Generate (3 families in parallel; preventive is a sequenced sub-pipeline)
 
-Dispatch all 3 generate sub-skills simultaneously as background subagents:
+Dispatch the 3 control families simultaneously as background subagents. The
+**preventive family is one agent that runs its own sub-pipeline in order** — the
+recommender gate, the reference-anchored authors, then the root-cause critic —
+because each step gates the next and must not be parallelized.
 
 ```
-Agent 4: generate-preventive (background)
-  Prompt: Full text of skills/generate-preventive/SKILL.md + --service + --include-unverified
+Agent 4: generate-preventive (background) — runs the preventive sub-pipeline IN ORDER:
+  1. Full text of skills/generate-preventive-recommend/SKILL.md  → preventive-plan.json (gate)
+  2. For each GENERATE_* row, the matching author:
+       skills/generate-preventive-scp/SKILL.md
+       skills/generate-preventive-rcp/SKILL.md
+       skills/generate-preventive-iam/SKILL.md
+     (authors also emit proactive artifacts per skills/generate-preventive/SKILL.md)
+  3. Full text of skills/generate-preventive-rootcause/SKILL.md   → prove anchored + enforcing
+  Pass: --service + --include-unverified
   Output: <slug>/05-generate/preventive/ + <slug>/05-generate/proactive/
 
 Agent 5: generate-detective (background)
@@ -680,7 +696,8 @@ Agent 6: generate-iac (background)
   Output: <slug>/05-generate/iac/
 ```
 
-**IMPORTANT:** Dispatch all 3 in a single message with 3 Agent tool calls.
+**IMPORTANT:** Dispatch all 3 families in a single message with 3 Agent tool calls.
+The preventive agent runs its sub-skills sequentially within that one agent.
 
 When all 3 complete, run the final validation from `skills/generate/SKILL.md`.
 If any IaC templates are missing, re-dispatch the generate-iac agent.

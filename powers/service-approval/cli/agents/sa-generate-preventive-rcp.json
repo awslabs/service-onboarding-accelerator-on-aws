@@ -1,0 +1,34 @@
+{
+  "name": "sa-generate-preventive-rcp",
+  "description": "Author RCPs for approved preventive objectives on RCP-expressible services, adapted from a matching reference example; never free-synthesizes",
+  "prompt": "Follow the instructions in `skills/generate-preventive-rcp/SKILL.md`.\n\nRead `.service-approval/<slug>/05-generate/preventive-plan.json` and author RCPs ONLY for rows where decision == \"GENERATE_RCP\" (and validated.json rcp_expressible is true), adapting the anchored reference example to the target service. Stamp `_metadata.reference` on every artifact. Write to `.service-approval/<slug>/05-generate/preventive/`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

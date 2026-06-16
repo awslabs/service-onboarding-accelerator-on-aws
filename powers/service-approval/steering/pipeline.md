@@ -5,7 +5,7 @@ inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/**"
 ---
 
-# Pipeline — 9 service-approval agents (1 precursor + 8 numbered phases), 21 sub-skills
+# Pipeline — 9 service-approval agents (1 precursor + 8 numbered phases), 26 sub-skills
 
 The pipeline runs as 9 agents total: an unnumbered **Intake** precursor that
 gathers customer inputs and writes a candidate slug to a staging directory,
@@ -153,15 +153,26 @@ sa-map-assemble           → <slug>/04-map/mapping-results.json         (sequen
 mitigation, every framework objective, the coverage matrix, and the
 threat → mitigation → control traceability. Phase 4 reads it.
 
-## Phase 4 — Generate (parallel)
+## Phase 4 — Generate (3 families in parallel; preventive is a gated sub-pipeline)
 
-**Sub-skills:** 3 in parallel
+**Families:** 3 in parallel. The preventive family runs its sub-skills in order
+(recommender gate → reference-anchored authors → root-cause critic).
 
 ```
-/spawn sa-generate-preventive  → <slug>/05-generate/preventive/, <slug>/05-generate/proactive/
+preventive (in order):
+  /spawn sa-generate-preventive-recommend → <slug>/05-generate/preventive-plan.json (gate)
+  /spawn sa-generate-preventive-scp        → <slug>/05-generate/preventive/ (GENERATE_SCP)
+  /spawn sa-generate-preventive-rcp        → <slug>/05-generate/preventive/ (GENERATE_RCP)
+  /spawn sa-generate-preventive-iam        → <slug>/05-generate/preventive/ (GENERATE_IAM)
+  /spawn sa-generate-preventive-rootcause  → prove anchored + enforcing
 /spawn sa-generate-detective   → <slug>/05-generate/detective/, <slug>/05-generate/responsive/
 /spawn sa-generate-iac         → <slug>/05-generate/iac/ (4 formats + TF modules)
 ```
+
+Every preventive artifact must carry a reference anchor (`_metadata.reference`)
+resolving to `data/reference-repos/index.yaml`, and only enforceable objectives
+(a condition key gates the action) are authored; the rest route to detective.
+`skills/generate-preventive/SKILL.md` is the shared authoring-rules reference.
 
 Each generator reads `<slug>/04-map/mapping-results.json` and emits artifacts to
 the right `<slug>/05-generate/` subdirectory. Artifact count ranges:

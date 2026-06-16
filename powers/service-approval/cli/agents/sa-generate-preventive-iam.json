@@ -1,0 +1,35 @@
+{
+  "name": "sa-generate-preventive-iam",
+  "description": "The single IAM authority for preventive controls \u2014 authors IAM identity/trust policies, permission boundaries, resource/VPCE/KMS-key policies from reference examples; never free-synthesizes",
+  "prompt": "Follow the instructions in `skills/generate-preventive-iam/SKILL.md`.\n\nRead `.service-approval/<slug>/05-generate/preventive-plan.json` and author IAM-family artifacts ONLY for rows where decision == \"GENERATE_IAM\", dispatching by the control's mechanism to the matching output file and adapting the anchored reference example. Stamp `_metadata.reference` on every artifact. Write to `.service-approval/<slug>/05-generate/preventive/`.",
+  "mcpServers": [
+    "aws-documentation",
+    "awsknowledge",
+    "awsiac"
+  ],
+  "tools": [
+    "*"
+  ],
+  "allowedTools": [
+    "fs_read",
+    "fs_write",
+    "execute_bash"
+  ],
+  "includeMcpJson": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_post_tool_use.py",
+        "timeout_ms": 30000
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "command": "python3 ${workspaceRoot}/tools/validate/hook_stop.py",
+        "timeout_ms": 60000
+      }
+    ]
+  }
+}

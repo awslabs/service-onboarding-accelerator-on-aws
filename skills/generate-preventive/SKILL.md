@@ -5,15 +5,24 @@ disable-model-invocation: false
 argument-hint: '[--service=<name>] [--include-unverified]'
 ---
 
-# Service Approval — Generator: Preventive & Proactive Controls
+# Service Approval — Preventive & Proactive: shared authoring rules
 
-Generate all preventive and proactive security control artifacts from the Controls Matrix.
-This covers Organisation×Proactive, Organisation×Preventive, Account×Proactive,
-Account×Preventive, Resource×Proactive, and Resource×Preventive cells.
+> **Role:** this file is the **shared authoring-rules reference** for the
+> preventive sub-pipeline. The preventive authors — `generate-preventive-scp`,
+> `generate-preventive-rcp`, `generate-preventive-iam` — follow the rules here
+> (SCP/RCP/IAM authoring, Rule C2, and the proactive sections below). It is
+> **not** dispatched as a standalone generator: the *decision* of which
+> mechanism enforces an objective is made first by `generate-preventive-recommend`
+> (the gate), and every authored preventive policy must carry a reference anchor
+> and be proven enforcing by `generate-preventive-rootcause`. The proactive
+> artifacts (tag policy, OPA, CFN Guard, Checkov, CFN Hooks) are emitted by the
+> authors per the proactive sections below.
+
+These rules cover Organisation×Proactive, Organisation×Preventive,
+Account×Proactive, Account×Preventive, Resource×Proactive, and
+Resource×Preventive cells.
 
 **Output:** `.service-approval/<slug>/05-generate/preventive/` and `.service-approval/<slug>/05-generate/proactive/`
-
-This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
 ---
 

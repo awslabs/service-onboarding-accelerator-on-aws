@@ -37,8 +37,8 @@ version: 1.0.0
 This Power drives a 9-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to CCMv4 (other frameworks are deferred), and produces a full set of deployable artifacts.
 
 **Key capabilities:**
-- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 21 sub-skills
-- **Parallel execution** — 4 research sub-skills, 3 generate sub-skills run concurrently via Kiro's `/spawn` command
+- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 26 sub-skills
+- **Parallel execution** — 4 research sub-skills and 3 generate families run concurrently via Kiro's `/spawn` command; the preventive family runs a gated sub-pipeline (recommend → reference-anchored authors → root-cause critic)
 - **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge`, `aws-documentation`, and `awsiac` MCPs. Hardcoded values from training data are banned.
 - **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks, CDK/CDKTF/Terraform/CloudFormation templates
 - **Integrity-enforced** — the Stop hook runs `validate_pipeline_integrity.py` and blocks shortcut runs

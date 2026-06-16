@@ -87,9 +87,22 @@ skills:
     role: phase-3d
   - slug: generate
     role: phase-4-root
+  # Preventive family — a sequenced sub-pipeline (recommend → author → critic).
+  # generate-preventive is retained as the shared authoring-rules reference the
+  # authors follow; it is no longer dispatched as a standalone generator.
   - slug: generate-preventive
-    role: phase-4a
+    role: phase-4a-rules-reference
+  - slug: generate-preventive-recommend
+    role: phase-4a1
     parallel_group: generate
+  - slug: generate-preventive-scp
+    role: phase-4a2
+  - slug: generate-preventive-rcp
+    role: phase-4a2
+  - slug: generate-preventive-iam
+    role: phase-4a2
+  - slug: generate-preventive-rootcause
+    role: phase-4a3
   - slug: generate-detective
     role: phase-4b
     parallel_group: generate
