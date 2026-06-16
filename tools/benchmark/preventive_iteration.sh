@@ -69,6 +69,10 @@ case "$MODE" in
       echo "  run-$(printf '%02d' "$i") → ${run_dir}"
       echo "    Generate the preventive sub-pipeline against the FIXTURE, writing into ${run_dir}:"
       echo "      1. generate-preventive-recommend  (reads ${MAPPING} + ${VALIDATED})"
+      echo "         baseline plan (deterministic part):"
+      echo "         ${PY} tools/benchmark/build_preventive_plan.py \\"
+      echo "             --mapping ${MAPPING} --validated ${VALIDATED} \\"
+      echo "             --out ${run_dir}/preventive-plan.json"
       echo "      2. generate-preventive-{scp,rcp,iam} for each GENERATE_* row"
       echo "      3. generate-preventive-rootcause"
     done
