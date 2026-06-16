@@ -93,6 +93,24 @@ Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
 
+### Step 4b: Cross-check mappings against the AWS Control Catalog (advisory)
+
+After `mapping-results.json` is assembled, cross-check each mapped framework
+objective against the authoritative AWS Control Catalog. This is **advisory
+(warn, never block)** — it surfaces objectives whose mapping has no catalog
+support so a reviewer can sanity-check the least-deterministic part of the run:
+
+```bash
+python3 tools/validate/validate_control_mappings.py --slug <slug>
+```
+
+The check bridges CCMv4 → NIST 800-53 (via `data/attack-nist-ccm-crosswalk.json`)
+→ the Control Catalog. It requires a catalog snapshot at
+`data/control-catalog-snapshot.json`; when absent it SKIPS honestly (it does not
+fabricate catalog data). Refresh the snapshot with AWS credentials:
+`python3 tools/validate/validate_control_mappings.py --refresh`. Record any
+`LOW_CONFIDENCE` objectives in the run notes for review; do not fail the phase.
+
 ---
 
 ## Parallel Invocation Mode (Claude Code only)
