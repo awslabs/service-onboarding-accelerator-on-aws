@@ -6,7 +6,7 @@ Generates AWS security controls and compliant IaC templates for any AWS service.
 
 - **Control mapping** - Maps threats and controls to security and compliance frameworks (e.g CCMv4, MITRE)
 - **Proactive controls** — CFN Guard rules, CloudFormation hooks, Checkov policies, OPA policies
-- **Preventive controls** — SCPs, RCPs, declarative policies, permission boundaries, tag policies, resource policies
+- **Preventive controls** — SCPs, RCPs, permission boundaries, IAM/resource policies, **anchored to published AWS sample policies** (see "Preventive controls are reference-anchored" below)
 - **Detective controls** — Config rules (with Lambda handlers), EventBridge rules, CloudWatch alarms, Access Analyzer
 - **Auto-remediation** — Lambda remediators, SSM runbooks, Step Functions workflows
 - **Compliant IaC** — CDK (TypeScript), Terraform (modular), CloudFormation, CDK for Terraform
@@ -35,8 +35,33 @@ Output lands in `.service-approval/<service-slug>/` (per-service layout) in your
 
 ### Key Features
 
-The pipeline runs as 21 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
+The pipeline runs as 26 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
 
+### Preventive controls are reference-anchored
+
+Preventive controls are anchored to existing AWS sample policies and reference
+repositories; where no reference covers an objective, the tool does not invent a
+preventive control — it points to the reference or recommends a detective/proactive
+control instead. Every emitted policy is an example to be verified against the
+service authorization guide before deployment.
+
+Concretely, preventive generation runs as a gated sub-pipeline: a recommender
+decides each objective's enforcement mechanism (SCP / RCP / IAM, or "not
+preventable → detective"), anchors each decision to a published example, the
+authors adapt that example to the target service, and a root-cause critic proves
+every emitted policy both resolves to a reference and actually enforces its
+control (a real condition key gates the action). The reference library is curated
+from public AWS repositories, including:
+
+- [`aws-samples/service-control-policy-examples`](https://github.com/aws-samples/service-control-policy-examples)
+- [`aws-samples/resource-control-policy-examples`](https://github.com/aws-samples/resource-control-policy-examples)
+- [`aws-samples/data-perimeter-policy-examples`](https://github.com/aws-samples/data-perimeter-policy-examples)
+- [`aws-samples/example-permissions-boundary`](https://github.com/aws-samples/example-permissions-boundary)
+- [`aws-samples/iam-access-analyzer-custom-policy-check-samples`](https://github.com/aws-samples/iam-access-analyzer-custom-policy-check-samples)
+
+The sourcing for each generated preventive policy is recorded in the artifact's
+`_metadata.reference` (repo + example id + source URL), so the basis for every
+control is visible and auditable.
 
 ### Artifact flow
 
