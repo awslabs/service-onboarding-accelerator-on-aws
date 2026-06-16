@@ -213,7 +213,12 @@ attack_coverage = {
 
 ## Phase 3: Identify Coverage Gaps
 
-Detect and classify ALL gap types:
+Detect and classify ALL gap types. The pseudocode below builds a flat list for
+readability, but the binding schema requires `coverage_gaps` to be an
+**object-of-arrays** keyed by gap type (`mitigation_gap`, `single_layer`,
+`framework_gap`, `control_orphan`, `posture_gap`). The assembler groups the
+classified gaps into that shape before writing — match the schema, not the flat
+list shown here.
 
 ```python
 coverage_gaps = []
@@ -341,8 +346,11 @@ mapping_results = {
     "threat_mitigation_map": threat_mitigation_map,
     "framework_mapping": fw_mapped['framework_mapping'],
     "framework_coverage_summary": fw_mapped['framework_coverage_summary'],
-    "coverage_gaps": coverage_gaps,
-    "attack_coverage": attack_coverage,  # always present — MITRE ATT&CK is mandatory
+    "coverage_gaps": coverage_gaps,  # object-of-arrays form per the schema
+    # NOTE: the binding schema (schemas/mapping-results.schema.json) is
+    # additionalProperties:false at top level and does NOT permit a top-level
+    # `attack_coverage` key. Nest it under `_metadata.attack_coverage` (the
+    # assembler does this). The pseudocode shows it inline only for readability.
     "control_summary": {
         "total_controls": len(controls),
         "by_scope": dict(scope_counts),
