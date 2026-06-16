@@ -49,6 +49,23 @@ def test_mechanism_family():
     assert ri.mechanism_family("SomethingNew") == ["SomethingNew"]
 
 
+def test_mechanism_family_matches_real_map_strings():
+    """The map skill emits these exact strings — each must resolve to a family,
+    not fall through to itself (regression guard for the VPCE mechanism)."""
+    # "VPC Endpoint Policy" is what the map skill emits; "VPCE Policy" was the
+    # old table key that never matched.
+    assert ri.mechanism_family("VPC Endpoint Policy") == ["VPCE", "data-perimeter"]
+    assert ri.mechanism_family("VPCE Policy") == ["VPCE", "data-perimeter"]  # alias
+    assert ri.mechanism_family("KMS Key Policy") == ["IAM"]
+    assert ri.mechanism_family("IAM Trust Policy") == ["IAM", "permission-boundary"]
+
+
+def test_mechanism_family_case_insensitive():
+    assert ri.mechanism_family("scp") == ["SCP"]
+    assert ri.mechanism_family("vpc endpoint policy") == ["VPCE", "data-perimeter"]
+    assert ri.mechanism_family("  SCP  ") == ["SCP"]
+
+
 def test_score_example_key_weighted_over_actions():
     ex = {"governed_actions": ["s3:DeleteBucket"], "condition_keys": ["aws:PrincipalOrgID"]}
     # control shares both the action and the key.

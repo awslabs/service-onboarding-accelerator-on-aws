@@ -85,26 +85,38 @@ def examples_for_mechanism(mechanism: str, path: Path | None = None) -> list[dic
 
 # Mechanisms that the recommender groups under one anchor family. A control's
 # mapping mechanism maps to one or more index mechanisms to search.
+#
+# Keys MUST match the mechanism strings map-generate-controls actually emits
+# (see its mechanism enum): "SCP", "RCP", "IAM Policy", "IAM Trust Policy",
+# "IAM Permission Boundary", "Resource Policy", "VPC Endpoint Policy",
+# "KMS Key Policy". Matching is case-insensitive and tolerant of a few common
+# aliases so a minor upstream wording change doesn't silently drop a control to
+# REFER_TO_REFERENCE. Index mechanism values are the families in the reference
+# index: SCP, RCP, IAM, permission-boundary, data-perimeter, VPCE.
 _MECHANISM_FAMILIES = {
-    "SCP": ["SCP"],
-    "RCP": ["RCP"],
-    "IAM Policy": ["IAM", "permission-boundary"],
-    "IAM Trust Policy": ["IAM", "permission-boundary"],
-    "IAM Permission Boundary": ["permission-boundary", "IAM"],
-    "Resource Policy": ["IAM", "data-perimeter"],
-    "Resource-Based Policy": ["IAM", "data-perimeter"],
-    "VPCE Policy": ["VPCE", "data-perimeter"],
-    "KMS Key Policy": ["IAM"],
+    "scp": ["SCP"],
+    "rcp": ["RCP"],
+    "iam policy": ["IAM", "permission-boundary"],
+    "iam trust policy": ["IAM", "permission-boundary"],
+    "iam permission boundary": ["permission-boundary", "IAM"],
+    "permission boundary": ["permission-boundary", "IAM"],
+    "resource policy": ["IAM", "data-perimeter"],
+    "resource-based policy": ["IAM", "data-perimeter"],
+    "vpc endpoint policy": ["VPCE", "data-perimeter"],
+    "vpce policy": ["VPCE", "data-perimeter"],
+    "kms key policy": ["IAM"],
 }
 
 
 def mechanism_family(control_mechanism: str) -> list[str]:
     """Map a control's mapping mechanism to the index mechanism(s) to search.
 
-    Falls back to treating the mechanism string itself as an index mechanism so
-    an exact-match mechanism (e.g. "SCP") still works without a family entry.
+    Lookup is case-insensitive on the mechanism string. Falls back to treating
+    the mechanism string itself as an index mechanism so an exact-match
+    mechanism (e.g. "SCP") still works without a family entry.
     """
-    return _MECHANISM_FAMILIES.get(control_mechanism, [control_mechanism])
+    key = (control_mechanism or "").strip().lower()
+    return _MECHANISM_FAMILIES.get(key, [control_mechanism])
 
 
 def _bare_action(action: str) -> str:
