@@ -91,6 +91,9 @@ Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to
 ### Step 2: Run generate-detective
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
+Runs AFTER Step 1's root-cause critic so it can consume
+`<slug>/05-generate/detective-routing.json` (objectives the critic found
+not-preventable and routed to detective) in its top-up pass.
 Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
 
 ### Step 3: Run generate-iac

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/detective-routing.schema.json",
+  "title": "detective-routing.json",
+  "description": "Hand-off contract from the preventive root-cause critic to the detective generator. Written by skills/generate-preventive-rootcause at .service-approval/<slug>/05-generate/detective-routing.json when a preventive objective is NOT_PREVENTABLE (no condition key gates the action) and must be covered by a detective control instead. Consumed by skills/generate-detective, which generates detective coverage for each routed entry and fills in covered_by. validate_detective_routing.py confirms every routed entry is covered.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_metadata", "routed"],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["service"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "generated": {"type": "string"}
+      }
+    },
+    "routed": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/routed_entry"}
+    }
+  },
+  "$defs": {
+    "routed_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_id", "reason"],
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
+        },
+        "objective_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "reason": {"type": "string", "minLength": 1},
+        "covered_by": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "minLength": 1},
+            {"type": "array", "items": {"type": "string", "minLength": 1}}
+          ],
+          "description": "Detective artifact filename(s) the generator produced to cover this routed objective, or null until covered."
+        }
+      }
+    }
+  }
+}

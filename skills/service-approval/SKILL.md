@@ -702,6 +702,18 @@ The preventive agent runs its sub-skills sequentially within that one agent.
 When all 3 complete, run the final validation from `skills/generate/SKILL.md`.
 If any IaC templates are missing, re-dispatch the generate-iac agent.
 
+**Detective top-up for routed objectives.** Because detective runs in parallel
+with preventive here, it cannot see the routing the preventive critic writes at
+the end of its sub-pipeline. After all 3 agents complete, if
+`<slug>/05-generate/detective-routing.json` exists with any `routed[]` entry
+whose `covered_by` is null, re-dispatch `generate-detective` for a top-up pass to
+cover those objectives (its "Routed-from-preventive objectives" section). Then
+confirm the loop is closed:
+
+```bash
+python3 tools/validate/validate_detective_routing.py --slug <slug>
+```
+
 ### Phase 5: Test
 
 Apply the same resolution as Sequential Mode (CLI flags > intake.testing.mode >

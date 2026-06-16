@@ -54,12 +54,40 @@ NOT have a preventive policy artifact — if one exists, that is the exact failu
 mode this critic catches:
 
 - Remove the non-enforcing artifact.
-- Record the objective in `rootcause-report.json` with `route_to: "detective"`
-  so the detective generator (or a re-run) covers it.
+- Record the objective in `rootcause-report.json` with `route_to: "detective"`.
+- **Write the machine-readable hand-off** so the detective generator actually
+  covers it (see Step 2b).
 
 The SAR condition-key list is a **lower bound**: if an artifact relies on a
 condition key absent from the SAR snapshot, require a doc citation (logged to
 `mcp-calls.log`) — otherwise treat it as not-enforcing.
+
+## Step 2b — Write the detective-routing hand-off
+
+For every objective routed to detective, write a machine-readable contract the
+detective generator consumes. Without this, routing is a dead-end report and the
+objective gets no coverage.
+
+Write `.service-approval/<slug>/05-generate/detective-routing.json`
+(schema: `schemas/detective-routing.schema.json`):
+
+```json
+{
+  "_metadata": {"service": "<service>", "generated": "service-approval v3.0.0"},
+  "routed": [
+    {
+      "control_id": "CTRL-ORG-PRV-007",
+      "objective_ids": ["IAM-13"],
+      "reason": "no condition key gates DeleteFunction; not preventable at request time",
+      "covered_by": null
+    }
+  ]
+}
+```
+
+`covered_by` is `null` here — the detective generator fills it in with the
+detective artifact filename(s) it produces. Leave it null; do not guess. If no
+objectives were routed, do NOT write the file (its absence means "nothing routed").
 
 ## Step 3 — Cross-check the plan
 

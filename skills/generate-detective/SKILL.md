@@ -40,6 +40,30 @@ print(f'Responsive controls: {len(cor)}')
 
 Unless `--include-unverified` is set, skip controls where `verified: false`.
 
+### Routed-from-preventive objectives (top-up pass)
+
+The preventive root-cause critic routes objectives it found NOT-preventable (no
+condition key gates the action) to detective. If
+`.service-approval/<slug>/05-generate/detective-routing.json` exists, you MUST
+also generate detective coverage for every entry in its `routed[]` array — these
+objectives have no preventive control and would otherwise go uncovered.
+
+```bash
+test -f .service-approval/<slug>/05-generate/detective-routing.json && python3 -c "
+import json
+r = json.load(open('.service-approval/<slug>/05-generate/detective-routing.json'))
+for e in r['routed']:
+    print(e['control_id'], '←', e['reason'])
+" || echo "(no routed objectives)"
+```
+
+For each routed entry, generate the appropriate detective artifact (Config rule,
+EventBridge rule, etc.) for the control's resource/action, then **write the
+artifact filename(s) back into that entry's `covered_by` field** so the routing
+loop is closed. `validate_detective_routing.py` confirms every routed entry ends
+up with a real `covered_by` artifact. This top-up runs AFTER the root-cause
+critic; the orchestrator sequences a detective pass once the critic finishes.
+
 ## Artifact Header Template
 
 Every generated artifact MUST include these comment lines at the top:
