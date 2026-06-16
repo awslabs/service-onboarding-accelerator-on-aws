@@ -95,6 +95,13 @@ Every `GENERATE_*` row in `preventive-plan.json` should have a corresponding
 artifact; every `ROUTE_DETECTIVE` / `REFER_TO_REFERENCE` row should have **no**
 preventive artifact. Flag mismatches in the report.
 
+These deferred decisions are not coverage gaps: the cross-artifact check
+(`validate_cross.py` CHECK-X2) reads `preventive-plan.json` and treats a control
+with a recorded `REFER_TO_REFERENCE` / `ROUTE_DETECTIVE` decision as covered, so
+a deliberately un-authored control is not reported as an orphan. A control with
+a `GENERATE_*` decision but no artifact IS still flagged — that is a real
+generation gap, not a deferral, so do not leave a `GENERATE_*` row unauthored.
+
 ## Step 4 — Report
 
 ```json

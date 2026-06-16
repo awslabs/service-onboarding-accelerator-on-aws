@@ -196,7 +196,16 @@ def check_control_coverage(controls_dir: str, mapping: dict) -> list[str]:
         if c.get("mechanism", "").lower() in ("iac template", "iac")
     }
 
-    orphaned = expected_ids - found_ids - iac_ctrl_ids
+    # Controls the preventive recommender deliberately deferred are NOT orphans:
+    # a REFER_TO_REFERENCE decision (no reference example anchors the objective)
+    # or a ROUTE_DETECTIVE decision (not preventable at request time) is a
+    # documented, intentional non-authoring outcome — the risk-averse path. The
+    # decision is recorded in preventive-plan.json, so a deferred control counts
+    # as covered as long as it carries an explicit plan decision. (A preventive
+    # control that is simply MISSING from the plan is still flagged.)
+    deferred_ctrl_ids = _deferred_preventive_controls(controls_dir)
+
+    orphaned = expected_ids - found_ids - iac_ctrl_ids - deferred_ctrl_ids
     if orphaned:
         errors.append(
             f"CHECK-X2 control_coverage: {len(orphaned)} control(s) in mapping-results "
@@ -204,6 +213,30 @@ def check_control_coverage(controls_dir: str, mapping: dict) -> list[str]:
         )
 
     return errors
+
+
+def _deferred_preventive_controls(controls_dir: str) -> set[str]:
+    """Control IDs the recommender deferred via REFER_TO_REFERENCE / ROUTE_DETECTIVE.
+
+    Read from preventive-plan.json (the recommender gate). These are intentional
+    non-authoring decisions — the objective could not be anchored to a reference
+    or is not preventable at request time — so the control legitimately has no
+    preventive artifact. Returns the empty set when no plan exists (e.g. a run
+    that predates the gated preventive sub-pipeline), preserving prior behavior.
+    """
+    plan_path = os.path.join(controls_dir, "preventive-plan.json")
+    plan = _load_json(plan_path)
+    if not plan:
+        return set()
+    deferred = set()
+    for d in plan.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        if d.get("decision") in ("REFER_TO_REFERENCE", "ROUTE_DETECTIVE"):
+            cid = d.get("control_id")
+            if cid:
+                deferred.add(cid)
+    return deferred
 
 
 # ================================================================
