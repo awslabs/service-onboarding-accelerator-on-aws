@@ -64,9 +64,11 @@ in the plan's `preventability_override` field and log the MCP lookup.
 
 ## Step 2 — Reference anchor per control
 
-For each `FEASIBLE` control, find a matching reference example using the shared
-loader. Match on **mechanism** first, then prefer examples whose governed actions
-or condition keys overlap the control's:
+For each `FEASIBLE` control, find a matching reference example with the
+deterministic ranker in the shared loader. It restricts to the control's
+mechanism family and scores each example by overlap with the control's governed
+actions and condition keys (condition-key overlap weighted 2x — a closer
+structural match). Do NOT eyeball this; call the helper:
 
 ```bash
 python3 - <<'PY'
@@ -74,11 +76,20 @@ import json, sys
 sys.path.insert(0, "tools")
 import reference_index as ri
 
-control_mechanism = "SCP"   # from the control's mapping mechanism → see table below
-candidates = ri.examples_for_mechanism(control_mechanism)
-# Rank by overlap with the control's governed actions / condition keys.
+# control_mechanism / actions / condition_keys come from the control + the
+# preventability verdict's enforcing_condition_keys[].
+best = ri.best_anchor(control_mechanism, control_actions, enforcing_condition_keys)
+# best is None when the mechanism family has no example OR nothing overlaps
+# (best score 0.0). None → REFER_TO_REFERENCE; do NOT claim an anchor.
+ranked = ri.rank_anchors(control_mechanism, control_actions, enforcing_condition_keys)
+# ranked[:3] gives the top candidates with scores for the rationale.
 PY
 ```
+
+`best_anchor` returning `None` is the risk-averse signal: a mechanism family with
+no overlapping example means we cannot anchor → the control's `decision` is
+`REFER_TO_REFERENCE`, NOT a `GENERATE_*`. `mechanism_family()` maps the control's
+mapping mechanism to the index mechanism(s) to search (the table below).
 
 **Mechanism → reference family:**
 
