@@ -11,14 +11,13 @@ Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 Failure signals:
     P1 — pipeline.log / mcp-calls.log missing or too few MCP calls
          (exempted when pipeline.log carries the
-         `[pipeline:complete:<VERDICT>]` terminal sentinel — finalized
+         `[pipeline:complete:FINALIZED]` terminal sentinel — finalized
          runs are immutable, retroactive remediation impossible)
     P2 — validated.json has templated or empty verification notes
     P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
          keys, broad Allow on Resource:* without Condition, SCP without Deny)
     P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
-    P6 — verdict mismatch (APPROVED emitted despite integrity failures)
     P7 — phase-output completeness: every phase dir on disk must contain
          its declared outputs (mapping-results.json, controls-catalog.md,
          framework-mapping.md, etc.) at min-size thresholds
@@ -88,12 +87,11 @@ _MCP_CALL_TOKEN_RE = re.compile(r"\[mcp:[^\]]+:call\]")
 # Terminal-state sentinel emitted by summarize/evidence at end of pipeline.
 # Anchor at the source-tag column (3rd bracketed token of a pipeline.log
 # line) so a message body containing the literal text can't satisfy the
-# gate. Line shape: `<iso8601> [<phase>] [<source>:<verdict>]  <message>`.
-# Verdict allowlist is closed: APPROVED | APPROVED_WITH_EXCEPTIONS |
-# REQUIRES_REMEDIATION. Anything else does NOT close out the run.
+# gate. Line shape: `<iso8601> [<phase>] [<source>:<status>]  <message>`.
+# The sentinel is verdict-free: the fixed token FINALIZED marks a finalized
+# run. Anything else does NOT close out the run.
 _PIPELINE_COMPLETE_RE = re.compile(
-    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:"
-    r"(APPROVED|APPROVED_WITH_EXCEPTIONS|REQUIRES_REMEDIATION)\]",
+    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:FINALIZED\]",
     re.MULTILINE,
 )
 
@@ -113,7 +111,7 @@ def check_mcp_log(service_root: Path) -> list[str]:
     containing "MCP CALL" mid-line doesn't inflate the count either.
 
     Terminal-state exemption: if pipeline.log carries a
-    `[pipeline:complete:<verdict>]` sentinel, the run is finalized and the
+    `[pipeline:complete:FINALIZED]` sentinel, the run is finalized and the
     file is frozen. P1 cannot be remediated retroactively, so the check
     returns no error for sentinel-bearing files. Mid-flight runs (no
     sentinel) still get the strict count.
@@ -485,8 +483,7 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
     a non-empty `framework_mapping` key. P7's size threshold is
     content-blind (>=1024 bytes); a 1024-byte JSON without the
     framework_mapping key would clear P7 and silently clear P5 too.
-    Same fail-closed pattern as check_validated_notes (P2) and
-    check_verdict_consistency (P6).
+    Same fail-closed pattern as check_validated_notes (P2).
     """
     errors: list[str] = []
     mapping_path = map_dir / "mapping-results.json"
@@ -680,42 +677,6 @@ def check_phase_outputs(service_root: Path) -> list[str]:
     return errors
 
 
-def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) -> list[str]:
-    """Check verdict consistency from 07-summarize/ phase dir.
-
-    Fails closed when APPROVAL-REPORT.md exists but the `## Verdict` H2
-    header is missing (e.g., template drift to H3, or report truncated).
-    Same pattern as `check_validated_notes` for P2 — silently returning
-    `[]` would let an APPROVED-with-integrity-failures run sneak past
-    when a future template change breaks the contract.
-    """
-    errors: list[str] = []
-    report = summarize_dir / "APPROVAL-REPORT.md"
-    if not report.exists():
-        return errors
-    content = report.read_text()
-    # Anchor on H2 only — `(?<!#)##(?!#)` enforces exactly two `#`s. Without
-    # the lookarounds, `##\s*Verdict` matches `### Verdict` as a substring,
-    # silently accepting H3 (the very drift the introducer note in
-    # skills/summarize/SKILL.md flags as broken).
-    match = re.search(r"(?<!#)##(?!#)\s*Verdict\s*\n+([^\n]+)", content)
-    if not match:
-        errors.append(
-            f"P6 FAIL: {report} exists but no `## Verdict` H2 header found. "
-            "skills/summarize/SKILL.md template requires the section at H2; "
-            "verdict cannot be verified — fail-closed against silent template drift."
-        )
-        return errors
-    verdict = match.group(1).strip().upper()
-    if integrity_errors_count > 0 and "APPROVED" in verdict and "EXCEPTION" not in verdict:
-        errors.append(
-            f"P6 APPROVAL-REPORT.md verdict '{verdict}' but {integrity_errors_count} "
-            f"integrity failures were detected. Change verdict to "
-            f"REQUIRES REMEDIATION."
-        )
-    return errors
-
-
 def check_reference_anchors(service_root: Path) -> list[str]:
     """P8: every preventive policy artifact must carry a resolvable anchor.
 
@@ -734,8 +695,8 @@ def check_reference_anchors(service_root: Path) -> list[str]:
 
 # Validator contract: every check_*() must fail-closed when the artifact it
 # reads exists but is missing/malformed. Pass-7 audit (2026-05-19) confirmed:
-#   - P1, P2, P5, P6, P7 fail-closed with explicit `P{N}`-prefixed errors.
-#     P2/P5/P6 use the `P{N} FAIL: ...` shape on missing-artifact branches
+#   - P1, P2, P5, P7 fail-closed with explicit `P{N}`-prefixed errors.
+#     P2/P5 use the `P{N} FAIL: ...` shape on missing-artifact branches
 #     (the canonical pattern). P1 and P7 ALSO have missing-artifact branches
 #     (P1 line ~146 emits `P1 neither pipeline.log nor mcp-calls.log exists`;
 #     P7 emits `P7 ... MISSING` when a required output is absent) but use
@@ -813,11 +774,6 @@ def validate_pipeline(root: Path) -> list[str]:
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
-
-        # Check verdict consistency in 07-summarize/
-        summarize_dir = service_root / "07-summarize"
-        if summarize_dir.exists():
-            errors.extend(check_verdict_consistency(summarize_dir, len(errors)))
 
     return errors
 

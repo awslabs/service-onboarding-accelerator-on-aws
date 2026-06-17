@@ -497,7 +497,7 @@ Resolve Phase 5 intent in this order (CLI flags > intake > default):
 
 ### Phase 6: Summarize
 Follow ALL instructions in `skills/summarize/SKILL.md` exactly.
-Report the final verdict to the user.
+Report the summary of findings to the user (this report issues no verdict).
 
 ### Phase 7: Evidence (Optional — requires AWS credentials)
 **NEW:** If `--env` was provided AND Phase 5 Test deployed resources successfully (not --dry-run):
@@ -760,5 +760,5 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 Service Approval complete.
 Report: .service-approval/APPROVAL-REPORT.md
 Controls: .service-approval/<slug>/05-generate/
-Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
+Summary of findings: see report (no verdict issued)
 ```

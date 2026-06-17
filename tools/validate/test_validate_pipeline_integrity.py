@@ -15,7 +15,6 @@ from validate_pipeline_integrity import (
     check_iam_policies,
     check_mcp_log,
     check_validated_notes,
-    check_verdict_consistency,
     validate_pipeline,
 )
 
@@ -396,55 +395,6 @@ def test_framework_coverage_falls_back_to_mapped_file(tmp_path: Path) -> None:
     assert check_framework_coverage(tmp_path) == []
 
 
-# ---------- P6: verdict consistency ----------
-
-
-def test_verdict_missing_report_is_noop(tmp_path: Path) -> None:
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=5) == []
-
-
-def test_verdict_approved_with_errors_fails(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n## Verdict\nAPPROVED\n")
-    errors = check_verdict_consistency(tmp_path, integrity_errors_count=3)
-    assert any("P6" in e and "APPROVED" in e for e in errors)
-
-
-def test_verdict_approved_with_exception_passes(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text(
-        "# Report\n\n## Verdict\nAPPROVED WITH EXCEPTION\n"
-    )
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=3) == []
-
-
-def test_verdict_requires_remediation_passes(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text(
-        "# Report\n\n## Verdict\nREQUIRES REMEDIATION\n"
-    )
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=3) == []
-
-
-def test_verdict_no_errors_approved_passes(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n## Verdict\nAPPROVED\n")
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=0) == []
-
-
-def test_verdict_h3_header_fails_closed(tmp_path: Path) -> None:
-    """A report with `### Verdict` H3 (instead of `## Verdict` H2) must
-    fail-closed. Pre-fix this returned [] silently — letting any verdict
-    through, even APPROVED with integrity failures."""
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n### Verdict\nAPPROVED\n")
-    errors = check_verdict_consistency(tmp_path, integrity_errors_count=3)
-    assert errors and "P6 FAIL" in errors[0] and "no `## Verdict` H2 header" in errors[0]
-
-
-def test_verdict_no_header_at_all_fails_closed(tmp_path: Path) -> None:
-    """A report without any verdict header (e.g., truncated mid-write)
-    must fail-closed for the same reason."""
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\nNo verdict here.\n")
-    errors = check_verdict_consistency(tmp_path, integrity_errors_count=0)
-    assert errors and "P6 FAIL" in errors[0]
-
-
 # ---------- validate_pipeline integration ----------
 
 
@@ -484,12 +434,12 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
 
 def test_pipeline_complete_sentinel_in_message_does_not_close_p1(tmp_path: Path) -> None:
     """A pipeline.log line whose MESSAGE contains the literal sentinel text must
-    NOT close out P1 — only a real `[pipeline:complete:<VERDICT>]` source-tag
+    NOT close out P1 — only a real `[pipeline:complete:FINALIZED]` source-tag
     counts. This protects against the validator getting tricked by skill prose
     that happens to quote the sentinel."""
     leaked = (
         "2026-05-14T18:32:01Z [07-summarize] [skill:summarize:end]  "
-        "wrote `[pipeline:complete:APPROVED]` reference to docs only\n"
+        "wrote `[pipeline:complete:FINALIZED]` reference to docs only\n"
     )
     (tmp_path / "pipeline.log").write_text(leaked)
     errors = check_mcp_log(tmp_path)
@@ -501,34 +451,25 @@ def test_pipeline_complete_sentinel_at_source_tag_closes_p1(tmp_path: Path) -> N
     """The real sentinel format closes out P1 retroactively — finalized runs
     are exempt because the file is frozen at that point."""
     line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:APPROVED]  "
-        "summarize finalized; verdict=APPROVED\n"
+        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:FINALIZED]  "
+        "summarize finalized\n"
     )
     (tmp_path / "pipeline.log").write_text(line)
     assert check_mcp_log(tmp_path) == []
 
 
-def test_pipeline_complete_sentinel_with_underscored_verdict(tmp_path: Path) -> None:
-    """All three closed-set verdicts close out P1."""
-    for verdict in ("APPROVED", "APPROVED_WITH_EXCEPTIONS", "REQUIRES_REMEDIATION"):
+def test_pipeline_complete_sentinel_unknown_token_is_ignored(tmp_path: Path) -> None:
+    """A sentinel with any token other than the fixed FINALIZED (e.g., a
+    leftover verdict word or a typo) should NOT close P1 — only FINALIZED
+    finalizes the run."""
+    for token in ("APPROVED", "UNCLEAR", "DONE"):
         line = (
-            f"2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:{verdict}]  "
-            f"finalized; verdict={verdict}\n"
+            f"2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:{token}]  "
+            f"weird state\n"
         )
         (tmp_path / "pipeline.log").write_text(line)
-        assert check_mcp_log(tmp_path) == [], f"verdict {verdict} should close P1"
-
-
-def test_pipeline_complete_sentinel_with_unknown_verdict_is_ignored(tmp_path: Path) -> None:
-    """A sentinel with an out-of-set verdict (e.g., a typo or future verdict)
-    should NOT close P1 — fail closed against unknown values."""
-    line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:UNCLEAR]  "
-        "weird state\n"
-    )
-    (tmp_path / "pipeline.log").write_text(line)
-    errors = check_mcp_log(tmp_path)
-    assert errors and "P1" in errors[0]
+        errors = check_mcp_log(tmp_path)
+        assert errors and "P1" in errors[0], f"token {token} must not close P1"
 
 
 # ---------- P3 wildcard-only literal-only matching ----------

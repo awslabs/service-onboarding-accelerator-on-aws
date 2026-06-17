@@ -1,6 +1,6 @@
 ---
 name: summarize-v3
-description: Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, test evidence, and verdict
+description: Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, and test evidence
 disable-model-invocation: false
 ---
 
@@ -21,19 +21,21 @@ Read all state files and generate the final approval report at `.service-approva
   as NOT RUN in the report). The summarize skill must NOT pre-gate Phase 6
   because intake's testing.mode=skip is a legitimate path that skips Phase 5.
 
-## Step 1: Determine verdict
+## Step 1: Collect run facts (no verdict)
+
+This report does NOT issue an approve/deny judgment. Instead, collect the factual
+inputs the report states plainly:
 
 Read `validated.json` for `unverified_count`. Read `test-results.json` if it exists.
+Record, as neutral facts:
+- whether testing ran (`test_results.passed`), was skipped (`skipped`/`passed: null`
+  dry-run), or is absent;
+- the count of unverified items (`unverified_count`);
+- whether a deployment occurred and any Phase 7 evidence outcome.
 
-| Condition | Verdict |
-|-----------|---------|
-| `test_results.passed = true` AND `unverified_count = 0` | APPROVED |
-| `test_results.passed = true` AND `unverified_count > 0` | APPROVED WITH EXCEPTIONS |
-| `test_results.skipped = true` AND `unverified_count = 0` | APPROVED (test not run) |
-| `test_results.passed = false` | REQUIRES REMEDIATION |
-| `test-results.json` absent | APPROVED (test not run) |
-
-Note: `passed: null` (dry-run) is treated the same as `skipped: true`.
+These facts populate the "Actions Taken to Increase Confidence" section (Step 6) and
+the "Test Evidence" / "UNVERIFIED Items" sections. Do NOT derive or print any
+verdict label (no "APPROVED", "REQUIRES REMEDIATION", etc.).
 
 ## Step 2: Build framework coverage matrix
 
@@ -87,11 +89,34 @@ The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipelin
 Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections.
 Section headings are H2 (`##`) — the report's top-level title `# Service Approval
 Report — {Service}` is H1, so all section headers under it are H2. Downstream
-consumers (`skills/evidence/SKILL.md` awk extraction, `validate_pipeline_integrity.py`
-P6 verdict-consistency check) anchor on H2; writing H3 here silently breaks both.
+consumers anchor on H2; writing H3 here silently breaks them.
 
-## Verdict
-[Verdict string with date, service name, resource count]
+## Actions Taken to Increase Confidence
+Place this section FIRST, immediately under the report title — before the executive
+summary and coverage matrix. List the concrete, verifiable actions performed during
+this run so the reader can see what was checked and proven. Populate every line from
+run state (not prose); when an action did not occur, say so factually rather than
+omitting it. Include, as applicable:
+- **Capability verification** — all service capabilities, API parameters, IAM
+  actions, and condition keys were verified against authoritative AWS sources
+  (`unverified_count` reported in "UNVERIFIED Items"); state the count checked.
+- **Validators run** — name the integrity/anchor/preventability checks that ran and
+  their results (e.g. reference-anchor enforcement, preventability/root-cause check,
+  control-mapping cross-check), reading from `pipeline.log`.
+- **Reference anchoring** — every preventive control either resolves to a public AWS
+  reference example or is explicitly marked not-anchored with a stated reason.
+- **Deployment** — if a stack was deployed: stack name/id and that it reached
+  CREATE_COMPLETE; otherwise "No live deployment was performed for this assessment."
+- **Runtime attestation** — if Phase 7 Evidence ran: how many controls were attested
+  live-in-effect via CLI probes, and that resources were torn down afterward.
+
+Render each as a short factual bullet. This section is descriptive, not a judgment.
+
+## Summary of Findings
+A neutral, factual recap of what this assessment produced and what remains open —
+date, service name, and resource/control counts. State coverage and any open items
+plainly. Do NOT include an approve/deny verdict or readiness rating; this report
+records findings, it does not adjudicate.
 
 ## Executive Summary
 [Coverage numbers: N controls generated, N framework objectives covered, N mitigations addressed, test result]
@@ -291,43 +316,24 @@ it runs). Detect Phase 7-in-scope by `intake-manifest.json.testing.mode ==
 "full-deploy"`.
 
 ```bash
-# Map verdict to sentinel form. Drop any parenthesized qualifier first so
-# "APPROVED (test not run)" canonicalizes to "APPROVED" (the qualifier is
-# audit-trail metadata, not a distinct verdict — see "Sentinel canonicalization"
-# note below). Then uppercase and fold spaces/hyphens to underscores.
-VERDICT_TAG=$(echo "<verdict>" \
-    | sed -E 's/ *\(.*\)$//' \
-    | tr '[:lower:]' '[:upper:]' | tr ' -' '__')
-# e.g., "APPROVED with exceptions" -> "APPROVED_WITH_EXCEPTIONS"
-# e.g., "APPROVED (test not run)"  -> "APPROVED"
-
+# The terminal-state sentinel is verdict-free: it records only that the run
+# finalized, freezing the file against retroactive remediation. The fixed
+# token FINALIZED closes out the P1 check.
 python3 -m tools.validate.log \
     --slug <slug> \
     --phase 07-summarize \
     --source pipeline:complete \
-    --verdict "${VERDICT_TAG}" \
-    --message "summarize finalized; verdict=${VERDICT_TAG}"
+    --verdict FINALIZED \
+    --message "summarize finalized"
 ```
 
-**Sentinel canonicalization:** the validator's closed allowlist is
-`APPROVED | APPROVED_WITH_EXCEPTIONS | REQUIRES_REMEDIATION`. Parenthesized
-qualifiers in the verdict table (e.g., `APPROVED (test not run)`) are
-*informational metadata*, not distinct verdicts — they describe which
-subset of validation ran, not whether the run was approved. The sentinel
-canonicalizes them away so the gate stays binary; consumers needing the
-original qualifier read `APPROVAL-REPORT.md` directly, not the sentinel
-token. Adding new parenthesized variants does NOT require validator
-allowlist changes; adding a new bare verdict (e.g., a hypothetical
-`PENDING`) does.
-
-The validator anchors on the literal token `[pipeline:complete:<VERDICT>]`,
-where `<VERDICT>` is uppercase letters with underscores. Mid-flight runs
-without the sentinel still get the strict P1 check.
+The validator anchors on the literal token `[pipeline:complete:FINALIZED]`.
+Mid-flight runs without the sentinel still get the strict P1 check. The
+sentinel carries no approve/deny meaning — this report does not adjudicate.
 
 Print:
 ```
 Report written: .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md
-Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed
 Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)
