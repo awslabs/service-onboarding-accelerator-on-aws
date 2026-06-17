@@ -79,12 +79,29 @@ an initial candidate list. Then read each candidate's `security_rationale` to as
 - Read the `security_rationale` — does the reasoning chain connect to the objective's requirement?
 - Write a 1-sentence `rationale` explaining the SPECIFIC connection.
 
+**Authoring rule — state only what is verified.** The rationale must
+describe the *mechanism* of the mapped control and the objective it
+serves. Do NOT make causal claims ("ensures", "guarantees", "prevents
+all", "completely blocks", "fully mitigates") — those exceed what a
+single control can be verified to do. If you cannot honestly write a
+verified mechanism-to-objective sentence, omit the mapping or hedge to a
+broader objective-level statement and lower the coverage_level
+accordingly.
+
 **Rationale quality rules:**
-- GOOD: "SCP denies CreateMemory without KmsKeyArn, directly enforcing encryption key generation requirements"
-- BAD: "Addresses Encryption and Key Management Policy and Procedures" (just restating the objective title)
-- BAD: "Addresses Key Generation" (too vague, no mechanism mentioned)
-- The rationale MUST mention the control's mechanism (SCP deny, Config rule check, KMS key policy, etc.)
+- GOOD: "SCP denies CreateMemory without KmsKeyArn at request time —
+  supports the encryption-key generation objective."
+- BAD: "Addresses Encryption and Key Management Policy and Procedures"
+  (just restates the objective title)
+- BAD: "Addresses Key Generation" (too vague, no mechanism)
+- BAD: "Guarantees no resource is created without encryption" (causal
+  overreach — a single SCP can be bypassed by exempted principals or by
+  service-internal calls)
+- The rationale MUST mention the control's mechanism (SCP deny, Config
+  rule check, KMS key policy, etc.)
 - The rationale MUST NOT be the objective title or a rephrasing of it
+- Keep it to one short sentence; broader, verified statements beat
+  speculative specifics.
 
 **Step 4: Assign coverage level based on how directly the control addresses the objective:**
 - **Full Coverage**: The control's mechanism directly implements what the objective requires

@@ -68,6 +68,15 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
      statement. Then add the scoped Deny(s) that enforce the control.
    - Resource-based policies: mandatory confused-deputy conditions.
    - VPCE policies: org scoping via `aws:PrincipalOrgID` (NOT confused-deputy keys).
+     A VPCE policy gates *endpoint use* — Action × Principal × ResourceArn at
+     the endpoint — not request-body parameters of the caller's API call. If
+     the upstream control's `parameters_controlled[]` references a nested
+     create/update field (e.g., `$.VpcConfig.SubnetIds`,
+     `$.ServerSideEncryption`, `$.KMSKeyArn`), a VPCE policy CANNOT enforce
+     it; surface this as a recommender mismatch rather than authoring a
+     no-op policy. Endpoint-use controls (restricting which principals or
+     actions may flow through the endpoint) remain a valid VPCE-policy use
+     case.
    - KMS key policies: `kms:ViaService` keyed to the consuming service.
 4. Stamp `_metadata.reference` (REQUIRED — the anchor gate hard-fails otherwise).
 
