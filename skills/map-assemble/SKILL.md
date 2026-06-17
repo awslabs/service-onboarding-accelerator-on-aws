@@ -213,23 +213,30 @@ attack_coverage = {
 
 ## Phase 3: Identify Coverage Gaps
 
-Detect and classify ALL gap types. The pseudocode below builds a flat list for
-readability, but the binding schema requires `coverage_gaps` to be an
+Detect and classify ALL gap types. The binding schema
+(`schemas/mapping-results.schema.json`) requires `coverage_gaps` to be an
 **object-of-arrays** keyed by gap type (`mitigation_gap`, `single_layer`,
-`framework_gap`, `control_orphan`, `posture_gap`). The assembler groups the
-classified gaps into that shape before writing — match the schema, not the flat
-list shown here.
+`framework_gap`, `control_orphan`, `posture_gap`,
+`partial_parameter_coverage`, `attack_technique_gap`). Build that shape
+directly — the pseudocode below does so.
 
 ```python
-coverage_gaps = []
+coverage_gaps = {
+    "posture_gap": [],
+    "mitigation_gap": [],
+    "single_layer": [],
+    "partial_parameter_coverage": [],
+    "framework_gap": [],
+    "control_orphan": [],
+    "attack_technique_gap": [],
+}
 
 # 0. posture_gap: forward any (mitigation, posture) gaps produced by Rule C1's
 # feasibility filter in map-generate-controls. These are structural gaps — a mitigation
 # was intended to produce a preventative-request or reactive-corrective control but the
 # parameter's gateable_by / mutability precluded it.
 for g in cg.get('coverage_gaps', []):
-    coverage_gaps.append({
-        "type": "posture_gap",
+    coverage_gaps["posture_gap"].append({
         "id": g.get('mitigation_id'),
         "description": (
             f"Posture {g.get('posture')!r} not feasible for mitigation "
@@ -246,8 +253,7 @@ for g in cg.get('coverage_gaps', []):
 # 1. mitigation_gap: mitigations with NONE coverage
 for t in threat_mitigation_map:
     if t['coverage'] == 'NONE':
-        coverage_gaps.append({
-            "type": "mitigation_gap",
+        coverage_gaps["mitigation_gap"].append({
             "id": t['mitigation_id'],
             "description": f"No controls address mitigation {t['mitigation_id']}",
             "recommendation": f"Generate controls for: {t['mitigation_goal'][:100]}"
@@ -264,15 +270,13 @@ for t in threat_mitigation_map:
     preventive_cats = ctrl_cats & {'PRV', 'PRO'}
     detective_cats = ctrl_cats & {'DET', 'COR'}
     if preventive_cats and not detective_cats:
-        coverage_gaps.append({
-            "type": "single_layer",
+        coverage_gaps["single_layer"].append({
             "id": t['mitigation_id'],
             "description": f"Mitigation {t['mitigation_id']} has only preventive controls, no detective",
             "recommendation": "Add detective control (Config rule or CloudWatch alarm)"
         })
     elif detective_cats and not preventive_cats:
-        coverage_gaps.append({
-            "type": "single_layer",
+        coverage_gaps["single_layer"].append({
             "id": t['mitigation_id'],
             "description": f"Mitigation {t['mitigation_id']} has only detective controls, no preventive",
             "recommendation": "Add preventive control (SCP, IAM policy, or resource policy)"
@@ -283,8 +287,7 @@ for t in threat_mitigation_map:
     if t['residual_gaps']:
         for gap in t['residual_gaps']:
             if 'Parameters not controlled' in gap:
-                coverage_gaps.append({
-                    "type": "partial_parameter_coverage",
+                coverage_gaps["partial_parameter_coverage"].append({
                     "id": t['mitigation_id'],
                     "description": gap,
                     "recommendation": "Add controls for uncovered parameters"
@@ -293,8 +296,7 @@ for t in threat_mitigation_map:
 # 4. framework_gap: MAPPED objectives with only Supportive Only coverage
 for f in fw_mapped['framework_mapping']:
     if f.get('status') == 'MAPPED' and f.get('coverage') == 'Supportive Only':
-        coverage_gaps.append({
-            "type": "framework_gap",
+        coverage_gaps["framework_gap"].append({
             "id": f['objective_id'],
             "description": f"Objective {f['objective_id']} has only Supportive controls (no Full or Partial Coverage)",
             "recommendation": "Implement stronger controls directly addressing this objective"
@@ -303,8 +305,7 @@ for f in fw_mapped['framework_mapping']:
 # 5. control_orphan: controls not mapped to any objective
 orphaned = fw_mapped.get('quality_gate_results', {}).get('orphaned_controls', [])
 for oid in orphaned:
-    coverage_gaps.append({
-        "type": "control_orphan",
+    coverage_gaps["control_orphan"].append({
         "id": oid,
         "description": f"Control {oid} does not map to any framework objective",
         "recommendation": "Review if this control addresses any framework requirement"
@@ -315,8 +316,7 @@ for oid in orphaned:
 # MITRE ATT&CK is mandatory); no guard needed.
 for t in attack_coverage.get('uncovered_techniques', []):
     if t['applicability'] == 'HIGH':
-        coverage_gaps.append({
-            "type": "attack_technique_gap",
+        coverage_gaps["attack_technique_gap"].append({
             "id": t['technique_id'],
             "description": f"HIGH applicability technique {t['technique_id']} ({t['technique_name']}) has no covering controls",
             "recommendation": "Generate controls targeting this attack technique"
@@ -347,16 +347,19 @@ mapping_results = {
     "framework_mapping": fw_mapped['framework_mapping'],
     "framework_coverage_summary": fw_mapped['framework_coverage_summary'],
     "coverage_gaps": coverage_gaps,  # object-of-arrays form per the schema
-    # NOTE: the binding schema (schemas/mapping-results.schema.json) is
-    # additionalProperties:false at top level and does NOT permit a top-level
-    # `attack_coverage` key. Nest it under `_metadata.attack_coverage` (the
-    # assembler does this). The pseudocode shows it inline only for readability.
     "control_summary": {
         "total_controls": len(controls),
         "by_scope": dict(scope_counts),
         "by_category": dict(cat_counts),
-        "by_mechanism": dict(mech_counts)
-    }
+        "by_mechanism": dict(mech_counts),
+    },
+    # The binding schema (schemas/mapping-results.schema.json) is
+    # additionalProperties:false at top level and does NOT permit a
+    # top-level `attack_coverage` key. The ATT&CK summary lives under
+    # `_metadata.attack_coverage`.
+    "_metadata": {
+        "attack_coverage": attack_coverage,
+    },
 }
 
 with open('.service-approval/<slug>/04-map/mapping-results.json', 'w') as f:

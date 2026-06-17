@@ -50,6 +50,34 @@
     "verification": {"type": "object", "additionalProperties": true},
     "_validation": {"type": "object", "additionalProperties": true},
     "botocore_enrichment": {"type": "object", "additionalProperties": true},
-    "_metadata": {"type": "object", "additionalProperties": true}
+    "_metadata": {"type": "object", "additionalProperties": true},
+    "scp_expressible": {
+      "type": "boolean",
+      "description": "Mirrored from capabilities.organization_policies.scp_expressible by the validate skill so downstream skills (map, generate) can read it from the root."
+    },
+    "rcp_expressible": {
+      "type": "boolean",
+      "description": "Mirrored from capabilities.organization_policies.rcp_expressible by the validate skill so downstream skills (map, generate) can read it from the root."
+    },
+    "attack_surface": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Threat-attack-surface block populated by research-attack-surface and propagated through validate. Carries applicable_techniques, stride_to_attack_bridge, tactic_coverage_summary, customer_stride_profile, attack_surface_gaps, and the verified/unverified technique counts."
+    },
+    "unverified_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of items the validate skill could not confirm against MCP-backed sources."
+    },
+    "unverified_items": {
+      "type": "array",
+      "items": {"type": ["object", "string"]},
+      "description": "Per-item details for the unverified count above."
+    },
+    "enrichment_opportunities": {
+      "type": "array",
+      "items": {"type": "object"},
+      "description": "Optional enrichment opportunities surfaced during validation."
+    }
   }
 }
