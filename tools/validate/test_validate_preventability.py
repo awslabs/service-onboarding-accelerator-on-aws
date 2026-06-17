@@ -119,6 +119,40 @@ def test_find_enforcing_keys_empty_when_no_targets():
     assert find_enforcing_keys(set(), VALIDATED["capabilities"]["iam"]["condition_keys"]) == []
 
 
+def test_vpce_policy_on_request_body_param_is_not_preventable():
+    """A VPCE-policy control whose parameters_controlled[] names a request-body
+    field cannot enforce it (the endpoint policy can't see the request body) —
+    route to detective even if a condition key exists for the action."""
+    control = {
+        "id": "CTRL-RES-PRV-002",
+        "category": "PRV",
+        "mechanism": "VPCE Policy",
+        "actions": ["lambda:CreateFunction"],  # a gating key DOES exist for this
+        "parameters_controlled": ["$.lambda/CreateFunction.VpcConfig.SubnetIds"],
+        "condition_keys": [],
+    }
+    r = assess_control(control, VALIDATED)
+    assert r["verdict"] == "NOT_PREVENTABLE"
+    assert r["route_to"] == "detective"
+    assert "VPCE policy gates endpoint use" in r["reason"]
+
+
+def test_vpce_policy_at_endpoint_scope_still_assessed_normally():
+    """A VPCE-policy control at endpoint scope (root path only) is NOT auto-routed;
+    it falls through to the normal condition-key assessment."""
+    control = {
+        "id": "CTRL-RES-PRV-009",
+        "category": "PRV",
+        "mechanism": "VPCE Policy",
+        "actions": ["lambda:CreateFunction"],
+        "parameters_controlled": ["$."],  # endpoint-level concern
+        "condition_keys": [],
+    }
+    r = assess_control(control, VALIDATED)
+    # Not short-circuited by the VPCE guard — normal assessment applies.
+    assert r["verdict"] == "FEASIBLE"
+
+
 def test_is_request_time_mechanism():
     assert is_request_time_mechanism("SCP")
     assert is_request_time_mechanism("IAM Permission Boundary")

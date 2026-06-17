@@ -89,6 +89,27 @@ def normalize_action(action: str) -> str:
     return a.strip()
 
 
+def _controls_request_body_param(control: dict) -> bool:
+    """True if any parameters_controlled[] entry names a request-body field.
+
+    Request-body paths name a specific parameter on the call, e.g.
+    `$.lambda/CreateFunction.KMSKeyArn`, `$.VpcConfig.SubnetIds`, or
+    `$.encryptionKeyArn`. A bare root path (`$.` / `$`) is an endpoint- or
+    whole-request-level concern, which a VPCE policy CAN address. We treat any
+    path with a named field component (a `.` followed by a non-empty segment)
+    as a request-body parameter.
+    """
+    params = control.get("parameters_controlled") or []
+    for p in params:
+        if not isinstance(p, str):
+            continue
+        body = p[2:] if p.startswith("$.") else p.lstrip("$")
+        # A named field after stripping the `$.` root → request-body parameter.
+        if body and body not in (".", ""):
+            return True
+    return False
+
+
 def _bare_actions(actions: list[str]) -> set[str]:
     return {normalize_action(a) for a in actions if isinstance(a, str) and a}
 
@@ -149,6 +170,27 @@ def assess_control(control: dict, validated: dict) -> dict:
     mechanism = (control.get("mechanism") or "").strip()
     target_actions = _bare_actions(control.get("actions", []))
     condition_keys = build_condition_key_index(validated)
+
+    # VPCE-policy scope guard. A VPC-endpoint policy evaluates at the endpoint
+    # boundary (Action x Principal x ResourceArn); it cannot see request-body
+    # parameters of a Create/Update call (e.g. $.lambda/CreateFunction.SubnetIds).
+    # So a VPCE-policy control whose parameters_controlled[] names a request-body
+    # field is not preventable by that mechanism — route to detective regardless
+    # of whether a condition key happens to exist for the action.
+    if "vpce" in mechanism.lower() and _controls_request_body_param(control):
+        return {
+            "id": control.get("id"),
+            "mechanism": mechanism,
+            "verdict": "NOT_PREVENTABLE",
+            "enforcing_condition_keys": [],
+            "target_actions": sorted(target_actions),
+            "route_to": "detective",
+            "reason": (
+                "VPCE policy gates endpoint use, not request-body parameters; it "
+                "cannot enforce a parameter on a Create/Update call. Route to a "
+                "detective mechanism or re-map to an SCP/IAM-based control."
+            ),
+        }
 
     enforcing = find_enforcing_keys(target_actions, condition_keys)
 
