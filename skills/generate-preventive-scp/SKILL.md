@@ -96,10 +96,17 @@ documented once in `skills/generate-preventive/SKILL.md` under
 enforced by validators CHECK-12 (size), CHECK-14a (condition keys), and CHECK-17
 (action sourcing) at hook time.
 
-**Action rule (restated — hard):** every `Action`/`NotAction` string for the
-target service MUST come from `validated.json.api_surface.operations[].operation`
-or `capabilities.iam.permission_only_actions[]`. Never templated from an
-operation name by analogy. CHECK-17 fails the hook on a synthesized action.
+**Action rule (restated — hard):** IAM Action strings are NOT API operation
+names. Every target-service `Action`/`NotAction` string MUST be a real action
+in the AWS Service Authorization Reference for the target service, sourced
+from the SAR IAM action list (resolving operation→action drift via
+`data/botocore-iam-alias.json` — e.g. boto3 `StopQueryExecution` ↔ SAR
+`athena:CancelQueryExecution`) or from
+`capabilities.iam.permission_only_actions[]`. Never template an Action
+string from an operation name. CHECK-17 fails the hook on a synthesized
+action. Service-specific condition keys absent from the SAR snapshot may
+still be valid — the SAR is a lower bound; cite the service authorization
+doc when relying on a non-SAR key.
 
 ## Print summary
 

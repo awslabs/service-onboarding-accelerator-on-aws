@@ -95,27 +95,41 @@ permission boundaries, resource-based policies, VPCE policies, KMS key policies.
 
 For every such artifact:
 
-1. **Every Condition-block key MUST come from `validated.json.capabilities.iam.condition_keys[]`**,
-   the AWS global key set (e.g., `aws:PrincipalARN`, `aws:SourceAccount`, `aws:RequestTag/*`),
-   or — for KMS key policy files only — the KMS service-owned key set
-   (`kms:ViaService`, `kms:EncryptionContext:*`, `kms:GrantOperations`, etc.).
+1. **Condition-block keys may include service-specific keys grounded in a
+   documentation citation.** The SAR/Bookkeeper condition-key list in
+   `validated.json.capabilities.iam.condition_keys[]` (plus the AWS global keys
+   such as `aws:PrincipalARN`, `aws:SourceAccount`, `aws:RequestTag/*`, and —
+   for KMS key policy files only — KMS service-owned keys like `kms:ViaService`,
+   `kms:EncryptionContext:*`, `kms:GrantOperations`) is a **lower bound, not a
+   closed set**. If the SAR snapshot does not list a service-specific key but
+   the service authorization documentation does, that key is valid; record the
+   doc URL in `mcp-calls.log` and the artifact's `_metadata`. Absence from the
+   SAR snapshot is not proof the key does not exist.
 2. **API parameter paths are NEVER valid condition keys.** A literal like
    `"$.networkConfiguration.awsvpcConfiguration.assignPublicIp"` in a Condition block
    is silently ignored by AWS IAM — the intended guardrail does not fire. Instead, find
-   the SAR condition key that gates the parameter (look up the parameter in
+   the SAR condition key (or doc-cited service-specific key) that gates the parameter
+   (look up the parameter in
    `validated.json.api_surface.operations[].parameters[]` and read its `sar_condition_key`
    field, populated by Phase B enrichment).
-3. **Every Action in the statement MUST come from `validated.json.api_surface.operations[].operation`**
-   OR `capabilities.iam.permission_only_actions[]` (this was already required; restated
-   here for completeness — SAR-driven mechanisms are grounded in both the action list
-   AND the condition-key list).
+3. **IAM Action strings are NOT API operation names.** They come from the IAM
+   action list published in the AWS Service Authorization Reference (SAR),
+   resolved via the operation→action mapping in `data/botocore-iam-alias.json`
+   (boto3/botocore operation names sometimes diverge from SAR IAM action
+   names — e.g. boto3 `StopQueryExecution` ↔ SAR `athena:CancelQueryExecution`),
+   plus `capabilities.iam.permission_only_actions[]` (IAM-evaluated actions
+   without an API endpoint, e.g. `lambda:InvokeFunctionUrl`). The
+   `validated.json.api_surface.operations[].operation` field carries the
+   operation name and is the input to that resolution; an unaliased operation
+   name is NOT, on its own, a valid IAM Action source. Do NOT template Action
+   strings from operation names.
 
-4. **Action-name verification (HARD RULE).** Every IAM `Action` string in every policy
-   artifact (SCP, resource policy, IAM policy, permission boundary, KMS key policy,
-   VPCE policy) MUST appear verbatim (case-sensitive) in one of:
-   - `sar-facts.json` action list or `permission_only_actions[]`
-   - `research-api-surface.json.api_surface.operations[].operation`
-   - `validated.json.api_surface.operations[].operation` (post-verification authoritative)
+4. **Action-name verification (HARD RULE).** Every IAM `Action` string in every
+   policy artifact (SCP, resource policy, IAM policy, permission boundary, KMS
+   key policy, VPCE policy) MUST be a real action in the AWS Service
+   Authorization Reference for the target service: present in the SAR action
+   list (resolving operation→action drift via `data/botocore-iam-alias.json`)
+   or in `capabilities.iam.permission_only_actions[]`.
 
    Do NOT generate action names by analogy or extrapolation. If a mitigation statement
    references an action in English prose (e.g., "prevent memory searches"), look up the
@@ -135,37 +149,30 @@ For every such artifact:
    validation.
 
    Validator CHECK-17 enforces this rule at hook time: every `Action`/`NotAction`
-   string whose prefix matches the target service is checked against
+   string whose prefix matches the target service is checked against the
+   service's valid action set (sourced from
    `validated.json.api_surface.operations[].operation` and
-   `capabilities.iam.permission_only_actions[]`. An action with the service prefix
-   that is absent from both sets fails the hook. Cross-service actions (a different
-   prefix) and wildcards are not checked — only target-service action names are
-   gated, because those are the ones the LLM is tempted to synthesize by analogy.
+   `capabilities.iam.permission_only_actions[]`, reconciled with the alias map).
+   An action with the service prefix that is absent from that set fails the
+   hook. Cross-service actions (a different prefix) and wildcards are not
+   checked — only target-service action names are gated, because those are the
+   ones the LLM is tempted to synthesize by analogy.
 
 Validator CHECK-14a enforces rule 1 at hook time. A condition-block key that is not a
-SAR/global/KMS key fails the hook with a remediation message. The #1 failure mode this
-prevents is an agent treating an API parameter as if it were a condition key — a class
-of silent-ignore bug that was endemic before Phase B enrichment.
+SAR/global/KMS/doc-cited key fails the hook with a remediation message. The #1
+failure mode this prevents is an agent treating an API parameter as if it were a
+condition key — a class of silent-ignore bug that was endemic before Phase B
+enrichment.
 
-### Zero-service-condition-keys branch
+### Service-specific condition keys absent from the SAR
 
-Some services (examples: DataSync, Athena, Step Functions in some configurations)
-publish NO service-specific condition keys — only the global tag keys
-(`aws:RequestTag/${TagKey}`, `aws:ResourceTag/${TagKey}`, `aws:TagKeys`,
-`aws:PrincipalTag/${TagKey}`) apply. You can tell deterministically by inspecting
-`validated.json.capabilities.iam.condition_keys[]`: if every entry's `key` starts
-with `aws:`, the service has zero service-specific keys.
-
-In that branch, SCPs and permission boundaries can ONLY gate tag-based controls
-(creation-time tagging, tag-mandated resource categories) — they CANNOT gate
-service-specific properties like encryption mode, network mode, result location,
-workgroup enforcement flags, etc. Do NOT fabricate a service-specific condition
-key to make an SCP statement work. CHECK-14a rejects invented keys, and even if
-it didn't, AWS IAM would silently ignore the condition and the guardrail would
-be a no-op.
-
-Instead, route non-tag gating to mechanisms that can see the property values
-directly:
+Absence of a service-specific key in the SAR snapshot or in
+`data/botocore-iam-alias.json`-derived bookkeeper data does NOT prove it does
+not exist — verify against the service's authorization documentation before
+concluding a control is not preventable. If the doc lists a gating key the
+SAR snapshot lacks, the key is valid (rule 1); if the doc confirms NO
+service-specific key gates the target action, route the control to a mechanism
+that can see the property value directly:
 
 - **Preventative-proactive** → CloudFormation Guard rules (`proactive/cfn-guard-rules.guard`)
   and Checkov custom policies (`proactive/custom-policies/`). These evaluate
@@ -684,16 +691,20 @@ control IDs present in mapping-results.
   Resource types column is empty are global-only and cannot be scoped.
 
 **IAM action validation (CRITICAL):** Before generating any IAM policy artifact (SCP,
-permission boundary, IAM policies, resource policies, VPCE policies), verify that every
-`Action` value exists in `validated.json` `api_surface.operations[].operation` OR is listed
-as a permission-only action in `capabilities.iam.permission_only_actions[]`. Permission-only
-actions (e.g., `InvokeGateway`) are valid IAM-evaluated actions without API endpoints — they
-CAN be used in policies. Common error: inventing action patterns (e.g., `<prefix>:Describe*`)
-when the service only supports `Get*` and `List*` for read operations. Check the service's
-IAM actions via `awsknowledge` MCP or
-the IAM Actions Reference. If the service prefix does not support a particular action verb,
-do not generate it. This applies to ALL policy files: `scp-policy.json`, `iam-policies.json`,
-`permission-boundary.json`, `resource-policy.json`, `vpce-policy.json`.
+permission boundary, IAM policies, resource policies, VPCE policies), verify that
+every `Action` value is a real action in the AWS Service Authorization
+Reference for the target service — sourced from the SAR IAM action list
+(resolving operation→action drift via `data/botocore-iam-alias.json`) or from
+`capabilities.iam.permission_only_actions[]`. IAM Action strings are NOT API
+operation names. Permission-only actions (e.g., `lambda:InvokeFunctionUrl`)
+are valid IAM-evaluated actions without API endpoints — they CAN be used in
+policies. Common error: inventing action patterns (e.g., `<prefix>:Describe*`)
+when the service only supports `Get*` and `List*` for read operations. Check
+the service's IAM actions via `awsknowledge` MCP or the IAM Actions
+Reference. If the service prefix does not support a particular action verb,
+do not generate it. This applies to ALL policy files: `scp-policy.json`,
+`iam-policies.json`, `permission-boundary.json`, `resource-policy.json`,
+`vpce-policy.json`.
 
 ### IAM Policies and Trust Policies (`preventive/iam-policies.json`)
 

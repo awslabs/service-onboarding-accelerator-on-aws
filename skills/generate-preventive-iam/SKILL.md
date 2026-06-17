@@ -79,12 +79,19 @@ the plan row's `anchor.example_id` and resolve in the index.
 
 ## Action rule (hard)
 
-Every target-service `Action`/`NotAction` string MUST come from
-`validated.json.api_surface.operations[].operation` or
-`capabilities.iam.permission_only_actions[]` — never templated from an operation
-name. Permission-only actions (e.g. `InvokeFunctionUrl`) are valid even without
-an API endpoint. CHECK-17 fails the hook on a synthesized target-service action;
-CHECK-14a fails the hook on a non-SAR condition key.
+IAM Action strings are NOT API operation names. Every target-service
+`Action`/`NotAction` string MUST be a real action in the AWS Service
+Authorization Reference for the target service, sourced from the SAR IAM
+action list (resolving operation→action drift via the
+`data/botocore-iam-alias.json` map — boto3 and SAR sometimes disagree, e.g.
+`StopQueryExecution` vs `athena:CancelQueryExecution`) or from
+`capabilities.iam.permission_only_actions[]` (IAM-evaluated actions without an
+API endpoint, e.g. `lambda:InvokeFunctionUrl`). Never template an Action
+string from an operation name. CHECK-17 fails the hook on a synthesized
+target-service action; CHECK-14a fails the hook on a non-SAR/non-doc-cited
+condition key. Service-specific condition keys absent from the SAR snapshot
+may still be valid — the SAR is a lower bound; cite the service authorization
+doc in `mcp-calls.log` when relying on a non-SAR key.
 
 ## Print summary
 
