@@ -78,31 +78,82 @@ class CliCheck:
 def decode_parameter_path(pc: str) -> tuple[str, str, str]:
     """Decode a parameters_controlled path into (service_prefix, operation, property).
 
-    Args:
-        pc: Path like "$.lambda/CreateFunction.KMSKeyArn"
+    Accepts two shapes:
+      - LONG: "$.<service>/<Operation>.<Param>"  -> ("service", "Operation", "Param")
+      - SHORT: "$.<Param>"                       -> ("", "", "Param")
+
+    The short shape is what map-generate-controls/SKILL.md prescribes for
+    most controls (e.g., "$.encryptionKeyArn"); callers fill missing svc/op
+    from sibling metadata (sar.service_prefix and the leading actions[0]
+    operation segment). The long shape is also accepted because some
+    controls and the test fixtures use it.
 
     Returns:
         Tuple of (service_prefix, operation, property_path).
-        Example: ("lambda", "CreateFunction", "KMSKeyArn")
 
     Raises:
-        ValueError: If path format is invalid.
+        ValueError: If the path doesn't start with "$." or is otherwise
+        unparseable.
     """
     if not pc.startswith("$."):
         raise ValueError(f"Invalid parameter path (must start with $.) : {pc!r}")
 
     rest = pc[2:]
-    if "/" not in rest:
-        raise ValueError(f"Invalid parameter path (missing /): {pc!r}")
-    service_prefix, op_and_prop = rest.split("/", 1)
+    if not rest:
+        raise ValueError(f"Invalid parameter path (empty after $.): {pc!r}")
 
-    if "." in op_and_prop:
-        operation, prop_path = op_and_prop.split(".", 1)
-    else:
-        operation = op_and_prop
-        prop_path = ""
+    if "/" in rest:
+        # Long form: $.<service>/<Operation>[.<Param>]
+        service_prefix, op_and_prop = rest.split("/", 1)
+        if "." in op_and_prop:
+            operation, prop_path = op_and_prop.split(".", 1)
+        else:
+            operation = op_and_prop
+            prop_path = ""
+        return service_prefix, operation, prop_path
 
-    return service_prefix, operation, prop_path
+    # Short form: $.<Param>. svc/op are unknown — caller resolves from sar
+    # (service_prefix) and actions[] (action -> operation).
+    return "", "", rest
+
+
+def _param_tail(pc: str) -> str:
+    """Return the trailing parameter component of a parameters_controlled path.
+
+    Used to compare short vs. long path shapes for the same parameter:
+        _param_tail("$.KMSKeyArn") == _param_tail("$.lambda/CreateFunction.KMSKeyArn")
+    Returns "" for malformed paths so callers can decide what to do.
+    """
+    try:
+        _, _, prop = decode_parameter_path(pc)
+    except ValueError:
+        return ""
+    # The "tail" is the leaf property name (last dotted segment), so a
+    # nested path like $.Encryption.KMSKeyArn still matches a short-form
+    # $.KMSKeyArn for synthesizer purposes.
+    return prop.rsplit(".", 1)[-1] if prop else ""
+
+
+def parameter_paths_match(a: str, b: str) -> bool:
+    """True when two parameters_controlled paths refer to the same parameter.
+
+    Compares on the trailing parameter component so a short-form path
+    ($.KMSKeyArn) matches its long-form equivalent
+    ($.lambda/CreateFunction.KMSKeyArn).
+    """
+    ta, tb = _param_tail(a), _param_tail(b)
+    return bool(ta) and ta == tb
+
+
+def _operation_from_action(action: str) -> str:
+    """Extract the operation segment from an IAM action string.
+
+    "lambda:CreateFunction" -> "CreateFunction"; returns "" if the action
+    isn't in <prefix>:<Operation> shape.
+    """
+    if not action or ":" not in action:
+        return ""
+    return action.split(":", 1)[1]
 
 
 # Stack ARN: arn:aws:cloudformation:<region>:<account>:stack/<name>/<id>
@@ -692,7 +743,11 @@ def synthesize_cli(
     pc_list = control.get("parameters_controlled", [])
     iac_only = bool(control.get("iac_only", False))
 
-    # Decode first parameter to get (service_prefix, operation, property)
+    # Decode first parameter to get (service_prefix, operation, property).
+    # The decoder accepts both the long form ($.svc/Op.Prop) and the short
+    # form ($.Prop) — for short form, svc/op come back empty and we fill
+    # them from the sibling metadata below so a path-shape mismatch alone
+    # never knocks an F1-eligible control into NOT_CLI_VALIDATABLE.
     svc: str | None = None
     op: str | None = None
     prop: str | None = None
@@ -704,6 +759,14 @@ def synthesize_cli(
 
     if not svc:
         svc = sar.get("service_prefix", "")
+
+    # Short-form paths leave op empty — recover it from the leading action
+    # (e.g., "lambda:CreateFunction" -> "CreateFunction"). Controls that
+    # mix scopes (one action per CRUD verb) still get a deterministic op
+    # because actions[0] is the canonical create/mutating verb by convention.
+    actions_list = control.get("actions", [])
+    if not op and actions_list:
+        op = _operation_from_action(actions_list[0])
 
     # F6 (intentional IaC-time) — selected ONLY by explicit signal, never as
     # a fallback. Checked BEFORE F1 so a control flagged iac_only doesn't

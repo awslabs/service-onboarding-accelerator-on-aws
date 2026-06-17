@@ -17,6 +17,7 @@ from tools.evidence.synthesize import (
     REASON_NO_DEPLOYED_RESOURCE,
     REASON_UNKNOWN_MECHANISM,
     decode_parameter_path,
+    parameter_paths_match,
     synthesize_cli,
     synthesize_all,
     f1_resource_get_probe,
@@ -68,7 +69,13 @@ def _control_by_id(mapping_results: dict, cid: str) -> dict:
 
 # ===== Helper / primitive tests =====
 def test_decode_parameter_path():
-    """Test parameter path decoder — core service-agnostic primitive."""
+    """Test parameter path decoder — core service-agnostic primitive.
+
+    Accepts both the long form ($.svc/Op.Prop) and the short form ($.Prop);
+    SKILL.md prescribes the short form for most controls, while the test
+    fixtures and a few legacy controls use the long form.
+    """
+    # Long form: full svc/op/prop tuple.
     svc, op, prop = decode_parameter_path("$.lambda/CreateFunction.KMSKeyArn")
     assert svc == "lambda"
     assert op == "CreateFunction"
@@ -79,16 +86,31 @@ def test_decode_parameter_path():
     assert op == "PutObject"
     assert prop == "ServerSideEncryption"
 
+    # Long form without trailing property.
     svc, op, prop = decode_parameter_path("$.lambda/CreateFunction")
     assert svc == "lambda"
     assert op == "CreateFunction"
     assert prop == ""
 
+    # Short form: svc/op blank, prop populated.
+    svc, op, prop = decode_parameter_path("$.KMSKeyArn")
+    assert svc == ""
+    assert op == ""
+    assert prop == "KMSKeyArn"
+
+    # Short form with a nested sub-path is preserved as-is in prop.
+    svc, op, prop = decode_parameter_path("$.Encryption.KMSKeyArn")
+    assert svc == ""
+    assert op == ""
+    assert prop == "Encryption.KMSKeyArn"
+
+    # Missing "$." prefix is still a hard error.
     with pytest.raises(ValueError):
         decode_parameter_path("lambda/CreateFunction.KMSKeyArn")
 
+    # Empty after "$." is still a hard error.
     with pytest.raises(ValueError):
-        decode_parameter_path("$.CreateFunction.KMSKeyArn")
+        decode_parameter_path("$.")
 
 
 def test_stack_arn_helpers():
@@ -507,3 +529,84 @@ def test_f1_argv_immune_to_shell_metacharacters(
             continue  # the value itself, intact
         assert ";rm" not in arg
         assert "&&" not in arg
+
+
+# ===== Short-form vs long-form parameter path normalization =====
+# map-generate-controls/SKILL.md prescribes the SHORT shape ($.KMSKeyArn) but
+# legacy fixtures and callers also produce the LONG shape
+# ($.lambda/CreateFunction.KMSKeyArn). The synthesizer must treat both as
+# equivalent — otherwise controls whose parameter the probe actually
+# exercised get marked NOT_CLI_VALIDATABLE solely because of path shape.
+
+def test_parameter_paths_match_short_vs_long():
+    """parameter_paths_match collapses short/long path shapes onto the same
+    leaf parameter component."""
+    assert parameter_paths_match("$.KMSKeyArn", "$.lambda/CreateFunction.KMSKeyArn")
+    assert parameter_paths_match("$.lambda/CreateFunction.KMSKeyArn", "$.KMSKeyArn")
+    # Same shape on both sides also matches.
+    assert parameter_paths_match("$.KMSKeyArn", "$.KMSKeyArn")
+    assert parameter_paths_match(
+        "$.lambda/CreateFunction.KMSKeyArn",
+        "$.lambda/CreateFunction.KMSKeyArn",
+    )
+    # Different leaf names don't match.
+    assert not parameter_paths_match("$.KMSKeyArn", "$.lambda/CreateFunction.RoleArn")
+    # Malformed paths don't crash and don't accidentally match.
+    assert not parameter_paths_match("not-a-path", "$.KMSKeyArn")
+    assert not parameter_paths_match("$.KMSKeyArn", "")
+
+
+def test_f1_dispatch_resolves_short_form_path(
+    deployed: dict, mapping_results: dict, sar_facts: dict, validated: dict
+):
+    """A control whose parameters_controlled uses the SHORT shape ($.KMSKeyArn)
+    must dispatch to F1 just like the equivalent LONG shape — the operation
+    is recovered from actions[0] and the service from sar.service_prefix.
+    """
+    long_form = _control_by_id(mapping_results, "CTRL-ACC-PRO-001")
+    short_form = json.loads(json.dumps(long_form))  # deep copy
+    short_form["id"] = "CTRL-ACC-PRO-001S"
+    short_form["parameters_controlled"] = ["$.KMSKeyArn"]
+
+    long_check = synthesize_cli(long_form, validated, deployed, sar_facts)
+    short_check = synthesize_cli(short_form, validated, deployed, sar_facts)
+
+    # Both must be CLI-validatable F1 probes — neither falls into NCV.
+    assert long_check.verdict is None, (
+        f"Long form unexpectedly NCV: {long_check.reason!r}"
+    )
+    assert short_check.verdict is None, (
+        f"Short form unexpectedly NCV: {short_check.reason!r}"
+    )
+    assert long_check.family == "F1-resource-get"
+    assert short_check.family == "F1-resource-get"
+
+    # The synthesized probe must be functionally identical: same describe
+    # API, same physical_id, same predicate (referencing the same property).
+    assert short_check.command_argv == long_check.command_argv
+    assert short_check.predicate_expression == long_check.predicate_expression
+    assert "KMSKeyArn" in short_check.predicate_expression
+
+
+def test_f1_short_form_no_actions_still_surfaces_metadata_gap(
+    deployed: dict, sar_facts: dict, validated: dict
+):
+    """If the short form is used AND actions[] is empty, op cannot be
+    recovered — the synthesizer must surface a missing-metadata NCV rather
+    than silently picking a wrong operation. This protects the invariant
+    that NCV reasons name a real, fixable upstream gap."""
+    control = {
+        "id": "CTRL-ACC-PRO-996",
+        "mechanism": "CloudFormation Guard",
+        "scope": "ACC",
+        "category": "PRO",
+        "parameters_controlled": ["$.KMSKeyArn"],
+        "actions": [],
+        "resource_types": ["AWS::Lambda::Function"],
+    }
+    # sar fixture has no service_prefix either, so svc + op are both unknown;
+    # but resource_types is present, so F1 begins dispatch and lands on the
+    # "missing metadata" guard rather than emitting a malformed probe.
+    check = synthesize_cli(control, validated, deployed, sar_facts)
+    assert check.verdict == "NOT_CLI_VALIDATABLE"
+    assert check.reason_code == REASON_MISSING_METADATA
