@@ -58,7 +58,14 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
    "Resource × Preventive", "Rule C2"):
    - Trust policies: confused-deputy `Condition` (`aws:SourceAccount`/`aws:SourceArn`).
    - IAM policies: scope to specific resource ARN patterns, not `*`.
-   - Permission boundaries: globally-scoped actions in their own `Resource: "*"` statement.
+   - Permission boundaries: NEVER emit an unconditional `Allow <prefix>:* on
+     Resource "*"` baseline — that is an exfiltration path the integrity check
+     (P3) hard-blocks, and it defeats the purpose of a boundary (which exists to
+     *constrain*). Scope the Allow to specific actions on the resource ARN
+     pattern (`arn:aws:<prefix>:*:*:<type>/*`); put only the genuinely
+     wildcard-only actions (those whose SAR `resource_types` is empty — e.g.
+     `List*`, account-level `Get*`) in a separate `Resource: "*"` Allow
+     statement. Then add the scoped Deny(s) that enforce the control.
    - Resource-based policies: mandatory confused-deputy conditions.
    - VPCE policies: org scoping via `aws:PrincipalOrgID` (NOT confused-deputy keys).
    - KMS key policies: `kms:ViaService` keyed to the consuming service.
