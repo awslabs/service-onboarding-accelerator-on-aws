@@ -689,9 +689,7 @@ def write_framework_mapping(
                             ctrl.get("scope", ""), ctrl.get("scope", "?")
                         )
                         title = ctrl.get("name", "?")
-                        # Current data uses coverage_level; confidence is the
-                        # deprecated legacy alias.
-                        level = cm.get("coverage_level", cm.get("confidence", "?"))
+                        level = cm.get("coverage_level", "?")
                         rat = cm.get("rationale", "")
                         lines.append(
                             f"| {cid} | {title} | {cat} | {scope} | {level} | {rat} |"

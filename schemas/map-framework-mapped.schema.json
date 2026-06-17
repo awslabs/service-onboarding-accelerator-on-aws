@@ -73,11 +73,6 @@
                 "enum": ["Full Coverage", "Partial Coverage", "Supportive", "High", "Medium", "Low"],
                 "description": "Preferred values: 'Full Coverage', 'Partial Coverage', 'Supportive'. Legacy values (High, Medium, Low) accepted for backward compatibility with archived runs."
               },
-              "confidence": {
-                "type": "string",
-                "enum": ["High", "Medium", "Low"],
-                "description": "DEPRECATED — use coverage_level instead. Retained for backward compatibility with archived state files from iter-14 through iter-18."
-              },
               "rationale": {"type": "string", "minLength": 1}
             }
           }

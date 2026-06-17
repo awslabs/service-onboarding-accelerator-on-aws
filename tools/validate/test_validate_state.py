@@ -296,7 +296,7 @@ def test_check_s11_still_catches_scope_category_mismatch(tmp_path) -> None:
 
 
 # ------------------------------------------------------------------
-# map-framework-mapped coverage_level enum (renamed from confidence)
+# map-framework-mapped coverage_level enum.
 # Accepts both new values (Full Coverage, Partial Coverage, Supportive)
 # and legacy values (High, Medium, Low) for backward compatibility.
 # ------------------------------------------------------------------
@@ -304,7 +304,7 @@ def test_check_s11_still_catches_scope_category_mismatch(tmp_path) -> None:
 
 def _minimal_mapped_doc(coverage_level: str, field_name: str = "coverage_level") -> dict:
     """Build a minimal map-framework-mapped.json that passes every schema
-    constraint except (potentially) the coverage_level/confidence enum."""
+    constraint except (potentially) the coverage_level enum."""
     ctrl = {
         "control_id": "CTRL-ORG-PRV-001",
         field_name: coverage_level,
@@ -335,27 +335,23 @@ def test_coverage_level_accepts_new_values() -> None:
         assert errs == [], f"New value {value!r} must validate; got: {errs}"
 
 
-def test_confidence_accepts_pascal_case() -> None:
-    """Legacy PascalCase values must still be accepted for backward compatibility
-    with archived runs (iter-14..18)."""
-    for value in ["High", "Medium", "Low"]:
-        doc = _minimal_mapped_doc(value, "confidence")
-        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
-        assert errs == [], f"Legacy PascalCase {value!r} must validate; got: {errs}"
+def test_confidence_field_no_longer_in_schema() -> None:
+    """The deprecated `confidence` enum was removed from the schema. The schema
+    intentionally does not define a `confidence` property anywhere on a control
+    entry — coverage_level is the only ranked field."""
+    import json
+    from pathlib import Path
 
-
-def test_confidence_rejects_lowercase() -> None:
-    """Lowercase was previously tolerated (foot-gun per reviewer). Must now
-    fail the enum so downstream consumers can rely on exact string match."""
-    for value in ["high", "medium", "low"]:
-        doc = _minimal_mapped_doc(value, "confidence")
-        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
-        assert len(errs) == 1, f"lowercase {value!r} must be rejected; got: {errs}"
-
-
-def test_confidence_rejects_other_variants() -> None:
-    """Other casings and synonyms must also fail — the enum is a closed set."""
-    for value in ["HIGH", "MED", "None", ""]:
-        doc = _minimal_mapped_doc(value, "confidence")
-        errs = [e for e in schema_errors(doc, "map-framework-mapped") if "confidence" in e]
-        assert len(errs) == 1, f"variant {value!r} must be rejected; got: {errs}"
+    schema_path = (
+        Path(__file__).resolve().parents[2] / "schemas" / "map-framework-mapped.schema.json"
+    )
+    with open(schema_path) as f:
+        schema = json.load(f)
+    ctrl_props = (
+        schema["$defs"]["mapping"]["properties"]["controls"]["items"]["properties"]
+    )
+    assert "confidence" not in ctrl_props, (
+        "confidence property must be absent from map-framework-mapped.schema.json "
+        "(LLM confidence scoring was removed)"
+    )
+    assert "coverage_level" in ctrl_props, "coverage_level remains the canonical field"

@@ -200,35 +200,43 @@ Record the source in the output for provenance:
 If SAR facts exist, extract API operations. Otherwise use the `--service` flag to
 identify the service. Map API action patterns to ATT&CK techniques:
 
-| API Action Pattern | ATT&CK Technique | Confidence | Rationale |
-|---|---|---|---|
-| `Create*` with IAM role parameter | T1078.004 (Cloud Accounts) | HIGH | Service uses assumable roles — credential compromise enables access |
-| `PutResourcePolicy`, `SetResourcePolicy` | T1098 (Account Manipulation) | HIGH | Resource policies can be modified to grant unauthorized access |
-| `Delete*` any resource | T1485 (Data Destruction) | MEDIUM | Resources can be deleted to disrupt service |
-| Data-plane `Invoke*`, `Get*` on user content | T1530 (Data from Cloud Storage) | HIGH if no auth required, MEDIUM if auth required | Data-plane reads expose customer content |
-| Encryption parameter is optional (not required) | T1530 (Data from Cloud Storage) | HIGH | Unencrypted data is exposed at rest |
-| Public endpoint available (no VPC-only mode) | T1190 (Exploit Public-Facing App) | MEDIUM | Public endpoints are attack surface |
-| VPC mode optional | T1190 (Exploit Public-Facing App) | MEDIUM | Network perimeter not enforced |
-| `Tag*`, `Untag*` operations | T1565 (Data Manipulation) | LOW | Tag manipulation enables classification evasion |
-| Cross-account role trust | T1199 (Trusted Relationship) | HIGH | Cross-account trust enables lateral movement |
-| `*CredentialProvider*`, `*Token*` operations | T1528 (Steal Application Access Token) | HIGH | Credential material in the service |
-| `*WorkloadIdentity*`, `*OAuth*` operations | T1556 (Modify Authentication Process) | MEDIUM | Authentication config can be tampered with |
-| Streaming/logging to external services | T1537 (Transfer Data to Cloud Account) | MEDIUM | Data channels can be redirected |
+For each ATT&CK technique below, mark `applies` (the service has the API
+pattern in its surface) or `does-not-apply` (no matching pattern, or the
+pattern is gated such that the technique cannot reach the service). State the
+rationale verbatim from the API surface — do not assign numeric or level
+scores.
+
+| API Action Pattern | ATT&CK Technique | Rationale |
+|---|---|---|
+| `Create*` with IAM role parameter | T1078.004 (Cloud Accounts) | Service uses assumable roles — credential compromise enables access |
+| `PutResourcePolicy`, `SetResourcePolicy` | T1098 (Account Manipulation) | Resource policies can be modified to grant unauthorized access |
+| `Delete*` any resource | T1485 (Data Destruction) | Resources can be deleted to disrupt service |
+| Data-plane `Invoke*`, `Get*` on user content | T1530 (Data from Cloud Storage) | Data-plane reads expose customer content |
+| Encryption parameter is optional (not required) | T1530 (Data from Cloud Storage) | Unencrypted data is exposed at rest |
+| Public endpoint available (no VPC-only mode) | T1190 (Exploit Public-Facing App) | Public endpoints are attack surface |
+| VPC mode optional | T1190 (Exploit Public-Facing App) | Network perimeter not enforced |
+| `Tag*`, `Untag*` operations | T1565 (Data Manipulation) | Tag manipulation enables classification evasion |
+| Cross-account role trust | T1199 (Trusted Relationship) | Cross-account trust enables lateral movement |
+| `*CredentialProvider*`, `*Token*` operations | T1528 (Steal Application Access Token) | Credential material in the service |
+| `*WorkloadIdentity*`, `*OAuth*` operations | T1556 (Modify Authentication Process) | Authentication config can be tampered with |
+| Streaming/logging to external services | T1537 (Transfer Data to Cloud Account) | Data channels can be redirected |
 
 ### 2.3 Cross-reference with STRIDE bridge
 
 For each identified technique, check if the corresponding STRIDE category appears in
-the customer profile. If yes, boost confidence by one level (MEDIUM→HIGH, LOW→MEDIUM).
+the customer profile. If yes, record that alignment in the technique's
+`stride_categories` field — do not adjust an applicability score.
 
 ### 2.4 Build applicable techniques list
 
-For each technique, calculate applicability:
-- **HIGH**: Direct API pattern match + customer STRIDE alignment
-- **MEDIUM**: Direct API pattern match without STRIDE data, OR indirect pattern
-- **LOW**: Tangential relevance (generic cloud risk, not service-specific)
+Include a technique when **any** of the following hold:
+- Its API pattern matches the service's verified API surface
+- The corresponding STRIDE category appears in the customer threat profile
 
-**Filter**: Only include techniques with MEDIUM or HIGH applicability. Discard LOW.
-Target: 15-25 applicable techniques per service. If >30, raise the threshold.
+Mark each technique either `"HIGH"` (direct API pattern match) or `"MEDIUM"`
+(indirect pattern, e.g., bridge from STRIDE without a direct API hit). Drop
+techniques with no API match and no customer-profile alignment. Target:
+15-25 applicable techniques per service.
 
 ---
 

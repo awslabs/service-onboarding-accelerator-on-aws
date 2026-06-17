@@ -109,7 +109,8 @@ The check bridges CCMv4 → NIST 800-53 (via `data/attack-nist-ccm-crosswalk.jso
 `data/control-catalog-snapshot.json`; when absent it SKIPS honestly (it does not
 fabricate catalog data). Refresh the snapshot with AWS credentials:
 `python3 tools/validate/validate_control_mappings.py --refresh`. Record any
-`LOW_CONFIDENCE` objectives in the run notes for review; do not fail the phase.
+objectives the validator flags as catalog-unsupported as a `REVIEW` note for
+manual sanity-check; do not fail the phase.
 
 ---
 
