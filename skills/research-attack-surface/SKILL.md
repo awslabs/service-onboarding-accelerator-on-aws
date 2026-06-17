@@ -37,11 +37,22 @@ Scan the input folder for threat model files. Detection rules:
 
 | File Pattern | Threat Model Type | Processing |
 |---|---|---|
+| JSON file with TOP-LEVEL `threats[]` AND `mitigations[]` | Canopy export (custom) | Ingest the `threats[]` entries verbatim; cross-link via `mappings[].id` to the file's `entities[]` and `mitigations[]` for context |
 | `*MITRE*`, `*ATT&CK*`, `*attack*` (xlsx/json) | MITRE ATT&CK | Parse enterprise/cloud matrix techniques |
 | `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
 | `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
 | Mitigation report with STRIDE keywords | STRIDE (implicit) | Extract from mitigation context |
 | **No threat model files found** | **MITRE ATT&CK (default)** | **Use MITRE MCP or bundled `data/attack-cloud-matrix.json` — derive techniques from service API surface** |
+
+**Canopy detector (must run BEFORE the MITRE default):** for every `.json`
+file in the input folder, peek at its top-level keys. If the file has both a
+top-level `threats[]` array AND a top-level `mitigations[]` array, treat it
+as a Canopy export and ingest the threats directly. Each Canopy threat
+carries `alias`, `source`, `prerequisites`, `threatAction`, and
+`requestParameters[]` — these are the fields to record. Without this
+detector, the file falls through to the MITRE default branch and the
+threat list is silently dropped. Reference detector at
+`tools/validate/canopy_parse.py::is_canopy_threats_shape`.
 
 If multiple threat model files are found, merge them — MITRE ATT&CK provides technique IDs,
 STRIDE provides category alignment, custom catalogs provide organization-specific threats.

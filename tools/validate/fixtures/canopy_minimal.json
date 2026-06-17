@@ -1,0 +1,87 @@
+{
+  "metadata": {
+    "service": "lambda",
+    "schemaVersion": "1.0"
+  },
+  "operations": [
+    {
+      "id": "00000000-0000-0000-0000-000000000001",
+      "service": "lambda",
+      "operation": "CreateFunction"
+    }
+  ],
+  "entities": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Function",
+      "entityType": "AWS::Lambda::Function",
+      "information": "Synthetic Lambda function entity for tests."
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "CapacityProvider",
+      "entityType": "AWS::Lambda::CapacityProvider",
+      "information": "Synthetic capacity provider entity for tests."
+    }
+  ],
+  "mitigations": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "alias": "Mitigation.LAMBDA.Function.1",
+      "statement": "Functions should be encrypted with a customer-managed KMS key.",
+      "configurationRequestParameters": [
+        {
+          "service": "lambda",
+          "operation": "CreateFunction",
+          "paths": [
+            {"path": "$.FunctionName"},
+            {"path": "$.KMSKeyArn"}
+          ]
+        }
+      ],
+      "verificationRequestParameters": [
+        {
+          "service": "lambda",
+          "operation": "GetFunctionConfiguration",
+          "paths": [{"path": "$.FunctionName"}]
+        }
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "11111111-1111-1111-1111-111111111111"},
+        {"type": "MITIGATION_GOAL", "id": "33333333-3333-3333-3333-333333333333"}
+      ]
+    },
+    {
+      "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "alias": "Mitigation.LAMBDA.CapacityProvider.1",
+      "statement": "Capacity provider operator role IAM service role should only be assumable by the Lambda principal.",
+      "configurationRequestParameters": [
+        {
+          "service": "lambda",
+          "operation": "CreateCapacityProvider",
+          "paths": [
+            {"path": "$.CapacityProviderName"},
+            {"path": "$.PermissionsConfig.CapacityProviderOperatorRoleArn"}
+          ]
+        }
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "22222222-2222-2222-2222-222222222222"},
+        {"type": "THREAT", "id": "44444444-4444-4444-4444-444444444444"}
+      ]
+    }
+  ],
+  "threats": [
+    {
+      "id": "44444444-4444-4444-4444-444444444444",
+      "alias": "Threat.LAMBDA.CapacityProvider.1",
+      "source": "IAM principal",
+      "prerequisites": "with unintended IAM permissions",
+      "threatAction": "can read EBS volume data in the capacity provider",
+      "requestParameters": [
+        {"service": "lambda", "operation": "ListCapacityProviders", "paths": [{"path": "$."}]}
+      ]
+    }
+  ],
+  "implementations": []
+}
