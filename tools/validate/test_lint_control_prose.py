@@ -14,6 +14,7 @@ from lint_control_prose import (
     DEFAULT_RATIONALE_BUDGET,
     find_banned_phrases,
     lint_control_prose,
+    lint_mapping_file,
 )
 
 
@@ -136,3 +137,33 @@ def test_lint_handles_nested_rationale() -> None:
 def test_lint_treats_missing_fields_as_clean() -> None:
     """A control without description/rationale is fine — no findings."""
     assert lint_control_prose({"id": "CTRL-ORG-PRV-001"}) == []
+
+
+# ---- lint_mapping_file ------------------------------------------------
+
+
+def test_lint_mapping_file_scans_top_level_and_nested() -> None:
+    """Findings are collected from controls[] and framework_mapping[].controls[]."""
+    mapping = {
+        "controls": [
+            {"control_id": "CTRL-ORG-PRV-001", "security_rationale": "This ensures safety."},
+            {"control_id": "CTRL-ORG-PRV-002", "description": "A short, verified note."},
+        ],
+        "framework_mapping": [
+            {
+                "objective_id": "CCC-04",
+                "controls": [
+                    {"control_id": "CTRL-ACC-DET-009", "rationale": "Eliminates all risk."}
+                ],
+            }
+        ],
+    }
+    results = lint_mapping_file(mapping)
+    flagged = {cid for cid, _ in results}
+    assert "CTRL-ORG-PRV-001" in flagged  # banned: ensures
+    assert "CTRL-ACC-DET-009" in flagged  # banned: eliminates
+    assert "CTRL-ORG-PRV-002" not in flagged  # clean
+
+
+def test_lint_mapping_file_empty_is_clean() -> None:
+    assert lint_mapping_file({}) == []

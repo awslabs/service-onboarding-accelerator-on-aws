@@ -668,6 +668,23 @@ Agent 3d: map-assemble (foreground)
 
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
 
+**Step 3e: Mapping review gate (foreground subagent, after 3d completes)**
+
+Before generation consumes the mapping, dispatch a foreground review subagent to
+check the mapping is well-grounded and citable. The subagent runs:
+
+```bash
+python3 tools/validate/validate_control_mappings.py --slug <slug>
+python3 tools/validate/lint_control_prose.py --slug <slug>
+```
+
+and reports: objectives flagged with no catalog/reference support, and any control
+prose that exceeds the verified-language budget. This is an **advisory gate** —
+surface the flagged items in the run log and proceed unless a hard validator
+(non-zero exit on a blocking check) fails. Its purpose is to confirm every mapping
+can point to a citation (Canopy mitigation, reference example, Control Catalog, or a
+service-specific doc) before any control is authored.
+
 ### Phase 4: Generate (3 families in parallel; preventive is a sequenced sub-pipeline)
 
 Dispatch the 3 control families simultaneously as background subagents. The
@@ -713,6 +730,25 @@ confirm the loop is closed:
 ```bash
 python3 tools/validate/validate_detective_routing.py --slug <slug>
 ```
+
+**Step 4-review: Generation review gate (foreground subagent, after generation completes)**
+
+Before summarizing, dispatch a foreground review subagent to prove every generated
+preventive artifact is both in the mapping and properly anchored. The subagent runs:
+
+```bash
+python3 tools/validate/validate_reference_anchor.py --slug <slug>
+python3 tools/validate/validate_preventability.py --slug <slug>
+python3 tools/validate/validate_detective_routing.py --slug <slug>
+```
+
+and reports: any authored preventive artifact lacking a resolvable reference anchor,
+any artifact marked not-anchored without an explicit reason, any `source_control_id`
+that does not trace back to `mapping-results.json`, and any objective that should be
+routed to detective. The reference-anchor and preventability checks are **hard
+gates** (they also run in the Stop hook); the routing summary is advisory. Surface
+the findings before Phase 6 so the report's confidence-actions section can state
+which checks ran and passed.
 
 ### Phase 5: Test
 

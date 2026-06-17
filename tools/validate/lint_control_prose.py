@@ -21,8 +21,12 @@ than raising. Callers (validators, CI) can decide whether to block.
 
 from __future__ import annotations
 
-import re
+import argparse
+import json
+import sys
 from dataclasses import dataclass
+from pathlib import Path
+import re
 
 # Default per-string budget. Most usefully-broad rationales fit in 200
 # characters; longer strings are almost always speculative drift. The
@@ -134,3 +138,62 @@ def lint_control_prose(
             )
 
     return findings
+
+
+def lint_mapping_file(mapping: dict) -> list[tuple[str, LintFinding]]:
+    """Lint every control in a mapping-results.json-shaped dict.
+
+    Returns (control_id, finding) pairs across the top-level `controls[]`
+    and any nested `framework_mapping[].controls[]` rationales.
+    """
+    results: list[tuple[str, LintFinding]] = []
+    for control in mapping.get("controls", []) or []:
+        cid = control.get("control_id", "<unknown>")
+        for f in lint_control_prose(control):
+            results.append((cid, f))
+    for obj in mapping.get("framework_mapping", []) or []:
+        for control in obj.get("controls", []) or []:
+            cid = control.get("control_id", obj.get("objective_id", "<unknown>"))
+            for f in lint_control_prose(control):
+                results.append((cid, f))
+    return results
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Advisory lint of control prose.")
+    parser.add_argument("--slug", help="service slug under .service-approval/")
+    parser.add_argument("--mapping", help="explicit path to mapping-results.json")
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="exit 2 if any finding is reported (default: advisory, exit 0)",
+    )
+    args = parser.parse_args()
+
+    if args.mapping:
+        mapping_path = Path(args.mapping)
+    elif args.slug:
+        mapping_path = Path(
+            f".service-approval/{args.slug}/04-map/mapping-results.json"
+        )
+    else:
+        print("ERROR: pass --slug or --mapping", file=sys.stderr)
+        return 2
+
+    if not mapping_path.exists():
+        print(f"lint_control_prose: {mapping_path} not found — nothing to lint")
+        return 0
+
+    mapping = json.loads(mapping_path.read_text())
+    results = lint_mapping_file(mapping)
+    if not results:
+        print(f"lint_control_prose: {mapping_path} — no findings")
+        return 0
+
+    for cid, f in results:
+        print(f"  [{cid}] {f.field} ({f.kind}): {f.detail}")
+    print(f"lint_control_prose: {len(results)} advisory finding(s)")
+    return 2 if args.strict else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
