@@ -15,6 +15,13 @@ Metrics per run (all in [0, 1], higher is better):
                           preventability verdict is FEASIBLE
   - action_real_rate    : fraction of target-service IAM actions across the
                           artifacts that are real (sourced), per CHECK-17
+  - citation_rate       : fraction of preventive-plan decisions carrying a typed
+                          citation (canopy / reference / catalog / service-doc)
+  - mapping_link_rate   : fraction of preventive-plan decisions whose
+                          source_control_id traces back to a mapping control
+  - disclosure_rate     : fraction of non-generating decisions (REFER /
+                          ROUTE_DETECTIVE) that state an explicit rationale —
+                          the "no silent un-anchored output" guarantee
 
 Aggregation across runs reports mean and population variance of each metric; low
 variance is the signal that the skill has become deterministic.
@@ -134,11 +141,69 @@ def action_real_rate(run_dir: Path, validated: dict) -> tuple[float, int, int]:
     return rate, real, total
 
 
+def _load_plan(run_dir: Path) -> dict:
+    """Load preventive-plan.json from the run dir (or its parent).
+
+    The plan sits next to the preventive/ output dir; tolerate either the
+    run_dir itself or its parent holding it. Returns {} when absent.
+    """
+    for cand in (run_dir / "preventive-plan.json", run_dir.parent / "preventive-plan.json"):
+        if cand.is_file():
+            try:
+                return _load_json(cand)
+            except (OSError, ValueError):
+                return {}
+    return {}
+
+
+def plan_metrics(plan: dict, mapping: dict) -> dict:
+    """Citation / mapping-link / disclosure rates from preventive-plan.json.
+
+    Rates default to 1.0 when there are no decisions (nothing to fault).
+    """
+    decisions = plan.get("decisions", []) or []
+    total = len(decisions)
+    mapping_ids = {
+        c.get("control_id") for c in (mapping.get("controls", []) or [])
+        if isinstance(c, dict)
+    }
+
+    cited = 0
+    linked = 0
+    non_generating = 0
+    disclosed = 0
+    for d in decisions:
+        if not isinstance(d, dict):
+            continue
+        cit = d.get("citation")
+        if isinstance(cit, dict) and cit.get("type") and (cit.get("id") or cit.get("url")):
+            cited += 1
+        scid = d.get("source_control_id")
+        if scid and (not mapping_ids or scid in mapping_ids):
+            linked += 1
+        if d.get("decision") in ("REFER_TO_REFERENCE", "ROUTE_DETECTIVE"):
+            non_generating += 1
+            if (d.get("rationale") or "").strip():
+                disclosed += 1
+
+    return {
+        "citation_rate": 1.0 if total == 0 else round(cited / total, 4),
+        "cited": cited,
+        "mapping_link_rate": 1.0 if total == 0 else round(linked / total, 4),
+        "linked": linked,
+        "disclosure_rate": 1.0 if non_generating == 0 else round(disclosed / non_generating, 4),
+        "disclosed": disclosed,
+        "non_generating": non_generating,
+        "decisions_total": total,
+    }
+
+
 def score_run(run_dir: Path, validated: dict, mapping: dict, known_ids: set[str]) -> dict:
     """Compute all metrics for one run output directory."""
     a_rate, a_ok, a_tot = anchor_rate(run_dir, known_ids)
     r_rate, r_ok, r_tot = rootcause_pass_rate(mapping, validated)
     x_rate, x_ok, x_tot = action_real_rate(run_dir, validated)
+    pm = plan_metrics(_load_plan(run_dir), mapping)
     return {
         "run_dir": str(run_dir),
         "anchor_rate": round(a_rate, 4),
@@ -150,6 +215,7 @@ def score_run(run_dir: Path, validated: dict, mapping: dict, known_ids: set[str]
         "action_real_rate": round(x_rate, 4),
         "actions_real": x_ok,
         "actions_total": x_tot,
+        **pm,
     }
 
 
@@ -166,10 +232,13 @@ def _variance(xs: list[float]) -> float:
 
 def aggregate(run_scores: list[dict]) -> dict:
     """Mean + population variance of each metric across runs."""
-    metrics = ("anchor_rate", "rootcause_pass_rate", "action_real_rate")
+    metrics = (
+        "anchor_rate", "rootcause_pass_rate", "action_real_rate",
+        "citation_rate", "mapping_link_rate", "disclosure_rate",
+    )
     out = {"runs": len(run_scores)}
     for mkey in metrics:
-        vals = [r[mkey] for r in run_scores]
+        vals = [r[mkey] for r in run_scores if mkey in r]
         out[mkey] = {"mean": round(_mean(vals), 4), "variance": round(_variance(vals), 6)}
     return out
 
@@ -198,15 +267,19 @@ def main() -> None:
         else:
             for s in scores:
                 print(f"{s['run_dir']}: anchor={s['anchor_rate']} "
-                      f"rootcause={s['rootcause_pass_rate']} action={s['action_real_rate']}")
+                      f"rootcause={s['rootcause_pass_rate']} action={s['action_real_rate']} "
+                      f"citation={s['citation_rate']} link={s['mapping_link_rate']} "
+                      f"disclosure={s['disclosure_rate']}")
             print("--- aggregate ---")
-            for k in ("anchor_rate", "rootcause_pass_rate", "action_real_rate"):
+            for k in ("anchor_rate", "rootcause_pass_rate", "action_real_rate",
+                      "citation_rate", "mapping_link_rate", "disclosure_rate"):
                 print(f"{k}: mean={agg[k]['mean']} variance={agg[k]['variance']}")
     elif args.run_dir:
         s = score_run(Path(args.run_dir), validated, mapping, known_ids)
         print(json.dumps(s, indent=2) if args.json else
               f"anchor={s['anchor_rate']} rootcause={s['rootcause_pass_rate']} "
-              f"action={s['action_real_rate']}")
+              f"action={s['action_real_rate']} citation={s['citation_rate']} "
+              f"link={s['mapping_link_rate']} disclosure={s['disclosure_rate']}")
     else:
         parser.error("provide --run-dir OR --aggregate")
 

@@ -141,6 +141,52 @@ def test_score_run_shape(tmp_path):
     assert s["anchor_rate"] == 1.0
     assert s["rootcause_pass_rate"] == 1.0
     assert s["action_real_rate"] == 1.0
+    # New Round-2 plan metrics present (default 1.0 when no plan file exists).
+    assert s["citation_rate"] == 1.0
+    assert s["mapping_link_rate"] == 1.0
+    assert s["disclosure_rate"] == 1.0
+
+
+def test_plan_metrics_full_credit():
+    plan = {
+        "decisions": [
+            {"control_id": "CTRL-ORG-PRV-001", "source_control_id": "CTRL-ORG-PRV-001",
+             "decision": "GENERATE_SCP", "citation": {"type": "canopy", "id": "Mitigation.LAMBDA.1"}},
+            {"control_id": "CTRL-ACC-PRV-002", "source_control_id": "CTRL-ACC-PRV-002",
+             "decision": "REFER_TO_REFERENCE", "citation": {"type": "reference", "url": "https://x"},
+             "rationale": "no anchor covers this objective"},
+        ]
+    }
+    mapping = {"controls": [{"control_id": "CTRL-ORG-PRV-001"}, {"control_id": "CTRL-ACC-PRV-002"}]}
+    pm = sp.plan_metrics(plan, mapping)
+    assert pm["citation_rate"] == 1.0
+    assert pm["mapping_link_rate"] == 1.0
+    assert pm["disclosure_rate"] == 1.0  # the single non-generating decision is disclosed
+
+
+def test_plan_metrics_penalizes_gaps():
+    plan = {
+        "decisions": [
+            # missing citation, orphan source_control_id
+            {"control_id": "CTRL-ORG-PRV-001", "source_control_id": "CTRL-ORG-PRV-099",
+             "decision": "GENERATE_SCP"},
+            # non-generating but no rationale → undisclosed
+            {"control_id": "CTRL-ACC-PRV-002", "source_control_id": "CTRL-ACC-PRV-002",
+             "decision": "ROUTE_DETECTIVE", "citation": {"type": "service-doc", "url": "https://y"}},
+        ]
+    }
+    mapping = {"controls": [{"control_id": "CTRL-ACC-PRV-002"}]}
+    pm = sp.plan_metrics(plan, mapping)
+    assert pm["citation_rate"] == 0.5            # only the 2nd has a citation
+    assert pm["mapping_link_rate"] == 0.5        # only the 2nd links to mapping
+    assert pm["disclosure_rate"] == 0.0          # the one non-generating decision lacks rationale
+
+
+def test_plan_metrics_no_decisions_is_full():
+    pm = sp.plan_metrics({}, {})
+    assert pm["citation_rate"] == 1.0
+    assert pm["mapping_link_rate"] == 1.0
+    assert pm["disclosure_rate"] == 1.0
 
 
 def test_aggregate_mean_and_variance():
