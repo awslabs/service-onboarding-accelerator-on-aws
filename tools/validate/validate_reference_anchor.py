@@ -86,7 +86,44 @@ def _is_gap_or_stub(meta: dict, data: dict) -> bool:
     return has_gap_note and body_empty
 
 
-def check_artifact(file_path: str, known_ids: set[str] | None = None) -> list[str]:
+def _is_authored_policy(data: dict) -> bool:
+    """True when the artifact emits enforcing policy (Statement[] non-empty).
+
+    The not_anchored escape hatch is only valid for REFER/pointer artifacts —
+    files that document an objective and point at a reference rather than
+    authoring policy of their own. An authored policy with an empty `Statement[]`
+    is impossible (it does nothing); a populated Statement[] means we are
+    shipping enforcing policy and MUST anchor.
+    """
+    statements = data.get("Statement")
+    if isinstance(statements, list) and len(statements) > 0:
+        return True
+    return False
+
+
+def _mapping_control_ids(service_root: Path) -> set[str] | None:
+    """Return the set of mapping-results.json control ids for orphan-check.
+
+    Returns None when mapping-results is unavailable (so the orphan check
+    silently no-ops rather than spuriously failing — the schema's pattern
+    rule already enforces shape).
+    """
+    mr = service_root / "04-map" / "mapping-results.json"
+    if not mr.is_file():
+        return None
+    try:
+        with mr.open() as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return {c.get("id") for c in data.get("controls", []) if isinstance(c, dict) and c.get("id")}
+
+
+def check_artifact(
+    file_path: str,
+    known_ids: set[str] | None = None,
+    mapping_ids: set[str] | None = None,
+) -> list[str]:
     """Validate one preventive artifact's reference anchor. Returns errors."""
     errors: list[str] = []
     basename = os.path.basename(file_path)
@@ -115,15 +152,64 @@ def check_artifact(file_path: str, known_ids: set[str] | None = None) -> list[st
     if _is_gap_or_stub(meta, data):
         return errors  # gap/skip stubs emit no policy; no anchor required
 
+    # not_anchored escape hatch: a REFER/pointer artifact may declare
+    # itself un-anchored, but ONLY if it is not actually authoring policy
+    # (Statement[] is empty) AND it states the reason explicitly. Without
+    # the explicit not_anchored_reason, "no anchor" is indistinguishable
+    # from the authoring sub-skill silently dropping the anchor on the
+    # floor — fail closed.
+    if meta.get("not_anchored") is True:
+        if _is_authored_policy(data):
+            errors.append(
+                f"P8 reference_anchor: {basename} declares "
+                f"_metadata.not_anchored: true but ships enforcing policy "
+                f"(Statement[] is non-empty). The not_anchored escape "
+                f"hatch is only valid for REFER/pointer artifacts; an "
+                f"authored policy MUST resolve a reference anchor or be "
+                f"removed."
+            )
+        if not str(meta.get("not_anchored_reason", "")).strip():
+            errors.append(
+                f"P8 reference_anchor: {basename} declares "
+                f"_metadata.not_anchored: true but no "
+                f"_metadata.not_anchored_reason. The reason is required so "
+                f"reviewers can tell why the artifact ships without an "
+                f"anchor — silent un-anchored REFER files are forbidden."
+            )
+        # Even an un-anchored REFER must trace back to a real upstream control.
+        sid = meta.get("source_control_id")
+        if mapping_ids is not None and sid is not None and sid not in mapping_ids:
+            errors.append(
+                f"P8 reference_anchor: {basename} declares "
+                f"source_control_id '{sid}' which does not exist in "
+                f"mapping-results.json — orphan artifact."
+            )
+        return errors
+
+    # An authored preventive policy with no anchor is the original P8
+    # failure mode; flag it before the resolution check.
     reference = meta.get("reference")
     if not isinstance(reference, dict) or not reference.get("example_id"):
-        errors.append(
-            f"P8 reference_anchor: {basename} emits a preventive policy but "
-            f"carries no _metadata.reference.example_id. Every preventive control "
-            f"must anchor to a reference example in data/reference-repos/index.yaml "
-            f"(or be a gap/skip stub). If no reference covers this objective, do not "
-            f"author a policy — point to the reference or route to detective."
-        )
+        if _is_authored_policy(data):
+            errors.append(
+                f"P8 reference_anchor: {basename} emits a preventive policy but "
+                f"carries no _metadata.reference.example_id. Every preventive control "
+                f"must anchor to a reference example in data/reference-repos/index.yaml "
+                f"(or be a gap/skip stub). If no reference covers this objective, do not "
+                f"author a policy — point to the reference or route to detective."
+            )
+        else:
+            # REFER/pointer with no Statement body, no anchor, and no
+            # explicit not_anchored declaration. The artifact is in a
+            # silent un-anchored state — fail closed so the run cannot
+            # claim coverage it does not have.
+            errors.append(
+                f"P8 reference_anchor: {basename} has no _metadata.reference "
+                f"and no enforcing Statement[] body, but does NOT declare "
+                f"_metadata.not_anchored: true with a reason. A REFER/pointer "
+                f"artifact must explicitly state it is un-anchored — silent "
+                f"un-anchored artifacts are forbidden."
+            )
         return errors
 
     ids = known_ids if known_ids is not None else _known_ids()
@@ -135,6 +221,18 @@ def check_artifact(file_path: str, known_ids: set[str] | None = None) -> list[st
             f"data/reference-repos/index.yaml. The anchor must be a real, "
             f"current index id (rebuild the index or fix the reference)."
         )
+
+    # Orphan source_control_id check — anchored or un-anchored, every
+    # artifact must trace back to a real upstream control. mapping_ids is
+    # None when mapping-results.json isn't available (helper test paths);
+    # in that case skip the check rather than raise spuriously.
+    sid = meta.get("source_control_id")
+    if mapping_ids is not None and sid is not None and sid not in mapping_ids:
+        errors.append(
+            f"P8 reference_anchor: {basename} declares "
+            f"source_control_id '{sid}' which does not exist in "
+            f"mapping-results.json — orphan artifact."
+        )
     return errors
 
 
@@ -145,8 +243,9 @@ def check_service(service_root: Path) -> list[str]:
     if not prev_dir.is_dir():
         return errors
     ids = _known_ids()
+    mids = _mapping_control_ids(service_root)
     for fpath in sorted(prev_dir.glob("*.json")):
-        errors.extend(check_artifact(str(fpath), ids))
+        errors.extend(check_artifact(str(fpath), ids, mids))
     return errors
 
 

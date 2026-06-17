@@ -160,3 +160,132 @@ def test_integrity_wrapper_surfaces_violations(tmp_path, monkeypatch):
     monkeypatch.setattr(vra, "_known_ids", lambda: KNOWN)
     errors = vpi.check_reference_anchors(tmp_path)
     assert len(errors) == 1 and "P8" in errors[0]
+
+
+# ---------------------------------------------------------------------------
+# ITEM E: not_anchored escape hatch + source_control_id orphan check.
+# ---------------------------------------------------------------------------
+
+
+def test_not_anchored_without_statement_fails(tmp_path):
+    """A REFER/pointer artifact with no _metadata.reference, no Statement
+    body, and no explicit not_anchored declaration must hard-fail — silent
+    un-anchored artifacts are forbidden."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {"_metadata": {"posture": "preventative-request"}, "Statement": []},
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert len(errors) == 1
+    assert "P8" in errors[0] and "not_anchored" in errors[0]
+
+
+def test_not_anchored_with_statement_passes(tmp_path):
+    """A REFER/pointer artifact that explicitly declares not_anchored with
+    a reason and ships no Statement body passes the gate."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "posture": "preventative-request",
+                "not_anchored": True,
+                "not_anchored_reason": "no reference example overlaps "
+                                      "this control's actions/keys; pointing at "
+                                      "the closest reference family instead",
+            },
+            "Statement": [],
+        },
+    )
+    assert vra.check_artifact(path, KNOWN) == []
+
+
+def test_not_anchored_with_authored_policy_fails(tmp_path):
+    """The not_anchored escape hatch is only valid for REFER/pointer files;
+    an authored policy with not_anchored: true must hard-fail."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "not_anchored": True,
+                "not_anchored_reason": "claiming we couldn't anchor",
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("ships enforcing policy" in e for e in errors), errors
+
+
+def test_not_anchored_without_reason_fails(tmp_path):
+    """not_anchored: true without not_anchored_reason fails — the reason is
+    required so reviewers can audit the gap."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {"not_anchored": True},
+            "Statement": [],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("not_anchored_reason" in e for e in errors), errors
+
+
+def test_orphan_source_control_id_fails(tmp_path):
+    """An artifact whose source_control_id is not in mapping-results.json is
+    an orphan — fail."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id"},
+                "source_control_id": "CTRL-ORG-PRV-999",
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    mapping_ids = {"CTRL-ORG-PRV-001"}  # 999 not present
+    errors = vra.check_artifact(path, KNOWN, mapping_ids)
+    assert any("orphan" in e for e in errors), errors
+
+
+def test_source_control_id_present_in_mapping_passes(tmp_path):
+    """An artifact whose source_control_id IS in mapping-results.json passes."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id"},
+                "source_control_id": "CTRL-ORG-PRV-001",
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    mapping_ids = {"CTRL-ORG-PRV-001"}
+    assert vra.check_artifact(path, KNOWN, mapping_ids) == []
+
+
+def test_check_service_loads_mapping_for_orphan_check(tmp_path):
+    """check_service reads mapping-results.json to build the orphan-check set."""
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir(parents=True)
+    (map_dir / "mapping-results.json").write_text(
+        json.dumps({"controls": [{"id": "CTRL-ORG-PRV-001", "category": "PRV"}]})
+    )
+    prev = tmp_path / "05-generate" / "preventive"
+    prev.mkdir(parents=True)
+    _write(
+        prev / "orphan.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id"},
+                "source_control_id": "CTRL-ORG-PRV-999",
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    # Stub the index so the anchor resolves; orphan check is what we want to fire.
+    import unittest.mock as mock
+
+    with mock.patch.object(vra, "_known_ids", lambda: {"real-anchor-id"}):
+        errors = vra.check_service(tmp_path)
+    assert any("orphan" in e and "CTRL-ORG-PRV-999" in e for e in errors), errors
