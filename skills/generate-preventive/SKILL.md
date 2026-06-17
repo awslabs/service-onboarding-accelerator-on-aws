@@ -277,46 +277,54 @@ If false, write `_metadata.scp_gap` note and skip.
   in EVERY Deny statement. Only exception: `DenyProhibitedTagKeys` (PII patterns).
 - **AND-logic awareness**: Conditions in one block use AND. If exceptions should be
   independent (OR), use SEPARATE statements.
-- **Service-principal vs confused-deputy keys MUST live in separate statements**:
-  `aws:PrincipalServiceName` is set ONLY when an AWS service is the calling principal;
-  `aws:SourceAccount` / `aws:SourceArn` are cross-service confused-deputy keys set on
-  the target call FROM the service. They never co-occur in the same authorization
-  context, so AND-ing them in one Condition block makes the Deny unreachable. Split
-  into two statements: one keyed on `aws:PrincipalServiceName` for service-as-caller
-  paths, one keyed on `aws:SourceAccount`/`aws:SourceArn` for confused-deputy paths.
+- **Confused-deputy Deny statements MUST only fire when the
+  confused-deputy keys are PRESENT and mismatched**: `aws:SourceAccount` and
+  `aws:SourceArn` are cross-service-call keys — IAM only sets them when an
+  AWS service is calling the target on behalf of a customer resource. For
+  every other request (in-account direct calls, identity-based calls without
+  service mediation) the keys are simply absent from the authorization
+  context. A bare `StringNotEquals` on a key that is absent evaluates to
+  TRUE (the key value is null and `null != "<expected>"`), which makes the
+  Deny fire on every non-confused-deputy request — most catastrophically,
+  it blocks ALL in-account `sts:AssumeRole`. Never split a Deny into a
+  clause that fires when an expected context key is ABSENT. Use
+  `StringNotEqualsIfExists` (or `Null`+`StringNotEquals` combined with AND
+  semantics) so absent keys never trigger the deny, and write the
+  confused-deputy guard as a SINGLE correctly-scoped statement:
 
   ```json
-  // WRONG — conditions AND together; deny never fires because the two keys
-  // are never present in the same authorization context.
+  // RIGHT — guard with *IfExists so absent keys never trigger the
+  // Deny; the statement only fires when the cross-service-call keys
+  // are PRESENT and the source account doesn't match the principal
+  // account. Pair with a presence check on aws:SourceArn the same way.
   {
+    "Sid": "DenyCrossAccountConfusedDeputy",
     "Effect": "Deny",
     "Action": "sts:AssumeRole",
     "Condition": {
-      "StringEquals":    {"aws:PrincipalServiceName": "<service>.amazonaws.com"},
-      "StringNotEquals": {"aws:SourceAccount": "${aws:PrincipalAccount}"}
-    }
-  }
-
-  // RIGHT — two statements, each keyed on exactly one mechanism. The first
-  // covers the service-as-caller path; the second covers the confused-deputy
-  // path. Either path alone fires the Deny.
-  {
-    "Sid": "DenyServicePrincipalUnscoped",
-    "Effect": "Deny",
-    "Action": "sts:AssumeRole",
-    "Condition": {
-      "StringEquals": {"aws:PrincipalServiceName": "<service>.amazonaws.com"}
-    }
-  },
-  {
-    "Sid": "DenyConfusedDeputyAcrossAccount",
-    "Effect": "Deny",
-    "Action": "sts:AssumeRole",
-    "Condition": {
-      "StringNotEquals": {"aws:SourceAccount": "${aws:PrincipalAccount}"}
+      "StringNotEqualsIfExists": {
+        "aws:SourceAccount": "${aws:PrincipalAccount}"
+      },
+      "Null": {"aws:SourceAccount": "false"}
     }
   }
   ```
+
+  The earlier two-statement pattern (a separate "deny when service principal
+  is set" statement plus a "deny when source account differs from principal
+  account" statement) is unsafe and must not be used: the second statement
+  uses a bare `StringNotEquals` on `aws:SourceAccount`, which evaluates true
+  whenever the key is absent (every in-account direct call), so the Deny
+  fires on legitimate traffic — most catastrophically, on every in-account
+  `sts:AssumeRole`.
+
+  The `Null: false` clause asserts the key is present; the
+  `StringNotEqualsIfExists` does the value comparison. AND-ing the two
+  yields "key present AND value mismatches" — the only state where the
+  Deny should fire. If the control also covers `aws:SourceArn`, add a
+  parallel pair (`Null: aws:SourceArn = false` plus
+  `ArnNotEqualsIfExists`) — keep this as ONE statement; do not split a
+  Deny into a presence-of-key vs absence-of-key pair.
 
 **No non-standard fields in Statements**: IAM policy Statements only accept standard
 keys (`Sid`, `Effect`, `Principal`, `NotPrincipal`, `Action`, `NotAction`, `Resource`,

@@ -152,3 +152,66 @@ def test_no_closed_set_condition_key_rule(skill_path: Path) -> None:
             f"The SAR/Bookkeeper condition-key list is a lower bound; doc-cited "
             f"service-specific keys are valid even when absent from the snapshot."
         )
+
+
+# ---------------------------------------------------------------------------
+# Wrong-pattern: confused-deputy Deny that fires on absent keys.
+# ---------------------------------------------------------------------------
+#
+# The dangerous pre-fix pattern was a two-statement example whose second
+# statement (`DenyConfusedDeputyAcrossAccount`) used bare `StringNotEquals`
+# on `aws:SourceAccount`. `aws:SourceAccount` is only present in the
+# authorization context when an AWS service is calling the target on
+# behalf of a customer resource — for every other request (in-account
+# direct calls, identity-based calls without service mediation) the key is
+# absent and `null != "<account>"` evaluates true, so the Deny would fire
+# on every in-account `sts:AssumeRole`. The fix is a single
+# `StringNotEqualsIfExists` (paired with a `Null` presence check) so the
+# Deny only fires when the keys are PRESENT and mismatched.
+_BANNED_DANGEROUS_SIDS = (
+    re.compile(r'"Sid"\s*:\s*"DenyServicePrincipalUnscoped"'),
+    re.compile(r'"Sid"\s*:\s*"DenyConfusedDeputyAcrossAccount"'),
+)
+
+
+# Match a Condition-block clause that uses bare `StringNotEquals` on
+# `aws:SourceAccount` (no `IfExists` suffix). The `(?!IfExists)` lookahead
+# is what distinguishes it from the safe form.
+_BANNED_BARE_STRING_NOT_EQUALS_SOURCE_ACCOUNT = re.compile(
+    r'"StringNotEquals"(?!IfExists)\s*:\s*\{\s*"aws:SourceAccount"',
+)
+
+
+@pytest.mark.parametrize("skill_path", _skill_paths(), ids=lambda p: p.parent.name)
+def test_no_dangerous_confused_deputy_sid_pair(skill_path: Path) -> None:
+    """The dangerous DenyServicePrincipalUnscoped + DenyConfusedDeputyAcrossAccount
+    Sid pair must not appear in any preventive skill."""
+    text = skill_path.read_text()
+    for pat in _BANNED_DANGEROUS_SIDS:
+        m = pat.search(text)
+        assert not m, (
+            f"{skill_path} contains the dangerous confused-deputy Sid "
+            f"matching /{pat.pattern}/. The pattern's "
+            f"DenyConfusedDeputyAcrossAccount statement uses bare "
+            f"StringNotEquals on aws:SourceAccount, which fires on every "
+            f"in-account AssumeRole because the key is absent in that "
+            f"authorization context. Rewrite as a single statement using "
+            f"StringNotEqualsIfExists with a Null presence check."
+        )
+
+
+@pytest.mark.parametrize("skill_path", _skill_paths(), ids=lambda p: p.parent.name)
+def test_no_bare_string_not_equals_on_source_account(skill_path: Path) -> None:
+    """Bare `StringNotEquals` on `aws:SourceAccount` is forbidden — must use
+    `StringNotEqualsIfExists` (or equivalent presence-guarded form) so absent
+    keys do not trigger the Deny."""
+    text = skill_path.read_text()
+    m = _BANNED_BARE_STRING_NOT_EQUALS_SOURCE_ACCOUNT.search(text)
+    assert not m, (
+        f"{skill_path} contains a bare StringNotEquals on aws:SourceAccount "
+        f"without an IfExists guard. When aws:SourceAccount is absent (every "
+        f"non-cross-service call), the comparison evaluates true and the "
+        f"Deny fires on legitimate traffic. Use StringNotEqualsIfExists "
+        f"paired with a Null presence check, or restructure so the Deny "
+        f"only fires when the key is PRESENT and the value mismatches."
+    )
