@@ -200,6 +200,52 @@ def test_no_dangerous_confused_deputy_sid_pair(skill_path: Path) -> None:
         )
 
 
+# ---------------------------------------------------------------------------
+# Sourcing-order rule (recommender): Canopy must be the first-priority intent
+# source, and the SKILL must state Canopy supplies intent + citation but not
+# policy body — Canopy implementations are Config rules + CFN hooks only.
+# ---------------------------------------------------------------------------
+
+
+def _recommend_skill_text() -> str:
+    return (_repo_root() / "skills" / "generate-preventive-recommend" / "SKILL.md").read_text()
+
+
+def test_recommend_skill_documents_canopy_first() -> None:
+    """The recommend SKILL must declare Canopy mitigations as the
+    first-priority preventive sourcing source — ahead of the reference-repo
+    index, the AWS Control Catalog, and AWS service docs."""
+    text = _recommend_skill_text()
+    m = re.search(r"##\s+Sourcing order[^\n]*\n([\s\S]+?)(?=\n##\s)", text)
+    assert m, "recommend SKILL is missing a `## Sourcing order` section"
+    section = m.group(1)
+    first = re.search(r"^\s*1\.\s+(.+)$", section, re.MULTILINE)
+    assert first, "Sourcing order section has no numbered list"
+    assert "Canopy" in first.group(1), (
+        f"first-priority source must be Canopy; got: {first.group(1)!r}"
+    )
+
+
+def test_recommend_skill_states_canopy_supplies_intent_not_body() -> None:
+    """Canopy contains no preventive policy text — the recommend SKILL must
+    say so and require a separate reference-repo body anchor (or downgrade
+    to detective/proactive)."""
+    text = _recommend_skill_text()
+    assert re.search(
+        r"Canopy.{0,200}(no|NO).{0,80}(preventive|policy).{0,80}(text|body|TEXT|BODY)",
+        text,
+        re.DOTALL,
+    ), "recommend SKILL must state Canopy contains no preventive policy text/body"
+    assert re.search(
+        r"Canopy.{0,200}(intent|citation).{0,400}(reference[- ]repo|policy\s+body|policy\s+BODY|downgrade)",
+        text,
+        re.DOTALL,
+    ), (
+        "recommend SKILL must say Canopy supplies intent + citation and that "
+        "the policy body still requires a reference-repo anchor (or downgrade)"
+    )
+
+
 @pytest.mark.parametrize("skill_path", _skill_paths(), ids=lambda p: p.parent.name)
 def test_no_bare_string_not_equals_on_source_account(skill_path: Path) -> None:
     """Bare `StringNotEquals` on `aws:SourceAccount` is forbidden — must use

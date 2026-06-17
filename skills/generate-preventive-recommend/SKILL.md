@@ -22,6 +22,8 @@ reference, or route the objective to a detective/proactive control instead.
 - `.service-approval/<slug>/04-map/mapping-results.json` — controls (filter `category == "PRV"`)
 - `.service-approval/<slug>/03-validate/validated.json` — API surface + condition keys
 - `data/reference-repos/index.yaml` — the reference anchor library (via `tools/reference_index.py`)
+- (optional) Canopy threat-model — when one was provided for this service, its
+  `mitigations[]` carry the control intent and citation; see "Sourcing order" below.
 
 **Output:** `.service-approval/<slug>/05-generate/preventive-plan.json` — the per-control
 decision plan consumed by `generate-preventive-scp`, `-rcp`, and `-iam`.
@@ -45,6 +47,47 @@ mkdir -p .service-approval/<slug>/05-generate
 ```
 
 ---
+
+## Sourcing order (Canopy first)
+
+When deciding the enforcement mechanism and anchor for each preventive control,
+walk the source list in this order — stop at the first source that yields a
+usable answer, fall through only when nothing applies:
+
+1. **Canopy mitigation (highest priority)** — if a Canopy threat-model was
+   provided for this service, its `mitigations[]` entries supply the control
+   intent (`statement` field), the exact operation+parameter to gate
+   (`configurationRequestParameters[]`), and the citation (the mitigation's
+   `alias`). Treat a Canopy mitigation as the authoritative source of intent
+   for any control that maps to it; record `citation: {type: "canopy", id:
+   "<alias>"}` on the plan row. **IMPORTANT:** Canopy contains NO preventive
+   policy TEXT — its implementations are only AWS Config rules (detective)
+   and CloudFormation Hooks (proactive). A Canopy-anchored preventive control
+   STILL must resolve a reference-repo example for the SCP/RCP/IAM policy
+   BODY (source 2 below); if no reference example matches, downgrade the
+   decision to detective/proactive (`ROUTE_DETECTIVE` with `route_to:
+   "detective"` or `"proactive"`). Canopy supplies intent and citation, not
+   policy body.
+2. **Reference-repo index** (`data/reference-repos/index.yaml`) — the
+   deterministic ranker (`tools/reference_index.py`) scores published AWS
+   sample policies by mechanism + action + condition-key overlap. This
+   produces the policy BODY anchor (`citation: {type: "reference", id:
+   "<example_id>", url: "<source_url>"}`).
+3. **AWS Control Catalog API** — for objectives the AWS Control Catalog
+   covers, cite the catalog control ARN directly (`citation: {type:
+   "catalog", id: "<arn>"}`). Use only when neither Canopy intent nor a
+   reference-repo example matches and the catalog has an explicit control.
+4. **Service-specific AWS documentation** — last resort, only when the
+   prior three sources have nothing. Cite the exact doc URL (`citation:
+   {type: "service-doc", url: "<url>"}`) and log the MCP lookup. Do NOT
+   free-browse general AWS docs to fabricate intent that none of the
+   prior sources support.
+
+The plan row records both the **intent source** (Canopy / catalog /
+service-doc — what motivates the control) and the **anchor** (the reference
+example whose body we adapt). For a Canopy-driven control authored against
+a reference-repo body, the row carries the Canopy citation AND the
+reference anchor; the authoring sub-skill consumes both.
 
 ## Step 1 — Preventability (root-cause) verdict per control
 
