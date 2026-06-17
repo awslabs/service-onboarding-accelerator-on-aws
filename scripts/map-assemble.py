@@ -867,9 +867,17 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
+    # `--service` and `--slug` are accepted as synonyms — the orchestrator
+    # prose elsewhere in this repo uses both names interchangeably, and
+    # historical scripts have varied. argparse lets us register the flags
+    # against the same `dest=service` so callers can use whichever they
+    # remember.
     parser.add_argument(
         "--service",
-        help="Service slug (e.g., 'awslambda', 's3'). Auto-detected if only one service exists.",
+        "--slug",
+        dest="service",
+        help="Service slug (e.g., 'awslambda', 's3'). `--slug` is an "
+             "accepted alias. Auto-detected if only one service exists.",
     )
 
     args = parser.parse_args()
@@ -879,7 +887,7 @@ def main() -> int:
     if not slug:
         slug = detect_single_service()
         if not slug:
-            print("ERROR: --service argument required (no single service detected)", file=sys.stderr)
+            print("ERROR: --service / --slug argument required (no single service detected)", file=sys.stderr)
             print("", file=sys.stderr)
             print("Detected services:", file=sys.stderr)
             try:
