@@ -26,9 +26,14 @@
     "decision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["control_id", "mechanism", "preventable", "decision"],
+      "required": ["control_id", "source_control_id", "mechanism", "preventable", "decision", "citation"],
       "properties": {
         "control_id": {
+          "type": "string",
+          "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
+        },
+        "source_control_id": {
+          "$comment": "The originating control id from mapping-results.json that this decision implements. Cross-checked at validate time against mapping-results.json so an orphan decision (no matching control upstream) hard-fails.",
           "type": "string",
           "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
         },
@@ -46,6 +51,28 @@
             "GENERATE_IAM",
             "REFER_TO_REFERENCE",
             "ROUTE_DETECTIVE"
+          ]
+        },
+        "citation": {
+          "$comment": "Typed citation for the intent source — what motivates the control. type==canopy: cite the Canopy mitigation alias in id. type==reference: cite the reference-repo example in id and url. type==catalog: cite the AWS Control Catalog ARN in id. type==service-doc: cite the AWS doc URL in url.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {"type": "string", "enum": ["canopy", "reference", "catalog", "service-doc"]},
+            "id": {"type": "string", "minLength": 1},
+            "url": {"type": "string", "minLength": 1}
+          },
+          "anyOf": [
+            {"required": ["id"]},
+            {"required": ["url"]}
+          ],
+          "allOf": [
+            {
+              "$comment": "type==canopy MUST cite the mitigation alias in id.",
+              "if": {"properties": {"type": {"const": "canopy"}}},
+              "then": {"required": ["id"]}
+            }
           ]
         },
         "anchor": {

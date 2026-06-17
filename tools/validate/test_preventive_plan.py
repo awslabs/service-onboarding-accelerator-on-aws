@@ -24,20 +24,24 @@ def _plan(decisions):
 
 GOOD_SCP = {
     "control_id": "CTRL-ORG-PRV-001",
+    "source_control_id": "CTRL-ORG-PRV-001",
     "mechanism": "SCP",
     "preventable": True,
     "enforcing_condition_keys": ["lambda:CodeSigningConfigArn"],
     "decision": "GENERATE_SCP",
     "anchor": {"example_id": "anchor-1", "repo": "r", "url": "u"},
+    "citation": {"type": "reference", "id": "anchor-1", "url": "u"},
     "route_to": None,
     "rationale": "ok",
 }
 ROUTE = {
     "control_id": "CTRL-ORG-PRV-007",
+    "source_control_id": "CTRL-ORG-PRV-007",
     "mechanism": "SCP",
     "preventable": False,
     "decision": "ROUTE_DETECTIVE",
     "anchor": None,
+    "citation": {"type": "service-doc", "url": "https://docs.aws.amazon.com/x.html"},
     "route_to": "detective",
     "rationale": "no gating key",
 }
@@ -96,3 +100,49 @@ def test_dispatcher_routes_preventive_plan(tmp_path):
     with patch.object(reference_index, "example_ids", lambda *a, **k: {"anchor-1"}):
         errors = vc.validate_file(str(f))
     assert errors == [], errors
+
+
+def test_missing_source_control_id_fails_schema():
+    """The schema marks source_control_id as required on every decision."""
+    bad = {k: v for k, v in GOOD_SCP.items() if k != "source_control_id"}
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e and "source_control_id" in e for e in errors), errors
+
+
+def test_missing_citation_fails_schema():
+    """The schema marks citation as required on every decision."""
+    bad = {k: v for k, v in GOOD_SCP.items() if k != "citation"}
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e and "citation" in e for e in errors), errors
+
+
+def test_canopy_citation_without_id_fails():
+    """A `citation.type == "canopy"` MUST cite the mitigation alias in `id`."""
+    bad = dict(GOOD_SCP)
+    bad["citation"] = {"type": "canopy", "url": "https://example/canopy"}
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e for e in errors), errors
+
+
+def test_citation_with_neither_id_nor_url_fails():
+    """A citation must carry at least one of id or url."""
+    bad = dict(GOOD_SCP)
+    bad["citation"] = {"type": "reference"}
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e for e in errors), errors
+
+
+def test_citation_with_unknown_type_fails():
+    """The citation type enum is closed."""
+    bad = dict(GOOD_SCP)
+    bad["citation"] = {"type": "manual", "id": "x"}
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e for e in errors), errors
+
+
+def test_route_decision_still_requires_citation():
+    """Citation is required even on ROUTE_DETECTIVE / REFER_TO_REFERENCE rows —
+    the customer needs the source pointer regardless of decision type."""
+    bad = {k: v for k, v in ROUTE.items() if k != "citation"}
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e and "citation" in e for e in errors), errors

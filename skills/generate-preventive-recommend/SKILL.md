@@ -160,6 +160,7 @@ Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
   "decisions": [
     {
       "control_id": "CTRL-ORG-PRV-001",
+      "source_control_id": "CTRL-ORG-PRV-001",
       "mechanism": "SCP",
       "preventable": true,
       "enforcing_condition_keys": ["lambda:CodeSigningConfigArn"],
@@ -169,15 +170,24 @@ Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
         "repo": "service-control-policy-examples",
         "url": "https://github.com/aws-samples/.../blob/<sha>/<path>"
       },
+      "citation": {
+        "type": "canopy",
+        "id": "<canopy-mitigation-alias>"
+      },
       "route_to": null,
       "rationale": "condition key gates CreateFunction; SCP example covers the deny-on-create pattern"
     },
     {
       "control_id": "CTRL-ORG-PRV-007",
+      "source_control_id": "CTRL-ORG-PRV-007",
       "mechanism": "SCP",
       "preventable": false,
       "decision": "ROUTE_DETECTIVE",
       "anchor": null,
+      "citation": {
+        "type": "service-doc",
+        "url": "https://docs.aws.amazon.com/.../<page>.html"
+      },
       "route_to": "detective",
       "rationale": "no condition key gates DeleteFunction; a request-time deny would silently never fire"
     }
@@ -189,6 +199,21 @@ Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
 - `GENERATE_SCP` / `GENERATE_RCP` / `GENERATE_IAM` — authoring sub-skill proceeds; `anchor` MUST be non-null.
 - `REFER_TO_REFERENCE` — preventable but no anchor; do not author. Point to the closest reference.
 - `ROUTE_DETECTIVE` — not preventable; the detective generator should cover this objective.
+
+Every emitted decision MUST carry:
+
+- `source_control_id` — the originating control id from
+  `mapping-results.json` that this decision implements. Validators
+  cross-check `source_control_id` against `mapping-results.json.controls[].id`;
+  an orphan decision (no matching upstream control) hard-fails.
+- `anchor` (for `GENERATE_*` decisions) — the resolved reference example
+  (already enforced; see Step 2).
+- `citation` — typed pointer to the intent source. `type` is one of
+  `canopy` (cite the mitigation `alias` in `id`), `reference` (cite the
+  reference-repo example in `id` and `url`), `catalog` (cite the AWS
+  Control Catalog control ARN in `id`), or `service-doc` (cite the AWS
+  doc URL in `url`). The `citation` field is REQUIRED on every
+  decision row, regardless of decision type.
 
 ## Step 4 — Hand-off summary
 

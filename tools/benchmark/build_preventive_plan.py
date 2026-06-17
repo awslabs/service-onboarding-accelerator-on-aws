@@ -44,6 +44,20 @@ def _generate_decision(mechanism: str) -> str:
     return _DECISION_BY_MECHANISM.get(mechanism, "GENERATE_IAM")
 
 
+def _service_doc_citation(control: dict) -> dict:
+    """Build a fallback service-doc citation when nothing richer is available.
+
+    Honors a `citation` field already present on the mapping control (the
+    map-generate-controls skill records the originating doc), falling back to
+    a typed pointer at the upstream control id so the row still validates.
+    """
+    cit = control.get("citation")
+    if isinstance(cit, dict) and cit.get("type") in {"canopy", "reference", "catalog", "service-doc"}:
+        return cit  # already typed by mapping
+    cid = control.get("id", "unknown")
+    return {"type": "service-doc", "id": cid}
+
+
 def build_plan(mapping: dict, validated: dict) -> dict:
     """Return a schema-valid preventive-plan.json structure for the PRV controls."""
     decisions = []
@@ -57,10 +71,12 @@ def build_plan(mapping: dict, validated: dict) -> dict:
         if verdict["verdict"] == "NOT_PREVENTABLE":
             decisions.append({
                 "control_id": cid,
+                "source_control_id": cid,
                 "mechanism": mechanism,
                 "preventable": False,
                 "decision": "ROUTE_DETECTIVE",
                 "anchor": None,
+                "citation": _service_doc_citation(control),
                 "route_to": "detective",
                 "rationale": verdict["reason"],
             })
@@ -71,11 +87,13 @@ def build_plan(mapping: dict, validated: dict) -> dict:
         if best is None:
             decisions.append({
                 "control_id": cid,
+                "source_control_id": cid,
                 "mechanism": mechanism,
                 "preventable": True,
                 "enforcing_condition_keys": keys,
                 "decision": "REFER_TO_REFERENCE",
                 "anchor": None,
+                "citation": _service_doc_citation(control),
                 "route_to": None,
                 "rationale": "preventable, but no reference example overlaps this "
                              "control's actions/keys — point the customer at the "
@@ -83,8 +101,22 @@ def build_plan(mapping: dict, validated: dict) -> dict:
             })
             continue
 
+        # When we have a reference-repo anchor, the citation for the body is
+        # the reference example. Mapping may carry a richer intent citation
+        # (e.g. a Canopy mitigation alias) — honor it; otherwise fall back to
+        # the reference itself as both intent and body source.
+        intent_citation = control.get("citation")
+        if not (isinstance(intent_citation, dict) and intent_citation.get("type") in
+                {"canopy", "reference", "catalog", "service-doc"}):
+            intent_citation = {
+                "type": "reference",
+                "id": best["id"],
+                "url": best["source_url"],
+            }
+
         decisions.append({
             "control_id": cid,
+            "source_control_id": cid,
             "mechanism": mechanism,
             "preventable": True,
             "enforcing_condition_keys": keys,
@@ -94,6 +126,7 @@ def build_plan(mapping: dict, validated: dict) -> dict:
                 "repo": best["repo"],
                 "url": best["source_url"],
             },
+            "citation": intent_citation,
             "route_to": None,
             "rationale": f"condition key gates the target action; anchored to {best['id']}",
         })
