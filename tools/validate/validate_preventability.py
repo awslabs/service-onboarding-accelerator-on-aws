@@ -83,8 +83,14 @@ _GLOBAL_TAG_KEYS = (
 # policy). AWS evaluates such a document when a principal tries to *access* the
 # resource (invoke, read, …) — it is NOT the authority for the operations that
 # *mutate the policy itself*. Those mutations are gated at the request layer by
-# the caller's identity policy / SCP.
-_RESOURCE_BASED_MECHANISMS = {"resource policy", "resource-based policy"}
+# the caller's identity policy / SCP. A KMS key policy is attached to the key and
+# is equally unable to evaluate a request-time-only key bound to a key-policy
+# management action (e.g. kms:PutKeyPolicy), so it belongs here too.
+_RESOURCE_BASED_MECHANISMS = {
+    "resource policy",
+    "resource-based policy",
+    "kms key policy",
+}
 
 # Action-name patterns for operations that MANAGE a resource-based policy or its
 # grants (rather than access the resource): grant add/remove and explicit policy
@@ -266,9 +272,19 @@ def assess_control(control: dict, validated: dict) -> dict:
     # Route such a control to detective (or re-map to an SCP/identity policy,
     # which DO evaluate the request). Membership of request-time-only keys is
     # derived from validated.json bindings, so no service is hardcoded.
-    if mechanism.lower() in _RESOURCE_BASED_MECHANISMS and keys_in_use:
+    #
+    # The guard tests the keys the POLICY ACTUALLY USES — the control-declared
+    # condition_keys (== the plan's enforcing_condition_keys), falling back to the
+    # SAR-derived set only when the control declares none. Testing the full SAR
+    # co-applying set would mask the defect: a key the policy never uses but that
+    # merely co-applies to the same action (e.g. lambda:FunctionUrlAuthType also
+    # applies to AddPermission) would defeat an `all(...)` quantifier and disable
+    # the guard, even though the authored policy is gated solely on the rt-only
+    # key (lambda:Principal). So gate on the declared keys.
+    if mechanism.lower() in _RESOURCE_BASED_MECHANISMS:
+        policy_keys = declared or keys_in_use
         rt_only = request_time_only_keys(validated)
-        if all(k in rt_only for k in keys_in_use):
+        if policy_keys and all(k in rt_only for k in policy_keys):
             return {
                 "id": control.get("id"),
                 "mechanism": mechanism,
@@ -279,7 +295,7 @@ def assess_control(control: dict, validated: dict) -> dict:
                 "reason": (
                     "a resource-based policy cannot evaluate a request-time "
                     "condition key bound to the policy-management action "
-                    f"({', '.join(sorted(keys_in_use))}); the attached document "
+                    f"({', '.join(sorted(policy_keys))}); the attached document "
                     "is not in the evaluation path for that request, so the deny "
                     "never fires. Route to a detective mechanism or re-map to an "
                     "SCP/identity policy that evaluates the request."

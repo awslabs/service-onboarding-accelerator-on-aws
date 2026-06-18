@@ -53,6 +53,23 @@ VALIDATED = {
                     "key": "aws:SourceArn",
                     "applies_to_actions": ["InvokeFunction"],
                 },
+                # A key that CO-APPLIES to AddPermission (a policy-mgmt action)
+                # but ALSO to access/config actions, so it is NOT request-time-
+                # only. It mirrors the real SAR shape that previously masked the
+                # resource-policy guard: a control gated solely on lambda:Principal
+                # must still route to detective even though this key co-applies to
+                # the same AddPermission action.
+                {
+                    "key": "lambda:FunctionUrlAuthType",
+                    "applies_to_actions": ["AddPermission", "CreateFunctionUrlConfig",
+                                           "UpdateFunctionUrlConfig"],
+                },
+                # KMS key-policy management key, bound solely to PutKeyPolicy
+                # (a key-policy-management action) → request-time-only.
+                {
+                    "key": "kms:GrantConstraintType",
+                    "applies_to_actions": ["PutKeyPolicy"],
+                },
             ]
         }
     },
@@ -221,6 +238,40 @@ def test_resource_policy_with_evaluable_confused_deputy_key_is_feasible():
     r = assess_control(control, VALIDATED)
     assert r["verdict"] == "FEASIBLE"
     assert "aws:SourceArn" in r["enforcing_condition_keys"]
+
+
+def test_resource_policy_rt_key_not_masked_by_coapplying_key():
+    """Regression: a resource policy gated SOLELY on a request-time-only key
+    (lambda:Principal) must route to detective even when the SAR binds ANOTHER
+    (non-rt-only) key to the same action. The guard must test the keys the policy
+    declares, not the action's full co-applying SAR set — otherwise a single
+    co-applying access key (lambda:FunctionUrlAuthType) disables the guard."""
+    control = {
+        "id": "CTRL-RES-PRV-002",
+        "category": "PRV",
+        "mechanism": "Resource Policy",
+        "actions": ["lambda:AddPermission"],
+        "parameters_controlled": ["$.Principal"],
+        "condition_keys": ["lambda:Principal"],  # the policy uses only this key
+    }
+    r = assess_control(control, VALIDATED)
+    assert r["verdict"] == "NOT_PREVENTABLE"
+    assert r["route_to"] == "detective"
+
+
+def test_kms_key_policy_with_request_time_key_is_not_preventable():
+    """A KMS key policy is resource-based — it cannot evaluate a request-time-only
+    key bound to a key-policy-management action (kms:PutKeyPolicy)."""
+    control = {
+        "id": "CTRL-RES-PRV-020",
+        "category": "PRV",
+        "mechanism": "KMS Key Policy",
+        "actions": ["kms:PutKeyPolicy"],
+        "condition_keys": ["kms:GrantConstraintType"],
+    }
+    r = assess_control(control, VALIDATED)
+    assert r["verdict"] == "NOT_PREVENTABLE"
+    assert r["route_to"] == "detective"
 
 
 def test_scp_with_request_time_key_stays_feasible():
