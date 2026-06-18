@@ -448,7 +448,14 @@ def f2_iam_simulate(control: dict, deployed: dict) -> CliCheck:
     if pc_list:
         try:
             svc, op, prop = decode_parameter_path(pc_list[0])
-            context_key = f"{svc}:{prop}"
+            # Use the leaf property and strip any JSONPath array suffix
+            # (e.g. "VpcConfig.SubnetIds[*]" -> "SubnetIds"). The IAM CLI
+            # shorthand parser for --context-entries rejects '[' / ']', and
+            # the array/index suffix is a path artifact, not part of the
+            # context-key name.
+            leaf = prop.rsplit(".", 1)[-1] if prop else prop
+            leaf = re.sub(r"\[.*?\]", "", leaf)
+            context_key = f"{svc}:{leaf}"
             context_entries.append(
                 f"ContextKeyName={context_key},ContextKeyValues=,ContextKeyType=string"
             )
