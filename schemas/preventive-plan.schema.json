@@ -43,6 +43,11 @@
           "type": "array",
           "items": {"type": "string"}
         },
+        "plan_actions": {
+          "$comment": "The reviewed action set: the IAM actions the recommender deliberately intends this control's authored policy to gate. The root-cause critic rejects any authored Deny action absent from this set — an action the enforcing key happens to apply to but that was never reviewed is silent scope-creep. When omitted, the critic falls back to the mapping control's actions[].",
+          "type": "array",
+          "items": {"type": "string"}
+        },
         "decision": {
           "type": "string",
           "enum": [

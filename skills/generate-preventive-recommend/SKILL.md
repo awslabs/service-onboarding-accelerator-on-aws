@@ -272,6 +272,18 @@ Every emitted decision MUST carry:
   Control Catalog control ARN in `id`), or `service-doc` (cite the AWS
   doc URL in `url`). The `citation` field is REQUIRED on every
   decision row, regardless of decision type.
+- `plan_actions[]` (for `GENERATE_*` decisions) — the **reviewed action set**:
+  the exact IAM actions you intend the authored policy's Deny(s) to gate for this
+  control. This is the closed set the root-cause critic checks the authored
+  statements against (Step 2c of the critic): an action present in a statement
+  but absent here is unreviewed scope-creep. Keep it to the actions the control's
+  intent actually targets — do NOT widen it to every action the enforcing key
+  happens to apply to. If the mapping control's `actions[]` already names exactly
+  the reviewed set, you may omit `plan_actions[]` (the critic falls back to it);
+  record it explicitly whenever the reviewed set is narrower than, or differs
+  from, the mapping's `actions[]` (e.g. a PassRole control whose mapping
+  `actions[]` lists only the Lambda create/update operations must record
+  `plan_actions: ["iam:PassRole"]`).
 
 ## Step 4 — Hand-off summary
 

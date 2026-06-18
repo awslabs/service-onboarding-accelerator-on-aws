@@ -115,6 +115,24 @@ The SAR condition-key list is a **lower bound**: if an artifact relies on a
 condition key absent from the SAR snapshot, require a doc citation (logged to
 `mcp-calls.log`) — otherwise treat it as not-enforcing.
 
+### Step 2c — Reject unreviewed authored deny actions (deterministic, required)
+
+Every action a Deny authorizes over must have been reviewed. Run:
+
+```bash
+python3 tools/validate/validate_action_scope.py --slug <slug>
+```
+
+It compares each authored Deny statement's actions against the control's
+**reviewed action set** — the plan decision's `plan_actions[]` (the actions the
+recommender deliberately intends to gate), falling back to the originating
+mapping control's `actions[]`. An action that appears in a statement but not in
+that set is **unreviewed scope-creep**: it may be SAR-bound to the enforcing key
+(so it is not unsound), but it expands the deny beyond what the mapping
+described. For each flagged action, either confirm the intent and record it in
+the plan row's `plan_actions[]`, or remove it from the statement. Do not ship a
+Deny that authorizes over an unreviewed action.
+
 ## Step 2b — Write the detective-routing hand-off
 
 For every objective routed to detective, write a machine-readable contract the
