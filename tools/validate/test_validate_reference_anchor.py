@@ -129,6 +129,65 @@ def test_non_json_skipped(tmp_path):
     assert vra.check_artifact(str(p), KNOWN) == []
 
 
+# ---------------------------------------------------------------------------
+# Trust-policy refer-only guard (W4).
+# ---------------------------------------------------------------------------
+
+
+def test_trust_policy_with_repo_anchor_fails(tmp_path):
+    """A trust policy that resolves a repo anchor is incoherent — there is no
+    vetted trust-policy example library, so the anchor is an unrelated
+    identity-policy example. Must fail."""
+    path = _write(
+        tmp_path / "trust-policy.json",
+        {
+            "_metadata": {
+                "mechanism": "IAM Trust Policy",
+                "reference": {"example_id": "real-anchor-id", "repo": "r", "url": "u"},
+            },
+            "Statement": [{"Effect": "Allow", "Principal": {"Service": "x"},
+                           "Action": "sts:AssumeRole"}],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("refer-only" in e and "trust-policy.json" in e for e in errors), errors
+
+
+def test_trust_policy_authoring_policy_fails(tmp_path):
+    """A trust policy that ships an enforcing Statement[] body must fail —
+    trust policies are referred, not authored."""
+    path = _write(
+        tmp_path / "trust-policy.json",
+        {
+            "_metadata": {"mechanism": "IAM Trust Policy"},
+            "Statement": [{"Effect": "Allow", "Principal": {"Service": "x"},
+                           "Action": "sts:AssumeRole"}],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("refer-only" in e and "enforcing policy" in e for e in errors), errors
+
+
+def test_trust_policy_refer_artifact_passes(tmp_path):
+    """A proper trust-policy REFER artifact — no anchor, no Statement body,
+    not_anchored: true with a service-doc reason — passes."""
+    path = _write(
+        tmp_path / "trust-policy.json",
+        {
+            "_metadata": {
+                "mechanism": "IAM Trust Policy",
+                "not_anchored": True,
+                "not_anchored_reason": (
+                    "Trust policies are refer-only; see the service's documented "
+                    "cross-service confused-deputy prevention pattern "
+                    "(aws:SourceArn / aws:SourceAccount)."
+                ),
+            },
+        },
+    )
+    assert vra.check_artifact(path, KNOWN) == []
+
+
 def test_check_service_scans_preventive_dir(tmp_path, monkeypatch):
     prev = tmp_path / "05-generate" / "preventive"
     prev.mkdir(parents=True)

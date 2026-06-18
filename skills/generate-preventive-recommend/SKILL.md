@@ -172,11 +172,31 @@ mapping mechanism to the index mechanism(s) to search (the table below).
 |---|---|---|
 | `SCP` | `SCP` | `generate-preventive-scp` |
 | `RCP` | `RCP` | `generate-preventive-rcp` |
-| `IAM Policy`, `IAM Trust Policy`, `IAM Permission Boundary`, `Resource Policy`, `Resource-Based Policy`, `KMS Key Policy`, `VPCE Policy` | `IAM`, `permission-boundary`, `data-perimeter`, `VPCE` | `generate-preventive-iam` |
+| `IAM Policy`, `IAM Permission Boundary`, `Resource Policy`, `Resource-Based Policy`, `KMS Key Policy`, `VPCE Policy` | `IAM`, `permission-boundary`, `data-perimeter`, `VPCE` | `generate-preventive-iam` |
+| `IAM Trust Policy` | *(none — refer-only)* | *(not authored — see below)* |
 
 If **no** example matches the mechanism (or no example overlaps the control's
 actions/keys), the control gets `decision: "REFER_TO_REFERENCE"` — we do not
 author. Surface the closest reference family so the customer knows where to look.
+
+### Trust policies are refer-only (required)
+
+A role's trust policy (the `AssumeRolePolicyDocument`) is **never authored** by
+this pipeline. There is no vetted trust-policy example library to anchor to, and
+the cross-service confused-deputy prevention a trust policy implements (the
+`aws:SourceArn` / `aws:SourceAccount` condition pattern on the `sts:AssumeRole`
+principal) is documented per-service. `mechanism_family("IAM Trust Policy")`
+returns an empty family, so `best_anchor` never resolves an anchor for it.
+
+- A control whose `mechanism` is **`IAM Trust Policy`** always gets
+  `decision: "REFER_TO_REFERENCE"` with a `citation` of `type: "service-doc"`
+  pointing at the service's documented cross-service confused-deputy prevention
+  page. Do **not** stamp it with a repo `anchor` — claiming an identity-policy
+  example as a trust-policy anchor is an incoherent shape.
+- The reference-anchor validator code-guards this: a trust-policy artifact that
+  carries a repo anchor, or that ships an enforcing `Statement[]` body, fails the
+  generation review gate. The IAM authoring sub-skill emits a REFER pointer
+  (no body, `not_anchored: true`, the service-doc reason), not a policy.
 
 ### Permission boundaries are refer-by-default (required)
 

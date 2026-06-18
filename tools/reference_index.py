@@ -97,7 +97,16 @@ _MECHANISM_FAMILIES = {
     "scp": ["SCP"],
     "rcp": ["RCP"],
     "iam policy": ["IAM"],
-    "iam trust policy": ["IAM"],
+    # Trust policies are REFER-ONLY (see REFER_ONLY_MECHANISMS below): there is
+    # no vetted trust-policy example library, and the confused-deputy patterns
+    # they implement are documented per-service. mechanism_family() returns an
+    # empty family for them, so rank_anchors/best_anchor never resolve a repo
+    # anchor — the recommender must emit REFER_TO_REFERENCE with a service-doc
+    # citation. Mapping a trust policy to the IAM identity-policy family (its
+    # old behavior) stamped it with an unrelated access-check example anchor —
+    # an incoherent shape — which is exactly what this prevents.
+    "iam trust policy": [],
+    "trust policy": [],
     # Permission boundaries anchor ONLY to the curated permission-boundary
     # example set, never to the much larger IAM (identity-policy) family. A
     # boundary is a structural scaffold (a scoped Allow allowlist plus the
@@ -124,6 +133,20 @@ _MECHANISM_FAMILIES = {
 # accept the top-ranked example even at a zero overlap score, rather than
 # returning None and dropping the control to REFER_TO_REFERENCE.
 PERMISSION_BOUNDARY_FAMILY = "permission-boundary"
+
+# Mechanisms that are REFER-ONLY: the tool never authors a policy body for them
+# and never resolves a repo anchor — it points the customer at the relevant AWS
+# documentation pattern instead. Trust policies live here because there is no
+# vetted trust-policy example library; the cross-service confused-deputy
+# prevention they implement is documented per-service (the aws:SourceArn /
+# aws:SourceAccount condition pattern). Keys are the lowercased mechanism
+# strings map-generate-controls emits.
+REFER_ONLY_MECHANISMS = frozenset({"iam trust policy", "trust policy"})
+
+
+def is_refer_only(control_mechanism: str) -> bool:
+    """True if `control_mechanism` is refer-only (never authored / anchored)."""
+    return (control_mechanism or "").strip().lower() in REFER_ONLY_MECHANISMS
 
 
 def mechanism_family(control_mechanism: str) -> list[str]:

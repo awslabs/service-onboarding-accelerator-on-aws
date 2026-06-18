@@ -57,7 +57,22 @@ def test_mechanism_family_matches_real_map_strings():
     assert ri.mechanism_family("VPC Endpoint Policy") == ["VPCE", "data-perimeter"]
     assert ri.mechanism_family("VPCE Policy") == ["VPCE", "data-perimeter"]  # alias
     assert ri.mechanism_family("KMS Key Policy") == ["IAM"]
-    assert ri.mechanism_family("IAM Trust Policy") == ["IAM"]
+    # Trust policies are refer-only: an EMPTY family so no repo anchor ever
+    # resolves (was ["IAM"], which stamped an incoherent identity-policy anchor).
+    assert ri.mechanism_family("IAM Trust Policy") == []
+
+
+def test_trust_policy_is_refer_only():
+    """Trust policies are refer-only: empty mechanism family, no anchor, and
+    is_refer_only() is True so the anchor validator can guard them."""
+    assert ri.is_refer_only("IAM Trust Policy") is True
+    assert ri.is_refer_only("trust policy") is True
+    assert ri.is_refer_only("  IAM TRUST POLICY  ") is True
+    assert ri.is_refer_only("SCP") is False
+    assert ri.is_refer_only("IAM Policy") is False
+    # No family → no candidates → best_anchor must be None regardless of input.
+    assert ri.mechanism_family("trust policy") == []
+    assert ri.best_anchor("IAM Trust Policy", ["sts:AssumeRole"], []) is None
 
 
 def test_permission_boundary_family_is_curated_only():

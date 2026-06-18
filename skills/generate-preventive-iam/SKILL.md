@@ -13,11 +13,24 @@ control and authors it from a reference example. Covers these mechanisms:
 
 | Mechanism (mapping) | Output file | Anchor family |
 |---|---|---|
-| `IAM Policy` / `IAM Trust Policy` | `preventive/iam-policies.json` | `IAM` |
+| `IAM Policy` | `preventive/iam-policies.json` | `IAM` |
 | `IAM Permission Boundary` | `preventive/permission-boundary.json` | `permission-boundary` |
 | `Resource Policy` / `Resource-Based Policy` | `preventive/resource-policy.json` | `IAM`, `data-perimeter` |
 | `VPCE Policy` | `preventive/vpce-policy.json` | `VPCE`, `data-perimeter` |
 | `KMS Key Policy` | `preventive/kms-key-policy.json` | `IAM` |
+| `IAM Trust Policy` | *(referred, not authored)* | *(none — refer-only)* |
+
+**Trust policies are referred, not authored.** There is no vetted trust-policy
+example library to anchor to, and the cross-service confused-deputy prevention a
+trust policy implements (the `aws:SourceArn` / `aws:SourceAccount` condition on
+the `sts:AssumeRole` principal) is documented per-service. The recommender marks
+trust-policy controls `REFER_TO_REFERENCE` with a `service-doc` citation, so they
+never reach this skill as a `GENERATE_IAM` row. If you ever encounter a
+trust-policy control here, emit a REFER pointer — `{"_metadata": {"mechanism":
+"IAM Trust Policy", "not_anchored": true, "not_anchored_reason": "...service-doc
+confused-deputy pattern..."}}` with **no** `Statement[]` body and **no** repo
+`reference` — never an authored policy. The reference-anchor validator hard-fails
+a trust policy that carries a repo anchor or ships an enforcing body.
 
 **Reference-repo purposes (anchor to the RIGHT repo for the mechanism).** The
 recommender's `best_anchor` already restricts to the correct family, but when
@@ -68,7 +81,6 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
 3. Apply the IAM-family authoring rules from
    `skills/generate-preventive/SKILL.md` ("Account × Preventive",
    "Resource × Preventive", "Rule C2"):
-   - Trust policies: confused-deputy `Condition` (`aws:SourceAccount`/`aws:SourceArn`).
    - IAM policies: scope to specific resource ARN patterns, not `*`.
    - Permission boundaries: NEVER emit an unconditional `Allow <prefix>:* on
      Resource "*"` baseline — that is an exfiltration path the integrity check

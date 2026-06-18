@@ -47,9 +47,16 @@ from pathlib import Path
 # Reuse the shared index loader.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 try:
-    from reference_index import example_ids  # type: ignore
+    from reference_index import example_ids, is_refer_only  # type: ignore
 except Exception:  # pragma: no cover - import guard
     example_ids = None  # resolved lazily in _known_ids
+
+    def is_refer_only(_mechanism: str) -> bool:  # type: ignore
+        # Fallback when the shared index module can't be imported: hardcode the
+        # refer-only mechanism strings so the trust-policy guard still fires.
+        return (_mechanism or "").strip().lower() in {
+            "iam trust policy", "trust policy",
+        }
 
 
 # Files under preventive/ that are documentation, not enforcing policy.
@@ -151,6 +158,33 @@ def check_artifact(
 
     if _is_gap_or_stub(meta, data):
         return errors  # gap/skip stubs emit no policy; no anchor required
+
+    # Refer-only mechanisms (trust policies) must NEVER carry a repo anchor or
+    # author policy. There is no vetted trust-policy example library, so a trust
+    # policy that resolves a reference example has been stamped with an
+    # unrelated (identity-policy) anchor — an incoherent shape. A trust policy
+    # must be a REFER artifact: no Statement[] body, not_anchored: true, and a
+    # service-doc citation pointing at the confused-deputy pattern.
+    mechanism = str(meta.get("mechanism", ""))
+    if is_refer_only(mechanism):
+        reference = meta.get("reference")
+        has_anchor = isinstance(reference, dict) and reference.get("example_id")
+        if has_anchor:
+            errors.append(
+                f"P8 reference_anchor: {basename} is a refer-only mechanism "
+                f"({mechanism!r}) but carries _metadata.reference.example_id "
+                f"'{reference.get('example_id')}'. Trust policies have no vetted "
+                f"example library and must be referred, not authored — emit a "
+                f"REFER artifact (no anchor, not_anchored: true, service-doc "
+                f"citation for the confused-deputy pattern) instead."
+            )
+        if _is_authored_policy(data):
+            errors.append(
+                f"P8 reference_anchor: {basename} is a refer-only mechanism "
+                f"({mechanism!r}) but ships enforcing policy (Statement[] is "
+                f"non-empty). Trust policies must be referred, not authored."
+            )
+        return errors
 
     # not_anchored escape hatch: a REFER/pointer artifact may declare
     # itself un-anchored, but ONLY if it is not actually authoring policy
