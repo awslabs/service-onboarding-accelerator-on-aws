@@ -35,12 +35,16 @@ serves, and stop there. Do NOT assert that an action list is complete,
 that a particular condition key fires under specific runtime context not
 present in the input data, or that the control causally prevents a named
 attack without an explicit ATT&CK technique cross-reference. Causal-
-filler phrases ("ensures", "guarantees", "prevents all", "fully
-mitigates", "completely blocks") are banned in `description` and
+filler and absolute-overreach phrases ("ensures", "guarantees",
+"prevents all", "fully mitigates", "completely blocks", bare "prevents" /
+"blocks" / "blocking", "cannot", absolute "only", "denies … untrusted",
+"confused-deputy" as a claim) are banned in `description` and
 `security_rationale` — prefer "supports", "enforces at request time",
 "constrains to the listed actions", or similar. The
 `tools/validate/lint_control_prose.py` lint flags these phrases plus an
-over-length budget on each prose field.
+over-length budget on each prose field, and it also scans the rendered
+`.md` files so a render-time re-wording cannot slip a stronger claim past
+the source JSON.
 
 **Input:** `.service-approval/<slug>/03-validate/validated.json`
 **Output:** `.service-approval/<slug>/04-map/map-controls-generated.json`
@@ -363,7 +367,7 @@ Every control MUST include these fields:
 {
   "id": "CTRL-ORG-PRV-001",
   "name": "Enforce CMK encryption on <Resource> creation via SCP",
-  "description": "SCP denies <prefix>:Create<Resource> unless encryption condition key is present",
+  "description": "Constrains <Resource> creation to require encryption at request time via SCP",
   "posture": "preventative-request",
   "source": "sar",
   "scope": "ORG",
@@ -375,7 +379,7 @@ Every control MUST include these fields:
   "actions": ["<prefix>:Create<Resource>", "<prefix>:Update<Resource>"],
   "resource_types": ["AWS::<Service>::<Resource>"],
   "assessment_gap_ids": [],
-  "security_rationale": "The mitigation requires encryption key enforcement at creation time. An SCP is the strongest mechanism because it operates at the organization level, denying any Create call that lacks the encryption key parameter regardless of the caller's IAM permissions. This ensures no resource can be created without customer-managed encryption.",
+  "security_rationale": "Supports encryption-at-rest by gating the create call on the customer-managed key parameter at request time.",
   "attack_techniques": ["T1530", "T1486"],
   "framework_keywords": ["encryption", "key management", "data protection", "policy enforcement"]
 }
@@ -407,10 +411,15 @@ Every control MUST include these fields:
 - `actions`: IAM actions restricted/monitored (empty array for non-IAM controls)
 - `resource_types`: AWS resource types affected (CFN format)
 - `assessment_gap_ids`: Assessment gaps addressed (empty array if none)
-- `security_rationale`: 2-3 sentences explaining the mitigation-to-mechanism reasoning chain. MUST include:
-  (1) what the mitigation requires, (2) why this specific mechanism was chosen, (3) what it prevents/detects.
-  This field is the PRIMARY context for downstream framework-mapping — write it as if the reader has
-  never seen the mitigation text.
+- `security_rationale`: **ONE broad sentence** stating the control's intent at objective
+  level — name the *kind* of setting it governs and the objective it supports. Do **not**
+  assert a causal guarantee, enumerate verbatim actions, or list condition keys here (those
+  live in the structured `actions[]` / `condition_keys[]` fields the generate phase consumes).
+  State only what is verified; a broad true sentence beats a precise uncertain one. Banned
+  causal-filler words (`ensures`, `guarantees`, `prevents all`, bare `prevents`/`blocks`,
+  `cannot`, absolute `only`, …) are rejected by `lint_control_prose.py`. Prefer
+  "supports / constrains / enforces at request time". This field is the PRIMARY context for
+  downstream framework-mapping — write it broad but accurate.
 - `attack_techniques`: ATT&CK technique IDs this control mitigates (empty array if `attack_surface`
   not present in validated.json). Populated by cross-referencing the control's `actions[]`,
   `condition_keys[]`, and `mechanism` against `attack_surface.applicable_techniques[].api_surface_evidence[]`.

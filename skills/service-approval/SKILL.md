@@ -680,13 +680,19 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --message "mapping review gate: citability + prose budget"
 
 python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
-python3 tools/validate/lint_control_prose.py --slug <slug>; lp=$?
+python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
 ```
 
 It reports: objectives flagged with no catalog/reference support, and any control
-prose that exceeds the verified-language budget. Its purpose is to confirm every
-mapping can point to a citation (Canopy mitigation, reference example, Control
-Catalog, or a service-specific doc) before any control is authored.
+prose that exceeds the verified-language budget or over-claims. The prose lint
+walks both `mapping-results.json` **and** the rendered `controls-catalog.md` /
+`framework-mapping.md` siblings, so it catches a banned/overreach phrase that
+was introduced only at render time (the `.md` making a claim stronger than the
+source JSON — an "upward re-wording" divergence). It runs `--strict`, so a prose
+finding gates the map phase: re-word the offending control to objective level and
+re-render before generation consumes the mapping. The cross-check's purpose is to
+confirm every mapping can point to a citation (Canopy mitigation, reference
+example, Control Catalog, or a service-specific doc) before any control is authored.
 
 **Persist the review artifact** so the gate leaves a machine-readable trace —
 write `.service-approval/<slug>/04-map/mapping-review.json`:
@@ -696,7 +702,7 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
   "_metadata": {"service": "<service>", "gate": "post-map", "generated": "service-approval v3.0.0"},
   "validators": [
     {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
-    {"name": "lint_control_prose", "exit_code": 0, "blocking": false}
+    {"name": "lint_control_prose", "exit_code": 0, "blocking": true}
   ],
   "flagged": [
     {"objective_id": "IAM-04", "issue": "no catalog/reference support", "severity": "advisory"}
@@ -712,14 +718,17 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --verdict $([ $cm -eq 0 ] && echo pass || echo warn) --message "control→catalog cross-check"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:lint_control_prose \
-    --verdict $([ $lp -eq 0 ] && echo pass || echo warn) --message "control prose language budget"
+    --verdict $([ $lp -eq 0 ] && echo pass || echo fail) --message "control prose language budget (JSON + rendered .md)"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source skill:map-review --verdict end \
     --message "mapping review gate complete" --extra artifact=mapping-review.json
 ```
 
-This is an **advisory gate** — surface the flagged items and proceed unless a
-hard validator (non-zero exit on a blocking check) fails.
+The control→catalog cross-check (`validate_control_mappings`) is **advisory** —
+surface its flagged items and proceed. The prose lint (`lint_control_prose
+--strict`) is a **hard gate**: a non-zero exit means a control over-claims in the
+JSON or the rendered `.md`, so fix the prose and re-render before generation
+consumes the mapping.
 
 ### Phase 4: Generate (3 families in parallel; preventive is a sequenced sub-pipeline)
 

@@ -34,14 +34,21 @@ import re
 DEFAULT_RATIONALE_BUDGET = 200
 DEFAULT_DESCRIPTION_BUDGET = 280
 
-# Banned causal-filler phrases. These are case-insensitive whole-word /
-# whole-phrase matches. The list is intentionally short — the goal is to
-# catch obvious overreach, not to police prose.
+# Banned causal-filler / absolute-overreach phrases. Case-insensitive
+# whole-word / whole-phrase matches. The list is intentionally short — the
+# goal is to catch obvious overreach, not to police prose. The bare verbs
+# (`prevents`/`blocks`/`blocking`/`cannot`) are the overreach actually
+# observed in control rationales ("blocks unauthorized calls", "X cannot
+# happen"); prefer "constrains"/"supports"/"enforces at request time".
 BANNED_PHRASES: tuple[str, ...] = (
     "ensures",
     "guarantees",
     "guarantee",
     "prevents all",
+    "prevents",
+    "blocks",
+    "blocking",
+    "cannot",
     "completely blocks",
     "completely prevents",
     "fully mitigates",
@@ -50,6 +57,8 @@ BANNED_PHRASES: tuple[str, ...] = (
     "100% effective",
     "always blocks",
     "never allows",
+    "confused-deputy",
+    "confused deputy",
 )
 
 # Compile a single regex that matches any banned phrase as a word boundary
@@ -57,6 +66,24 @@ BANNED_PHRASES: tuple[str, ...] = (
 # standalone word, and "censure" doesn't trip).
 _BANNED_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(p) for p in BANNED_PHRASES) + r")\b",
+    re.IGNORECASE,
+)
+
+# `only` is absolute overreach in a control claim ("denies all but X only"),
+# but it is also part of legitimate, non-claim text we must NOT flag: the
+# coverage-level label "Supportive Only" and the compounds "read-only" /
+# "write-only". Fixed-width negative lookbehinds (with IGNORECASE) exclude
+# exactly those before matching a standalone `only`.
+_ONLY_RE = re.compile(
+    r"(?<!supportive )(?<!read-)(?<!write-)\bonly\b",
+    re.IGNORECASE,
+)
+
+# "denies … untrusted" — a strong claim that a control denies untrusted
+# principals/sources. Match `denies` followed by `untrusted` within the same
+# sentence (no period between them).
+_DENIES_UNTRUSTED_RE = re.compile(
+    r"\bdenies\b[^.]*\buntrusted\b",
     re.IGNORECASE,
 )
 
@@ -74,11 +101,19 @@ class LintFinding:
 def find_banned_phrases(text: str) -> list[str]:
     """Return the list of distinct banned phrases that appear in `text`.
 
-    Returns an empty list when the text is clean.
+    Returns an empty list when the text is clean. Beyond the fixed
+    `BANNED_PHRASES` list, two context-sensitive matchers run: a standalone
+    `only` (excluding "Supportive Only" / "read-only" / "write-only") and the
+    `denies … untrusted` claim.
     """
     if not text:
         return []
-    return sorted({m.group(0).lower() for m in _BANNED_RE.finditer(text)})
+    found = {m.group(0).lower() for m in _BANNED_RE.finditer(text)}
+    if _ONLY_RE.search(text):
+        found.add("only")
+    if _DENIES_UNTRUSTED_RE.search(text):
+        found.add("denies … untrusted")
+    return sorted(found)
 
 
 def lint_control_prose(
@@ -159,8 +194,135 @@ def lint_mapping_file(mapping: dict) -> list[tuple[str, LintFinding]]:
     return results
 
 
+# ---------------------------------------------------------------------------
+# Rendered-markdown scanning
+# ---------------------------------------------------------------------------
+# The customer-facing catalog (controls-catalog.md) and the framework crosswalk
+# (framework-mapping.md) are re-rendered from the JSON. A render-time re-wording
+# that strengthens a claim (JSON says "requires", the .md says "ensures") never
+# reaches the JSON-only lint, so the .md must be scanned too.
+
+# A control id as emitted by map-generate-controls.
+_CTRL_ID_RE = re.compile(r"CTRL-(?:ORG|ACC|RES)-(?:PRO|PRV|DET|COR)-\d{3}")
+
+# Catalog per-control prose bullets (the free-text lines under a control
+# header). The bold label may carry the colon inside (`**Description:**`) or
+# outside (`**Description**:`) the asterisks — accept either.
+_CATALOG_PROSE_BULLET_RE = re.compile(
+    r"^\s*-\s*\*\*(?:Description|Implementation|Governs|Security Rationale)\s*:?\s*\*\*\s*:?",
+    re.IGNORECASE,
+)
+
+
+def _md_control_prose_lines(md_text: str):
+    """Yield (control_id, line) for each per-control prose line in a rendered map .md.
+
+    "Per-control prose" is scoped deliberately so structural/template text is
+    NOT linted: only (a) table rows that name a control id (mapping + MITRE
+    crosswalk rows carry the description/rationale columns) and (b) catalog
+    bullets (Description / Implementation / Governs / Security Rationale) under
+    the nearest preceding control header. Objective-level N/A reasons,
+    coverage-level labels, and section headers are skipped — they are not
+    per-control claims and legitimately use words like "cannot"/"only".
+    """
+    current: str | None = None
+    for raw in md_text.splitlines():
+        stripped = raw.strip()
+        if stripped.startswith("#"):
+            m = _CTRL_ID_RE.search(stripped)
+            if m:
+                current = m.group(0)
+            continue
+        ids_in_line = _CTRL_ID_RE.findall(raw)
+        if ids_in_line:
+            yield ids_in_line[0], raw
+        elif _CATALOG_PROSE_BULLET_RE.match(raw) and current:
+            yield current, raw
+
+
+def lint_markdown_prose(md_text: str) -> list[tuple[str, LintFinding]]:
+    """Return (control_id, finding) for banned phrases in rendered map .md prose.
+
+    Scans only per-control prose lines (see `_md_control_prose_lines`).
+    """
+    results: list[tuple[str, LintFinding]] = []
+    for cid, line in _md_control_prose_lines(md_text):
+        banned = find_banned_phrases(line)
+        if banned:
+            results.append((
+                cid,
+                LintFinding(
+                    field="markdown",
+                    kind="banned_phrase",
+                    detail=(
+                        f"rendered .md prose for {cid} contains causal-filler / "
+                        f"overreach phrase(s): {', '.join(banned)}. Keep the "
+                        "customer-facing prose broad and objective-level."
+                    ),
+                    excerpt=line.strip()[:120],
+                ),
+            ))
+    return results
+
+
+def _banned_by_control_from_json(mapping: dict) -> dict[str, set[str]]:
+    """Map each control_id → the set of banned phrases present in its SOURCE
+    JSON prose (description / security_rationale / rationale / name)."""
+    out: dict[str, set[str]] = {}
+
+    def add(cid: str | None, text) -> None:
+        if not cid or not isinstance(text, str):
+            return
+        b = find_banned_phrases(text)
+        if b:
+            out.setdefault(cid, set()).update(b)
+
+    for control in mapping.get("controls", []) or []:
+        cid = control.get("control_id") or control.get("id")
+        for k in ("description", "security_rationale", "rationale", "name"):
+            add(cid, control.get(k))
+    for obj in mapping.get("framework_mapping", []) or []:
+        for control in obj.get("controls", []) or []:
+            cid = control.get("control_id")
+            for k in ("description", "security_rationale", "rationale"):
+                add(cid, control.get(k))
+    return out
+
+
+def find_md_divergences(md_text: str, mapping: dict) -> list[tuple[str, LintFinding]]:
+    """Return (control_id, finding) for upward re-wording at render time.
+
+    A banned/stronger word that appears in the rendered .md prose for a control
+    but is ABSENT from that control's source JSON prose is a render-time
+    over-claim — the .md must never make a claim stronger than its source.
+    """
+    json_banned = _banned_by_control_from_json(mapping)
+    results: list[tuple[str, LintFinding]] = []
+    for cid, line in _md_control_prose_lines(md_text):
+        md_banned = set(find_banned_phrases(line))
+        if not md_banned:
+            continue
+        introduced = sorted(md_banned - json_banned.get(cid, set()))
+        if introduced:
+            results.append((
+                cid,
+                LintFinding(
+                    field="markdown",
+                    kind="divergence",
+                    detail=(
+                        f"rendered .md introduces stronger word(s) {introduced} for "
+                        f"{cid} that are absent from the source JSON rationale — do "
+                        "not re-word upward at render time; the .md must not make a "
+                        "claim stronger than the JSON."
+                    ),
+                    excerpt=line.strip()[:120],
+                ),
+            ))
+    return results
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Advisory lint of control prose.")
+    parser = argparse.ArgumentParser(description="Lint of control prose (JSON + rendered .md).")
     parser.add_argument("--slug", help="service slug under .service-approval/")
     parser.add_argument("--mapping", help="explicit path to mapping-results.json")
     parser.add_argument(
@@ -185,13 +347,27 @@ def main() -> int:
 
     mapping = json.loads(mapping_path.read_text())
     results = lint_mapping_file(mapping)
+
+    # Scan the rendered .md siblings too: catch banned phrases and upward
+    # re-wording that never reach the JSON.
+    map_dir = mapping_path.parent
+    for md_name in ("controls-catalog.md", "framework-mapping.md"):
+        md_path = map_dir / md_name
+        if not md_path.exists():
+            continue
+        md_text = md_path.read_text()
+        for cid, f in lint_markdown_prose(md_text):
+            results.append((f"{md_name}:{cid}", f))
+        for cid, f in find_md_divergences(md_text, mapping):
+            results.append((f"{md_name}:{cid}", f))
+
     if not results:
-        print(f"lint_control_prose: {mapping_path} — no findings")
+        print(f"lint_control_prose: {mapping_path} (+ rendered .md) — no findings")
         return 0
 
     for cid, f in results:
         print(f"  [{cid}] {f.field} ({f.kind}): {f.detail}")
-    print(f"lint_control_prose: {len(results)} advisory finding(s)")
+    print(f"lint_control_prose: {len(results)} finding(s)")
     return 2 if args.strict else 0
 
 
