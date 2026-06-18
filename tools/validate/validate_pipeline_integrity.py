@@ -587,27 +587,41 @@ def check_arn_shapes(service_root: Path) -> list[str]:
 # inside the boundary (an observed defect) and means the control intent is not
 # actually carried by the boundary's Deny + condition keys.
 
-# Write/management action verbs (first word of the action after the prefix).
-# A boundary Allow that enumerates these is doing the role policy's job.
-_BOUNDARY_MGMT_VERBS = (
-    "Create", "Update", "Put", "Delete", "Remove", "Tag", "Untag",
-    "Attach", "Detach", "Associate", "Disassociate", "Add", "Modify",
-    "Set", "Enable", "Disable", "Publish", "Register", "Deregister",
-    "Replace",
+# Read-only action verbs. The boundary-minimality check is FAIL-CLOSED: an Allow
+# action is management UNLESS its verb is one of these read-only verbs. An
+# allowlist of write verbs would fail open — any escalation action whose verb the
+# author didn't anticipate (RunInstances, AssumeRole, ScheduleKeyDeletion,
+# RestoreObject, …) would slip through. Inverting to a read allowlist means an
+# unknown verb is treated as management, which is the safe default for a boundary.
+_BOUNDARY_READ_VERBS = (
+    "Get", "List", "Describe", "Search", "Query", "Lookup", "View", "Read",
+    "Batch", "Scan", "Head", "Check", "Test", "Validate", "Estimate",
+    "Detect", "Discover", "Count", "Filter", "Select",
 )
 
 
 def _is_management_action(action: str) -> bool:
-    """True if an action's verb is a write/management verb (Create*, Put*, …).
+    """True if a boundary-Allow action mutates state (fail-closed).
 
-    `lambda:CreateFunction` → True; `lambda:GetFunction` / `lambda:ListX` /
-    `lambda:InvokeFunction` → False. A bare `*` or `prefix:*` is not a single
-    named management action (handled separately by the Resource:* exfil check).
+    An action is management UNLESS its verb is a known read-only verb. So
+    `lambda:CreateFunction`, `ec2:RunInstances`, `sts:AssumeRole`,
+    `kms:ScheduleKeyDeletion` → True (management); `lambda:GetFunction`,
+    `lambda:ListX`, `s3:DescribeJob` → False (read). A wildcard glob counts as
+    management unless its stem is a read verb: `lambda:Create*` → True,
+    `lambda:Get*` → False, and a bare `*` / `prefix:*` → True (it spans writes).
+    `Invoke*` is intentionally treated as management on a boundary — invoke is a
+    privileged data-plane action a boundary should constrain, not floor.
     """
     name = action.split(":", 1)[1] if ":" in action else action
-    if not name or "*" in name:
+    if not name:
         return False
-    return any(name.startswith(v) for v in _BOUNDARY_MGMT_VERBS)
+    if name == "*":
+        return True  # spans every action, including writes
+    # Strip a trailing wildcard to test the verb stem (Create* → Create).
+    stem = name[:-1] if name.endswith("*") else name
+    # A glob whose stem is a read verb (Get*, List*) is read-only; otherwise a
+    # glob is management (Create*, or an ambiguous stem like Cr* → management).
+    return not any(stem.startswith(v) for v in _BOUNDARY_READ_VERBS)
 
 
 def check_boundary_minimality(service_root: Path) -> list[str]:
@@ -625,7 +639,19 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
         return errors
 
     for policy_file, data in _iter_json_files(preventive_dir):
-        if "permission-boundary" not in policy_file.name.lower():
+        # Identify a boundary by filename OR by its metadata, so a renamed file
+        # (pb.json, boundary.json) cannot dodge the check.
+        meta = data.get("_metadata") or {}
+        meta_blob = " ".join(
+            str(meta.get(k, "")) for k in ("mechanism", "posture", "layer")
+        ).lower()
+        is_boundary = (
+            "permission-boundary" in policy_file.name.lower()
+            or "boundary" in policy_file.name.lower()
+            or "permission boundary" in meta_blob
+            or "permission-boundary" in meta_blob
+        )
+        if not is_boundary:
             continue
         if "Statement" not in data:
             continue

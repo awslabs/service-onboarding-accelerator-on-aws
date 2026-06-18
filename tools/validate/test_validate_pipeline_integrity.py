@@ -474,18 +474,31 @@ def test_check_arn_shapes_no_sar_facts_is_silent(tmp_path: Path) -> None:
 
 
 def test_is_management_action_classification() -> None:
+    # Explicit write verbs are management.
     assert _is_management_action("lambda:CreateFunction")
     assert _is_management_action("lambda:UpdateFunctionConfiguration")
     assert _is_management_action("lambda:PutFunctionCodeSigningConfig")
     assert _is_management_action("lambda:DeleteFunction")
     assert _is_management_action("lambda:TagResource")
-    # reads / invoke / list are not management actions
+    # FAIL-CLOSED: escalation actions whose verb is not a known read verb are
+    # management even though their verb is not an obvious Create/Update/Put.
+    assert _is_management_action("ec2:RunInstances")
+    assert _is_management_action("sts:AssumeRole")
+    assert _is_management_action("kms:ScheduleKeyDeletion")
+    assert _is_management_action("s3:RestoreObject")
+    assert _is_management_action("dynamodb:ExportTableToPointInTime")
+    # invoke is a privileged data-plane action a boundary should constrain.
+    assert _is_management_action("lambda:InvokeFunction")
+    # read verbs are not management.
     assert not _is_management_action("lambda:GetFunction")
     assert not _is_management_action("lambda:ListFunctions")
-    assert not _is_management_action("lambda:InvokeFunction")
-    # wildcards / bare prefix are handled elsewhere, not here
-    assert not _is_management_action("lambda:*")
-    assert not _is_management_action("lambda:Create*")
+    assert not _is_management_action("s3:DescribeJob")
+    # wildcard globs: a write/ambiguous stem is management; a read stem is not.
+    assert _is_management_action("lambda:Create*")
+    assert _is_management_action("lambda:*")
+    assert _is_management_action("*")
+    assert not _is_management_action("lambda:Get*")
+    assert not _is_management_action("lambda:List*")
 
 
 def test_boundary_allow_with_management_actions_flagged(tmp_path: Path) -> None:
@@ -510,15 +523,15 @@ def test_boundary_allow_with_management_actions_flagged(tmp_path: Path) -> None:
 
 
 def test_boundary_minimal_allow_passes(tmp_path: Path) -> None:
-    """A boundary whose Allow is a minimal read/invoke floor — control intent in
-    the Deny — passes P10."""
+    """A boundary whose Allow is a minimal READ floor — control intent in the
+    Deny — passes P10. (Reads only; invoke/management belong in the Deny + keys.)"""
     _write_preventive_artifact(
         tmp_path,
         "permission-boundary.json",
         [
             {"Sid": "AllowReadFloor", "Effect": "Allow",
              "Action": ["lambda:GetFunction", "lambda:ListFunctions",
-                        "lambda:InvokeFunction"],
+                        "lambda:GetAccountSettings"],
              "Resource": "*"},
             {"Sid": "DenyPassRole", "Effect": "Deny", "Action": "iam:PassRole",
              "Resource": "*",
@@ -526,6 +539,39 @@ def test_boundary_minimal_allow_passes(tmp_path: Path) -> None:
         ],
     )
     assert check_boundary_minimality(tmp_path) == []
+
+
+def test_boundary_escalation_action_flagged(tmp_path: Path) -> None:
+    """FAIL-CLOSED regression: a boundary Allow listing escalation actions whose
+    verbs are not in any write-verb list (RunInstances, AssumeRole, …) must still
+    be flagged — the check treats unknown verbs as management."""
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "AllowEscalation", "Effect": "Allow",
+             "Action": ["ec2:RunInstances", "sts:AssumeRole",
+                        "kms:ScheduleKeyDeletion"],
+             "Resource": "*"},
+        ],
+    )
+    errors = check_boundary_minimality(tmp_path)
+    assert len(errors) == 1 and "AllowEscalation" in errors[0]
+
+
+def test_boundary_detected_by_metadata_not_just_filename(tmp_path: Path) -> None:
+    """A boundary artifact under a non-obvious filename is still checked when its
+    _metadata marks it a permission boundary."""
+    prev = tmp_path / "05-generate" / "preventive"
+    prev.mkdir(parents=True)
+    (prev / "pb.json").write_text(json.dumps({
+        "_metadata": {"mechanism": "IAM Permission Boundary", "layer": "preventive"},
+        "Version": "2012-10-17",
+        "Statement": [{"Sid": "AllowMgmt", "Effect": "Allow",
+                       "Action": ["lambda:CreateFunction"], "Resource": "*"}],
+    }))
+    errors = check_boundary_minimality(tmp_path)
+    assert len(errors) == 1 and "AllowMgmt" in errors[0]
 
 
 def test_boundary_minimality_only_checks_boundary_files(tmp_path: Path) -> None:
