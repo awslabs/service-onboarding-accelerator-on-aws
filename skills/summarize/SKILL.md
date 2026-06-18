@@ -130,6 +130,32 @@ omitting it. Include, as applicable:
 
 Render each as a short factual bullet. This section is descriptive, not a judgment.
 
+## Preventive Coverage
+Place this section immediately after "Actions Taken to Increase Confidence". It is a
+**deterministic, file-backed** accounting — read it from
+`.service-approval/<slug>/05-generate/preventive-coverage.json` (built by
+`build_preventive_coverage.py`); do NOT hand-write or estimate the numbers. If the
+file is absent (no preventive controls in this run), state that plainly and omit the
+table.
+
+Render the totals and a per-control breakdown so every count is traceable:
+
+```markdown
+Of {objectives} preventive objectives: **{authored}** have a policy generated from a
+public AWS reference example, **{referred}** point to a reference example the customer
+applies, and **{routed_to_detective}** are covered by detective controls (not
+preventable at request time).
+
+| Control | Coverage | Mechanism | Reference / Citation | Why |
+|---|---|---|---|---|
+| {control_id} | {Authored / Referred / Routed to detective} | {mechanism} | {anchor example_id + url, or citation type + id/url} | {reason} |
+```
+
+The counts come straight from `totals`; each row comes from `controls[]` (its
+`category`, `mechanism`, `anchor`/`citation`, and `reason`). A reader can verify
+every number by following the control id and citation back to the generated
+artifacts. This section is descriptive, not a judgment.
+
 ## Summary of Findings
 A neutral, factual recap of what this assessment produced and what remains open —
 date, service name, and resource/control counts. State coverage and any open items

@@ -839,6 +839,18 @@ python3 -m tools.validate.log --slug <slug> --phase 05-generate \
     --message "generation review gate complete" --extra artifact=generation-review.json
 ```
 
+**Build the preventive-coverage rollup.** After the gate, produce the deterministic,
+file-backed accounting of how many preventive objectives were authored, referred, or
+routed to detective — each traceable to its control id and citation:
+
+```bash
+python3 tools/validate/build_preventive_coverage.py --slug <slug>
+```
+
+This reads `preventive-plan.json` + `preventive/rootcause-report.json` and writes
+`.service-approval/<slug>/05-generate/preventive-coverage.json`. The numbers are
+deterministic (no prose narration); Phase 6 surfaces them near the top of the report.
+
 Surface the findings before Phase 6 so the report's confidence-actions section can
 state which checks ran and passed.
 
