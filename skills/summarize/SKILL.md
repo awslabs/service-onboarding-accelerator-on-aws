@@ -70,9 +70,27 @@ Build a table per layer:
 
 ## Step 5: Build artifact manifest
 
+List the generated artifacts, but **exclude vendored and build directories** —
+`node_modules/`, `.terraform/`, `cdk.out/`, `__pycache__/`, `.git/`, and
+lockfiles. An IaC format that vendors its dependencies (e.g. cdktf) can otherwise
+dump tens of thousands of `node_modules` paths into the manifest and balloon the
+customer-facing report from hundreds of lines to thousands.
+
 ```bash
-find .service-approval/<slug>/05-generate -type f | sort
+find .service-approval/<slug>/05-generate \
+  \( -type d \( -name node_modules -o -name .terraform -o -name cdk.out \
+       -o -name __pycache__ -o -name .git \) -prune \) -o \
+  \( -type f \
+     ! -name 'package-lock.json' ! -name 'yarn.lock' ! -name '*.tfstate' \
+     ! -name '*.tfstate.backup' ! -name '*.pyc' \
+     -print \) | sort
 ```
+
+For the IaC subtree (`05-generate/iac/`), **summarize each format rather than
+listing every file** — report the format and its top-level entry (e.g.
+`iac/cdktf/ — CDK for Terraform project (N files)`), not the full vendored tree.
+The manifest names what was produced; the templates themselves live on disk for
+the customer to read.
 
 ## Step 6: Write APPROVAL-REPORT.md
 
