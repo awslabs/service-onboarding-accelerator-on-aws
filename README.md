@@ -63,6 +63,84 @@ The sourcing for each generated preventive policy is recorded in the artifact's
 `_metadata.reference` (repo + example id + source URL), so the basis for every
 control is visible and auditable.
 
+Some preventive mechanisms are **referred rather than authored** by design,
+because no vetted example library exists to anchor them to:
+
+- **Trust policies** are refer-only. A role's trust policy and the cross-service
+  confused-deputy prevention it implements (`aws:SourceArn` / `aws:SourceAccount`
+  on `sts:AssumeRole`) are documented per-service, so the tool points to that
+  documented pattern rather than synthesizing a policy body.
+- **Permission boundaries** are refer-by-default. A boundary only takes effect
+  when the organization attaches one to its principals, so the tool refers to the
+  published boundary scaffold unless the run explicitly opts in.
+
+This is an intentional stance: the tool refers rather than authors wherever a
+vetted reference library is absent, instead of inventing a policy that looks
+plausible but is unanchored.
+
+### Source priority
+
+When the tool needs an external fact or citation, it consults sources in one
+fixed priority order and cites the highest-priority source that supports the
+claim — the same order everywhere facts are pulled (research, validation,
+mapping, and preventive recommendation):
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present. It
+   is the authoritative source of *what* matters for the service (control intent)
+   and the top citation.
+2. **AWS Control Catalog API** — the control→objective authority for controls the
+   catalog covers.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general blog posts or third-party write-ups.
+
+The reference-repo library above supplies the *vetted policy body* for a
+preventive control, adapted under the Canopy (or catalog/doc) intent — Canopy
+sets what to enforce and is the top citation; the reference repo supplies how.
+Each mapping row and each preventive decision records a typed `citation` whose
+`type` (`canopy` / `reference` / `catalog` / `service-doc`) reflects the
+highest-priority source that backs it.
+
+### How the tool builds confidence
+
+The pipeline does not issue an approve/deny verdict; instead, every run records
+the concrete, verifiable steps it took so a reviewer can see exactly what was
+checked:
+
+- The final report opens with an **"Actions Taken to Increase Confidence"**
+  section — a factual list of the verifications performed (capabilities and
+  condition keys checked against AWS sources, which validators ran and passed,
+  reference anchoring, deployment, runtime attestation).
+- A **Preventive Coverage** accounting follows it: a file-backed
+  (`preventive-coverage.json`) count of how many preventive objectives have a
+  policy authored from a reference example, how many point to a reference the
+  customer applies, and how many are covered by detective controls instead — each
+  count traceable to its control id and citation.
+
+### Validation efforts
+
+Validation runs at several layers, not only at deploy time:
+
+- **Two review gates.** A post-map gate checks the mapping is citable and its
+  prose stays objective-level (the prose lint scans both the JSON and the
+  rendered `.md` files for over-claims and upward re-wording), runs the
+  deterministic semantic checks (every referenced control resolves, every mapped
+  objective exists, no control claims an unverified action/condition key), and
+  the Canopy-factual check. A post-generate gate proves every preventive artifact
+  is reference-anchored and actually enforcing.
+- **Root-cause critic.** The last step of preventive generation proves each
+  emitted policy both resolves to a reference and enforces its control's root
+  cause (a real condition key gates the target action); non-enforcing objectives
+  are routed to detective rather than shipped.
+- **Reference-anchor enforcement** plus **preventability / enforcement /
+  action-scope** checks ensure no policy ships unanchored, no Deny is a silent
+  no-op, and no Deny widens beyond the reviewed action set.
+- **Canopy-factual check.** Any control citing a Canopy mitigation must name a
+  mitigation that actually exists in the provided export, with consistent gated
+  operations — fabricated or drifted citations are flagged.
+- **Conflict detection.** A deterministic pre-filter surfaces control pairs that
+  contradict each other (a Deny on an action another control allows, or two
+  Denies with incompatible conditions), and a clean reviewer confirms each.
+
 ### Artifact flow
 
 Each phase consumes the previous phase's output — the pipeline is a strict DAG:
@@ -175,7 +253,12 @@ Note: if you do not provide any values, or custom threat models / frameworks in 
 
 ## Validation
 
-The plugin includes automatic validation hooks that run at session end:
+Validation happens in two complementary places. The **review gates and
+correctness checks** that run during the pipeline — the two review gates, the
+root-cause critic, reference-anchor enforcement, the Canopy-factual check, and
+conflict detection — are described under [Validation efforts](#validation-efforts)
+above. The **deployability checks** below confirm the generated artifacts are
+syntactically valid and policy-sound, and run automatically at session end:
 
 **Tier 1 — Static (no credentials)**
 - JSON/YAML parse, Terraform validate/fmt, CDK/CDKTF TypeScript compile
