@@ -155,29 +155,40 @@ def resolve_mitigations(validated: dict, controls: list[dict]) -> list[dict]:
     Prefer customer-provided `existing_mitigations` from validated.json. When a
     run has no customer mitigation report (`existing_mitigations == []`, which is
     valid), derive synthetic mitigations from `assessment_gaps` so the map still
-    traces threats → controls. Each gap with id `GAP-NNN` becomes a mitigation
-    `M-GAP-NNN` whose statement is `"{requirement}: {details}"` and whose
-    resource_type is the gap `domain`. Only gaps that are actually referenced by
-    at least one generated control are emitted, so no NONE-coverage mitigations
-    are introduced (CHECK-S13 rejects those).
+    traces threats → controls.
+
+    map-generate-controls (Rule C1) anchors each control to one or more synthetic
+    mitigation IDs of the form `M-GAP-NNN.x` — a single gap `GAP-NNN` can spawn
+    several mitigations (`.0`, `.1`, …) when it is addressed by more than one
+    posture/control. We therefore build one synthetic mitigation per *referenced
+    synthetic ID*, resolving each back to its source gap `GAP-NNN` for the
+    statement (`"{requirement}: {details}"`) and resource_type (gap `domain`).
+    Only synthetic IDs actually referenced by a generated control are emitted, so
+    no NONE-coverage mitigations are introduced (CHECK-S13 rejects those).
     """
     existing = validated.get("existing_mitigations") or []
     if existing:
         return existing
 
-    # Synthesize from assessment_gaps, restricted to mitigation ids that
-    # controls actually reference (mitigation_ids[]).
-    referenced = {
-        mid for c in controls for mid in c.get("mitigation_ids", [])
+    # The synthetic IDs the controls actually reference (e.g. M-GAP-005.0).
+    referenced = sorted(
+        {mid for c in controls for mid in c.get("mitigation_ids", [])}
+    )
+
+    # Index gaps by id so each referenced synthetic ID can resolve its source.
+    gaps_by_id = {
+        g["id"]: g for g in validated.get("assessment_gaps", []) if g.get("id")
     }
+
     synthetic: list[dict] = []
-    for gap in validated.get("assessment_gaps", []):
-        gid = gap.get("id")
-        if not gid:
-            continue
-        mid = f"M-{gid}"
-        if mid not in referenced:
-            continue
+    for mid in referenced:
+        # Strip the leading "M-" and the trailing ".x" instance suffix to recover
+        # the source gap id (M-GAP-005.0 -> GAP-005). IDs that don't follow the
+        # synthetic scheme are kept with empty statement/resource_type rather than
+        # dropped, so the control still traces to a mitigation entry.
+        gap_id = mid[2:] if mid.startswith("M-") else mid
+        gap_id = gap_id.rsplit(".", 1)[0]
+        gap = gaps_by_id.get(gap_id, {})
         requirement = gap.get("requirement", "").strip()
         details = gap.get("details", "").strip()
         statement = f"{requirement}: {details}" if details else requirement
@@ -445,6 +456,77 @@ CATEGORY_LABELS = {
     "COR": "Responsive",
 }
 
+# --- Objective-level catalog authoring (Phase 5 authoring rule) --------------
+# The customer-facing controls-catalog.md must stay broad: NO raw `$.` parameter
+# paths, NO long verbatim action lists. It states what kind of setting each
+# control governs in words and names the action family / one or two
+# representative actions. The exact paths and full action lists live in
+# mapping-results.json. These maps translate the machine-readable control
+# fields into the words-only catalog text.
+_PARAM_GOVERNS = {
+    "$.AuthType": "the function URL authentication-type setting",
+    "$.VpcConfig.SubnetIds[*]": "the function's VPC networking configuration",
+    "$.VpcConfig.SecurityGroupIds[*]": "the function's VPC networking configuration",
+    "$.Role": "the function's execution-role assignment",
+    "$.KMSKeyArn": "the function's encryption-key setting",
+    "$.CodeSigningConfigArn": "the function's code-signing configuration",
+    "$.Principal": "the function's resource-policy principal grants",
+}
+_CK_GOVERNS = {
+    "aws:PrincipalOrgID": "the calling principal's organization membership",
+    "aws:RequestTag": "tags supplied on the request",
+    "aws:ResourceTag": "tags present on the resource",
+    "aws:TagKeys": "the set of tag keys applied to the resource",
+    "iam:PassedToService": "which service an execution role may be passed to",
+    "lambda:Principal": "the function's resource-policy principal grants",
+}
+_MECH_GOVERNS = {
+    "CloudTrail": "logging of function-invocation activity",
+    "AWS Config Rule": "the configuration state of deployed functions",
+    "SSM Automation": "remediation of the targeted function setting",
+    "Lambda Remediation": "remediation of the targeted function setting",
+    "Compensating Control Documentation": "the documented compensating procedure",
+    "VPC Endpoint Policy": "access to the service through the VPC endpoint",
+    "Resource Policy": "the function's resource-policy principal grants",
+}
+
+
+def _governs_phrase(ctrl: dict) -> str:
+    """Plain-language description of the kind of setting a control governs.
+
+    Words only — never a raw `$.` parameter path (those stay in
+    mapping-results.json). Falls back from parameters → condition keys →
+    mechanism so every control gets a meaningful, broad statement.
+    """
+    seen: list[str] = []
+    for p in ctrl.get("parameters_controlled", []):
+        phrase = _PARAM_GOVERNS.get(p)
+        if phrase and phrase not in seen:
+            seen.append(phrase)
+    if not seen:
+        for ck in ctrl.get("condition_keys", []):
+            phrase = _CK_GOVERNS.get(ck)
+            if phrase and phrase not in seen:
+                seen.append(phrase)
+    if not seen:
+        phrase = _MECH_GOVERNS.get(ctrl.get("mechanism", ""))
+        if phrase:
+            seen.append(phrase)
+    return "; ".join(seen) if seen else "the targeted function configuration"
+
+
+def _action_family(ctrl: dict) -> str:
+    """Name the action family / one or two representative actions.
+
+    Never a long verbatim list — the full list stays in mapping-results.json.
+    """
+    actions = ctrl.get("actions", [])
+    if not actions:
+        return ""
+    if len(actions) <= 2:
+        return "`" + "`, `".join(actions) + "`"
+    return f"`{actions[0]}` and related `lambda:` actions"
+
 
 def write_controls_catalog(
     controls: list[dict],
@@ -469,6 +551,14 @@ def write_controls_catalog(
     lines.append(f"**Total Controls:** {len(controls)}  ")
     lines.append(f"**Resources:** {', '.join(resources)}  ")
     lines.append(f"**Mitigations Addressed:** {mitigations_addressed}  ")
+    lines.append("")
+    lines.append(
+        "> The objective-level statements below describe each control broadly. "
+        "The exact parameter paths and full action lists for each control are "
+        "recorded in `mapping-results.json` (the machine-readable source the "
+        "generate phase consumes); the catalog stays objective-level so it does "
+        "not over-state specifics."
+    )
     lines.append("")
 
     # Control categories reference table
@@ -525,40 +615,47 @@ def write_controls_catalog(
         grouped.setdefault(c["scope"], {}).setdefault(c["category"], []).append(c)
 
     for scope in sorted(grouped, key=lambda s: SCOPE_ORDER.get(s, 99)):
-        lines.append(f"## {SCOPE_LABELS.get(scope, scope)} Scope\n")
+        lines.append(f"## {SCOPE_LABELS.get(scope, scope)}-Level Controls\n")
         lines.append("")
         categories = grouped[scope]
         for cat in sorted(categories, key=lambda c: CATEGORY_ORDER.get(c, 99)):
-            lines.append(f"### {CATEGORY_LABELS.get(cat, cat)} Controls\n")
+            lines.append(f"### {CATEGORY_LABELS.get(cat, cat)}\n")
             lines.append("")
             for ctrl in categories[cat]:
-                lines.append(f"#### {ctrl['id']}: {ctrl['name']}\n")
+                # Objective-level entry. NO raw `$.` parameter paths, NO long
+                # verbatim action lists — `Governs:` states the kind of setting in
+                # words and `Implementation:` names the action family. The exact
+                # data stays in mapping-results.json.
+                lines.append(f"#### {ctrl['id']} — {ctrl['name']}\n")
                 lines.append("")
                 lines.append(
-                    f"- **Resource Types**: {', '.join(ctrl.get('resource_types', []))}"
+                    f"- **Resource:** {', '.join(ctrl.get('resource_types', []))}"
                 )
-                lines.append(f"- **Scope**: {SCOPE_LABELS.get(ctrl['scope'], ctrl['scope'])}")
-                lines.append(f"- **Mechanism**: {ctrl['mechanism']}")
-                lines.append(f"- **Description**: {ctrl['description']}")
-                if ctrl.get("actions"):
-                    lines.append(f"- **Actions**: `{'`, `'.join(ctrl['actions'])}`")
-                if ctrl.get("condition_keys"):
-                    lines.append(
-                        f"- **Condition Keys**: `{'`, `'.join(ctrl['condition_keys'])}`"
-                    )
-                if ctrl.get("parameters_controlled"):
-                    lines.append(
-                        f"- **Parameters Controlled**: `{'`, `'.join(ctrl['parameters_controlled'])}`"
-                    )
+                lines.append(f"- **Scope:** {SCOPE_LABELS.get(ctrl['scope'], ctrl['scope'])}")
+                lines.append(f"- **Description:** {ctrl['description']}")
+                lines.append(f"- **Enforcement Point:** {ctrl['mechanism']}")
+                fam = _action_family(ctrl)
+                if fam:
+                    lines.append(f"- **Implementation:** {ctrl['mechanism']} applied to {fam}")
+                else:
+                    lines.append(f"- **Implementation:** {ctrl['mechanism']}")
+                lines.append(f"- **Governs:** {_governs_phrase(ctrl)}")
                 lines.append(
-                    f"- **Mitigations**: {', '.join(ctrl.get('mitigation_ids', []))}"
+                    f"- **Mitigations:** {', '.join(ctrl.get('mitigation_ids', []))}"
                 )
                 if ctrl.get("framework_objectives"):
                     lines.append(
-                        f"- **Framework Objectives**: {', '.join(ctrl['framework_objectives'])}"
+                        f"- **Framework Objectives:** {', '.join(ctrl['framework_objectives'])}"
                     )
-                lines.append(f"- **Security Rationale**: {ctrl['security_rationale']}")
                 lines.append("")
+
+    lines.append(
+        "> The exact parameter paths and full action lists for each control are "
+        "recorded in `mapping-results.json` (the machine-readable source generate "
+        "consumes); the catalog stays objective-level so it does not over-state "
+        "specifics."
+    )
+    lines.append("")
 
     write_text(path, "\n".join(lines))
 

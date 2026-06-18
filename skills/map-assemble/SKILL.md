@@ -370,6 +370,27 @@ with open('.service-approval/<slug>/04-map/mapping-results.json', 'w') as f:
 
 ## Phase 5: Write controls-catalog.md
 
+**Authoring rule — keep the customer-facing catalog broad and accurate.** This
+`.md` is read by the customer; the exhaustive, exact data lives in
+`mapping-results.json` (machine-readable, consumed by generate). The catalog
+must state controls at the **objective level** and omit specifics that are open
+to being wrong:
+
+- **Do NOT enumerate exact parameter paths** (`$.CapacityProviderName`,
+  `$.VpcConfig.SubnetIds`, …) in the markdown. Describe the *kind* of setting
+  the control governs ("the function's networking configuration", "the
+  encryption-key setting") instead. The precise paths stay in the JSON.
+- **Do NOT enumerate long verbatim action lists.** Name the action *family* or
+  the one or two representative actions ("restricts function-permission grants",
+  not a 9-item `lambda:` list). The full list stays in the JSON.
+- **State only what is verified.** Omit any claim you are not 100% sure of
+  rather than hedging it in prose. A broad true statement beats a precise
+  uncertain one — the same rule the control descriptions follow in
+  `map-generate-controls`. The `lint_control_prose.py` banned-phrase and
+  length budgets apply to the strings rendered here.
+- Prefer "constrains / supports / enforces at request time" over absolute
+  verbs ("ensures", "prevents all", "guarantees").
+
 Write `.service-approval/<slug>/04-map/controls-catalog.md`:
 
 ```markdown
@@ -407,14 +428,18 @@ Write `.service-approval/<slug>/04-map/controls-catalog.md`:
 
 - **Resource:** {resource-type}
 - **Scope:** Organisation
-- **Description:** {what this control does}
+- **Description:** {objective-level statement of what this control does — no exact parameter paths, no long verbatim action lists}
 - **Enforcement Point:** {mechanism}
-- **Implementation:** {how to implement}
-- **Parameters Controlled:** {API parameters}
+- **Implementation:** {how to implement, at the mechanism level}
+- **Governs:** {the kind of setting/configuration this control constrains, in words — NOT raw `$.` parameter paths}
 - **Mitigations:** {M-xxx IDs}
 - **AWS Doc Reference:** {URL}
 
 [repeat for each control, organized by Scope > Category]
+
+> The exact parameter paths and full action lists for each control are recorded
+> in `mapping-results.json` (the machine-readable source generate consumes); the
+> catalog stays objective-level so it does not over-state specifics.
 
 ### Preventive
 ### Detective
