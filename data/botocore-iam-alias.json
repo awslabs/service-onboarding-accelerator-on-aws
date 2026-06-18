@@ -7,6 +7,12 @@
       "botocore_operation": "StopQueryExecution",
       "sar_iam_action": "CancelQueryExecution",
       "_source": "iter-14 run 3/5 (Amazon Athena); boto3 uses Stop*, SAR grants use athena:Cancel*."
+    },
+    {
+      "service": "lambda",
+      "botocore_operation": "Invoke",
+      "sar_iam_action": "InvokeFunction",
+      "_source": "AWS Lambda; boto3 wire op is Invoke, SAR grants use lambda:InvokeFunction (SAR Actions table row InvokeFunction links to API_Invoke.html). The InvokeFunction IAM action also backs the InvokeAsync and InvokeWithResponseStream wire ops."
     }
   ]
 }
