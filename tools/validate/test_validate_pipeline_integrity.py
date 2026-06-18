@@ -413,6 +413,30 @@ def test_arn_delimiter_malformed_too_few_fields_flagged() -> None:
     assert err is not None and "6 colon-delimited" in err
 
 
+def test_arn_delimiter_wrong_case_resource_type_flagged() -> None:
+    """IAM resource matching is case-sensitive — a capitalized resource type
+    (Function/ instead of function:) matches nothing and is flagged."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:*:*:Function/*", "lambda", delims)
+    assert err is not None and "case" in err.lower()
+
+
+def test_arn_delimiter_uppercase_scheme_still_checked() -> None:
+    """A wrong-case ARN scheme/service (ARN:AWS:LAMBDA:…) is still parsed and its
+    malformed resource delimiter flagged (not silently skipped)."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("ARN:AWS:LAMBDA:*:*:FUNCTION/*", "lambda", delims)
+    assert err is not None
+
+
+def test_arn_delimiter_missing_delimiter_flagged() -> None:
+    """A known resource type with NO delimiter (function* instead of function:*)
+    is a malformed ARN."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:*:*:function*", "lambda", delims)
+    assert err is not None and "without its delimiter" in err
+
+
 def _write_preventive_artifact(root: Path, name: str, statements: list) -> None:
     prev = root / "05-generate" / "preventive"
     prev.mkdir(parents=True, exist_ok=True)

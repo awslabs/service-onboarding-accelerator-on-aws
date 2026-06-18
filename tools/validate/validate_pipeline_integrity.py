@@ -509,22 +509,46 @@ def _arn_delimiter_errors(
     resource field's leading literal type token is matched against `delims`; a
     token present in the SAR map but used with the wrong delimiter is the defect.
     """
-    if not isinstance(arn, str) or not arn.startswith("arn:"):
+    # ARN scheme detection is case-insensitive only for locating the fields; AWS
+    # itself lower-cases arn/partition/service, and IAM resource matching IS
+    # case-sensitive, so a wrong-case scheme/service is a real defect we surface.
+    if not isinstance(arn, str) or not arn.lower().startswith("arn:"):
         return None  # `*` or a non-ARN value — nothing to validate here
     fields = arn.split(":", 5)
     if len(fields) < 6:
         return f"malformed ARN (needs 6 colon-delimited fields): {arn!r}"
     service = fields[2]
-    if service != service_prefix:
+    if service.lower() != service_prefix.lower():
         return None  # different service — its format was not loaded
     resource_field = fields[5]
+    # Build a case-folded view of the known resource types (IAM matching is
+    # case-sensitive, so a wrong-case token is itself a no-op — flag it).
+    delims_lower = {t.lower(): (t, d) for t, d in delims.items()}
+
     m = re.match(r"^([A-Za-z0-9\-]+)([:/])", resource_field)
     if not m:
+        # No delimiter after the leading token. If the segment before any wildcard
+        # is a known resource type used WITHOUT its delimiter (e.g. `function*`
+        # instead of `function:*`), that is a malformed ARN.
+        stem = re.match(r"^([A-Za-z0-9\-]+)", resource_field)
+        if stem and stem.group(1).lower() in delims_lower and resource_field[len(stem.group(1)):len(stem.group(1)) + 1] in ("", "*"):
+            canon, exp = delims_lower[stem.group(1).lower()]
+            return (
+                f"resource type {stem.group(1)!r} appears without its delimiter "
+                f"(expected {canon}{exp}…, got {arn!r}); the ARN matches nothing "
+                f"and the Deny is a silent no-op"
+            )
         return None  # bare id / wildcard resource (e.g. `*`, `${id}`) — no token
     token, used_delim = m.group(1), m.group(2)
-    expected = delims.get(token)
-    if expected is None:
+    if token.lower() not in delims_lower:
         return None  # unknown token — can't authoritatively judge; stay quiet
+    canon_token, expected = delims_lower[token.lower()]
+    if token != canon_token:
+        return (
+            f"resource type {token!r} has the wrong case (AWS uses "
+            f"{canon_token!r}); IAM resource matching is case-sensitive, so the "
+            f"ARN {arn!r} matches nothing and the Deny is a silent no-op"
+        )
     if used_delim != expected:
         return (
             f"resource type {token!r} uses delimiter {used_delim!r} but the "
