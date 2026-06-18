@@ -25,6 +25,10 @@ Failure signals:
          05-generate/preventive/ must carry a _metadata.reference resolving to
          a real entry in data/reference-repos/index.yaml (gap/skip stubs and
          documentation files exempt)
+    P9 — ARN resource-delimiter validation: every Resource/NotResource ARN in a
+         preventive policy artifact must use the delimiter the service's SAR ARN
+         format mandates for that resource type (catches a function written
+         `function/*` instead of `function:*` — a silent no-op deny)
 """
 from __future__ import annotations
 
@@ -442,6 +446,134 @@ def check_iam_policies(controls_dir: Path) -> list[str]:
     return errors
 
 
+# --- P9: ARN resource-delimiter validation --------------------------------
+# A resource ARN has 6 colon-delimited fields:
+#   arn:partition:service:region:account:resource
+# The 6th field is `resource` — usually `<resource-type><delim><resource-id>`
+# where the delimiter is `:` or `/` depending on the resource type (and is
+# fixed per type by AWS). A policy that uses the WRONG delimiter (e.g. a Lambda
+# function as `function/*` instead of `function:*`) matches nothing — the Deny
+# is a silent no-op. The correct delimiter for each resource type is taken from
+# the service's own SAR ARN patterns (sar-facts.json.resource_types[].arn_pattern),
+# so this check is service-agnostic, not hardcoded to any one service.
+
+
+def _resource_type_delimiters(sar_facts: dict) -> dict[str, str]:
+    """Map each SAR resource-type token → the delimiter that follows it.
+
+    Parsed from `resource_types[].arn_pattern`. For
+    `arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}` the
+    6th field is `function:${FunctionName}`, so the type token is `function`
+    and the delimiter is `:`. A pattern whose 6th field is just `${Resource}`
+    (no literal type token) contributes nothing. When a type token appears with
+    conflicting delimiters across patterns (it does not in practice), the colon
+    form wins — a slash variant of a colon type is the defect we want to catch.
+    """
+    delims: dict[str, str] = {}
+    for rt in sar_facts.get("resource_types", []) or []:
+        pattern = rt.get("arn_pattern")
+        if not isinstance(pattern, str):
+            continue
+        fields = pattern.split(":", 5)
+        if len(fields) < 6:
+            continue
+        resource_field = fields[5]
+        # Find the first delimiter (`:` or `/`) and the literal token before it.
+        m = re.match(r"^([A-Za-z0-9\-]+)([:/])", resource_field)
+        if not m:
+            continue
+        token, delim = m.group(1), m.group(2)
+        # A token that starts with a template var (e.g. `${FunctionName}`) has no
+        # literal type prefix — skip (handled by the `[A-Za-z0-9\-]+` anchor,
+        # which won't match a leading `$`).
+        if token in delims and delims[token] != delim:
+            # Prefer ':' on conflict (the colon form is the canonical type).
+            if delim == ":":
+                delims[token] = delim
+        else:
+            delims.setdefault(token, delim)
+    return delims
+
+
+def _arn_delimiter_errors(
+    arn: str, service_prefix: str, delims: dict[str, str]
+) -> str | None:
+    """Return an error string if `arn` is malformed for this service, else None.
+
+    Only ARNs for `service_prefix` are checked (cross-service ARNs use other
+    services' formats we did not load). `*` and non-ARN strings pass. The
+    resource field's leading literal type token is matched against `delims`; a
+    token present in the SAR map but used with the wrong delimiter is the defect.
+    """
+    if not isinstance(arn, str) or not arn.startswith("arn:"):
+        return None  # `*` or a non-ARN value — nothing to validate here
+    fields = arn.split(":", 5)
+    if len(fields) < 6:
+        return f"malformed ARN (needs 6 colon-delimited fields): {arn!r}"
+    service = fields[2]
+    if service != service_prefix:
+        return None  # different service — its format was not loaded
+    resource_field = fields[5]
+    m = re.match(r"^([A-Za-z0-9\-]+)([:/])", resource_field)
+    if not m:
+        return None  # bare id / wildcard resource (e.g. `*`, `${id}`) — no token
+    token, used_delim = m.group(1), m.group(2)
+    expected = delims.get(token)
+    if expected is None:
+        return None  # unknown token — can't authoritatively judge; stay quiet
+    if used_delim != expected:
+        return (
+            f"resource type {token!r} uses delimiter {used_delim!r} but the "
+            f"service ARN format requires {expected!r} "
+            f"(expected {token}{expected}…, got {arn!r}); the Deny matches "
+            f"nothing and is a silent no-op"
+        )
+    return None
+
+
+def check_arn_shapes(service_root: Path) -> list[str]:
+    """P9: every Resource ARN in a preventive policy artifact must use the
+    delimiter the service's SAR ARN format mandates for that resource type.
+
+    Catches the silent-no-op class where a function ARN is written `function/*`
+    (slash) instead of `function:*` (colon). The authoritative per-type
+    delimiters come from sar-facts.json, so the check works for any service.
+    """
+    errors: list[str] = []
+    controls_dir = service_root / "05-generate"
+    if not controls_dir.exists():
+        return errors
+
+    sar_facts = _load_json(service_root / "01-assess" / "sar-facts.json") or {}
+    service_prefix = sar_facts.get("service_prefix") or ""
+    delims = _resource_type_delimiters(sar_facts)
+    if not (service_prefix and delims):
+        return errors  # no authoritative format to validate against
+
+    preventive_dir = controls_dir / "preventive"
+    for policy_file, data in _iter_json_files(preventive_dir):
+        if "Statement" not in data:
+            continue
+        statements = data["Statement"]
+        if not isinstance(statements, list):
+            statements = [statements]
+        rel = policy_file.relative_to(controls_dir)
+        for i, stmt in enumerate(statements):
+            if not isinstance(stmt, dict):
+                continue
+            for field in ("Resource", "NotResource"):
+                resources = stmt.get(field)
+                if resources is None:
+                    continue
+                if isinstance(resources, str):
+                    resources = [resources]
+                for arn in resources:
+                    err = _arn_delimiter_errors(arn, service_prefix, delims)
+                    if err:
+                        errors.append(f"P9 {rel} Statement[{i}] {field}: {err}")
+    return errors
+
+
 def check_iac_placeholders(iac_dir: Path) -> list[str]:
     # Reuse the canonical exclude list from validate_deployable so adding a new
     # vendored-dep dir doesn't require touching two places.
@@ -774,6 +906,9 @@ def validate_pipeline(root: Path) -> list[str]:
                 errors.extend(check_iac_placeholders(iac_dir))
             # P8: every preventive policy artifact must anchor to a reference.
             errors.extend(check_reference_anchors(service_root))
+            # P9: every Resource ARN must use the SAR-mandated delimiter for its
+            # resource type (catches function/* vs function:* silent no-ops).
+            errors.extend(check_arn_shapes(service_root))
 
         # Check framework coverage in 04-map/
         map_dir = service_root / "04-map"

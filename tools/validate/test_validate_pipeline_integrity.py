@@ -10,6 +10,9 @@ from validate_pipeline_integrity import (
     CONDITION_OPERATOR_PAIRS,
     MIN_FRAMEWORK_COVERAGE_PCT,
     MIN_MCP_CALLS,
+    _arn_delimiter_errors,
+    _resource_type_delimiters,
+    check_arn_shapes,
     check_framework_coverage,
     check_iac_placeholders,
     check_iam_policies,
@@ -18,6 +21,24 @@ from validate_pipeline_integrity import (
     check_validated_notes,
     validate_pipeline,
 )
+
+
+# Authoritative Lambda SAR ARN patterns (subset) — the data the delimiter map is
+# derived from. `function` uses a colon; `layer` uses a colon; the slash variant
+# is the defect.
+_LAMBDA_SAR_FACTS = {
+    "service_prefix": "lambda",
+    "resource_types": [
+        {"name": "function",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}"},
+        {"name": "code signing config",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:code-signing-config:${CodeSigningConfigId}"},
+        {"name": "layer",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:layer:${LayerName}"},
+        {"name": "eventSourceMapping",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:event-source-mapping:${UUID}"},
+    ],
+}
 
 
 # ---------- P1: mcp-calls.log ----------
@@ -338,6 +359,113 @@ def test_phase_outputs_skip_sentinel_suppresses_errors(tmp_path: Path) -> None:
     )
     errors = check_phase_outputs(tmp_path)
     assert not any("08-evidence" in e for e in errors)
+
+
+# ---------- P9: ARN resource-delimiter validation ----------
+
+
+def test_resource_type_delimiters_parsed_from_sar_patterns() -> None:
+    """The delimiter map is derived from SAR arn_pattern fields — `function`
+    and `layer` use a colon, multi-word types keep their hyphenated token."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    assert delims["function"] == ":"
+    assert delims["layer"] == ":"
+    assert delims["code-signing-config"] == ":"
+    assert delims["event-source-mapping"] == ":"
+
+
+def test_arn_delimiter_wrong_delimiter_flagged() -> None:
+    """A function ARN with a slash where SAR mandates a colon is the no-op
+    defect — flagged."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:*:*:function/*", "lambda", delims)
+    assert err is not None
+    assert "function" in err and "silent no-op" in err
+
+
+def test_arn_delimiter_correct_and_wildcard_pass() -> None:
+    """The colon form, a fully-qualified colon ARN, and a bare `*` all pass."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    assert _arn_delimiter_errors("arn:aws:lambda:*:*:function:*", "lambda", delims) is None
+    assert _arn_delimiter_errors(
+        "arn:aws:lambda:*:123456789012:function:*", "lambda", delims
+    ) is None
+    assert _arn_delimiter_errors("*", "lambda", delims) is None
+
+
+def test_arn_delimiter_other_service_and_unknown_token_pass() -> None:
+    """Cross-service ARNs (format not loaded) and unknown type tokens are not
+    judged — the check stays quiet rather than false-positive."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    # Different service — its ARN format was not loaded.
+    assert _arn_delimiter_errors("arn:aws:s3:::my-bucket/*", "lambda", delims) is None
+    # Unknown resource-type token for this service.
+    assert _arn_delimiter_errors(
+        "arn:aws:lambda:*:*:newthing/abc", "lambda", delims
+    ) is None
+
+
+def test_arn_delimiter_malformed_too_few_fields_flagged() -> None:
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:function", "lambda", delims)
+    assert err is not None and "6 colon-delimited" in err
+
+
+def _write_preventive_artifact(root: Path, name: str, statements: list) -> None:
+    prev = root / "05-generate" / "preventive"
+    prev.mkdir(parents=True, exist_ok=True)
+    (prev / name).write_text(json.dumps({"Version": "2012-10-17", "Statement": statements}))
+
+
+def _write_sar_facts(root: Path) -> None:
+    assess = root / "01-assess"
+    assess.mkdir(parents=True, exist_ok=True)
+    (assess / "sar-facts.json").write_text(json.dumps(_LAMBDA_SAR_FACTS))
+
+
+def test_check_arn_shapes_flags_slash_function(tmp_path: Path) -> None:
+    """End-to-end: a preventive artifact with `function/*` fails P9; the colon
+    sibling in the same file passes."""
+    _write_sar_facts(tmp_path)
+    _write_preventive_artifact(
+        tmp_path,
+        "scp-policy.json",
+        [
+            {"Sid": "Bad", "Effect": "Deny", "Action": "lambda:CreateFunction",
+             "Resource": "arn:aws:lambda:*:*:function/*"},
+            {"Sid": "Good", "Effect": "Deny", "Action": "lambda:CreateFunction",
+             "Resource": "arn:aws:lambda:*:*:function:*"},
+        ],
+    )
+    errors = check_arn_shapes(tmp_path)
+    assert len(errors) == 1
+    assert "P9" in errors[0] and "scp-policy.json" in errors[0] and "Statement[0]" in errors[0]
+
+
+def test_check_arn_shapes_clean_artifact_passes(tmp_path: Path) -> None:
+    """An artifact whose ARNs all use the correct delimiter yields no P9 error."""
+    _write_sar_facts(tmp_path)
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "Ok", "Effect": "Deny", "Action": "lambda:CreateFunction",
+             "Resource": ["arn:aws:lambda:*:*:function:*", "*"]},
+        ],
+    )
+    assert check_arn_shapes(tmp_path) == []
+
+
+def test_check_arn_shapes_no_sar_facts_is_silent(tmp_path: Path) -> None:
+    """Without sar-facts.json there is no authoritative format — the check must
+    not fire (it cannot judge correctness)."""
+    _write_preventive_artifact(
+        tmp_path,
+        "scp-policy.json",
+        [{"Sid": "X", "Effect": "Deny", "Action": "lambda:CreateFunction",
+          "Resource": "arn:aws:lambda:*:*:function/*"}],
+    )
+    assert check_arn_shapes(tmp_path) == []
 
 
 # ---------- P5: framework coverage ----------
