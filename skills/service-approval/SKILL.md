@@ -681,6 +681,8 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
 
 python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
 python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
+python3 tools/validate/validate_mapping_semantics.py --slug <slug>; ms=$?
+python3 tools/validate/validate_canopy_facts.py --slug <slug>; cf=$?
 ```
 
 It reports: objectives flagged with no catalog/reference support, and any control
@@ -702,13 +704,23 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
   "_metadata": {"service": "<service>", "gate": "post-map", "generated": "service-approval v3.0.0"},
   "validators": [
     {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
-    {"name": "lint_control_prose", "exit_code": 0, "blocking": true}
+    {"name": "lint_control_prose", "exit_code": 0, "blocking": true},
+    {"name": "validate_mapping_semantics", "exit_code": 0, "blocking": false},
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false}
   ],
   "flagged": [
     {"objective_id": "IAM-04", "issue": "no catalog/reference support", "severity": "advisory"}
   ]
 }
 ```
+
+`validate_mapping_semantics` runs the deterministic S1/S2/S3 checks (every
+satisfied-by control id resolves, every mapped objective id exists in the parsed
+framework, no control claims an action/condition key absent from `validated.json`).
+`validate_canopy_facts` confirms every `citation.type == "canopy"` row names a
+mitigation alias that exists in the provided Canopy export and whose governed
+operations are consistent with the control's actions. Both are advisory here
+(reported in `mapping-review.json`); they also run in the post-generate gate.
 
 Then log the outcome:
 
@@ -719,6 +731,12 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:lint_control_prose \
     --verdict $([ $lp -eq 0 ] && echo pass || echo fail) --message "control prose language budget (JSON + rendered .md)"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_mapping_semantics \
+    --verdict $([ $ms -eq 0 ] && echo pass || echo warn) --message "semantic mapping checks (S1/S2/S3)"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_canopy_facts \
+    --verdict $([ $cf -eq 0 ] && echo pass || echo warn) --message "Canopy-factual citation check"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source skill:map-review --verdict end \
     --message "mapping review gate complete" --extra artifact=mapping-review.json
@@ -793,7 +811,25 @@ python3 tools/validate/validate_enforcement.py --slug <slug> --strict; en=$?
 python3 tools/validate/validate_action_scope.py --slug <slug> --strict; as=$?
 python3 tools/validate/validate_cross.py .service-approval/<slug>/05-generate; cx=$?
 python3 tools/validate/validate_detective_routing.py --slug <slug>;   dr=$?
+python3 tools/validate/validate_canopy_facts.py --slug <slug>;        cf=$?
 ```
+
+**Conflict / contradiction detection (deterministic pre-filter → clean-subagent judge).**
+First run the deterministic pre-filter, which surfaces candidate statement pairs that
+share a gated action with opposing posture (an SCP/RCP/IAM Deny vs. an Allow the IaC
+assumes, or two Denies gating the same action with incompatible condition keys):
+
+```bash
+python3 tools/validate/detect_control_conflicts.py --slug <slug> \
+    > .service-approval/<slug>/05-generate/conflict-report.json
+```
+
+Then dispatch a **clean review subagent** (Agent tool, no prior context) whose sole job
+is to confirm or dismiss each candidate. Give it ONLY the generated control set and the
+candidate list; it returns the final `conflict-report.json` (`{pairs:[{a,b,kind,
+explanation,severity}], verdict}`, `verdict ∈ {NO_CONFLICTS, CONFLICTS_FOUND}`). The
+judge confirms/explains — it does not re-scan from scratch. Advisory at first (surface
+the confirmed pairs in the report); it can become a hard gate later.
 
 It reports: any authored preventive artifact lacking a resolvable reference anchor;
 any artifact marked not-anchored without an explicit reason; any `source_control_id`
@@ -818,7 +854,9 @@ also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisor
     {"name": "validate_enforcement", "exit_code": 0, "blocking": true},
     {"name": "validate_action_scope", "exit_code": 0, "blocking": true},
     {"name": "validate_cross", "exit_code": 0, "blocking": true},
-    {"name": "validate_detective_routing", "exit_code": 0, "blocking": false}
+    {"name": "validate_detective_routing", "exit_code": 0, "blocking": false},
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
+    {"name": "conflict_detection", "exit_code": 0, "blocking": false}
   ],
   "flagged": []
 }
@@ -828,7 +866,8 @@ Then log each validator's outcome and close the gate:
 
 ```bash
 for v in "reference_anchor:$ra:1" "preventability:$pv:0" "enforcement:$en:1" \
-         "action_scope:$as:1" "cross:$cx:1" "detective_routing:$dr:0"; do
+         "action_scope:$as:1" "cross:$cx:1" "detective_routing:$dr:0" \
+         "canopy_facts:$cf:0"; do
   name=${v%%:*}; rest=${v#*:}; code=${rest%%:*}
   python3 -m tools.validate.log --slug <slug> --phase 05-generate \
       --source script:validate_$name \
