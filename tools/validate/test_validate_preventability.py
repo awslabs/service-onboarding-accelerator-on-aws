@@ -21,6 +21,7 @@ from validate_preventability import (  # noqa: E402
     find_enforcing_keys,
     is_request_time_mechanism,
     normalize_action,
+    request_time_only_keys,
 )
 
 
@@ -36,6 +37,21 @@ VALIDATED = {
                 {
                     "key": "lambda:FunctionArn",
                     "applies_to_actions": ["InvokeFunctionUrl", "GetFunctionUrlConfig"],
+                },
+                # Request-time-only key: bound SOLELY to the policy-management
+                # actions (AddPermission/RemovePermission). It gates the request
+                # to change the function's resource policy, so it cannot be
+                # evaluated from inside the attached resource policy document.
+                {
+                    "key": "lambda:Principal",
+                    "applies_to_actions": ["AddPermission", "RemovePermission"],
+                },
+                # Genuinely resource-policy-evaluable confused-deputy key: bound
+                # to an ACCESS action (InvokeFunction), evaluable in the attached
+                # document when a principal invokes the function.
+                {
+                    "key": "aws:SourceArn",
+                    "applies_to_actions": ["InvokeFunction"],
                 },
             ]
         }
@@ -159,6 +175,68 @@ def test_is_request_time_mechanism():
     assert is_request_time_mechanism("kms key policy")
     assert not is_request_time_mechanism("AWS Config rule")
     assert not is_request_time_mechanism("")
+
+
+def test_request_time_only_keys_derived_from_bindings():
+    """A key bound SOLELY to policy-management actions is request-time-only; a
+    key bound to an access action is not (it is evaluable in an attached doc)."""
+    rt = request_time_only_keys(VALIDATED)
+    assert "lambda:Principal" in rt  # AddPermission/RemovePermission only
+    assert "aws:SourceArn" not in rt  # bound to InvokeFunction (an access action)
+    assert "lambda:FunctionArn" not in rt  # bound to access/config actions
+    assert "lambda:CodeSigningConfigArn" not in rt  # bound to CreateFunction
+
+
+def test_resource_policy_with_request_time_key_is_not_preventable():
+    """A Resource Policy control gated on lambda:Principal (a request-time key
+    bound to AddPermission) cannot enforce inside the attached document — the
+    document is not in the evaluation path for the AddPermission request, so the
+    deny silently never fires. Route to detective rather than ship a no-op."""
+    control = {
+        "id": "CTRL-RES-PRV-002",
+        "category": "PRV",
+        "mechanism": "Resource Policy",
+        "actions": ["lambda:AddPermission"],
+        "parameters_controlled": ["$.Principal"],
+        "condition_keys": ["lambda:Principal"],
+    }
+    r = assess_control(control, VALIDATED)
+    assert r["verdict"] == "NOT_PREVENTABLE"
+    assert r["route_to"] == "detective"
+    assert "resource-based policy cannot evaluate a request-time" in r["reason"]
+    assert r["enforcing_condition_keys"] == []
+
+
+def test_resource_policy_with_evaluable_confused_deputy_key_is_feasible():
+    """A resource-based policy CAN evaluate a confused-deputy key bound to an
+    access action (aws:SourceArn on InvokeFunction) — that stays FEASIBLE."""
+    control = {
+        "id": "CTRL-RES-PRV-010",
+        "category": "PRV",
+        "mechanism": "Resource Policy",
+        "actions": ["lambda:InvokeFunction"],
+        "parameters_controlled": ["$.Principal"],
+        "condition_keys": ["aws:SourceArn"],
+    }
+    r = assess_control(control, VALIDATED)
+    assert r["verdict"] == "FEASIBLE"
+    assert "aws:SourceArn" in r["enforcing_condition_keys"]
+
+
+def test_scp_with_request_time_key_stays_feasible():
+    """The guard is specific to resource-based policies. The SAME lambda:Principal
+    key on an SCP (which DOES evaluate the request) stays FEASIBLE — an SCP can
+    gate AddPermission at request time."""
+    control = {
+        "id": "CTRL-ORG-PRV-020",
+        "category": "PRV",
+        "mechanism": "SCP",
+        "actions": ["lambda:AddPermission"],
+        "condition_keys": ["lambda:Principal"],
+    }
+    r = assess_control(control, VALIDATED)
+    assert r["verdict"] == "FEASIBLE"
+    assert "lambda:Principal" in r["enforcing_condition_keys"]
 
 
 def test_assess_mapping_only_considers_prv():

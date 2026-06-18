@@ -46,6 +46,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -77,6 +78,55 @@ _GLOBAL_TAG_KEYS = (
     "aws:TagKeys",
     "aws:PrincipalTag",
 )
+
+# Mechanisms whose policy document is ATTACHED TO the resource (a resource-based
+# policy). AWS evaluates such a document when a principal tries to *access* the
+# resource (invoke, read, …) — it is NOT the authority for the operations that
+# *mutate the policy itself*. Those mutations are gated at the request layer by
+# the caller's identity policy / SCP.
+_RESOURCE_BASED_MECHANISMS = {"resource policy", "resource-based policy"}
+
+# Action-name patterns for operations that MANAGE a resource-based policy or its
+# grants (rather than access the resource): grant add/remove and explicit policy
+# put/set/delete/get. These follow AWS-wide naming conventions across services
+# (Lambda Add/RemovePermission, ECR/S3/SNS Put*Policy, generic *ResourcePolicy),
+# so the rule is name-pattern driven, not hardcoded to any one service.
+_RESOURCE_POLICY_MGMT_ACTION_RE = re.compile(
+    r"(Permission$|ResourcePolicy$|^(Put|Set|Delete|Get)[A-Za-z]*Policy$)"
+)
+
+
+def _is_resource_policy_mgmt_action(action: str) -> bool:
+    """True if an action manages a resource-based policy / its grants.
+
+    Such actions are authorized at the request layer (identity policy / SCP),
+    not from inside the attached resource policy.
+    """
+    return bool(_RESOURCE_POLICY_MGMT_ACTION_RE.search(normalize_action(action)))
+
+
+def request_time_only_keys(validated: dict) -> set[str]:
+    """Condition keys that exist only in the request context of a policy-
+    management action — and so cannot be evaluated from inside an attached
+    resource-based policy document.
+
+    Seeded data-drivenly from validated.json action↔key bindings: a key whose
+    `applies_to_actions` are ALL resource-policy-management actions (e.g.
+    `lambda:Principal` → bound only to AddPermission/RemovePermission) gates the
+    *request to change the policy*, not access through the attached document. A
+    Deny placed in the attached document and conditioned on such a key silently
+    never fires. No service is hardcoded — membership is derived from the
+    snapshot's own bindings.
+    """
+    out: set[str] = set()
+    for ck in build_condition_key_index(validated):
+        key = ck.get("key")
+        applies = [a for a in ck.get("applies_to_actions", []) if a]
+        if not key or not applies:
+            continue
+        if all(_is_resource_policy_mgmt_action(a) for a in applies):
+            out.add(key)
+    return out
 
 
 def normalize_action(action: str) -> str:
@@ -202,12 +252,46 @@ def assess_control(control: dict, validated: dict) -> dict:
         k for k in declared if k not in {ck.get("key") for ck in condition_keys}
     ]
 
-    verdict = "FEASIBLE" if (enforcing or declared_non_sar) else "NOT_PREVENTABLE"
+    # The keys that would be authored into the policy (mirrors the plan's
+    # enforcing_condition_keys: the SAR-derived gates, else control-declared keys).
+    keys_in_use = enforcing or declared_non_sar
+
+    # Resource-based-policy scope guard. A resource-based policy document is
+    # ATTACHED to the resource; AWS consults it when a principal accesses the
+    # resource, NOT when a principal calls the operation that *manages the policy
+    # itself* (e.g. AddPermission/RemovePermission). So a Deny placed inside the
+    # attached document and conditioned on a request-time-only key — one bound
+    # solely to those policy-management actions, e.g. lambda:Principal — silently
+    # never fires: the document is not in the evaluation path for that request.
+    # Route such a control to detective (or re-map to an SCP/identity policy,
+    # which DO evaluate the request). Membership of request-time-only keys is
+    # derived from validated.json bindings, so no service is hardcoded.
+    if mechanism.lower() in _RESOURCE_BASED_MECHANISMS and keys_in_use:
+        rt_only = request_time_only_keys(validated)
+        if all(k in rt_only for k in keys_in_use):
+            return {
+                "id": control.get("id"),
+                "mechanism": mechanism,
+                "verdict": "NOT_PREVENTABLE",
+                "enforcing_condition_keys": [],
+                "target_actions": sorted(target_actions),
+                "route_to": "detective",
+                "reason": (
+                    "a resource-based policy cannot evaluate a request-time "
+                    "condition key bound to the policy-management action "
+                    f"({', '.join(sorted(keys_in_use))}); the attached document "
+                    "is not in the evaluation path for that request, so the deny "
+                    "never fires. Route to a detective mechanism or re-map to an "
+                    "SCP/identity policy that evaluates the request."
+                ),
+            }
+
+    verdict = "FEASIBLE" if keys_in_use else "NOT_PREVENTABLE"
     result = {
         "id": control.get("id"),
         "mechanism": mechanism,
         "verdict": verdict,
-        "enforcing_condition_keys": enforcing or declared_non_sar,
+        "enforcing_condition_keys": keys_in_use,
         "target_actions": sorted(target_actions),
         "route_to": None,
         "reason": "",
