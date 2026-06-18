@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from validate_cross import (
     check_boundary_org_prerequisite,
+    check_confused_deputy,
     check_control_coverage,
     _deferred_preventive_controls,
     _org_attaches_permission_boundaries,
@@ -194,3 +195,39 @@ def test_org_optin_helper_defaults_false(tmp_path):
     # explicit true
     _write_intake(tmp_path, boundaries_attached=True)
     assert _org_attaches_permission_boundaries(str(gen)) is True
+
+
+# ---------- X9: confused-deputy on the FLAT resource-policy shape ----------
+
+
+def _write_flat_resource_policy(gen: Path, statement: dict):
+    prev = gen / "preventive"
+    prev.mkdir(parents=True, exist_ok=True)
+    (prev / "resource-policy.json").write_text(json.dumps({
+        "_metadata": {"controls": ["CTRL-RES-PRV-002"]},
+        "Version": "2012-10-17",
+        "Statement": [statement],
+    }))
+
+
+def test_confused_deputy_flat_policy_missing_condition_flagged(tmp_path):
+    """The authors emit a FLAT IAM document ({Version, Statement, _metadata});
+    a flat resource policy with Principal:* and no confused-deputy condition must
+    be flagged (previously the flat shape slipped the check entirely)."""
+    gen = tmp_path / "05-generate"
+    _write_flat_resource_policy(gen, {
+        "Sid": "AllowInvoke", "Effect": "Allow", "Principal": "*",
+        "Action": "lambda:InvokeFunction", "Resource": "*",
+    })
+    errors = check_confused_deputy(str(gen))
+    assert len(errors) == 1 and "X9" in errors[0]
+
+
+def test_confused_deputy_flat_policy_with_source_arn_passes(tmp_path):
+    gen = tmp_path / "05-generate"
+    _write_flat_resource_policy(gen, {
+        "Sid": "AllowInvoke", "Effect": "Allow", "Principal": "*",
+        "Action": "lambda:InvokeFunction", "Resource": "*",
+        "Condition": {"ArnLike": {"aws:SourceArn": "arn:aws:sns:*:*:*"}},
+    })
+    assert check_confused_deputy(str(gen)) == []

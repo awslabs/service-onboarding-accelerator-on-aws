@@ -640,9 +640,24 @@ def check_confused_deputy(controls_dir: str) -> list[str]:
     if not data:
         return []
 
-    for key, policy in data.items():
-        if key == "_metadata":
-            continue
+    # The artifact is one of two shapes:
+    #   1. FLAT  — a single IAM document: {Version, Statement[], _metadata}
+    #   2. NESTED — a map of named policies: {name: {Version, Statement[]}}
+    # The flat shape is what the preventive authors actually emit. Normalize to a
+    # list of (name, policy-doc) pairs so both shapes are checked; previously the
+    # flat shape slipped through entirely (its top-level values are str/list, not
+    # dicts), making the whole check a silent no-op for the real artifacts.
+    if "Statement" in data:
+        meta = data.get("_metadata") or {}
+        name = "resource-policy"
+        controls = meta.get("controls") if isinstance(meta, dict) else None
+        if controls:
+            name = f"resource-policy ({', '.join(controls)})"
+        candidates = [(name, data)]
+    else:
+        candidates = [(k, v) for k, v in data.items() if k != "_metadata"]
+
+    for key, policy in candidates:
         if not isinstance(policy, dict):
             continue
 
