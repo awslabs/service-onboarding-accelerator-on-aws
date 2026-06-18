@@ -10,6 +10,22 @@ Read `.service-approval/<slug>/02-research/research.json` (schema v3.0 produced 
 every capability claim, API parameter, and mitigation against live MCP sources.
 Produce `.service-approval/<slug>/03-validate/validated.json`.
 
+## Source priority (which source to trust when verifying)
+
+When confirming a claim or attaching a citation, consult sources in this fixed
+order and cite the **highest-priority** source that supports the claim:
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present
+   (authoritative intent + top citation).
+2. **AWS Control Catalog API** — the control→objective authority.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general/blog/third-party content.
+
+The reference-repo index supplies the vetted *policy body* for a preventive
+control under that intent; it is the implementation library, not a verification
+source. `sar-facts.json` / `checkpoint-results.json` remain the authoritative
+*assessment* inputs. Log every MCP lookup to `mcp-calls.log`.
+
 ## Prerequisites
 
 - [ ] Confirm research.json exists (schema validation runs automatically via PostToolUse hook).

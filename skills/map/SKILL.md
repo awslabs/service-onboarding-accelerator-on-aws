@@ -26,6 +26,24 @@ framework mappings, and traceability. This skill bridges the gap between capabil
 - `.service-approval/<slug>/04-map/controls-catalog.md` — controls inventory by Category x Scope matrix
 - `.service-approval/<slug>/04-map/framework-mapping.md` — framework objective crosswalk
 
+## Source priority (which source backs each mapping)
+
+When a mapping row needs an external fact or citation, consult sources in this
+fixed order and record the **highest-priority** source that supported the row:
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present
+   (authoritative intent + top citation).
+2. **AWS Control Catalog API** — the control→objective authority.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general/blog/third-party content.
+
+The reference-repo index supplies the vetted *policy body* for a preventive
+control under that intent (consumed downstream by generate); it is the
+implementation library, not a mapping fact/citation source. `validated.json` is
+the authoritative *assessment* input — never assert an action or condition key
+absent from it. Every mapping row carries a `citation` whose `type` reflects the
+highest-priority source above that backs it.
+
 ## Sub-Skill Architecture
 
 This skill is split into 4 focused sub-skills that write to separate intermediate state files:
