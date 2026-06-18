@@ -105,6 +105,38 @@ authoritative AWS doc (service authorization reference) for a gating condition
 key the SAR snapshot lacks, you may override to `FEASIBLE` — record the doc URL
 in the plan's `preventability_override` field and log the MCP lookup.
 
+### Keep enforcing keys aligned to the control's INTENT (required)
+
+The analyzer returns *every* service condition key whose `applies_to_actions`
+intersects the control's target action(s). That set can include keys unrelated
+to what the control is actually about — e.g. a control whose intent is "cap the
+execution role passed on `CreateFunction`" (`parameters_controlled: ["$.Role"]`)
+will see the analyzer also surface `lambda:SubnetIds`, `lambda:SecurityGroupIds`,
+`lambda:CodeSigningConfigArn` simply because they too apply to `CreateFunction`.
+Authoring a policy around those drops the control's real intent — a
+mapping↔generate drift where the generated policy gates a different thing than
+the control objective describes.
+
+So when the control declares its intent, **filter the enforcing keys to the ones
+that match it** before recording them on the plan row:
+
+1. If the control has non-empty `condition_keys[]` (the keys the mapping chose),
+   intersect the analyzer's `enforcing_condition_keys[]` with those; use the
+   intersection. If the mapping's declared key is not in the SAR snapshot but is
+   doc-citable (e.g. `iam:PassedToService` for a PassRole control), keep it and
+   record the citation.
+2. Else, if the control has `parameters_controlled[]`, keep only the enforcing
+   keys whose meaning matches that parameter (e.g. `$.Role` → an IAM
+   role-passing key such as `iam:PassedToService` / a role-ARN-scoping key, NOT
+   networking/code-signing keys).
+3. If after filtering NO key remains that genuinely enforces the control's
+   intent, the control is NOT preventable *as mapped* — set `ROUTE_DETECTIVE`
+   (do not author a policy around an unrelated key just because it applies to
+   the same action).
+
+Record the chosen, intent-aligned keys in the plan row's
+`enforcing_condition_keys[]`; the authoring sub-skill uses exactly those.
+
 ## Step 2 — Reference anchor per control
 
 For each `FEASIBLE` control, find a matching reference example with the

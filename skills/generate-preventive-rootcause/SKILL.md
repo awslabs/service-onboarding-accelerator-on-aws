@@ -53,6 +53,59 @@ For every control that produced a preventive artifact, confirm its verdict is
 NOT have a preventive policy artifact — if one exists, that is the exact failure
 mode this critic catches:
 
+### Step 2a — Per-statement enforcement check (deterministic, required)
+
+The preventability verdict is a mapping-time judgement. Prove the SAME property
+on the policy text that was actually authored — statement by statement — with the
+enforcement analyzer:
+
+```bash
+python3 tools/validate/validate_enforcement.py --slug <slug> --json > /tmp/enforcement.json
+```
+
+For every Deny statement in every authored artifact it resolves
+`{sid, action, resource_arn, enforcing_key, evaluable, reason}` and proves three
+things a name-overlap check misses:
+
+1. **Key-context evaluability.** The enforcing key must be evaluable in *this
+   policy type*. A request-time-only key — one bound solely to a policy-management
+   action (e.g. `lambda:Principal` → AddPermission/RemovePermission) — placed
+   inside a **resource-based policy** never fires: the attached document is not in
+   the evaluation path for that request. (The same key in an SCP/identity policy
+   IS evaluable.) `evaluable:false`.
+2. **Resolved Resource ARN.** The ARN must use the delimiter the service's SAR
+   format mandates for that resource type (`function:` not `function/`); a
+   mismatched delimiter matches nothing and the deny is a no-op. `evaluable:false`.
+3. **Action applicability.** The enforcing key must apply to at least one gated
+   action; gating `DeleteFunction` on a key that only applies to `CreateFunction`
+   denies a different operation than the key controls. `evaluable:false`.
+
+Any statement with `evaluable:false` is a non-enforcing artifact: **remove it and
+route the objective to detective (Step 2b).** Copy the analyzer's per-statement
+records into the report's `enforcement[]` (Step 4) so the resolved ARN and key
+context are visible at generation time, not only at the Stop gate. (Global keys
+such as `aws:PrincipalOrgID` are principal-context — a Deny that gates only on
+them, e.g. a VPCE org-perimeter deny, is legitimate and is not flagged here.)
+
+**Also prove the artifact enforces the control's INTENT, not just *some* gate.**
+A policy can use a real condition key that gates the target action yet still miss
+what the control is about (e.g. a boundary whose control intent is "cap the
+execution role passed on create" but that gates `lambda:SubnetIds` instead, or an
+unconditional allowlist with no enforcing key at all). For each artifact, check:
+
+- The artifact's `Condition` keys overlap the control's declared
+  `condition_keys[]` / the parameter named in `parameters_controlled[]`
+  (`$.Role` → an IAM role-passing/role-ARN key; `$.KmsKeyArn` → a KMS key;
+  networking params → subnet/SG keys). A mismatch is an **intent-drift FAIL** —
+  the artifact gates the wrong thing.
+- A preventive artifact that carries NO `Condition` at all (e.g. a permission
+  boundary that is just an Allow allowlist) does not enforce its control — FAIL.
+
+On an intent-drift or no-condition FAIL: remove the artifact, route the
+objective to detective (Step 2b), and record it in the report under a new
+`intent_mismatch[]` list with the control id, the expected intent
+(parameter/key), and what the artifact actually gated.
+
 - Remove the non-enforcing artifact.
 - Record the objective in `rootcause-report.json` with `route_to: "detective"`.
 - **Write the machine-readable hand-off** so the detective generator actually
@@ -110,12 +163,26 @@ generation gap, not a deferral, so do not leave a `GENERATE_*` row unauthored.
   "anchored": true,
   "enforcing": true,
   "artifacts_checked": 4,
+  "enforcement": [
+    {"sid": "DenyPublicFunctionUrlCtrlOrgPrv003", "action": ["lambda:CreateFunctionUrlConfig"],
+     "resource_arn": ["arn:aws:lambda:*:*:function:*"],
+     "enforcing_key": ["lambda:FunctionUrlAuthType"], "evaluable": true, "reason": ""}
+  ],
   "routed_to_detective": [
     {"control_id": "CTRL-ORG-PRV-007", "reason": "no gating condition key for DeleteFunction"}
+  ],
+  "intent_mismatch": [
+    {"control_id": "CTRL-ACC-PRV-001", "expected": "$.Role / iam:PassedToService",
+     "artifact_gated": "lambda:SubnetIds", "action": "removed; routed to detective"}
   ],
   "unmatched_plan_rows": []
 }
 ```
+
+The `enforcement[]` array is the per-statement output of `validate_enforcement.py`
+(one record per Deny statement, across all authored artifacts). Any record with
+`evaluable:false` MUST correspond to a removed artifact and a detective routing —
+`enforcing` cannot be `true` while an `evaluable:false` record remains.
 
 ## Print summary
 
