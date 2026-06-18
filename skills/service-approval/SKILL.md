@@ -671,19 +671,55 @@ Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
 **Step 3e: Mapping review gate (foreground subagent, after 3d completes)**
 
 Before generation consumes the mapping, dispatch a foreground review subagent to
-check the mapping is well-grounded and citable. The subagent runs:
+check the mapping is well-grounded and citable. Log the gate lifecycle and run
+each validator, capturing its exit code:
 
 ```bash
-python3 tools/validate/validate_control_mappings.py --slug <slug>
-python3 tools/validate/lint_control_prose.py --slug <slug>
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source skill:map-review --verdict start \
+    --message "mapping review gate: citability + prose budget"
+
+python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
+python3 tools/validate/lint_control_prose.py --slug <slug>; lp=$?
 ```
 
-and reports: objectives flagged with no catalog/reference support, and any control
-prose that exceeds the verified-language budget. This is an **advisory gate** —
-surface the flagged items in the run log and proceed unless a hard validator
-(non-zero exit on a blocking check) fails. Its purpose is to confirm every mapping
-can point to a citation (Canopy mitigation, reference example, Control Catalog, or a
-service-specific doc) before any control is authored.
+It reports: objectives flagged with no catalog/reference support, and any control
+prose that exceeds the verified-language budget. Its purpose is to confirm every
+mapping can point to a citation (Canopy mitigation, reference example, Control
+Catalog, or a service-specific doc) before any control is authored.
+
+**Persist the review artifact** so the gate leaves a machine-readable trace —
+write `.service-approval/<slug>/04-map/mapping-review.json`:
+
+```json
+{
+  "_metadata": {"service": "<service>", "gate": "post-map", "generated": "service-approval v3.0.0"},
+  "validators": [
+    {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
+    {"name": "lint_control_prose", "exit_code": 0, "blocking": false}
+  ],
+  "flagged": [
+    {"objective_id": "IAM-04", "issue": "no catalog/reference support", "severity": "advisory"}
+  ]
+}
+```
+
+Then log the outcome:
+
+```bash
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_control_mappings \
+    --verdict $([ $cm -eq 0 ] && echo pass || echo warn) --message "control→catalog cross-check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:lint_control_prose \
+    --verdict $([ $lp -eq 0 ] && echo pass || echo warn) --message "control prose language budget"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source skill:map-review --verdict end \
+    --message "mapping review gate complete" --extra artifact=mapping-review.json
+```
+
+This is an **advisory gate** — surface the flagged items and proceed unless a
+hard validator (non-zero exit on a blocking check) fails.
 
 ### Phase 4: Generate (3 families in parallel; preventive is a sequenced sub-pipeline)
 
@@ -734,21 +770,68 @@ python3 tools/validate/validate_detective_routing.py --slug <slug>
 **Step 4-review: Generation review gate (foreground subagent, after generation completes)**
 
 Before summarizing, dispatch a foreground review subagent to prove every generated
-preventive artifact is both in the mapping and properly anchored. The subagent runs:
+preventive artifact is both in the mapping and properly enforcing. Log the gate
+lifecycle and run each validator, capturing its exit code:
 
 ```bash
-python3 tools/validate/validate_reference_anchor.py --slug <slug>
-python3 tools/validate/validate_preventability.py --slug <slug>
-python3 tools/validate/validate_detective_routing.py --slug <slug>
+python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+    --source skill:generate-review --verdict start \
+    --message "generation review gate: anchor + enforcement + scope"
+
+python3 tools/validate/validate_reference_anchor.py --slug <slug>;   ra=$?
+python3 tools/validate/validate_preventability.py --slug <slug>;      pv=$?
+python3 tools/validate/validate_enforcement.py --slug <slug> --strict; en=$?
+python3 tools/validate/validate_action_scope.py --slug <slug> --strict; as=$?
+python3 tools/validate/validate_cross.py .service-approval/<slug>/05-generate; cx=$?
+python3 tools/validate/validate_detective_routing.py --slug <slug>;   dr=$?
 ```
 
-and reports: any authored preventive artifact lacking a resolvable reference anchor,
-any artifact marked not-anchored without an explicit reason, any `source_control_id`
-that does not trace back to `mapping-results.json`, and any objective that should be
-routed to detective. The reference-anchor and preventability checks are **hard
-gates** (they also run in the Stop hook); the routing summary is advisory. Surface
-the findings before Phase 6 so the report's confidence-actions section can state
-which checks ran and passed.
+It reports: any authored preventive artifact lacking a resolvable reference anchor;
+any artifact marked not-anchored without an explicit reason; any `source_control_id`
+that does not trace back to `mapping-results.json`; any statement that is not
+evaluable (request-time key in a resource-based policy, malformed Resource ARN, key
+that does not apply to the gated action); any authored Deny action absent from the
+recommender's reviewed set; any permission-boundary that emits without the org
+prerequisite; and any objective that should be routed to detective.
+
+The anchor, enforcement, action-scope, and cross checks are **hard gates** (they
+also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisory.
+
+**Persist the review artifact** — write
+`.service-approval/<slug>/05-generate/generation-review.json`:
+
+```json
+{
+  "_metadata": {"service": "<service>", "gate": "post-generate", "generated": "service-approval v3.0.0"},
+  "validators": [
+    {"name": "validate_reference_anchor", "exit_code": 0, "blocking": true},
+    {"name": "validate_preventability", "exit_code": 0, "blocking": false},
+    {"name": "validate_enforcement", "exit_code": 0, "blocking": true},
+    {"name": "validate_action_scope", "exit_code": 0, "blocking": true},
+    {"name": "validate_cross", "exit_code": 0, "blocking": true},
+    {"name": "validate_detective_routing", "exit_code": 0, "blocking": false}
+  ],
+  "flagged": []
+}
+```
+
+Then log each validator's outcome and close the gate:
+
+```bash
+for v in "reference_anchor:$ra:1" "preventability:$pv:0" "enforcement:$en:1" \
+         "action_scope:$as:1" "cross:$cx:1" "detective_routing:$dr:0"; do
+  name=${v%%:*}; rest=${v#*:}; code=${rest%%:*}
+  python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+      --source script:validate_$name \
+      --verdict $([ $code -eq 0 ] && echo pass || echo fail) --message "generation gate check"
+done
+python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+    --source skill:generate-review --verdict end \
+    --message "generation review gate complete" --extra artifact=generation-review.json
+```
+
+Surface the findings before Phase 6 so the report's confidence-actions section can
+state which checks ran and passed.
 
 ### Phase 5: Test
 
