@@ -17,7 +17,8 @@ condition keys — it does not invent policy from scratch.
 - `.service-approval/<slug>/03-validate/validated.json` — actions + condition keys
 - `data/reference-repos/index.yaml` + vendored bodies under `data/reference-repos/<repo>/examples/`
 
-**Output:** `.service-approval/<slug>/05-generate/preventive/scp-policy*.json`
+**Output:** `.service-approval/<slug>/05-generate/preventive/scp-policy.json`
+(a SINGLE consolidated file — see "One consolidated file" below)
 
 ---
 
@@ -36,6 +37,29 @@ PY
 
 If there are no `GENERATE_SCP` rows, write nothing and report "no SCP controls."
 Do NOT emit a placeholder.
+
+## One consolidated file (REQUIRED)
+
+Author **exactly one** `scp-policy.json` containing the Statements for ALL
+`GENERATE_SCP` controls — never one file per control. A reviewer asked "why is
+this two files?"; per-control SCP files are noise. Collect every approved
+control's Deny statement(s) into the single file's `Statement[]` array, list
+every control id in `_metadata.controls[]`, and record each control's anchor in
+`_metadata._anchors` (a `{control_id: example_id}` map). `_metadata.reference`
+holds the primary anchor (the example most controls drew from); `_anchors` keeps
+the rest traceable. Give each Statement a `Sid` suffixed with its control id
+(e.g. `DenyLambdaWithoutPrivateSubnet`) so statements stay attributable.
+
+If two controls would emit byte-identical statements, keep one and list both
+control ids against it — do not duplicate.
+
+**Only exception — the SCP size limit.** A single attached SCP has a hard
+character limit (CHECK-12 fails a minified body over 5120 bytes). If, and only
+if, consolidating every statement into one file would exceed that limit, split
+into the fewest files that fit, named `scp-policy.json`, `scp-policy-2.json`,
+… (numeric suffix, not per-control). Each split file carries its own
+`_metadata` (controls/`_anchors` for the statements it holds). Do NOT split for
+any other reason — one statement per file is wrong.
 
 ## Authoring procedure (per approved control)
 
@@ -61,7 +85,7 @@ Do NOT emit a placeholder.
     "scope": "org",
     "layer": "preventive",
     "posture": "preventative-request",
-    "controls": ["CTRL-ORG-PRV-001"],
+    "controls": ["CTRL-ORG-PRV-001", "CTRL-ORG-PRV-002"],
     "framework": "<copy VERBATIM from mapping-results.json.framework_header_canonical>",
     "mitigations": ["M-..."],
     "generated": "service-approval v3.0.0",
@@ -70,6 +94,10 @@ Do NOT emit a placeholder.
       "example_id": "service-control-policy-examples-deny-...",
       "repo": "service-control-policy-examples",
       "url": "https://github.com/aws-samples/.../blob/<sha>/<path>"
+    },
+    "_anchors": {
+      "CTRL-ORG-PRV-001": "service-control-policy-examples-deny-...",
+      "CTRL-ORG-PRV-002": "data-perimeter-policy-examples-..."
     },
     "_simulation_tests": {
       "should_deny": [{"action": "<prefix>:CreateX", "context": {}}],
@@ -112,6 +140,6 @@ doc when relying on a non-SAR key.
 
 ```
 Preventive SCP author complete — <service>:
-  Authored: scp-policy.json (controls: ...) anchored to <example_id>
+  Authored: scp-policy.json (1 file, N controls: ...) each anchored (see _anchors)
   (or: no GENERATE_SCP controls in plan)
 ```
