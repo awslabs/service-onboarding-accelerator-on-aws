@@ -240,6 +240,66 @@ def _deferred_preventive_controls(controls_dir: str) -> set[str]:
 
 
 # ================================================================
+# Check X4: Permission-boundary org prerequisite
+# ================================================================
+
+# Mapping mechanism strings that resolve to an IAM permission boundary.
+_BOUNDARY_MECHANISMS = {"iam permission boundary", "permission boundary"}
+
+
+def _org_attaches_permission_boundaries(controls_dir: str) -> bool:
+    """Whether the org recorded that it attaches permission boundaries.
+
+    Read from intake-manifest.json at `org_context.permission_boundaries_attached`
+    (default False when the block or field is absent). A permission boundary only
+    takes effect if the org actually attaches one to its delegated-admin / role
+    principals; absent that prerequisite, authoring a boundary is shelfware. So
+    the recommender authors a boundary ONLY when this is explicitly true —
+    otherwise it refers the customer to the reference example.
+    """
+    service_root = os.path.dirname(controls_dir.rstrip("/"))
+    manifest = _load_json(os.path.join(service_root, "00-intake", "intake-manifest.json"))
+    if not isinstance(manifest, dict):
+        return False
+    org = manifest.get("org_context")
+    if not isinstance(org, dict):
+        return False
+    return org.get("permission_boundaries_attached") is True
+
+
+def check_boundary_org_prerequisite(controls_dir: str) -> list[str]:
+    """X4: a GENERATE_IAM boundary decision requires the org opt-in.
+
+    A permission boundary is refer-by-default: the recommender must NOT author a
+    boundary unless the run records that the org attaches boundaries to its
+    principals (intake org_context.permission_boundaries_attached == true).
+    Without the opt-in, the decision must be REFER_TO_REFERENCE, pointing at the
+    reference boundary example. This keeps the boundary authoring surface out of
+    the common case entirely.
+    """
+    errors: list[str] = []
+    plan = _load_json(os.path.join(controls_dir, "preventive-plan.json"))
+    if not plan:
+        return errors
+    if _org_attaches_permission_boundaries(controls_dir):
+        return errors  # opt-in recorded — authoring a boundary is permitted
+    for d in plan.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        mechanism = (d.get("mechanism") or "").strip().lower()
+        if d.get("decision") == "GENERATE_IAM" and mechanism in _BOUNDARY_MECHANISMS:
+            errors.append(
+                f"X4 {d.get('control_id', '?')}: decision GENERATE_IAM for a "
+                f"permission boundary, but the run did not record "
+                f"org_context.permission_boundaries_attached=true in "
+                f"intake-manifest.json. Permission boundaries are refer-by-default "
+                f"— set the decision to REFER_TO_REFERENCE (point to the reference "
+                f"boundary example) unless the org explicitly attaches boundaries."
+            )
+    return errors
+
+
+# ================================================================
 # Check X3: Resource type consistency across Config and EventBridge
 # ================================================================
 
@@ -701,6 +761,7 @@ def validate_all(controls_dir: str) -> list[str]:
     errors.extend(check_lambda_handler_completeness(controls_dir))
     errors.extend(check_confused_deputy(controls_dir))
     errors.extend(check_proactive_completeness(controls_dir))
+    errors.extend(check_boundary_org_prerequisite(controls_dir))
 
     # Require mapping-results
     if mapping:

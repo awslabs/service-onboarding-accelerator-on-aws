@@ -14,7 +14,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from validate_cross import check_control_coverage, _deferred_preventive_controls
+from validate_cross import (
+    check_boundary_org_prerequisite,
+    check_control_coverage,
+    _deferred_preventive_controls,
+    _org_attaches_permission_boundaries,
+)
 
 
 def _mapping(*control_ids, mechanism="SCP"):
@@ -117,3 +122,75 @@ def test_deferred_helper_reads_plan(tmp_path):
 def test_deferred_helper_empty_without_plan(tmp_path):
     gen, _ = _setup(tmp_path)
     assert _deferred_preventive_controls(str(gen)) == set()
+
+
+# ---------- X4: permission-boundary org prerequisite ----------
+
+
+def _write_intake(tmp_path: Path, *, boundaries_attached=None):
+    intake = tmp_path / "00-intake"
+    intake.mkdir(parents=True, exist_ok=True)
+    manifest = {"service": {"name": "lambda"}}
+    if boundaries_attached is not None:
+        manifest["org_context"] = {"permission_boundaries_attached": boundaries_attached}
+    (intake / "intake-manifest.json").write_text(json.dumps(manifest))
+
+
+def test_boundary_generate_without_optin_flagged(tmp_path):
+    """A GENERATE_IAM boundary decision with no recorded org opt-in fails X4."""
+    gen, _ = _setup(tmp_path)
+    _write_plan(gen, [
+        {"control_id": "CTRL-ACC-PRV-001", "mechanism": "IAM Permission Boundary",
+         "decision": "GENERATE_IAM"},
+    ])
+    # no intake org_context → opt-in absent
+    errors = check_boundary_org_prerequisite(str(gen))
+    assert len(errors) == 1
+    assert "X4" in errors[0] and "CTRL-ACC-PRV-001" in errors[0]
+
+
+def test_boundary_refer_without_optin_passes(tmp_path):
+    """The same boundary control as REFER_TO_REFERENCE is the default — no X4."""
+    gen, _ = _setup(tmp_path)
+    _write_plan(gen, [
+        {"control_id": "CTRL-ACC-PRV-001", "mechanism": "IAM Permission Boundary",
+         "decision": "REFER_TO_REFERENCE"},
+    ])
+    assert check_boundary_org_prerequisite(str(gen)) == []
+
+
+def test_boundary_generate_with_optin_passes(tmp_path):
+    """With org_context.permission_boundaries_attached=true, GENERATE_IAM is OK."""
+    gen, _ = _setup(tmp_path)
+    _write_intake(tmp_path, boundaries_attached=True)
+    _write_plan(gen, [
+        {"control_id": "CTRL-ACC-PRV-001", "mechanism": "IAM Permission Boundary",
+         "decision": "GENERATE_IAM"},
+    ])
+    assert check_boundary_org_prerequisite(str(gen)) == []
+
+
+def test_non_boundary_iam_decision_not_affected(tmp_path):
+    """A GENERATE_IAM decision for a NON-boundary mechanism (e.g. VPCE / resource
+    policy) is not an X4 concern."""
+    gen, _ = _setup(tmp_path)
+    _write_plan(gen, [
+        {"control_id": "CTRL-RES-PRV-001", "mechanism": "VPC Endpoint Policy",
+         "decision": "GENERATE_IAM"},
+    ])
+    assert check_boundary_org_prerequisite(str(gen)) == []
+
+
+def test_org_optin_helper_defaults_false(tmp_path):
+    gen, _ = _setup(tmp_path)
+    # no intake manifest at all
+    assert _org_attaches_permission_boundaries(str(gen)) is False
+    # manifest present but no org_context
+    _write_intake(tmp_path, boundaries_attached=None)
+    assert _org_attaches_permission_boundaries(str(gen)) is False
+    # explicit false
+    _write_intake(tmp_path, boundaries_attached=False)
+    assert _org_attaches_permission_boundaries(str(gen)) is False
+    # explicit true
+    _write_intake(tmp_path, boundaries_attached=True)
+    assert _org_attaches_permission_boundaries(str(gen)) is True

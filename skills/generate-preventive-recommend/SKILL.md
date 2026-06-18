@@ -178,6 +178,32 @@ If **no** example matches the mechanism (or no example overlaps the control's
 actions/keys), the control gets `decision: "REFER_TO_REFERENCE"` — we do not
 author. Surface the closest reference family so the customer knows where to look.
 
+### Permission boundaries are refer-by-default (required)
+
+A permission boundary only takes effect if the org actually attaches one to its
+delegated-admin / role principals; authoring a boundary for an org that does not
+attach boundaries is shelfware. So a control whose mechanism is an **IAM
+Permission Boundary** defaults to `REFER_TO_REFERENCE` (pointing at the
+`example-permissions-boundary` scaffold) — do NOT author it unless the run
+explicitly opts in:
+
+```
+org_context.permission_boundaries_attached == true   (in intake-manifest.json)
+```
+
+- **Opt-in absent or false (the common case):** set the boundary control's
+  `decision` to `REFER_TO_REFERENCE`, anchor to the reference boundary example,
+  and note that the customer attaches it themselves. This removes the boundary
+  authoring surface entirely in the default case.
+- **Opt-in `true`:** the boundary may be `GENERATE_IAM` (subject to the usual
+  anchor + enforcing-key gates); the authored boundary must be minimal (no
+  enumerated management actions — integrity check P10) and carry the control's
+  enforcing condition keys in its Deny.
+
+The cross-artifact validator (X4 in `validate_cross.py`) enforces this: a
+`GENERATE_IAM` boundary decision without the recorded opt-in fails the gate.
+Prefer an SCP/RCP path over a boundary where the control objective allows it.
+
 ## Step 3 — Emit the plan
 
 Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
