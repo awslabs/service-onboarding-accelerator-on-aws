@@ -71,14 +71,44 @@ def test_policy_type_inference():
 
 
 def test_resource_policy_request_time_key_not_evaluable():
+    """A resource-based Deny on a policy-management action (AddPermission) is a
+    no-op regardless of the gating key — the attached document is not in the
+    evaluation path. The action-driven check catches it."""
     stmt = _deny(
         "DenyAddPerm", "lambda:AddPermission", "arn:aws:lambda:*:*:function:*",
         {"StringNotEqualsIfExists": {"lambda:Principal": "123456789012"}},
     )
     r = assess_statement(stmt, "resource-based", VALIDATED, DELIMS, PREFIX)
     assert r["evaluable"] is False
-    assert "resource-based policy cannot evaluate a request-time" in r["reason"]
+    assert "policy-management action" in r["reason"]
     assert r["enforcing_key"] == ["lambda:Principal"]
+
+
+def test_resource_policy_mgmt_action_not_masked_by_coapplying_key():
+    """Regression: a resource-based Deny on AddPermission gated SOLELY on a
+    non-rt-only key that co-applies to AddPermission (lambda:FunctionUrlAuthType)
+    must STILL be flagged — the deny is a no-op because AddPermission mutates the
+    attached policy, which is not in its own evaluation path. The action-driven
+    check is not maskable by a co-applying key."""
+    stmt = _deny(
+        "DenyAddPerm", "lambda:AddPermission", "arn:aws:lambda:*:*:function:*",
+        {"StringEquals": {"lambda:FunctionUrlAuthType": "NONE"}},
+    )
+    r = assess_statement(stmt, "resource-based", VALIDATED, DELIMS, PREFIX)
+    assert r["evaluable"] is False
+    assert "policy-management action" in r["reason"]
+
+
+def test_notresource_malformed_arn_flagged():
+    """A malformed ARN in NotResource is flagged, not just Resource."""
+    stmt = {
+        "Sid": "DenyOutside", "Effect": "Deny", "Action": "lambda:InvokeFunction",
+        "NotResource": "arn:aws:lambda:*:*:function/*",
+        "Condition": {"StringEquals": {"aws:PrincipalOrgID": "o-x"}},
+    }
+    r = assess_statement(stmt, "scp", VALIDATED, DELIMS, PREFIX)
+    assert r["evaluable"] is False
+    assert "malformed resource ARN" in r["reason"]
 
 
 def test_same_request_time_key_evaluable_in_scp():

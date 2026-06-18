@@ -54,6 +54,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from validate_preventability import (  # noqa: E402
+    _is_resource_policy_mgmt_action,
     build_condition_key_index,
     normalize_action,
     request_time_only_keys,
@@ -64,9 +65,10 @@ from validate_pipeline_integrity import (  # noqa: E402
 )
 
 
-# Authored-artifact basename → policy type. The request-time-only-key
-# evaluability rule applies ONLY to resource-based (attached) policies; SCP,
-# identity, boundary, VPCE and KMS-key policies all evaluate the request itself.
+# Authored-artifact basename → policy type. The resource-based evaluability
+# rules apply to ATTACHED policies (resource-based + KMS key policy, which is
+# attached to the key); SCP, identity, boundary and VPCE policies evaluate the
+# request itself.
 _FILE_POLICY_TYPE = {
     "scp-policy": "scp",
     "rcp-policy": "rcp",
@@ -149,6 +151,9 @@ def assess_statement(
     resources = stmt.get("Resource", [])
     if isinstance(resources, str):
         resources = [resources]
+    not_resources = stmt.get("NotResource", [])
+    if isinstance(not_resources, str):
+        not_resources = [not_resources]
 
     all_keys = _statement_condition_keys(stmt)
     enforcing = _service_specific_keys(all_keys, service_prefix)
@@ -167,8 +172,9 @@ def assess_statement(
     # for minimality elsewhere. We still validate its ARNs below.
     is_deny = stmt.get("Effect") == "Deny"
 
-    # (b) ARN well-formedness — applies to every statement.
-    for arn in resources:
+    # (b) ARN well-formedness — applies to every statement, Resource AND
+    # NotResource (a malformed ARN in either matches nothing).
+    for arn in [*resources, *not_resources]:
         err = _arn_delimiter_errors(arn, service_prefix, delims)
         if err:
             record["evaluable"] = False
@@ -178,16 +184,36 @@ def assess_statement(
     if not is_deny:
         return record
 
-    # Checks (a) and (b) operate on the SERVICE-SPECIFIC enforcing keys. A Deny
+    # (a0) Resource-based policy whose gated actions are ALL policy-management
+    # actions → the attached document is never in the evaluation path for those
+    # requests, so the deny is a no-op REGARDLESS of which condition key gates it.
+    # This is action-driven (not key-driven) so it cannot be masked by a key that
+    # merely co-applies to the management action (the key-based check below only
+    # fires when EVERY enforcing key is request-time-only, which a co-applying
+    # access key would defeat).
+    if policy_type == "resource-based" and actions:
+        bare = [a for a in actions if isinstance(a, str)]
+        if bare and all(_is_resource_policy_mgmt_action(a) for a in bare):
+            record["evaluable"] = False
+            record["reason"] = (
+                "a resource-based policy cannot enforce a deny on a "
+                f"policy-management action ({', '.join(bare)}); the attached "
+                "document is not in the evaluation path for that request, so the "
+                "deny never fires. Route to detective or re-map to an SCP/identity "
+                "policy that evaluates the request."
+            )
+            return record
+
+    # Checks (a) and (c) operate on the SERVICE-SPECIFIC enforcing keys. A Deny
     # may legitimately gate on a global key alone — e.g. a VPCE / data-perimeter
     # org-scoping deny conditioned only on aws:PrincipalOrgID. Global keys are
     # principal-context, always evaluable and not action-bound, so a statement
-    # with no service-specific key is not flagged by (a)/(b); the ARN check above
+    # with no service-specific key is not flagged by (a)/(c); the ARN check above
     # and the boundary-minimality check (separate) still apply.
     if not enforcing:
         return record
 
-    # (a) Resource-based policy + request-time-only key → not evaluable.
+    # (a) Resource-based policy + request-time-only enforcing key → not evaluable.
     if policy_type == "resource-based":
         rt_only = request_time_only_keys(validated)
         offending = [k for k in enforcing if k in rt_only]
@@ -201,7 +227,7 @@ def assess_statement(
             )
             return record
 
-    # (b) The enforcing key must apply to at least one gated action.
+    # (c) The enforcing key must apply to at least one gated action.
     bare_actions = {normalize_action(a) for a in actions if isinstance(a, str)}
     ck_index = {
         ck.get("key"): {normalize_action(a) for a in ck.get("applies_to_actions", []) if a}
