@@ -14,6 +14,7 @@ from validate_pipeline_integrity import (
     check_iac_placeholders,
     check_iam_policies,
     check_mcp_log,
+    check_phase_outputs,
     check_validated_notes,
     validate_pipeline,
 )
@@ -315,6 +316,28 @@ def test_iac_parameterized_passes(tmp_path: Path) -> None:
         '  Role:\n    Arn: !Sub "arn:aws:iam::${AccountId}:role/foo"\n'
     )
     assert check_iac_placeholders(tmp_path) == []
+
+
+# ---------- P7: phase-output completeness ----------
+
+
+def test_phase_outputs_missing_required_artifact_fails(tmp_path: Path) -> None:
+    """An evidence dir that ran but lacks its required artifacts is a P7 error."""
+    (tmp_path / "08-evidence").mkdir()
+    errors = check_phase_outputs(tmp_path)
+    assert any("P7" in e and "cli-commands.json" in e for e in errors)
+
+
+def test_phase_outputs_skip_sentinel_suppresses_errors(tmp_path: Path) -> None:
+    """A phase that wrote phase-skipped.json deliberately skipped itself; its
+    required outputs are not expected (e.g. Evidence after a dry-run Test)."""
+    evidence = tmp_path / "08-evidence"
+    evidence.mkdir()
+    (evidence / "phase-skipped.json").write_text(
+        '{"phase": "evidence", "skipped": true, "skip_reason": "dry-run"}'
+    )
+    errors = check_phase_outputs(tmp_path)
+    assert not any("08-evidence" in e for e in errors)
 
 
 # ---------- P5: framework coverage ----------

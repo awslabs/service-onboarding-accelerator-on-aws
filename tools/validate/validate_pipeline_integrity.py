@@ -609,7 +609,10 @@ def check_phase_outputs(service_root: Path) -> list[str]:
     Walks each phase dir under service_root and asserts that every required
     output exists and meets its minimum size threshold. A phase dir not
     present is considered "phase did not run" and skipped silently — the
-    user may have set testing.mode=skip, --dry-run, etc.
+    user may have set testing.mode=skip, --dry-run, etc. A phase dir that
+    contains a `phase-skipped.json` sentinel is treated the same way: the
+    phase deliberately skipped itself (e.g. Evidence skips when Test ran
+    dry-run and deployed nothing), so its required outputs are not expected.
 
     The full-deploy → Phase 7 contract gets an extra check: if 06-test/
     exists with deployed-resources.json AND 08-evidence/ exists, the linkage
@@ -622,6 +625,8 @@ def check_phase_outputs(service_root: Path) -> list[str]:
         phase_dir = service_root / phase_name
         if not phase_dir.exists():
             continue  # phase did not run — OK
+        if (phase_dir / "phase-skipped.json").exists():
+            continue  # phase deliberately skipped itself — outputs not expected
 
         for filename, min_size in required:
             artifact = phase_dir / filename
