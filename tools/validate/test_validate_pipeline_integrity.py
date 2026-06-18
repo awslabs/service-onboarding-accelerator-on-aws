@@ -11,8 +11,10 @@ from validate_pipeline_integrity import (
     MIN_FRAMEWORK_COVERAGE_PCT,
     MIN_MCP_CALLS,
     _arn_delimiter_errors,
+    _is_management_action,
     _resource_type_delimiters,
     check_arn_shapes,
+    check_boundary_minimality,
     check_framework_coverage,
     check_iac_placeholders,
     check_iam_policies,
@@ -466,6 +468,76 @@ def test_check_arn_shapes_no_sar_facts_is_silent(tmp_path: Path) -> None:
           "Resource": "arn:aws:lambda:*:*:function/*"}],
     )
     assert check_arn_shapes(tmp_path) == []
+
+
+# ---------- P10: permission-boundary minimality ----------
+
+
+def test_is_management_action_classification() -> None:
+    assert _is_management_action("lambda:CreateFunction")
+    assert _is_management_action("lambda:UpdateFunctionConfiguration")
+    assert _is_management_action("lambda:PutFunctionCodeSigningConfig")
+    assert _is_management_action("lambda:DeleteFunction")
+    assert _is_management_action("lambda:TagResource")
+    # reads / invoke / list are not management actions
+    assert not _is_management_action("lambda:GetFunction")
+    assert not _is_management_action("lambda:ListFunctions")
+    assert not _is_management_action("lambda:InvokeFunction")
+    # wildcards / bare prefix are handled elsewhere, not here
+    assert not _is_management_action("lambda:*")
+    assert not _is_management_action("lambda:Create*")
+
+
+def test_boundary_allow_with_management_actions_flagged(tmp_path: Path) -> None:
+    """A permission-boundary Allow enumerating CreateFunction/UpdateX fails P10."""
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "AllowScopedMgmt", "Effect": "Allow",
+             "Action": ["lambda:CreateFunction", "lambda:UpdateFunctionConfiguration",
+                        "lambda:InvokeFunction"],
+             "Resource": "arn:aws:lambda:*:*:function:*"},
+            {"Sid": "DenyUrl", "Effect": "Deny",
+             "Action": "lambda:CreateFunctionUrlConfig", "Resource": "*",
+             "Condition": {"StringNotEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}}},
+        ],
+    )
+    errors = check_boundary_minimality(tmp_path)
+    assert len(errors) == 1
+    assert "P10" in errors[0] and "AllowScopedMgmt" in errors[0]
+    assert "lambda:CreateFunction" in errors[0]
+
+
+def test_boundary_minimal_allow_passes(tmp_path: Path) -> None:
+    """A boundary whose Allow is a minimal read/invoke floor — control intent in
+    the Deny — passes P10."""
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "AllowReadFloor", "Effect": "Allow",
+             "Action": ["lambda:GetFunction", "lambda:ListFunctions",
+                        "lambda:InvokeFunction"],
+             "Resource": "*"},
+            {"Sid": "DenyPassRole", "Effect": "Deny", "Action": "iam:PassRole",
+             "Resource": "*",
+             "Condition": {"StringNotEqualsIfExists": {"iam:PassedToService": "lambda.amazonaws.com"}}},
+        ],
+    )
+    assert check_boundary_minimality(tmp_path) == []
+
+
+def test_boundary_minimality_only_checks_boundary_files(tmp_path: Path) -> None:
+    """An SCP that enumerates management actions in an Allow is NOT a P10 concern
+    (P10 is specific to permission-boundary artifacts)."""
+    _write_preventive_artifact(
+        tmp_path,
+        "scp-policy.json",
+        [{"Sid": "AllowMgmt", "Effect": "Allow",
+          "Action": ["lambda:CreateFunction"], "Resource": "*"}],
+    )
+    assert check_boundary_minimality(tmp_path) == []
 
 
 # ---------- P5: framework coverage ----------

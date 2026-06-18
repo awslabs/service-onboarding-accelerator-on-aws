@@ -29,6 +29,10 @@ Failure signals:
          preventive policy artifact must use the delimiter the service's SAR ARN
          format mandates for that resource type (catches a function written
          `function/*` instead of `function:*` — a silent no-op deny)
+    P10 — permission-boundary minimality: a boundary's Allow statement must not
+         enumerate management actions (Create*/Update*/Put*/Delete*/Tag*/…). A
+         boundary is the MAXIMUM a principal may do, not the role's grant policy;
+         the control intent belongs in the Deny + condition keys
 """
 from __future__ import annotations
 
@@ -574,6 +578,80 @@ def check_arn_shapes(service_root: Path) -> list[str]:
     return errors
 
 
+# --- P10: permission-boundary minimality -----------------------------------
+# A permission boundary defines the MAXIMUM a principal may do; it is not the
+# role's grant policy. Its Allow exists only to keep the boundary from being a
+# deny-all — it should be a minimal floor (reads + the actions the enforcing
+# Denys gate), NOT an enumerated allowlist of management actions. Enumerating
+# Create*/Update*/Put*/Delete*/Tag*/… in the Allow re-creates the role policy
+# inside the boundary (an observed defect) and means the control intent is not
+# actually carried by the boundary's Deny + condition keys.
+
+# Write/management action verbs (first word of the action after the prefix).
+# A boundary Allow that enumerates these is doing the role policy's job.
+_BOUNDARY_MGMT_VERBS = (
+    "Create", "Update", "Put", "Delete", "Remove", "Tag", "Untag",
+    "Attach", "Detach", "Associate", "Disassociate", "Add", "Modify",
+    "Set", "Enable", "Disable", "Publish", "Register", "Deregister",
+    "Replace",
+)
+
+
+def _is_management_action(action: str) -> bool:
+    """True if an action's verb is a write/management verb (Create*, Put*, …).
+
+    `lambda:CreateFunction` → True; `lambda:GetFunction` / `lambda:ListX` /
+    `lambda:InvokeFunction` → False. A bare `*` or `prefix:*` is not a single
+    named management action (handled separately by the Resource:* exfil check).
+    """
+    name = action.split(":", 1)[1] if ":" in action else action
+    if not name or "*" in name:
+        return False
+    return any(name.startswith(v) for v in _BOUNDARY_MGMT_VERBS)
+
+
+def check_boundary_minimality(service_root: Path) -> list[str]:
+    """P10: a permission-boundary Allow must not enumerate management actions.
+
+    Only `permission-boundary*.json` artifacts are checked. Each Allow statement
+    is scanned; if it enumerates one or more management actions
+    (Create*/Update*/Put*/Delete*/Tag*/…), the boundary is re-creating the role's
+    grant policy instead of carrying the control intent in its Deny + condition
+    keys — flag it. Deny statements and read/list/invoke Allows are fine.
+    """
+    errors: list[str] = []
+    preventive_dir = service_root / "05-generate" / "preventive"
+    if not preventive_dir.exists():
+        return errors
+
+    for policy_file, data in _iter_json_files(preventive_dir):
+        if "permission-boundary" not in policy_file.name.lower():
+            continue
+        if "Statement" not in data:
+            continue
+        statements = data["Statement"]
+        if not isinstance(statements, list):
+            statements = [statements]
+        rel = policy_file.relative_to(service_root / "05-generate")
+        for i, stmt in enumerate(statements):
+            if not isinstance(stmt, dict) or stmt.get("Effect") != "Allow":
+                continue
+            actions = stmt.get("Action", [])
+            if isinstance(actions, str):
+                actions = [actions]
+            mgmt = sorted({a for a in actions if _is_management_action(a)})
+            if mgmt:
+                errors.append(
+                    f"P10 {rel} Statement[{i}] (Sid {stmt.get('Sid', '?')!r}): "
+                    f"permission-boundary Allow enumerates management action(s) "
+                    f"{mgmt} — a boundary is the MAXIMUM a principal may do, not "
+                    f"the role's grant policy. Keep the Allow to a minimal floor "
+                    f"(reads + the actions the enforcing Denys gate); carry the "
+                    f"control intent in the Deny + condition keys."
+                )
+    return errors
+
+
 def check_iac_placeholders(iac_dir: Path) -> list[str]:
     # Reuse the canonical exclude list from validate_deployable so adding a new
     # vendored-dep dir doesn't require touching two places.
@@ -909,6 +987,9 @@ def validate_pipeline(root: Path) -> list[str]:
             # P9: every Resource ARN must use the SAR-mandated delimiter for its
             # resource type (catches function/* vs function:* silent no-ops).
             errors.extend(check_arn_shapes(service_root))
+            # P10: a permission-boundary Allow must not enumerate management
+            # actions (the boundary is a maximum, not the role's grant policy).
+            errors.extend(check_boundary_minimality(service_root))
 
         # Check framework coverage in 04-map/
         map_dir = service_root / "04-map"

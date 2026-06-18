@@ -57,7 +57,28 @@ def test_mechanism_family_matches_real_map_strings():
     assert ri.mechanism_family("VPC Endpoint Policy") == ["VPCE", "data-perimeter"]
     assert ri.mechanism_family("VPCE Policy") == ["VPCE", "data-perimeter"]  # alias
     assert ri.mechanism_family("KMS Key Policy") == ["IAM"]
-    assert ri.mechanism_family("IAM Trust Policy") == ["IAM", "permission-boundary"]
+    assert ri.mechanism_family("IAM Trust Policy") == ["IAM"]
+
+
+def test_permission_boundary_family_is_curated_only():
+    """Permission boundaries anchor ONLY to the curated permission-boundary
+    set — never the much larger IAM identity-policy family (regression: a
+    boundary was being anchored to an identity-policy access-check sample)."""
+    assert ri.mechanism_family("IAM Permission Boundary") == ["permission-boundary"]
+    assert ri.mechanism_family("permission boundary") == ["permission-boundary"]
+
+
+def test_best_anchor_boundary_accepts_zero_overlap():
+    """A boundary scaffold legitimately shares no actions with the control, so
+    best_anchor returns it even at score 0.0 (the family is curated). A
+    non-boundary family with zero overlap still returns None."""
+    # Boundary family: even with no action/key overlap, an example resolves.
+    boundary = ri.best_anchor("IAM Permission Boundary", ["lambda:CreateFunction"], [])
+    assert boundary is not None
+    assert boundary.get("mechanism") == "permission-boundary"
+    # IAM family with a guaranteed-no-overlap action stays None.
+    none_anchor = ri.best_anchor("IAM Policy", ["zzznosuchservice:DoNothing"], [])
+    assert none_anchor is None
 
 
 def test_mechanism_family_case_insensitive():

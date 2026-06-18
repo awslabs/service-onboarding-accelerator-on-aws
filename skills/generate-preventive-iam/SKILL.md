@@ -13,11 +13,23 @@ control and authors it from a reference example. Covers these mechanisms:
 
 | Mechanism (mapping) | Output file | Anchor family |
 |---|---|---|
-| `IAM Policy` / `IAM Trust Policy` | `preventive/iam-policies.json` | `IAM`, `permission-boundary` |
-| `IAM Permission Boundary` | `preventive/permission-boundary.json` | `permission-boundary`, `IAM` |
+| `IAM Policy` / `IAM Trust Policy` | `preventive/iam-policies.json` | `IAM` |
+| `IAM Permission Boundary` | `preventive/permission-boundary.json` | `permission-boundary` |
 | `Resource Policy` / `Resource-Based Policy` | `preventive/resource-policy.json` | `IAM`, `data-perimeter` |
 | `VPCE Policy` | `preventive/vpce-policy.json` | `VPCE`, `data-perimeter` |
 | `KMS Key Policy` | `preventive/kms-key-policy.json` | `IAM` |
+
+**Reference-repo purposes (anchor to the RIGHT repo for the mechanism).** The
+recommender's `best_anchor` already restricts to the correct family, but when
+you load the anchor body, confirm it came from the repo that *publishes that
+mechanism* — do not adapt an identity-policy access-check sample into a
+permission boundary:
+
+| Mechanism | Correct source repo | NOT this |
+|---|---|---|
+| Permission boundary | `example-permissions-boundary` (structural boundary scaffold) | `iam-access-analyzer-custom-policy-check-samples` (those are identity-policy *checks*, not boundaries) |
+| Resource-based / data-perimeter policy | `data-perimeter-policy-examples`, `iam-access-analyzer-custom-policy-check-samples` (resource-policy examples) | — |
+| Identity policy | `iam-access-analyzer-custom-policy-check-samples`, `iam-policy-autopilot` | — |
 
 **Input:**
 - `.service-approval/<slug>/05-generate/preventive-plan.json` — rows where `decision == "GENERATE_IAM"`
@@ -61,11 +73,35 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
    - Permission boundaries: NEVER emit an unconditional `Allow <prefix>:* on
      Resource "*"` baseline — that is an exfiltration path the integrity check
      (P3) hard-blocks, and it defeats the purpose of a boundary (which exists to
-     *constrain*). Scope the Allow to specific actions on the resource ARN
+     *constrain*). A boundary is the **maximum** a principal may do; it is NOT
+     the role's grant policy. Two failure modes to avoid:
+     1. **Do not re-create the role's main policy.** Do not enumerate a broad
+        list of management actions (`CreateFunction`, `UpdateFunctionCode`,
+        `TagResource`, …) as the Allow — that is the role policy's job, not the
+        boundary's. The boundary's Allow exists only to keep the boundary from
+        being a deny-all; keep it to the smallest scope the control needs. The
+        integrity check (P10) hard-blocks a boundary Allow that enumerates
+        `Create*/Update*/Put*/Delete*/Tag*/…` management actions.
+     2. **The boundary MUST carry the control's enforcing condition.** A
+        boundary with no condition key does not implement the control — it is
+        the same defect as a no-op SCP. The Deny statement(s) MUST use the
+        plan row's `enforcing_condition_keys[]` to gate the target action(s)
+        (e.g. deny `iam:PassRole` unless `iam:PassedToService` /
+        `aws:ResourceTag` matches the approved execution-role pattern, when the
+        control's intent is "cap PassRole to approved roles"). If the plan row
+        has no `enforcing_condition_keys[]`, the recommender should not have
+        marked it `GENERATE_IAM` — surface the mismatch rather than emitting an
+        unconditional boundary.
+
+     Concretely: scope the Allow to specific actions on the resource ARN
      pattern (`arn:aws:<prefix>:*:*:<type>/*`); put only the genuinely
      wildcard-only actions (those whose SAR `resource_types` is empty — e.g.
      `List*`, account-level `Get*`) in a separate `Resource: "*"` Allow
-     statement. Then add the scoped Deny(s) that enforce the control.
+     statement. Then add the scoped, **condition-keyed** Deny(s) that enforce
+     the control. The boundary must reflect the upstream control's intent — if
+     the mapping says "cap PassRole to approved execution roles," the boundary
+     denies the un-approved case, it does not hand out a Lambda-management
+     allowlist.
    - Resource-based policies: mandatory confused-deputy conditions.
    - VPCE policies: org scoping via `aws:PrincipalOrgID` (NOT confused-deputy keys).
      A VPCE policy gates *endpoint use* — Action × Principal × ResourceArn at

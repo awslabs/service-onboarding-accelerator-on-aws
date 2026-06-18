@@ -96,16 +96,34 @@ def examples_for_mechanism(mechanism: str, path: Path | None = None) -> list[dic
 _MECHANISM_FAMILIES = {
     "scp": ["SCP"],
     "rcp": ["RCP"],
-    "iam policy": ["IAM", "permission-boundary"],
-    "iam trust policy": ["IAM", "permission-boundary"],
-    "iam permission boundary": ["permission-boundary", "IAM"],
-    "permission boundary": ["permission-boundary", "IAM"],
+    "iam policy": ["IAM"],
+    "iam trust policy": ["IAM"],
+    # Permission boundaries anchor ONLY to the curated permission-boundary
+    # example set, never to the much larger IAM (identity-policy) family. A
+    # boundary is a structural scaffold (a scoped Allow allowlist plus the
+    # Denies that enforce the control); pulling its body from an
+    # identity-policy access-check example is the wrong shape. See
+    # PERMISSION_BOUNDARY_FAMILY below for why this family bypasses the
+    # zero-overlap anchor gate.
+    "iam permission boundary": ["permission-boundary"],
+    "permission boundary": ["permission-boundary"],
     "resource policy": ["IAM", "data-perimeter"],
     "resource-based policy": ["IAM", "data-perimeter"],
     "vpc endpoint policy": ["VPCE", "data-perimeter"],
     "vpce policy": ["VPCE", "data-perimeter"],
     "kms key policy": ["IAM"],
 }
+
+# The permission-boundary example set is a small, curated collection of
+# structural boundary scaffolds (aws-samples/example-permissions-boundary).
+# Unlike SCP/RCP/IAM examples — which must overlap the control's actions or
+# condition keys to be a meaningful anchor — a boundary scaffold legitimately
+# shares few or no actions with any single control: its actions are supplied
+# by the target service, and the example contributes the *shape* (scoped Allow
+# allowlist + wildcard-only reads + enforcing Denies). So for this family we
+# accept the top-ranked example even at a zero overlap score, rather than
+# returning None and dropping the control to REFER_TO_REFERENCE.
+PERMISSION_BOUNDARY_FAMILY = "permission-boundary"
 
 
 def mechanism_family(control_mechanism: str) -> list[str]:
@@ -189,8 +207,18 @@ def best_anchor(
 
     None when the mechanism family has no examples OR the best score is 0.0
     (no overlap) — in both cases the recommender must NOT claim an anchor.
+
+    Exception: the permission-boundary family is a curated set of structural
+    scaffolds whose actions come from the target service, so a zero overlap
+    score is expected and still a valid anchor (see PERMISSION_BOUNDARY_FAMILY).
     """
     ranked = rank_anchors(control_mechanism, actions, condition_keys, path)
-    if not ranked or ranked[0]["score"] <= 0.0:
+    if not ranked:
+        return None
+    families = set(mechanism_family(control_mechanism))
+    if families == {PERMISSION_BOUNDARY_FAMILY}:
+        # Curated boundary scaffolds — accept the top rank even at score 0.0.
+        return ranked[0]["example"]
+    if ranked[0]["score"] <= 0.0:
         return None
     return ranked[0]["example"]
