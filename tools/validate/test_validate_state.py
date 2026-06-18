@@ -355,3 +355,66 @@ def test_confidence_field_no_longer_in_schema() -> None:
         "(LLM confidence scoring was removed)"
     )
     assert "coverage_level" in ctrl_props, "coverage_level remains the canonical field"
+
+
+def _walk_schema_property_names(node):
+    """Yield every JSON-Schema `properties` key name reachable from `node`.
+
+    Walks `properties`, `$defs`/`definitions`, `items`, and the composition
+    keywords (`allOf`/`anyOf`/`oneOf`) so a `confidence` property nested at any
+    depth — under a control item, a mapping row, or a sub-definition — is found.
+    """
+    if isinstance(node, dict):
+        props = node.get("properties")
+        if isinstance(props, dict):
+            for name in props:
+                yield name
+        for key, child in node.items():
+            yield from _walk_schema_property_names(child)
+    elif isinstance(node, list):
+        for child in node:
+            yield from _walk_schema_property_names(child)
+
+
+def test_no_pipeline_schema_defines_confidence_property() -> None:
+    """LLM confidence scoring is permanently locked out. No pipeline schema
+    under schemas/ may define a `confidence` (or `run_confidence`) property at
+    any nesting depth — coverage_level is the only ranked field the pipeline
+    emits, and it is a deterministic catalog cross-check, not an LLM score."""
+    import json
+    from pathlib import Path
+
+    schemas_dir = Path(__file__).resolve().parents[2] / "schemas"
+    offenders: list[str] = []
+    for schema_path in sorted(schemas_dir.glob("*.json")):
+        with open(schema_path) as f:
+            schema = json.load(f)
+        names = set(_walk_schema_property_names(schema))
+        for banned in ("confidence", "run_confidence"):
+            if banned in names:
+                offenders.append(f"{schema_path.name}:{banned}")
+    assert not offenders, (
+        "confidence scoring was permanently removed; these schemas re-introduced "
+        f"a confidence property: {offenders}"
+    )
+
+
+def test_mapping_results_schema_has_no_confidence() -> None:
+    """`mapping-results.schema.json` specifically must define neither
+    `confidence` nor `run_confidence` (the deprecated CANOPY-PARITY §4.10
+    feature put both there — it is descoped)."""
+    import json
+    from pathlib import Path
+
+    schema_path = (
+        Path(__file__).resolve().parents[2] / "schemas" / "mapping-results.schema.json"
+    )
+    with open(schema_path) as f:
+        schema = json.load(f)
+    names = set(_walk_schema_property_names(schema))
+    assert "confidence" not in names, (
+        "mapping-results.schema.json must not define a `confidence` property"
+    )
+    assert "run_confidence" not in names, (
+        "mapping-results.schema.json must not define a `run_confidence` property"
+    )

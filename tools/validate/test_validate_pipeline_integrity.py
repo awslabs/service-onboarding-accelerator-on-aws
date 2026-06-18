@@ -870,3 +870,85 @@ def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     assert "datasync:DescribeAgent" in out
+
+
+# ---------- P11: no LLM confidence scoring ----------
+
+
+def test_confidence_key_in_map_json_fails(tmp_path: Path) -> None:
+    """A `confidence` key on a control under 04-map/ fails P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir()
+    (map_dir / "mapping-results.json").write_text(json.dumps({
+        "framework_mapping": [
+            {"objective_id": "X", "controls": [
+                {"control_id": "C-1", "confidence": {"band": "HIGH", "score": 0.9}}
+            ]}
+        ]
+    }))
+    errors = check_no_confidence_scoring(tmp_path)
+    assert any("P11" in e and "confidence" in e for e in errors), errors
+
+
+def test_run_confidence_key_in_generate_json_fails(tmp_path: Path) -> None:
+    """A `run_confidence` key under 05-generate/ fails P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    gen_dir = tmp_path / "05-generate" / "preventive"
+    gen_dir.mkdir(parents=True)
+    (gen_dir / "summary.json").write_text(json.dumps({"run_confidence": 0.7}))
+    errors = check_no_confidence_scoring(tmp_path)
+    assert any("P11" in e and "run_confidence" in e for e in errors), errors
+
+
+def test_confidence_band_in_report_md_fails(tmp_path: Path) -> None:
+    """A confidence band attached to 'confidence' in the report fails P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    sm_dir = tmp_path / "07-summarize"
+    sm_dir.mkdir()
+    (sm_dir / "APPROVAL-REPORT.md").write_text(
+        "# Report\n\n| Control | Confidence |\n|--|--|\n"
+        "| C-1 | HIGH confidence |\n"
+    )
+    errors = check_no_confidence_scoring(tmp_path)
+    assert any("P11" in e and "band" in e for e in errors), errors
+
+
+def test_actions_to_increase_confidence_heading_passes(tmp_path: Path) -> None:
+    """The deterministic 'Actions Taken to Increase Confidence' heading carries
+    no band token, so it must NOT trip P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    sm_dir = tmp_path / "07-summarize"
+    sm_dir.mkdir()
+    (sm_dir / "APPROVAL-REPORT.md").write_text(
+        "# Report\n\n## Actions Taken to Increase Confidence\n\n"
+        "- Every capability was MCP-verified.\n"
+        "- Reference anchors resolved for each preventive policy.\n"
+    )
+    assert check_no_confidence_scoring(tmp_path) == []
+
+
+def test_coverage_level_does_not_trip_p11(tmp_path: Path) -> None:
+    """coverage_level is the allowed deterministic ranked field — not confidence."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir()
+    (map_dir / "mapping-results.json").write_text(json.dumps({
+        "framework_mapping": [
+            {"objective_id": "X", "controls": [
+                {"control_id": "C-1", "coverage_level": "Full Coverage"}
+            ]}
+        ]
+    }))
+    assert check_no_confidence_scoring(tmp_path) == []
+
+
+def test_p11_exempts_finalized_run(tmp_path: Path) -> None:
+    """A finalized run is frozen — P11 must not retroactively fail it."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir()
+    (map_dir / "mapping-results.json").write_text(json.dumps({"confidence": 0.5}))
+    assert len(check_no_confidence_scoring(tmp_path)) == 1  # mid-flight
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_no_confidence_scoring(tmp_path) == []  # finalized

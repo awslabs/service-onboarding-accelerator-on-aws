@@ -33,6 +33,12 @@ Failure signals:
          enumerate management actions (Create*/Update*/Put*/Delete*/Tag*/…). A
          boundary is the MAXIMUM a principal may do, not the role's grant policy;
          the control intent belongs in the Deny + condition keys
+    P11 — no LLM confidence scoring: no emitted artifact under 04-map/ or
+         05-generate/, nor the APPROVAL-REPORT, may carry a per-item confidence
+         score/key/band (a `"confidence":` JSON key, a `run_confidence` key, or a
+         HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The report's
+         deterministic "Actions Taken to Increase Confidence" heading is exempt —
+         the guard targets scored/keyed confidence, not the English word.
 """
 from __future__ import annotations
 
@@ -725,6 +731,102 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
     return errors
 
 
+# --- P11: no LLM confidence scoring in emitted artifacts -------------------
+# LLM confidence scoring was permanently removed from the pipeline. It must not
+# reappear in any artifact a run emits. Two signals are caught:
+#   1. A JSON `"confidence":` / `"run_confidence":` key on any object under
+#      04-map/ or 05-generate/ (the machine-readable form the deprecated feature
+#      used). coverage_level — a deterministic catalog cross-check — is allowed.
+#   2. A confidence BAND label (HIGH/MEDIUM/LOW/SPECULATIVE) attached to the word
+#      "confidence" on the same line of a markdown artifact (mapping .md files,
+#      the APPROVAL-REPORT). The report's deterministic
+#      "Actions Taken to Increase Confidence" heading carries no band token, so
+#      it is naturally exempt; the regex requires a band token alongside the word.
+
+# JSON-key form: a quoted `confidence`/`run_confidence` property used as a key.
+_CONFIDENCE_KEY_RE = re.compile(r'"(confidence|run_confidence)"\s*:')
+# Band tokens the deprecated feature attached to each scored item.
+_CONFIDENCE_BAND_RE = re.compile(r"\b(HIGH|MEDIUM|LOW|SPECULATIVE)\b")
+_CONFIDENCE_WORD_RE = re.compile(r"confidence", re.IGNORECASE)
+
+
+def _confidence_scoring_errors_in_text(text: str, rel: str, is_markdown: bool) -> list[str]:
+    """Return P11 errors for confidence scoring found in `text`.
+
+    JSON files are scanned for the `"confidence":`/`"run_confidence":` key form.
+    Markdown files are scanned line-by-line for a confidence BAND token on a line
+    that also contains the word "confidence" (so a scored band attached to a
+    control is caught, while prose like "high availability" or the exempt
+    "Actions Taken to Increase Confidence" heading is not).
+    """
+    errors: list[str] = []
+    for m in _CONFIDENCE_KEY_RE.finditer(text):
+        errors.append(
+            f"P11 {rel}: emits a {m.group(1)!r} key — LLM confidence scoring was "
+            f"permanently removed and must not appear in pipeline artifacts."
+        )
+    if is_markdown:
+        for ln in text.splitlines():
+            if (
+                _CONFIDENCE_WORD_RE.search(ln)
+                and _CONFIDENCE_BAND_RE.search(ln)
+            ):
+                errors.append(
+                    f"P11 {rel}: line carries a confidence band label "
+                    f"({_CONFIDENCE_BAND_RE.search(ln).group(1)}) attached to "
+                    f"'confidence' — per-item confidence scoring is not permitted: "
+                    f"{ln.strip()[:120]!r}"
+                )
+    return errors
+
+
+def check_no_confidence_scoring(service_root: Path) -> list[str]:
+    """P11: no emitted artifact may carry a per-item confidence score/key/band.
+
+    Scans every JSON under 04-map/ and 05-generate/ for confidence keys, and the
+    rendered markdown (mapping .md files + the APPROVAL-REPORT) for band labels.
+    Finalized runs are exempt (frozen artifacts cannot be remediated).
+    """
+    from validate_deployable import SKIP_DIRS
+
+    if is_finalized(service_root):
+        return []
+
+    errors: list[str] = []
+    scan_dirs = [service_root / "04-map", service_root / "05-generate"]
+    for base in scan_dirs:
+        if not base.exists():
+            continue
+        for p in base.rglob("*"):
+            if not p.is_file():
+                continue
+            if any(part in SKIP_DIRS for part in p.parts):
+                continue
+            suffix = p.suffix.lower()
+            if suffix not in (".json", ".md"):
+                continue
+            try:
+                text = p.read_text()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = p.relative_to(service_root)
+            errors.extend(
+                _confidence_scoring_errors_in_text(text, str(rel), suffix == ".md")
+            )
+
+    report = service_root / "07-summarize" / "APPROVAL-REPORT.md"
+    if report.exists():
+        try:
+            text = report.read_text()
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        if text:
+            rel = report.relative_to(service_root)
+            errors.extend(_confidence_scoring_errors_in_text(text, str(rel), True))
+
+    return errors
+
+
 def check_iac_placeholders(iac_dir: Path) -> list[str]:
     # Reuse the canonical exclude list from validate_deployable so adding a new
     # vendored-dep dir doesn't require touching two places.
@@ -1068,6 +1170,9 @@ def validate_pipeline(root: Path) -> list[str]:
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
+
+        # P11: no emitted artifact may carry per-item confidence scoring.
+        errors.extend(check_no_confidence_scoring(service_root))
 
     return errors
 
