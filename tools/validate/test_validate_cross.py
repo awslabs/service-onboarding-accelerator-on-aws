@@ -197,6 +197,21 @@ def test_org_optin_helper_defaults_false(tmp_path):
     assert _org_attaches_permission_boundaries(str(gen)) is True
 
 
+def test_boundary_org_prerequisite_exempts_finalized_run(tmp_path):
+    """A finalized run is frozen — X4 (added after the run) must not retroactively
+    fail it. Mid-flight (no sentinel) still flags the missing opt-in."""
+    gen, _ = _setup(tmp_path)
+    _write_plan(gen, [
+        {"control_id": "CTRL-ACC-PRV-001", "mechanism": "IAM Permission Boundary",
+         "decision": "GENERATE_IAM"},
+    ])
+    assert len(check_boundary_org_prerequisite(str(gen))) == 1  # mid-flight
+    (tmp_path / "pipeline.log").write_text(
+        "2026-06-18T01:19:00Z [07-summarize] [pipeline:complete:FINALIZED]  done\n"
+    )
+    assert check_boundary_org_prerequisite(str(gen)) == []  # finalized
+
+
 # ---------- X9: confused-deputy on the FLAT resource-policy shape ----------
 
 

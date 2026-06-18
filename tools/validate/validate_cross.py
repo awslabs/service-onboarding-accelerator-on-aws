@@ -246,6 +246,32 @@ def _deferred_preventive_controls(controls_dir: str) -> set[str]:
 # Mapping mechanism strings that resolve to an IAM permission boundary.
 _BOUNDARY_MECHANISMS = {"iam permission boundary", "permission boundary"}
 
+# Matches the finalized-run sentinel at the source-tag column of a pipeline.log
+# line (mirrors validate_pipeline_integrity._PIPELINE_COMPLETE_RE).
+_FINALIZED_RE = re.compile(
+    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:FINALIZED\]", re.MULTILINE
+)
+
+
+def _is_finalized_run(controls_dir: str) -> bool:
+    """True if the run carries the `[pipeline:complete:FINALIZED]` sentinel.
+
+    A finalized run is frozen and immutable — its plan/artifacts cannot be
+    remediated. A check added after a run finalized must not retroactively fail
+    it (it would brick every subsequent Stop hook for that frozen state). Honored
+    the same way P1 in validate_pipeline_integrity is. `controls_dir` is
+    `<service_root>/05-generate`, so pipeline.log is one level up.
+    """
+    service_root = os.path.dirname(controls_dir.rstrip("/"))
+    log_path = os.path.join(service_root, "pipeline.log")
+    if not os.path.isfile(log_path):
+        return False
+    try:
+        with open(log_path) as fh:
+            return bool(_FINALIZED_RE.search(fh.read()))
+    except OSError:
+        return False
+
 
 def _org_attaches_permission_boundaries(controls_dir: str) -> bool:
     """Whether the org recorded that it attaches permission boundaries.
@@ -281,6 +307,8 @@ def check_boundary_org_prerequisite(controls_dir: str) -> list[str]:
     plan = _load_json(os.path.join(controls_dir, "preventive-plan.json"))
     if not plan:
         return errors
+    if _is_finalized_run(controls_dir):
+        return errors  # frozen run — the plan can't be remediated retroactively
     if _org_attaches_permission_boundaries(controls_dir):
         return errors  # opt-in recorded — authoring a boundary is permitted
     for d in plan.get("decisions", []):

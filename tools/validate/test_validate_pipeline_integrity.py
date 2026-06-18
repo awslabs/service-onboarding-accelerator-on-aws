@@ -21,6 +21,7 @@ from validate_pipeline_integrity import (
     check_mcp_log,
     check_phase_outputs,
     check_validated_notes,
+    is_finalized,
     validate_pipeline,
 )
 
@@ -480,6 +481,51 @@ def test_check_arn_shapes_clean_artifact_passes(tmp_path: Path) -> None:
         ],
     )
     assert check_arn_shapes(tmp_path) == []
+
+
+_FINALIZED_LINE = (
+    "2026-06-18T01:19:00Z [07-summarize] [pipeline:complete:FINALIZED]  done\n"
+)
+
+
+def test_arn_shapes_exempts_finalized_run(tmp_path: Path) -> None:
+    """A finalized run is frozen — newly-added P9 must not retroactively fail it
+    (it would brick every subsequent Stop hook for an immutable run)."""
+    _write_sar_facts(tmp_path)
+    _write_preventive_artifact(
+        tmp_path, "scp-policy.json",
+        [{"Sid": "Bad", "Effect": "Deny", "Action": "lambda:CreateFunction",
+          "Resource": "arn:aws:lambda:*:*:function/*"}],
+    )
+    # mid-flight (no sentinel) → flagged
+    assert len(check_arn_shapes(tmp_path)) == 1
+    # finalized (sentinel present) → exempt
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_arn_shapes(tmp_path) == []
+
+
+def test_boundary_minimality_exempts_finalized_run(tmp_path: Path) -> None:
+    _write_preventive_artifact(
+        tmp_path, "permission-boundary.json",
+        [{"Sid": "AllowMgmt", "Effect": "Allow",
+          "Action": ["lambda:CreateFunction"], "Resource": "*"}],
+    )
+    assert len(check_boundary_minimality(tmp_path)) == 1  # mid-flight
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_boundary_minimality(tmp_path) == []  # finalized
+
+
+def test_is_finalized_detection(tmp_path: Path) -> None:
+    assert is_finalized(tmp_path) is False  # no pipeline.log
+    (tmp_path / "pipeline.log").write_text("2026-01-01T00:00:00Z [04-map] [skill:x:end]  hi\n")
+    assert is_finalized(tmp_path) is False  # no sentinel
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert is_finalized(tmp_path) is True
+    # the sentinel must sit at the source-tag column, not in a message body
+    (tmp_path / "pipeline.log").write_text(
+        "2026-01-01T00:00:00Z [04-map] [skill:x:end]  mentions [pipeline:complete:FINALIZED]\n"
+    )
+    assert is_finalized(tmp_path) is False
 
 
 def test_check_arn_shapes_no_sar_facts_is_silent(tmp_path: Path) -> None:

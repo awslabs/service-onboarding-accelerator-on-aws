@@ -104,6 +104,25 @@ _PIPELINE_COMPLETE_RE = re.compile(
 )
 
 
+def is_finalized(service_root: Path) -> bool:
+    """True if the run carries the `[pipeline:complete:FINALIZED]` sentinel.
+
+    A finalized run is frozen and immutable — its artifacts cannot be remediated.
+    Checks ADDED after a run finalized would otherwise retroactively fail a run
+    that had no chance to satisfy them (and would brick every subsequent Stop
+    hook for that frozen state). Newly-added artifact checks honor this the same
+    way P1 (`check_mcp_log`) does; mid-flight runs (no sentinel — the ones where
+    a defect can actually be fixed) still get the full strict check.
+    """
+    pipeline_log = service_root / "pipeline.log"
+    if not pipeline_log.exists():
+        return False
+    try:
+        return bool(_PIPELINE_COMPLETE_RE.search(pipeline_log.read_text()))
+    except OSError:
+        return False
+
+
 def check_mcp_log(service_root: Path) -> list[str]:
     """Check MCP call count from the consolidated pipeline.log.
 
@@ -571,6 +590,8 @@ def check_arn_shapes(service_root: Path) -> list[str]:
     controls_dir = service_root / "05-generate"
     if not controls_dir.exists():
         return errors
+    if is_finalized(service_root):
+        return errors  # frozen run — artifacts can't be remediated retroactively
 
     sar_facts = _load_json(service_root / "01-assess" / "sar-facts.json") or {}
     service_prefix = sar_facts.get("service_prefix") or ""
@@ -661,6 +682,8 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
     preventive_dir = service_root / "05-generate" / "preventive"
     if not preventive_dir.exists():
         return errors
+    if is_finalized(service_root):
+        return errors  # frozen run — artifacts can't be remediated retroactively
 
     for policy_file, data in _iter_json_files(preventive_dir):
         # Identify a boundary by filename OR by its metadata, so a renamed file
