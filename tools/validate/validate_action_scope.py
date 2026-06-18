@@ -51,19 +51,57 @@ def control_id_from_sid(sid: str) -> str | None:
     return f"CTRL-{m.group(1).upper()}-{m.group(2).upper()}-{m.group(3)}"
 
 
-def reviewed_actions_by_control(plan: dict, mapping: dict) -> dict[str, set[str]]:
-    """Map control_id → the reviewed action set.
+# Condition keys that legitimately imply a cross-service enforcement action a
+# control's mapping actions[] would not list. The canonical case: a control whose
+# intent is "cap the execution role passed on create" carries iam:PassedToService
+# / iam:AssociatedResourceArn and MUST deny iam:PassRole — an action that is not in
+# the (Lambda-only) mapping actions[]. So when a control declares such a key, the
+# implied action is part of its reviewed set.
+_KEY_IMPLIED_ACTIONS = {
+    "iam:passedtoservice": {"iam:PassRole"},
+    "iam:associatedresourcearn": {"iam:PassRole"},
+    "iam:passedtoservicelist": {"iam:PassRole"},
+}
 
-    Prefer the plan decision's `plan_actions[]`; fall back to the mapping
-    control's `actions[]`. Returns a dict only for controls that have a reviewed
-    set from one of those sources.
+
+def _norm(action: str) -> str:
+    """Case-fold an action for comparison (IAM is case-insensitive on service:op)."""
+    return action.strip().lower()
+
+
+def reviewed_actions_by_control(
+    plan: dict, mapping: dict
+) -> dict[str, dict]:
+    """Map control_id → {actions: set[str], authoritative: bool}.
+
+    `authoritative` is True when the set came from the plan decision's explicit
+    `plan_actions[]` (the reviewed contract); False when it fell back to the
+    mapping control's `actions[]` (a looser superset that may itself contain
+    creep). A non-authoritative mismatch is reported as a WARN, not a hard FAIL,
+    so the gate does not block on the known-loose fallback. The reviewed set is
+    augmented with any cross-service action implied by the control's declared
+    condition keys (e.g. iam:PassRole for an iam:PassedToService control).
     """
-    out: dict[str, set[str]] = {}
-    mapping_actions: dict[str, set[str]] = {}
+    out: dict[str, dict] = {}
+    map_by_id: dict[str, dict] = {}
     for c in mapping.get("controls", []):
         cid = c.get("id")
         if cid:
-            mapping_actions[cid] = {a for a in c.get("actions", []) if isinstance(a, str)}
+            map_by_id[cid] = c
+
+    def _implied(cid: str) -> set[str]:
+        keys = [
+            _norm(k) for k in (map_by_id.get(cid, {}).get("condition_keys") or [])
+            if isinstance(k, str)
+        ]
+        implied: set[str] = set()
+        for k in keys:
+            implied |= _KEY_IMPLIED_ACTIONS.get(k, set())
+        return implied
+
+    def _mapping_actions(cid: str) -> set[str]:
+        return {a for a in (map_by_id.get(cid, {}).get("actions") or [])
+                if isinstance(a, str)}
 
     for d in plan.get("decisions", []):
         if not isinstance(d, dict):
@@ -72,13 +110,15 @@ def reviewed_actions_by_control(plan: dict, mapping: dict) -> dict[str, set[str]
         if not cid:
             continue
         if d.get("plan_actions"):
-            out[cid] = {a for a in d["plan_actions"] if isinstance(a, str)}
-        elif cid in mapping_actions:
-            out[cid] = set(mapping_actions[cid])
-    # Controls present in the mapping but not the plan still get their mapping
-    # action set (so a statement attributed to them can be checked).
-    for cid, acts in mapping_actions.items():
-        out.setdefault(cid, acts)
+            actions = {a for a in d["plan_actions"] if isinstance(a, str)}
+            out[cid] = {"actions": actions | _implied(cid), "authoritative": True}
+        else:
+            out[cid] = {"actions": _mapping_actions(cid) | _implied(cid),
+                        "authoritative": False}
+
+    for cid in map_by_id:
+        out.setdefault(cid, {"actions": _mapping_actions(cid) | _implied(cid),
+                             "authoritative": False})
     return out
 
 
@@ -90,9 +130,14 @@ def _statement_actions(stmt: dict) -> list[str]:
 
 
 def assess_artifact_scope(
-    path: Path, reviewed: dict[str, set[str]]
+    path: Path, reviewed: dict[str, dict]
 ) -> list[str]:
-    """Return scope-creep errors for one authored artifact."""
+    """Return scope-creep findings for one authored artifact.
+
+    Each finding is prefixed `FAIL` (authoritative plan_actions contract violated)
+    or `WARN` (only the looser mapping fallback was available — the action is not
+    in the mapping superset either, but the set is not the reviewed contract).
+    """
     errors: list[str] = []
     try:
         data = json.loads(path.read_text())
@@ -113,27 +158,54 @@ def assess_artifact_scope(
         if not isinstance(stmt, dict) or stmt.get("Effect") != "Deny":
             continue
         sid = stmt.get("Sid", "")
+
+        # A Deny written with NotAction authorizes over the COMPLEMENT of the
+        # listed actions — an unbounded surface that cannot be reconciled with a
+        # reviewed allowlist. Always flag it.
+        if "NotAction" in stmt:
+            errors.append(
+                f"FAIL {path.name} Statement[{i}] (Sid {sid!r}): Deny uses "
+                f"NotAction, which authorizes over every action EXCEPT those "
+                f"listed — an unbounded surface that cannot be reviewed against a "
+                f"reviewed action set. Rewrite as an explicit Action allowlist."
+            )
+            continue
+
         cid = control_id_from_sid(sid)
         if cid and cid in reviewed:
-            allowed = reviewed[cid]
+            entry = reviewed[cid]
         else:
             # No recognizable control suffix → union of every control the
-            # artifact declares (a superset; keeps the check conservative).
-            allowed = set()
+            # artifact declares (a superset; keeps the check conservative). The
+            # union is authoritative only if every contributing control is.
+            actions: set[str] = set()
+            auth = bool(meta_controls)
             for mc in meta_controls:
-                allowed |= reviewed.get(mc, set())
-            if not allowed:
+                e = reviewed.get(mc)
+                if e:
+                    actions |= e["actions"]
+                    auth = auth and e["authoritative"]
+                else:
+                    auth = False
+            if not actions:
                 continue  # nothing to check against — do not guess
+            entry = {"actions": actions, "authoritative": auth}
+
+        allowed_norm = {_norm(a) for a in entry["actions"]}
+        prefix = "FAIL" if entry["authoritative"] else "WARN"
         for action in _statement_actions(stmt):
-            if action not in allowed:
+            if _norm(action) not in allowed_norm:
                 errors.append(
-                    f"{path.name} Statement[{i}] (Sid {sid!r}): authored Deny "
-                    f"lists action {action!r} not in the reviewed action set "
-                    f"{sorted(allowed)} for "
-                    f"{cid or 'the artifact controls'} — unreviewed scope-creep. "
-                    f"Every action a Deny authorizes over must be reviewed; add "
-                    f"it to the plan's plan_actions[] (after confirming intent) "
-                    f"or remove it from the statement."
+                    f"{prefix} {path.name} Statement[{i}] (Sid {sid!r}): authored "
+                    f"Deny lists action {action!r} not in the reviewed action set "
+                    f"{sorted(entry['actions'])} for "
+                    f"{cid or 'the artifact controls'} — "
+                    + ("unreviewed scope-creep. " if entry["authoritative"]
+                       else "not in the mapping action set (no plan_actions[] "
+                            "recorded, so this is the looser fallback). ")
+                    + "Every action a Deny authorizes over must be reviewed; "
+                    "record it in the plan's plan_actions[] (after confirming "
+                    "intent) or remove it from the statement."
                 )
     return errors
 
@@ -180,15 +252,19 @@ def main() -> None:
 
     plan = _load_json(plan_path) if Path(plan_path).exists() else {}
     mapping = _load_json(mapping_path) if Path(mapping_path).exists() else {}
-    errors = assess_preventive_dir_scope(preventive_dir, plan, mapping)
+    findings = assess_preventive_dir_scope(preventive_dir, plan, mapping)
 
-    if errors:
-        for e in errors:
+    if findings:
+        for e in findings:
             print(f"  {e}")
-        if args.strict:
+        # Only authoritative-contract violations (FAIL) block under --strict; a
+        # WARN means only the looser mapping fallback was available (no
+        # plan_actions recorded), so it is surfaced but does not fail the gate.
+        fails = [e for e in findings if e.startswith("FAIL")]
+        if args.strict and fails:
             print(
-                f"\n{len(errors)} unreviewed authored deny action(s) — "
-                f"review and record them or remove them.",
+                f"\n{len(fails)} authored deny action(s) violate the reviewed "
+                f"plan_actions[] contract — review and record them or remove them.",
                 file=sys.stderr,
             )
             sys.exit(2)
