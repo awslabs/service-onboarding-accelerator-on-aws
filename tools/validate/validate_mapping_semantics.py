@@ -90,12 +90,16 @@ def check(mapping: dict, framework: dict | None, validated: dict | None) -> list
         if isinstance(c, dict) and c.get("id")
     }
 
-    # S2 prep: parsed framework objective ids (when available).
+    # S2 prep: parsed framework objective ids (when available). map-parse-framework
+    # emits each objective under `objective_id` (the canonical key, matching the
+    # `framework_mapping[].objective_id` we compare against); legacy/archived parsed
+    # files used `id`. Accept either so a valid mapping is not flagged as fabricated.
     fw_obj_ids: set[str] | None = None
     if isinstance(framework, dict):
         fw_obj_ids = {
-            o.get("id") for o in framework.get("framework_objectives", []) or []
-            if isinstance(o, dict) and o.get("id")
+            (o.get("objective_id") or o.get("id"))
+            for o in framework.get("framework_objectives", []) or []
+            if isinstance(o, dict) and (o.get("objective_id") or o.get("id"))
         }
 
     for obj in mapping.get("framework_mapping", []) or []:
@@ -141,7 +145,18 @@ def check(mapping: dict, framework: dict | None, validated: dict | None) -> list
                     )
             if verified_keys:
                 for k in c.get("condition_keys", []) or []:
-                    if isinstance(k, str) and k.strip().lower() not in verified_keys:
+                    if not isinstance(k, str):
+                        continue
+                    kl = k.strip().lower()
+                    # AWS global condition keys (the `aws:` namespace —
+                    # aws:SourceArn, aws:SourceAccount, aws:PrincipalOrgID, the
+                    # tag keys, etc.) are available to every service and are NOT
+                    # enumerated in a service's per-service condition_keys[] list,
+                    # so they are not "drift". Only service-specific keys are
+                    # checked against the verified surface.
+                    if kl.startswith("aws:"):
+                        continue
+                    if kl not in verified_keys:
                         errors.append(
                             f"SEMANTIC-S3 control {cid}: claims condition key {k!r} "
                             f"which is absent from validated.json's verified condition "

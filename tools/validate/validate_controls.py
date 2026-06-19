@@ -826,10 +826,13 @@ _SAR_DRIVEN_BASENAME_PATTERNS = (
 )
 
 # Filename patterns CHECK-15 accepts under posture `preventative-request`.
-# Superset of _SAR_DRIVEN_BASENAME_PATTERNS because tag-policy lives in
-# preventive/ under the same posture but is not SAR-driven.
+# Superset of _SAR_DRIVEN_BASENAME_PATTERNS because tag-policy and the
+# refer-only trust-policy pointer live in preventive/ under the same posture
+# but are not SAR-driven (trust policies ship no enforcing Statement[] body —
+# they are REFER pointers to the per-service confused-deputy pattern).
 _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
     "tag-policy",
+    "trust-policy",
 )
 
 # Filename patterns CHECK-15 accepts under posture `reactive-detective`

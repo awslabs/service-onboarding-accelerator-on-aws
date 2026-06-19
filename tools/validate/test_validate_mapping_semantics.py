@@ -108,6 +108,22 @@ def test_s2_noops_without_framework() -> None:
     assert vms.check(mapping, None, _VALIDATED) == []
 
 
+def test_aws_global_condition_keys_are_exempt_from_s3() -> None:
+    """AWS global condition keys (aws:SourceArn / aws:SourceAccount / etc.) are
+    available to every service and are not enumerated in a service's per-service
+    condition_keys[] list, so they must NOT be flagged as drift."""
+    mapping = {
+        "controls": [
+            {"id": "CTRL-ACC-PRV-001",
+             "actions": ["bedrock-agentcore:CreateAgentRuntime"],
+             "condition_keys": ["aws:SourceArn", "aws:SourceAccount",
+                                "aws:PrincipalOrgID"]},
+        ],
+        "framework_mapping": [],
+    }
+    assert vms.check(mapping, _FRAMEWORK, _VALIDATED) == []
+
+
 def test_bare_action_name_matches_verified_surface() -> None:
     """A control listing the bare operation name matches when validated.json
     verified the qualified action."""

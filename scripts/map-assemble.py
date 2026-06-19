@@ -461,33 +461,76 @@ CATEGORY_LABELS = {
 # paths, NO long verbatim action lists. It states what kind of setting each
 # control governs in words and names the action family / one or two
 # representative actions. The exact paths and full action lists live in
-# mapping-results.json. These maps translate the machine-readable control
-# fields into the words-only catalog text.
-_PARAM_GOVERNS = {
-    "$.AuthType": "the function URL authentication-type setting",
-    "$.VpcConfig.SubnetIds[*]": "the function's VPC networking configuration",
-    "$.VpcConfig.SecurityGroupIds[*]": "the function's VPC networking configuration",
-    "$.Role": "the function's execution-role assignment",
-    "$.KMSKeyArn": "the function's encryption-key setting",
-    "$.CodeSigningConfigArn": "the function's code-signing configuration",
-    "$.Principal": "the function's resource-policy principal grants",
-}
-_CK_GOVERNS = {
-    "aws:PrincipalOrgID": "the calling principal's organization membership",
-    "aws:RequestTag": "tags supplied on the request",
-    "aws:ResourceTag": "tags present on the resource",
-    "aws:TagKeys": "the set of tag keys applied to the resource",
-    "iam:PassedToService": "which service an execution role may be passed to",
-    "lambda:Principal": "the function's resource-policy principal grants",
-}
+# mapping-results.json.
+#
+# The `Governs:` phrase is derived service-agnostically from the parameter-path
+# *leaf tokens* (not a per-service lookup): a leaf like `kmsKeyArn` maps to "the
+# resource's encryption-key setting", `subnets` to "the resource's network
+# configuration", and so on. This keeps the catalog accurate for ANY AWS service
+# without hardcoding a service's parameter vocabulary, and without leaking raw
+# `$.` paths. Condition-key and mechanism themes are the fallbacks so every
+# control still gets a meaningful, broad statement.
+
+# Ordered (substring-matched against the lowercased param leaf token) so the
+# first matching theme wins. Tokens are matched case-insensitively.
+_LEAF_THEMES: tuple[tuple[str, str], ...] = (
+    ("kmskey", "the resource's encryption-key setting"),
+    ("encryptionkey", "the resource's encryption-key setting"),
+    ("keytype", "the resource's encryption-key setting"),
+    ("kmsconfiguration", "the resource's encryption-key setting"),
+    ("subnet", "the resource's network configuration"),
+    ("securitygroup", "the resource's network configuration"),
+    ("networkmode", "the resource's network configuration"),
+    ("vpcconfig", "the resource's network configuration"),
+    ("privateendpoint", "the resource's private-endpoint network configuration"),
+    ("executionrole", "the resource's execution-role assignment"),
+    ("rolearn", "the resource's execution-role assignment"),
+    ("policy", "the resource's resource-based access policy"),
+    ("tagkeys", "the set of tag keys applied to the resource"),
+    ("tags", "tags applied to the resource"),
+    ("deliverydestination", "the resource's log-delivery configuration"),
+    ("deliverysource", "the resource's log-delivery configuration"),
+    ("logtype", "the resource's log-delivery configuration"),
+    ("discoveryurl", "the inbound authorizer configuration"),
+    ("authorizationendpoint", "the inbound authorizer configuration"),
+    ("tokenendpoint", "the inbound authorizer configuration"),
+    ("issuer", "the inbound authorizer configuration"),
+    ("authorizertype", "the inbound authorizer configuration"),
+    ("allowedaudience", "the inbound authorizer's accepted-token settings"),
+    ("allowedclients", "the inbound authorizer's accepted-token settings"),
+    ("allowedscopes", "the inbound authorizer's accepted-token settings"),
+    ("clientid", "the inbound authorizer's accepted-token settings"),
+    ("claim", "the inbound authorizer's token-claim matching rules"),
+    ("inboundtoken", "the inbound authorizer's token-claim matching rules"),
+    ("matchvalue", "the inbound authorizer's token-claim matching rules"),
+    ("credentialprovider", "the outbound credential-provider configuration"),
+    ("oauth2", "the outbound credential-provider configuration"),
+)
+
+_CK_GOVERNS: tuple[tuple[str, str], ...] = (
+    ("sourcearn", "the calling source resource identity"),
+    ("sourceaccount", "the calling source account identity"),
+    ("principalorgid", "the calling principal's organization membership"),
+    ("requesttag", "tags supplied on the request"),
+    ("resourcetag", "tags present on the resource"),
+    ("tagkeys", "the set of tag keys applied to the resource"),
+    ("securitygroups", "the resource's network configuration"),
+    ("subnets", "the resource's network configuration"),
+    ("authorizertype", "the inbound authorizer configuration"),
+)
+
 _MECH_GOVERNS = {
-    "CloudTrail": "logging of function-invocation activity",
-    "AWS Config Rule": "the configuration state of deployed functions",
-    "SSM Automation": "remediation of the targeted function setting",
-    "Lambda Remediation": "remediation of the targeted function setting",
+    "CloudTrail": "logging of management and data-plane activity",
+    "AWS Config Rule": "the configuration state of deployed resources",
+    "CloudFormation Guard": "the resource configuration declared at deploy time",
+    "SSM Automation": "remediation of the targeted resource setting",
     "Compensating Control Documentation": "the documented compensating procedure",
     "VPC Endpoint Policy": "access to the service through the VPC endpoint",
-    "Resource Policy": "the function's resource-policy principal grants",
+    "Resource Policy": "the resource's resource-based access policy",
+    "KMS Key Policy": "the encryption key's key policy",
+    "IAM Trust Policy": "which principals may assume the service role",
+    "Tag Policy": "the set of tag keys applied to the resource",
+    "SCP": "the organization-level guardrail on the targeted action",
 }
 
 
@@ -495,24 +538,33 @@ def _governs_phrase(ctrl: dict) -> str:
     """Plain-language description of the kind of setting a control governs.
 
     Words only — never a raw `$.` parameter path (those stay in
-    mapping-results.json). Falls back from parameters → condition keys →
-    mechanism so every control gets a meaningful, broad statement.
+    mapping-results.json). Service-agnostic: derives the theme from parameter
+    leaf tokens, then condition keys, then mechanism, so every control gets a
+    meaningful, broad statement regardless of which AWS service it targets.
     """
     seen: list[str] = []
+
+    def _leaf(path: str) -> str:
+        return path.replace("[*]", "").replace("{key}", "").split(".")[-1].lower()
+
     for p in ctrl.get("parameters_controlled", []):
-        phrase = _PARAM_GOVERNS.get(p)
-        if phrase and phrase not in seen:
-            seen.append(phrase)
+        leaf = _leaf(p)
+        for token, phrase in _LEAF_THEMES:
+            if token in leaf and phrase not in seen:
+                seen.append(phrase)
+                break
     if not seen:
         for ck in ctrl.get("condition_keys", []):
-            phrase = _CK_GOVERNS.get(ck)
-            if phrase and phrase not in seen:
-                seen.append(phrase)
+            ckl = ck.lower()
+            for token, phrase in _CK_GOVERNS:
+                if token in ckl and phrase not in seen:
+                    seen.append(phrase)
+                    break
     if not seen:
         phrase = _MECH_GOVERNS.get(ctrl.get("mechanism", ""))
         if phrase:
             seen.append(phrase)
-    return "; ".join(seen) if seen else "the targeted function configuration"
+    return "; ".join(seen) if seen else "the targeted resource configuration"
 
 
 def _action_family(ctrl: dict) -> str:
@@ -525,7 +577,10 @@ def _action_family(ctrl: dict) -> str:
         return ""
     if len(actions) <= 2:
         return "`" + "`, `".join(actions) + "`"
-    return f"`{actions[0]}` and related `lambda:` actions"
+    # Name the first action plus its service prefix family (e.g.
+    # `bedrock-agentcore:`), service-agnostically — never a long verbatim list.
+    prefix = actions[0].split(":")[0]
+    return f"`{actions[0]}` and related `{prefix}:` actions"
 
 
 def write_controls_catalog(
