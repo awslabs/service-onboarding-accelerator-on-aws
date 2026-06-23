@@ -646,9 +646,24 @@ def check_arn_shapes(service_root: Path) -> list[str]:
 # unknown verb is treated as management, which is the safe default for a boundary.
 _BOUNDARY_READ_VERBS = (
     "Get", "List", "Describe", "Search", "Query", "Lookup", "View", "Read",
-    "Batch", "Scan", "Head", "Check", "Test", "Validate", "Estimate",
+    "Scan", "Head", "Check", "Test", "Validate", "Estimate",
     "Detect", "Discover", "Count", "Filter", "Select",
 )
+
+# `Batch` is intentionally NOT a read verb: it is a family prefix that spans
+# state-mutating actions (dynamodb:BatchWriteItem, dynamodb:BatchExecuteStatement,
+# BatchDeleteItem, …). Treating `Batch*` as read-only would fail the gate open on
+# those writes. The genuinely read-only batch actions are enumerated here and
+# matched exactly (stem) before the verb-stem test, so they still pass.
+_BOUNDARY_READ_BATCH_ACTIONS = frozenset({
+    "BatchGetItem", "BatchGetSecretValue", "BatchGetImage", "BatchGetTraces",
+    "BatchGetBuilds", "BatchGetProjects", "BatchGetReportGroups", "BatchGetReports",
+    "BatchGetCollection", "BatchGetNamedQuery", "BatchGetQueryExecution",
+    "BatchGetPartition", "BatchGetCustomDataIdentifiers", "BatchDescribeMergeConflicts",
+    "BatchCheckLayerAvailability", "BatchGetDeployment", "BatchGetApplicationRevisions",
+    "BatchGetDeploymentTargets", "BatchGetOnPremisesInstances", "BatchGetDeploymentGroups",
+    "BatchGetDeploymentInstances", "BatchGetFrameworkMetrics",
+})
 
 
 def _is_management_action(action: str) -> bool:
@@ -670,6 +685,10 @@ def _is_management_action(action: str) -> bool:
         return True  # spans every action, including writes
     # Strip a trailing wildcard to test the verb stem (Create* → Create).
     stem = name[:-1] if name.endswith("*") else name
+    # Genuinely read-only batch actions (BatchGetItem, …) are read; every other
+    # `Batch*` action is a write family and must be treated as management.
+    if stem in _BOUNDARY_READ_BATCH_ACTIONS:
+        return False
     # A glob whose stem is a read verb (Get*, List*) is read-only; otherwise a
     # glob is management (Create*, or an ambiguous stem like Cr* → management).
     return not any(stem.startswith(v) for v in _BOUNDARY_READ_VERBS)

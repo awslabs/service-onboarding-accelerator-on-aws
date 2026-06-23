@@ -132,17 +132,23 @@ def check(mapping: dict, framework: dict | None, validated: dict | None) -> list
             if not isinstance(c, dict):
                 continue
             cid = c.get("id", "<unknown>")
-            for a in c.get("actions", []) or []:
-                if not isinstance(a, str):
-                    continue
-                al = a.strip().lower()
-                bare = al.split(":", 1)[1] if ":" in al else al
-                if al not in verified_actions and bare not in verified_actions:
-                    errors.append(
-                        f"SEMANTIC-S3 control {cid}: claims action {a!r} which is "
-                        f"absent from validated.json's verified API surface — "
-                        f"unenforceable / unverified action."
-                    )
+            # Only check actions when the verified action surface is populated.
+            # validated.json can legitimately carry condition keys with no
+            # operations (a permission-only / data-plane shape); without this
+            # guard every action would false-FAIL against an empty set. Mirrors
+            # the `if verified_keys:` guard on the condition-key loop below.
+            if verified_actions:
+                for a in c.get("actions", []) or []:
+                    if not isinstance(a, str):
+                        continue
+                    al = a.strip().lower()
+                    bare = al.split(":", 1)[1] if ":" in al else al
+                    if al not in verified_actions and bare not in verified_actions:
+                        errors.append(
+                            f"SEMANTIC-S3 control {cid}: claims action {a!r} which is "
+                            f"absent from validated.json's verified API surface — "
+                            f"unenforceable / unverified action."
+                        )
             if verified_keys:
                 for k in c.get("condition_keys", []) or []:
                     if not isinstance(k, str):

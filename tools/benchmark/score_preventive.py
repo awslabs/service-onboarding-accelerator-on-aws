@@ -163,8 +163,11 @@ def plan_metrics(plan: dict, mapping: dict) -> dict:
     """
     decisions = plan.get("decisions", []) or []
     total = len(decisions)
+    # Real mapping-results.json keys the control id under `id`; the evidence
+    # fixtures use `control_id`. Accept either so the link rate is computed
+    # against actual control ids instead of {None}.
     mapping_ids = {
-        c.get("control_id") for c in (mapping.get("controls", []) or [])
+        (c.get("control_id") or c.get("id")) for c in (mapping.get("controls", []) or [])
         if isinstance(c, dict)
     }
 
