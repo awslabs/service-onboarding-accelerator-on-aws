@@ -380,6 +380,71 @@ def f1_resource_get_probe(
             supplemental_evidence=f"iac-time-evidence/{control['id']}.log",
         )
 
+    # Property-fit guard. The dispatcher hands us parameters_controlled[0],
+    # but [0] is not always a field the chosen describe verb returns — some
+    # controls list a property governed at a *different* API first (e.g.,
+    # AuthType/Principal are set on AddPermission, FunctionUrlAuthType on
+    # get-function-url-config; none are returned by get-function-configuration).
+    # Probing such a property would yield a spurious FAIL on a fully compliant
+    # resource. When the mapping declares a `returns` allowlist, refine `prop`
+    # to the first *governed* property the verb actually returns (skipping the
+    # bare resource-identifier name param, which is always present and proves
+    # nothing). If none of the controlled properties are observable here, the
+    # control is genuinely not CLI-validatable via this describe call.
+    returns = desc.get("returns")
+    if returns:
+        returns_set = set(returns)
+        conditional_set = set(desc.get("conditional", []))
+        name_param = desc["name_flag"].lstrip("-").replace("-", "").lower()
+        candidate: str | None = None
+        saw_conditional = False
+        for pc in control.get("parameters_controlled", []):
+            try:
+                _, _, leaf_prop = decode_parameter_path(pc)
+            except ValueError:
+                continue
+            if not leaf_prop:
+                continue
+            leaf = leaf_prop.split(".", 1)[0]
+            leaf = re.sub(r"\[.*?\]", "", leaf)
+            leaf = re.sub(r"\{.*?\}", "", leaf)
+            if not leaf or leaf.lower() == name_param:
+                continue
+            if leaf in returns_set:
+                candidate = leaf_prop
+                break
+            if leaf in conditional_set:
+                saw_conditional = True
+        if candidate is None:
+            if saw_conditional:
+                reason = (
+                    f"F1 probe-fit: the controlled property "
+                    f"({control.get('parameters_controlled', [])}) is a conditional "
+                    f"configuration block on '{desc['service']} {desc['verb']}' — it is "
+                    f"populated only when the customer opts in (e.g., VPC attachment, "
+                    f"layers). The control's IaC-time guard is a conditional rule "
+                    f"('when <block> exists ...') that is vacuously satisfied when "
+                    f"the property is absent, so a runtime existence probe cannot prove "
+                    f"or disprove it on a deployment that did not opt in. Enforcement is "
+                    f"verified at template-time; see supplemental_evidence."
+                )
+            else:
+                reason = (
+                    f"F1 probe-fit: none of the controlled properties "
+                    f"({control.get('parameters_controlled', [])}) are returned by "
+                    f"'{desc['service']} {desc['verb']}'. The governed property is set "
+                    f"at a different API (e.g., a permission/URL-config call) and is "
+                    f"not observable in this resource's base configuration. Enforcement "
+                    f"is verified at template-time; see supplemental_evidence."
+                )
+            return _ncv(
+                control["id"],
+                REASON_POLICY_ONLY,
+                reason,
+                supplemental_evidence=f"iac-time-evidence/{control['id']}.log",
+            )
+        prop = candidate
+
     # Build argv as a list — never serialize through a shell.
     argv: list[str] = [
         "aws",
@@ -454,11 +519,23 @@ def f2_iam_simulate(control: dict, deployed: dict) -> CliCheck:
             # the array/index suffix is a path artifact, not part of the
             # context-key name.
             leaf = prop.rsplit(".", 1)[-1] if prop else prop
-            leaf = re.sub(r"\[.*?\]", "", leaf)
-            context_key = f"{svc}:{leaf}"
-            context_entries.append(
-                f"ContextKeyName={context_key},ContextKeyValues=,ContextKeyType=string"
-            )
+            # Strip path artifacts the --context-entries shorthand parser
+            # rejects: JSONPath array suffixes ("[*]", "[0]") AND tag-template
+            # braces ("Tags{key}" -> "Tags"). Both are path decorations, not
+            # part of the context-key name.
+            leaf = re.sub(r"\[.*?\]", "", leaf or "")
+            leaf = re.sub(r"\{.*?\}", "", leaf)
+            # Only emit a context entry when the key is well-formed: both a
+            # service prefix and a residue-free leaf are present. A malformed
+            # key (empty svc, empty leaf, or leftover metacharacters) would
+            # make the CLI reject the whole call (exit 252) and produce a
+            # false FAIL; the action-decision probe is still meaningful
+            # without the negative-case context entry, so we just omit it.
+            if svc and leaf and not re.search(r"[^A-Za-z0-9:_/-]", leaf):
+                context_key = f"{svc}:{leaf}"
+                context_entries.append(
+                    f"ContextKeyName={context_key},ContextKeyValues=,ContextKeyType=string"
+                )
         except ValueError:
             pass
 
