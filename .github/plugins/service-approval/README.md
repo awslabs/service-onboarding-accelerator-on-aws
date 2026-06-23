@@ -115,7 +115,7 @@ Create `.vscode/mcp.json` if missing:
 
 ## Output
 
-- `.service-approval/APPROVAL-REPORT.md` — final verdict + CCMv4 matrix
+- `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
 - `.service-approval/<slug>/05-generate/` — all 78–111 generated artifacts
 - `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 

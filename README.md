@@ -6,12 +6,12 @@ Generates AWS security controls and compliant IaC templates for any AWS service.
 
 - **Control mapping** - Maps threats and controls to security and compliance frameworks (e.g CCMv4, MITRE)
 - **Proactive controls** — CFN Guard rules, CloudFormation hooks, Checkov policies, OPA policies
-- **Preventive controls** — SCPs, RCPs, declarative policies, permission boundaries, tag policies, resource policies
+- **Preventive controls** — SCPs, RCPs, permission boundaries, IAM/resource policies, **anchored to published AWS sample policies** (see "Preventive controls are reference-anchored" below)
 - **Detective controls** — Config rules (with Lambda handlers), EventBridge rules, CloudWatch alarms, Access Analyzer
 - **Auto-remediation** — Lambda remediators, SSM runbooks, Step Functions workflows
 - **Compliant IaC** — CDK (TypeScript), Terraform (modular), CloudFormation, CDK for Terraform
 - **Validation** — Tier 1 static checks + Tier 2 AWS API policy validation (automatic via hooks)
-- **Approval report** - Summaries the overall service onboarding accelerator on AWS
+- **Summary Report** - Summarizes the overall service onboarding accelerator output on AWS
 
 
 Output lands in `.service-approval/<service-slug>/` (per-service layout) in your working directory:
@@ -24,7 +24,7 @@ Output lands in `.service-approval/<service-slug>/` (per-service layout) in your
   04-map/                 ← mapping-results.json, controls-catalog.md, framework-mapping.md
   05-generate/            ← all generated control artifacts (preventive, proactive, detective, responsive, IaC)
   06-test/                ← test-results.json, deploy logs
-  07-summarize/           ← APPROVAL-REPORT.md
+  07-summarize/           ← SUMMARY-REPORT.md
   08-evidence/            ← attestation-report.md, CLI probe outputs, attestation-results.json
   attestation.md          ← reviewer's audit guide
   mcp-calls.log           ← MCP call audit log
@@ -35,8 +35,126 @@ Output lands in `.service-approval/<service-slug>/` (per-service layout) in your
 
 ### Key Features
 
-The pipeline runs as 21 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
+The pipeline runs as 26 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
 
+### Preventive controls are reference-anchored
+
+Preventive controls are anchored to existing AWS sample policies and reference
+repositories; where no reference covers an objective, the tool does not invent a
+preventive control — it points to the reference or recommends a detective/proactive
+control instead. Every emitted policy is an example to be verified against the
+service authorization guide before deployment.
+
+Concretely, preventive generation runs as a gated sub-pipeline: a recommender
+decides each objective's enforcement mechanism (SCP / RCP / IAM, or "not
+preventable → detective"), anchors each decision to a published example, the
+authors adapt that example to the target service, and a root-cause critic proves
+every emitted policy both resolves to a reference and actually enforces its
+control (a real condition key gates the action). The reference library is curated
+from public AWS repositories, including:
+
+- [`aws-samples/service-control-policy-examples`](https://github.com/aws-samples/service-control-policy-examples)
+- [`aws-samples/resource-control-policy-examples`](https://github.com/aws-samples/resource-control-policy-examples)
+- [`aws-samples/data-perimeter-policy-examples`](https://github.com/aws-samples/data-perimeter-policy-examples)
+- [`aws-samples/example-permissions-boundary`](https://github.com/aws-samples/example-permissions-boundary)
+- [`aws-samples/iam-access-analyzer-custom-policy-check-samples`](https://github.com/aws-samples/iam-access-analyzer-custom-policy-check-samples)
+
+The sourcing for each generated preventive policy is recorded in the artifact's
+`_metadata.reference` (repo + example id + source URL), so the basis for every
+control is visible and auditable.
+
+Some preventive mechanisms are **referred rather than authored** by design,
+because no vetted example library exists to anchor them to:
+
+- **Trust policies** are refer-only. A role's trust policy and the cross-service
+  confused-deputy prevention it implements (`aws:SourceArn` / `aws:SourceAccount`
+  on `sts:AssumeRole`) are documented per-service, so the tool points to that
+  documented pattern rather than synthesizing a policy body.
+- **Permission boundaries** are refer-by-default. A boundary only takes effect
+  when the organization attaches one to its principals, so the tool refers to the
+  published boundary scaffold unless the run explicitly opts in.
+
+This is an intentional stance: the tool refers rather than authors wherever a
+vetted reference library is absent, instead of inventing a policy that looks
+plausible but is unanchored.
+
+### Source priority
+
+When the tool needs an external fact or citation, it consults sources in one
+fixed priority order and cites the highest-priority source that supports the
+claim — the same order everywhere facts are pulled (research, validation,
+mapping, and preventive recommendation):
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present. It
+   is the authoritative source of *what* matters for the service (control intent)
+   and the top citation.
+2. **AWS Control Catalog API** — the control→objective authority for controls the
+   catalog covers.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general blog posts or third-party write-ups.
+
+The reference-repo library above supplies the *vetted policy body* for a
+preventive control, adapted under the Canopy (or catalog/doc) intent — Canopy
+sets what to enforce and is the top citation; the reference repo supplies how.
+Each mapping row and each preventive decision records a typed `citation` whose
+`type` (`canopy` / `reference` / `catalog` / `service-doc`) reflects the
+highest-priority source that backs it.
+
+### How the tool builds confidence
+
+The pipeline does not issue an approve/deny verdict; instead, every run takes the
+same concrete, verifiable steps so a reviewer can see exactly what was checked.
+These steps are the same on every run, so they are documented here once rather
+than repeated in each Summary Report:
+
+- **Capability verification** — every service capability, API parameter, IAM
+  action, and condition key is verified against authoritative AWS sources before
+  any control is generated; unverified items are reported, not silently dropped.
+- **Validators run** — integrity, reference-anchor, preventability/root-cause, and
+  control-mapping cross-checks run at the map and generate review gates and again
+  in the Stop hook; their pass/fail is recorded in `pipeline.log`.
+- **Reference anchoring** — every preventive control either resolves to a public
+  AWS reference example or is explicitly marked not-anchored with a stated reason.
+- **Deployment** — when testing is enabled, the compliant resource template is
+  deployed to a real account, Config-rule evaluations and alarms are checked, then
+  the stack is torn down.
+- **Runtime attestation** — when Phase 7 Evidence runs, controls are attested
+  live-in-effect via read-only CLI probes and resources are torn down afterward.
+
+Each Summary Report does **not** repeat this generic list. Instead it carries only
+the **run-specific** data a reviewer needs:
+
+- A **Preventive Coverage** accounting: a file-backed
+  (`preventive-coverage.json`) count of how many preventive objectives have a
+  policy authored from a reference example, how many point to a reference the
+  customer applies, and how many are covered by detective controls instead — each
+  count traceable to its control id and citation, plus the concrete apply/adapt
+  guidance for each authored or referred policy.
+
+### Validation efforts
+
+Validation runs at several layers, not only at deploy time:
+
+- **Two review gates.** A post-map gate checks the mapping is citable and its
+  prose stays objective-level (the prose lint scans both the JSON and the
+  rendered `.md` files for over-claims and upward re-wording), runs the
+  deterministic semantic checks (every referenced control resolves, every mapped
+  objective exists, no control claims an unverified action/condition key), and
+  the Canopy-factual check. A post-generate gate proves every preventive artifact
+  is reference-anchored and actually enforcing.
+- **Root-cause critic.** The last step of preventive generation proves each
+  emitted policy both resolves to a reference and enforces its control's root
+  cause (a real condition key gates the target action); non-enforcing objectives
+  are routed to detective rather than shipped.
+- **Reference-anchor enforcement** plus **preventability / enforcement /
+  action-scope** checks ensure no policy ships unanchored, no Deny is a silent
+  no-op, and no Deny widens beyond the reviewed action set.
+- **Canopy-factual check.** Any control citing a Canopy mitigation must name a
+  mitigation that actually exists in the provided export, with consistent gated
+  operations — fabricated or drifted citations are flagged.
+- **Conflict detection.** A deterministic pre-filter surfaces control pairs that
+  contradict each other (a Deny on an action another control allows, or two
+  Denies with incompatible conditions), and a clean reviewer confirms each.
 
 ### Artifact flow
 
@@ -150,7 +268,12 @@ Note: if you do not provide any values, or custom threat models / frameworks in 
 
 ## Validation
 
-The plugin includes automatic validation hooks that run at session end:
+Validation happens in two complementary places. The **review gates and
+correctness checks** that run during the pipeline — the two review gates, the
+root-cause critic, reference-anchor enforcement, the Canopy-factual check, and
+conflict detection — are described under [Validation efforts](#validation-efforts)
+above. The **deployability checks** below confirm the generated artifacts are
+syntactically valid and policy-sound, and run automatically at session end:
 
 **Tier 1 — Static (no credentials)**
 - JSON/YAML parse, Terraform validate/fmt, CDK/CDKTF TypeScript compile

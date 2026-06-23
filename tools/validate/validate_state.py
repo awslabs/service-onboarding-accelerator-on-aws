@@ -878,7 +878,11 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
 
     # All objectives present
     if fw:
-        expected_ids = {o["id"] for o in fw.get("framework_objectives", []) if o.get("id")}
+        expected_ids = {
+            o.get("objective_id") or o.get("id")
+            for o in fw.get("framework_objectives", [])
+            if o.get("objective_id") or o.get("id")
+        }
         actual_ids = {f.get("objective_id") for f in fm if f.get("objective_id")}
         missing = expected_ids - actual_ids
         if missing:
@@ -899,8 +903,7 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
         ctrls = f.get("controls", [])
         if not ctrls:
             continue
-        # Accept both new (coverage_level) and legacy (confidence) field names
-        levels = [c.get("coverage_level", c.get("confidence", "Supportive")) for c in ctrls]
+        levels = [c.get("coverage_level", "Supportive") for c in ctrls]
         cov = f.get("coverage", "")
         # Normalize: map old values to new for comparison
         has_full = any(l in ("Full Coverage", "High") for l in levels)
@@ -956,11 +959,11 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
     if missing_rationale > 0:
         errors.append(f"CHECK-S12 Rule5: {missing_rationale} control mappings missing rationale")
 
-    # Rule 6: Max 5 Full Coverage per objective (accepts both new and legacy field names)
+    # Rule 6: Max 5 Full Coverage per objective
     for f in fm:
         full_count = sum(
             1 for c in f.get("controls", [])
-            if c.get("coverage_level", c.get("confidence")) in ("Full Coverage", "High")
+            if c.get("coverage_level") in ("Full Coverage", "High")
         )
         if full_count > 5:
             errors.append(
@@ -1032,7 +1035,7 @@ def check_mapping_results(data: dict) -> list[str]:
         ctrls = f.get("controls", [])
         if not ctrls:
             continue
-        levels = [c.get("coverage_level", c.get("confidence", "Supportive")) for c in ctrls]
+        levels = [c.get("coverage_level", "Supportive") for c in ctrls]
         cov = f.get("coverage", "")
         has_full = any(l in ("Full Coverage", "High") for l in levels)
         if cov in ("FULL", "Fully Covered") and not has_full:

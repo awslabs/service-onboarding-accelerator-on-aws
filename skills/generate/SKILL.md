@@ -14,16 +14,26 @@ for API surface and capabilities. Generate artifacts organized by the Controls M
 
 ## Sub-Skill Architecture
 
-This skill is split into 3 focused sub-skills that write to separate directories:
+This skill is split into 3 focused control families that write to separate
+directories. The **preventive family is itself a sequenced sub-pipeline** (a
+recommender gate → reference-anchored authors → a root-cause critic), so that
+the *decision* of how to enforce an objective happens before any policy is
+authored, and every authored policy is proven anchored and enforcing:
 
-| Sub-Skill | Focus | Output Directory |
-|-----------|-------|-----------------|
-| `generate-preventive` | SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA, CFN Guard | `<slug>/05-generate/preventive/`, `<slug>/05-generate/proactive/` |
-| `generate-detective` | Config rules, Lambda handlers, EventBridge, CloudWatch, SSM runbooks, Step Functions | `<slug>/05-generate/detective/`, `<slug>/05-generate/responsive/` |
-| `generate-iac` | Terraform modules, CDK TypeScript, CloudFormation YAML, CDK for Terraform | `<slug>/05-generate/iac/` |
+| Family | Sub-skills | Output Directory |
+|--------|-----------|-----------------|
+| Preventive (gated) | `generate-preventive-recommend` → (`generate-preventive-scp` / `generate-preventive-rcp` / `generate-preventive-iam`) → `generate-preventive-rootcause` | `<slug>/05-generate/preventive/`, `<slug>/05-generate/proactive/` |
+| Detective | `generate-detective` | `<slug>/05-generate/detective/`, `<slug>/05-generate/responsive/` |
+| IaC | `generate-iac` | `<slug>/05-generate/iac/` |
 
-**When invoked directly** (via `/generate`), this skill runs all 3 sub-skills sequentially.
-**When invoked by the orchestrator**, the orchestrator dispatches sub-skills in parallel.
+`skills/generate-preventive/SKILL.md` is retained as the **shared authoring-rules
+reference** the preventive authors follow (SCP/RCP/IAM rules, Rule C2, the
+proactive sections). It is no longer dispatched as a single monolithic generator.
+
+**When invoked directly** (via `/generate`), this skill runs the families
+sequentially (and the preventive sub-pipeline in its fixed order).
+**When invoked by the orchestrator**, the orchestrator dispatches the three
+families in parallel; the preventive family runs its sub-skills in order.
 
 ## Agent model rule
 
@@ -65,14 +75,25 @@ mkdir -p .service-approval/<slug>/05-generate/iac/modules/_shared
 
 When this skill is invoked directly (not by orchestrator):
 
-### Step 1: Run generate-preventive
-Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
+### Step 1: Run the preventive sub-pipeline (in order)
+Run the preventive sub-skills sequentially — each step gates the next:
+1. `skills/generate-preventive-recommend/SKILL.md` — decide mechanism + anchor
+   per objective; writes `<slug>/05-generate/preventive-plan.json` (the gate).
+2. For each `GENERATE_*` row in the plan, the matching author:
+   `skills/generate-preventive-scp/SKILL.md`, `…-rcp/SKILL.md`, `…-iam/SKILL.md`.
+   These also write the proactive artifacts per
+   `skills/generate-preventive/SKILL.md` (tag policy, OPA, CFN Guard, Checkov).
+3. `skills/generate-preventive-rootcause/SKILL.md` — prove every preventive
+   artifact is anchored and enforcing; route non-preventable objectives to detective.
 Pass: `--service`, `--include-unverified` if set.
 Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
 
 ### Step 2: Run generate-detective
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
+Runs AFTER Step 1's root-cause critic so it can consume
+`<slug>/05-generate/detective-routing.json` (objectives the critic found
+not-preventable and routed to detective) in its top-up pass.
 Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
 
 ### Step 3: Run generate-iac

@@ -1,12 +1,12 @@
 ---
 name: summarize-v3
-description: Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, test evidence, and verdict
+description: Produce final SUMMARY-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, and test evidence
 disable-model-invocation: false
 ---
 
 # Service Approval — Summarizer v3
 
-Read all state files and generate the final approval report at `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md`.
+Read all state files and generate the final Summary Report at `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md`.
 
 ## Prerequisites
 
@@ -21,19 +21,23 @@ Read all state files and generate the final approval report at `.service-approva
   as NOT RUN in the report). The summarize skill must NOT pre-gate Phase 6
   because intake's testing.mode=skip is a legitimate path that skips Phase 5.
 
-## Step 1: Determine verdict
+## Step 1: Collect run facts (no verdict)
+
+This report does NOT issue an approve/deny judgment. Instead, collect the factual
+inputs the report states plainly:
 
 Read `validated.json` for `unverified_count`. Read `test-results.json` if it exists.
+Record, as neutral facts:
+- whether testing ran (`test_results.passed`), was skipped (`skipped`/`passed: null`
+  dry-run), or is absent;
+- the count of unverified items (`unverified_count`);
+- whether a deployment occurred and any Phase 7 evidence outcome.
 
-| Condition | Verdict |
-|-----------|---------|
-| `test_results.passed = true` AND `unverified_count = 0` | APPROVED |
-| `test_results.passed = true` AND `unverified_count > 0` | APPROVED WITH EXCEPTIONS |
-| `test_results.skipped = true` AND `unverified_count = 0` | APPROVED (test not run) |
-| `test_results.passed = false` | REQUIRES REMEDIATION |
-| `test-results.json` absent | APPROVED (test not run) |
-
-Note: `passed: null` (dry-run) is treated the same as `skipped: true`.
+These facts populate the run-specific "Preventive Coverage" accounting (Step 6) and
+the "Test Evidence" / "UNVERIFIED Items" sections. The generic verification steps are
+NOT repeated in the report — they live once in the project README (see the
+"Verification approach" one-line pointer in Step 6). Do NOT derive or print any
+verdict label (no "APPROVED", "REQUIRES REMEDIATION", etc.).
 
 ## Step 2: Build framework coverage matrix
 
@@ -68,14 +72,32 @@ Build a table per layer:
 
 ## Step 5: Build artifact manifest
 
+List the generated artifacts, but **exclude vendored and build directories** —
+`node_modules/`, `.terraform/`, `cdk.out/`, `__pycache__/`, `.git/`, and
+lockfiles. An IaC format that vendors its dependencies (e.g. cdktf) can otherwise
+dump tens of thousands of `node_modules` paths into the manifest and balloon the
+customer-facing report from hundreds of lines to thousands.
+
 ```bash
-find .service-approval/<slug>/05-generate -type f | sort
+find .service-approval/<slug>/05-generate \
+  \( -type d \( -name node_modules -o -name .terraform -o -name cdk.out \
+       -o -name __pycache__ -o -name .git \) -prune \) -o \
+  \( -type f \
+     ! -name 'package-lock.json' ! -name 'yarn.lock' ! -name '*.tfstate' \
+     ! -name '*.tfstate.backup' ! -name '*.pyc' \
+     -print \) | sort
 ```
 
-## Step 6: Write APPROVAL-REPORT.md
+For the IaC subtree (`05-generate/iac/`), **summarize each format rather than
+listing every file** — report the format and its top-level entry (e.g.
+`iac/cdktf/ — CDK for Terraform project (N files)`), not the full vendored tree.
+The manifest names what was produced; the templates themselves live on disk for
+the customer to read.
+
+## Step 6: Write SUMMARY-REPORT.md
 
 **CRITICAL — Terminology rules for the report:**
-The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipeline terms:
+The SUMMARY-REPORT.md is a customer-facing document. NEVER use internal/pipeline terms:
 - NO: "service approval pipeline", "pipeline generated" → YES: "47 security controls were generated"
 - NO: "--skip-test flag", "--clean flag" → YES: "Testing was deferred for this assessment"
 - NO: "deployment pipeline" → YES: "deployment process"
@@ -84,14 +106,78 @@ The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipelin
 - NO: "unverified_count = 0" → YES: "all items verified"
 - Apply all terminology rules from CLAUDE.md (see Terminology Rules section)
 
-Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections.
-Section headings are H2 (`##`) — the report's top-level title `# Service Approval
+Write `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` with these sections.
+Section headings are H2 (`##`) — the report's top-level title `# Service Summary
 Report — {Service}` is H1, so all section headers under it are H2. Downstream
-consumers (`skills/evidence/SKILL.md` awk extraction, `validate_pipeline_integrity.py`
-P6 verdict-consistency check) anchor on H2; writing H3 here silently breaks both.
+consumers anchor on H2; writing H3 here silently breaks them.
 
-## Verdict
-[Verdict string with date, service name, resource count]
+## Verification approach (one-line pointer — do NOT expand)
+Place a single short line FIRST, immediately under the report title:
+
+> The verification steps performed on every run (capability verification, validator
+> gates, reference anchoring, deployment, runtime attestation) are described in the
+> project README under "How the tool builds confidence."
+
+Do **not** render the generic "Actions Taken to Increase Confidence" bullet list in
+the report — those steps are identical on every run and are documented once in the
+README. The report carries only **run-specific** data: the Preventive Coverage
+accounting below (which is data, not boilerplate). Do not add a per-item confidence
+score or band anywhere (validator P11 enforces this).
+
+## Preventive Coverage
+Place this section immediately after the one-line "Verification approach" pointer. It is a
+**deterministic, file-backed** accounting — read it from
+`.service-approval/<slug>/05-generate/preventive-coverage.json` (built by
+`build_preventive_coverage.py`); do NOT hand-write or estimate the numbers. If the
+file is absent (no preventive controls in this run), state that plainly and omit the
+table.
+
+Render the totals and a per-control breakdown so every count is traceable:
+
+```markdown
+Of {objectives} preventive objectives: **{authored}** have a policy generated from a
+public AWS reference example, **{referred}** point to a reference example the customer
+applies, and **{routed_to_detective}** are covered by detective controls (not
+preventable at request time).
+
+| Control | Coverage | Mechanism | Reference / Citation | Why |
+|---|---|---|---|---|
+| {control_id} | {Authored / Referred / Routed to detective} | {mechanism} | {anchor example_id + url, or citation type + id/url} | {reason} |
+```
+
+The counts come straight from `totals`; each row comes from `controls[]` (its
+`category`, `mechanism`, `anchor`/`citation`, and `reason`). A reader can verify
+every number by following the control id and citation back to the generated
+artifacts. This section is descriptive, not a judgment.
+
+### Applying the preventive policies
+
+For every authored and referred control that carries an `application_guidance`
+block in `preventive-coverage.json`, render a concrete **"how to apply / adapt
+this"** subsection so the reader is not left with a bare citation URL. Read the
+fields verbatim from `controls[].application_guidance` — do NOT invent steps.
+Omit a control here only when it has no `application_guidance` (e.g. a
+routed-to-detective row, which produces no preventive policy to apply).
+
+```markdown
+#### {control_id} — how to apply
+
+- **Where it goes:** {application_guidance.placement}
+- **Edit these placeholders:** {application_guidance.placeholders joined by ", "}
+- **Test it:** {application_guidance.test}
+- **Roll back:** {application_guidance.rollback}
+```
+
+For a **referred** control, the placement/placeholders describe how to copy the
+cited reference example and what to change for this service/account; for an
+**authored** control they point at the generated artifact file and the exact
+placeholders inside it.
+
+## Summary of Findings
+A neutral, factual recap of what this assessment produced and what remains open —
+date, service name, and resource/control counts. State coverage and any open items
+plainly. Do NOT include an approve/deny verdict or readiness rating; this report
+records findings, it does not adjudicate.
 
 ## Executive Summary
 [Coverage numbers: N controls generated, N framework objectives covered, N mitigations addressed, test result]
@@ -273,12 +359,12 @@ print("\n\n".join(blocks) if blocks else "No deployable IaC artifacts found.")
 PY
 ```
 
-Append the rendered blocks to `APPROVAL-REPORT.md` under this heading. Skip the
+Append the rendered blocks to `SUMMARY-REPORT.md` under this heading. Skip the
 entire section when `testing.mode` is anything other than `manual-cli`.
 
 ## Pipeline-Complete Sentinel
 
-After APPROVAL-REPORT.md is written, emit a terminal-state sentinel to
+After SUMMARY-REPORT.md is written, emit a terminal-state sentinel to
 `pipeline.log`. This signals to the Stop hook (`validate_pipeline_integrity.py`
 P1 check) that the run is finalized — the file is frozen, and remediation-only
 checks like the MCP-call-count gate cannot be retroactively satisfied.
@@ -291,43 +377,24 @@ it runs). Detect Phase 7-in-scope by `intake-manifest.json.testing.mode ==
 "full-deploy"`.
 
 ```bash
-# Map verdict to sentinel form. Drop any parenthesized qualifier first so
-# "APPROVED (test not run)" canonicalizes to "APPROVED" (the qualifier is
-# audit-trail metadata, not a distinct verdict — see "Sentinel canonicalization"
-# note below). Then uppercase and fold spaces/hyphens to underscores.
-VERDICT_TAG=$(echo "<verdict>" \
-    | sed -E 's/ *\(.*\)$//' \
-    | tr '[:lower:]' '[:upper:]' | tr ' -' '__')
-# e.g., "APPROVED with exceptions" -> "APPROVED_WITH_EXCEPTIONS"
-# e.g., "APPROVED (test not run)"  -> "APPROVED"
-
+# The terminal-state sentinel is verdict-free: it records only that the run
+# finalized, freezing the file against retroactive remediation. The fixed
+# token FINALIZED closes out the P1 check.
 python3 -m tools.validate.log \
     --slug <slug> \
     --phase 07-summarize \
     --source pipeline:complete \
-    --verdict "${VERDICT_TAG}" \
-    --message "summarize finalized; verdict=${VERDICT_TAG}"
+    --verdict FINALIZED \
+    --message "summarize finalized"
 ```
 
-**Sentinel canonicalization:** the validator's closed allowlist is
-`APPROVED | APPROVED_WITH_EXCEPTIONS | REQUIRES_REMEDIATION`. Parenthesized
-qualifiers in the verdict table (e.g., `APPROVED (test not run)`) are
-*informational metadata*, not distinct verdicts — they describe which
-subset of validation ran, not whether the run was approved. The sentinel
-canonicalizes them away so the gate stays binary; consumers needing the
-original qualifier read `APPROVAL-REPORT.md` directly, not the sentinel
-token. Adding new parenthesized variants does NOT require validator
-allowlist changes; adding a new bare verdict (e.g., a hypothetical
-`PENDING`) does.
-
-The validator anchors on the literal token `[pipeline:complete:<VERDICT>]`,
-where `<VERDICT>` is uppercase letters with underscores. Mid-flight runs
-without the sentinel still get the strict P1 check.
+The validator anchors on the literal token `[pipeline:complete:FINALIZED]`.
+Mid-flight runs without the sentinel still get the strict P1 check. The
+sentinel carries no approve/deny meaning — this report does not adjudicate.
 
 Print:
 ```
-Report written: .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md
-Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
+Report written: .service-approval/<slug>/07-summarize/SUMMARY-REPORT.md
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed
 Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)

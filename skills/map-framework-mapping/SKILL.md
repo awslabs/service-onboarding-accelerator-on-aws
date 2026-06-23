@@ -57,6 +57,94 @@ of relying on keyword matching alone.
 
 ---
 
+## Phase 0: Domain Applicability Screen (run BEFORE per-objective mapping)
+
+Before mapping any control, screen each framework domain for applicability to the
+**target service class**. Several objectives describe controls a customer literally
+cannot act on for a serverless / managed / infrastructure service — mapping any
+control to them over-claims coverage. Mark these **N/A by default**; an override
+requires an explicit `applicability_justification` plus a `reference_url`.
+
+### 0.1 Mechanism is not the same as application code
+
+The controls this pipeline generates are **platform / infrastructure config**
+mechanisms: SCP, RCP, IAM policy, AWS Config rule, CloudFormation Guard, CloudFormation
+Hook, OPA / Checkov, tag policy, KMS key policy, resource-based policy. None of them
+inspect a workload's **application source code, dependencies, business logic, or
+runtime behavior** — they evaluate IAM requests, resource configuration, or IaC
+template properties.
+
+**CloudFormation Guard, Config rules, SCPs, RCPs, and tag policies MAY satisfy** CCC
+(change control), IVS (infrastructure security), CEK (encryption), LOG, IAM, and GRC
+objectives. They may **NEVER** satisfy an **application-code** objective.
+
+### 0.2 Mechanism → domain deny matrix (CCMv4)
+
+This matrix is **framework-specific** (CCMv4) and lives in this sub-skill — it is not a
+generic, service-agnostic rule. Consult it during candidate building: if a control's
+`mechanism` is in the denied set for an objective, do NOT map it.
+
+| Mechanism (platform/infra config) | Denied objectives | Why |
+|---|---|---|
+| CloudFormation Guard, AWS Config Rule, SCP, RCP, Tag Policy, OPA Policy, IAM policy | **AIS-02** (secure development), **AIS-04** (secure deployment/testing), **AIS-05** (application security testing), and any AIS objective about **application code, logic, dependencies, runtime behavior, or security testing** | These mechanisms inspect IAM requests, resource configuration, or IaC template properties — never the function's source code, dependencies, or runtime behavior. |
+
+For an infrastructure / platform service, AIS code/testing objectives MUST be **N/A**
+unless a control *directly* tests application code (none exist for a managed compute
+service today). Use reason: `"Application-code security testing is the customer's
+responsibility; <service> provides no control that inspects function/application
+code."` (Note: AIS objectives about *interface*/API authentication that a request-time
+control genuinely governs — e.g. an authorizer-config control — remain mappable; the
+deny is specific to the application-**code**/testing objectives.)
+
+### 0.3 N/A-by-default domains for serverless / managed / infrastructure services
+
+Classify these domains as **N/A by default**. An objective in one of them may only be
+`MAPPED` if the entry carries BOTH an `applicability_justification` (one sentence on
+why the service genuinely supports it) AND a `reference_url` (a public AWS doc backing
+the justification):
+
+- **DCS** (Datacenter Security) — physical/datacenter controls are AWS-managed under
+  the shared-responsibility model; the customer cannot act on them for a managed service.
+- **UEM** (Universal Endpoint Management) — endpoint/device management does not apply
+  to a serverless/managed service.
+- **BCR** (Business Continuity & Operational Resilience) — backup/DR-exercise/continuity
+  processes; only map where the service exposes a genuine backup/replication/DR API
+  (multi-AZ is NOT backup, NOT a DR exercise).
+- **IPY** (Interoperability & Portability) — cross-cloud data-portability objectives
+  (e.g. IPY-03) do not apply unless the service provides a portability capability.
+- **TVM vulnerability-metric objectives** (TVM-10-class: CVE counts, vuln metrics, mean
+  time to remediate) — a managed/serverless service does not itself produce vulnerability
+  metrics. **Keep TVM-05-style "works-with-Inspector" objectives mappable** — pairing the
+  service with Amazon Inspector is legitimate and is NOT screened out.
+
+Existing Rule 4 guidance for `HRS`, `STA`, and the organizational `GRC` objectives still
+applies; this screen makes the DCS/UEM/BCR/IPY/TVM-metric set an **enforced** list rather
+than soft guidance.
+
+### 0.4 Recording the screen
+
+For every N/A-by-default objective you leave N/A, write the `reason` explaining
+non-applicability. For any you override to `MAPPED`, add the two extra fields on the
+objective entry:
+
+```json
+{
+  "objective_id": "BCR-01",
+  "status": "MAPPED",
+  "coverage": "Partially Covered",
+  "reason": "...",
+  "applicability_justification": "Lambda exposes versioned function code and alias routing that support a documented recovery procedure.",
+  "reference_url": "https://docs.aws.amazon.com/lambda/latest/dg/configuration-versions.html",
+  "controls": [ ... ]
+}
+```
+
+`tools/validate/validate_domain_applicability.py` reads `map-framework-mapped.json` and
+flags (a) any platform-config control mapped to a denied application-code objective, and
+(b) any N/A-by-default domain objective that is `MAPPED` without both fields.
+
+---
+
 ## Phase 1: Map Controls to Framework Objectives
 
 Iterate over EVERY `framework_objectives[]` entry. For each objective:
@@ -79,12 +167,29 @@ an initial candidate list. Then read each candidate's `security_rationale` to as
 - Read the `security_rationale` — does the reasoning chain connect to the objective's requirement?
 - Write a 1-sentence `rationale` explaining the SPECIFIC connection.
 
+**Authoring rule — state only what is verified.** The rationale must
+describe the *mechanism* of the mapped control and the objective it
+serves. Do NOT make causal claims ("ensures", "guarantees", "prevents
+all", "completely blocks", "fully mitigates") — those exceed what a
+single control can be verified to do. If you cannot honestly write a
+verified mechanism-to-objective sentence, omit the mapping or hedge to a
+broader objective-level statement and lower the coverage_level
+accordingly.
+
 **Rationale quality rules:**
-- GOOD: "SCP denies CreateMemory without KmsKeyArn, directly enforcing encryption key generation requirements"
-- BAD: "Addresses Encryption and Key Management Policy and Procedures" (just restating the objective title)
-- BAD: "Addresses Key Generation" (too vague, no mechanism mentioned)
-- The rationale MUST mention the control's mechanism (SCP deny, Config rule check, KMS key policy, etc.)
+- GOOD: "SCP denies CreateMemory without KmsKeyArn at request time —
+  supports the encryption-key generation objective."
+- BAD: "Addresses Encryption and Key Management Policy and Procedures"
+  (just restates the objective title)
+- BAD: "Addresses Key Generation" (too vague, no mechanism)
+- BAD: "Guarantees no resource is created without encryption" (causal
+  overreach — a single SCP can be bypassed by exempted principals or by
+  service-internal calls)
+- The rationale MUST mention the control's mechanism (SCP deny, Config
+  rule check, KMS key policy, etc.)
 - The rationale MUST NOT be the objective title or a rephrasing of it
+- Keep it to one short sentence; broader, verified statements beat
+  speculative specifics.
 
 **Step 4: Assign coverage level based on how directly the control addresses the objective:**
 - **Full Coverage**: The control's mechanism directly implements what the objective requires
@@ -160,10 +265,20 @@ Framework objectives about organizational processes MUST NOT be mapped to purely
   Only map to controls that DIRECTLY implement backup, replication, or DR capabilities —
   NOT generic infrastructure controls. Multi-AZ != backup. Multi-AZ != DR exercise.
 - **HRS, DCS, UEM, STA domains**: Almost always N/A for cloud service technical controls.
+  DCS/UEM are enforced as N/A-by-default in the Phase 0 screen.
 - **GRC domain**: Only map to controls implementing governance automation (Config rules for
   compliance, tag policies for classification) — not operational controls.
-- **AIS domain**: Application security PROCESSES (design reviews, security testing). Only map
-  controls that enforce secure deployment patterns or automated security checks.
+- **AIS domain (application/interface security):** AIS objectives about application
+  code, logic, dependencies, runtime behavior, or security testing (e.g. AIS-02,
+  AIS-04, AIS-05) MUST be **N/A** for an infrastructure/platform service unless a
+  control *directly* tests application code. CloudFormation Guard, AWS Config rules,
+  SCPs, RCPs, and tag policies are **platform/infrastructure config** mechanisms — they
+  MAY satisfy CCC (change control), IVS (infra security), CEK (encryption), LOG, IAM
+  objectives, but they may **never** satisfy an application-code AIS objective (they do
+  not inspect function source, dependencies, or runtime behavior). Map AIS code/testing
+  objectives to N/A with reason "Application-code security testing is the customer's
+  responsibility; <service> provides no control that inspects function/application
+  code." See the Phase 0 mechanism→domain deny matrix.
 
 ### Rule 5 — Rationale required and mechanism-consistent
 Every control-to-objective mapping MUST include a `rationale` string. Additionally:
@@ -205,8 +320,17 @@ Use as a STARTING POINT for candidate controls, then apply per-objective evaluat
 | Change/Configuration/Baseline/Drift | CCC | Config rules, Guard rules, drift detection |
 | Vulnerability/Patch/Scan | TVM | Vulnerability scanning, patching automation |
 | Incident/Forensics/Response | SEF | CloudTrail, alarms, runbooks |
-| Data/Privacy/PII/Classification | DSP | Encryption, tagging, data lifecycle |
+| Data/Privacy/PII/Classification | DSP | Encryption, data lifecycle (see DSP note below) |
 | AI/ML/Model/Guardrail/Prompt | AIS | Only secure deployment pattern controls |
+
+**DSP data-classification note (DSP-03, DSP-04).** These objectives concern the
+**sensitivity of data** (PII, confidential, public) — classifying *data*, not resources.
+A tag-policy / `aws:RequestTag` / resource-ownership-tag control (e.g. "tag resources as
+security-owned vs platform-owned") classifies the **resource**, not the data inside it,
+and does **NOT** satisfy DSP-03/04. Mark DSP-03/04 **N/A** unless the service provides a
+genuine data-sensitivity classification capability (e.g. Macie-style content
+classification) — a managed compute service such as Lambda does not. Do not map a tag /
+SCP / Config control to DSP-03/04 on a keyword match for "classification."
 
 ---
 
@@ -307,6 +431,14 @@ controls (like tagging) map to every objective.
 ## Validate Output
 
 Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on status / coverage / control_id drift per the enum details at "Schema rules". `validate_state.py::check_framework_mapped` retains the 7 quality-gate rules (Rule 1 coverage-level consistency, Rule 2 domain spray, Rule 3 ≤15 objectives per control, Rule 5 rationale required, Rule 6 ≤5 Full Coverage per objective, Rule 7 orphaned controls) plus cross-file lookups against map-controls-generated and map-framework-parsed.
+
+The Phase 0 domain-applicability screen is checked by
+`tools/validate/validate_domain_applicability.py` (CCMv4-specific), run in the map
+review gate (Step 3e of `service-approval`): it flags platform/infra-config controls
+mapped to application-code AIS objectives (AIS-02/04/05), N/A-by-default domain
+objectives (DCS/UEM/BCR/IPY, TVM-10-class) mapped without an
+`applicability_justification` + `reference_url` override, and resource-tag controls
+mapped to data-sensitivity objectives (DSP-03/04).
 
 ## Print Summary
 

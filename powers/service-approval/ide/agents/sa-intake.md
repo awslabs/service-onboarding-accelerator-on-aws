@@ -172,7 +172,7 @@ How do you want to validate the generated controls?
   [D] Manual CLI commands     (mode: manual-cli)
       Skip Phase 5; Summarize appends per-format deploy commands
       (terraform apply, cdk deploy, aws cloudformation deploy) to the
-      approval report so you can run them yourself later.
+      Summary Report so you can run them yourself later.
 
 Reply with A, B, C, or D. Default if blank: C.
 ```

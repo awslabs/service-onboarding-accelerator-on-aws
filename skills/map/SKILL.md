@@ -26,6 +26,24 @@ framework mappings, and traceability. This skill bridges the gap between capabil
 - `.service-approval/<slug>/04-map/controls-catalog.md` — controls inventory by Category x Scope matrix
 - `.service-approval/<slug>/04-map/framework-mapping.md` — framework objective crosswalk
 
+## Source priority (which source backs each mapping)
+
+When a mapping row needs an external fact or citation, consult sources in this
+fixed order and record the **highest-priority** source that supported the row:
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present
+   (authoritative intent + top citation).
+2. **AWS Control Catalog API** — the control→objective authority.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general/blog/third-party content.
+
+The reference-repo index supplies the vetted *policy body* for a preventive
+control under that intent (consumed downstream by generate); it is the
+implementation library, not a mapping fact/citation source. `validated.json` is
+the authoritative *assessment* input — never assert an action or condition key
+absent from it. Every mapping row carries a `citation` whose `type` reflects the
+highest-priority source above that backs it.
+
 ## Sub-Skill Architecture
 
 This skill is split into 4 focused sub-skills that write to separate intermediate state files:
@@ -92,6 +110,25 @@ Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 ### Step 4: Run map-assemble
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
+
+### Step 4b: Cross-check mappings against the AWS Control Catalog (advisory)
+
+After `mapping-results.json` is assembled, cross-check each mapped framework
+objective against the authoritative AWS Control Catalog. This is **advisory
+(warn, never block)** — it surfaces objectives whose mapping has no catalog
+support so a reviewer can sanity-check the least-deterministic part of the run:
+
+```bash
+python3 tools/validate/validate_control_mappings.py --slug <slug>
+```
+
+The check bridges CCMv4 → NIST 800-53 (via `data/attack-nist-ccm-crosswalk.json`)
+→ the Control Catalog. It requires a catalog snapshot at
+`data/control-catalog-snapshot.json`; when absent it SKIPS honestly (it does not
+fabricate catalog data). Refresh the snapshot with AWS credentials:
+`python3 tools/validate/validate_control_mappings.py --refresh`. Record any
+objectives the validator flags as catalog-unsupported as a `REVIEW` note for
+manual sanity-check; do not fail the phase.
 
 ---
 

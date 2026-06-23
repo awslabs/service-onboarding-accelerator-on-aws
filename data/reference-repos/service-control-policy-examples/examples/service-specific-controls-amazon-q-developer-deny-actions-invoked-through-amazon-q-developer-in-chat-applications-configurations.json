@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "iam:AddUserToGroup",
+        "iam:AttachGroupPolicy",
+        "iam:AttachRolePolicy",
+        "iam:AttachUserPolicy",
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:CreateServiceSpecificCredential",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:DeleteUserPermissionsBoundary",
+        "iam:DeleteRolePolicy",
+        "iam:DeleteUserPolicy",
+        "iam:DetachRolePolicy",
+        "iam:DetachUserPolicy",
+        "iam:PutGroupPolicy",
+        "iam:PutRolePolicy",
+        "iam:PutUserPolicy",
+        "iam:ResetServiceSpecificCredential",
+        "iam:SetDefaultPolicyVersion",
+        "iam:UpdateAccessKey",
+        "sts:AssumeRole",
+        "account:GetContactInformation",
+        "organizations:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnLike": {
+          "aws:ChatbotSourceArn": "arn:aws:chatbot::*:*"
+        }
+      }
+    }
+  ]
+}

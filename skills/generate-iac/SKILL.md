@@ -404,6 +404,13 @@ These rules MUST be enforced in every template format — not just one:
    }
    ```
 
+   `DataClassification` here is a **customer-supplied governance tag** — its value
+   comes from the `var.data_classification` input the customer populates, with no
+   default. The tool never infers or fills a data-classification value; data
+   sensitivity is the customer's determination. Keep the tag *key* in the canonical
+   set (tag-policy / Config `required-tags` controls reference it), but leave the
+   *value* for the customer to provide.
+
    **CDK TypeScript**: apply `Tags.of(resource).add("Owner", ownerParam)` once per
    canonical key — NEVER add a lowercase pair. Same for CloudFormation (Tags list with
    one entry per key) and CDKTF (same locals pattern).

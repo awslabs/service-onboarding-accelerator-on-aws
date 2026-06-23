@@ -9,8 +9,42 @@ argument-hint: '[--service=<name>] [--include-unverified]'
 
 Using the mitigation inventory and verified service capabilities, generate security controls
 organized by the Category x Scope matrix. Each control traces back to mitigation(s) and
-includes rich metadata so downstream skills (framework-mapping, generate) can work without
+includes the metadata downstream skills (framework-mapping, generate) need without
 re-deriving the reasoning chain.
+
+## Authoring rule — state only what is verified
+
+Every string this skill emits (control `name`, `description`,
+`security_rationale`, mapped-objective `rationale`) MUST be defensible
+from the input data:
+
+- API operations and parameters MUST appear in
+  `validated.json.api_surface.operations[]`.
+- IAM action strings MUST come from the AWS Service Authorization
+  Reference IAM action list (resolved via the operation→action map at
+  `data/botocore-iam-alias.json`) or
+  `validated.json.capabilities.iam.permission_only_actions[]`.
+- Condition keys MUST appear in
+  `validated.json.capabilities.iam.condition_keys[]` or be cited from a
+  specific public AWS doc URL.
+
+If you are not 100% certain a specific claim holds, **omit it or hedge to
+the broad objective level** — describe the *category* of mechanism (SCP,
+AWS Config rule, KMS key policy, etc.) and what objective the control
+serves, and stop there. Do NOT assert that an action list is complete,
+that a particular condition key fires under specific runtime context not
+present in the input data, or that the control causally prevents a named
+attack without an explicit ATT&CK technique cross-reference. Causal-
+filler and absolute-overreach phrases ("ensures", "guarantees",
+"prevents all", "fully mitigates", "completely blocks", bare "prevents" /
+"blocks" / "blocking", "cannot", absolute "only", "denies … untrusted",
+"confused-deputy" as a claim) are banned in `description` and
+`security_rationale` — prefer "supports", "enforces at request time",
+"constrains to the listed actions", or similar. The
+`tools/validate/lint_control_prose.py` lint flags these phrases plus an
+over-length budget on each prose field, and it also scans the rendered
+`.md` files so a render-time re-wording cannot slip a stronger claim past
+the source JSON.
 
 **Input:** `.service-approval/<slug>/03-validate/validated.json`
 **Output:** `.service-approval/<slug>/04-map/map-controls-generated.json`
@@ -83,9 +117,14 @@ For each mitigation:
 2. Read `request_parameters[]` — the API parameters that enforce the control
 3. Look up the corresponding capability in `capabilities{}` — defines HOW the service supports it
 4. Generate one or more controls that enforce the mitigation goal using available capabilities
-5. Write the **security_rationale** — a 2-3 sentence explanation of WHY this control is the right
-   mechanism for this mitigation, including the reasoning chain from mitigation goal to enforcement
-   mechanism. This rationale is consumed by map-framework-mapping to make informed mapping decisions.
+5. Write the **security_rationale** — 1-2 short sentences naming the
+   mitigation goal and the mechanism family chosen to enforce it. Stay at
+   the objective level: name the control category (SCP, Config rule, KMS
+   key policy) and the parameter/action it constrains. Do NOT claim the
+   control prevents specific attacks unless an ATT&CK technique is
+   cross-referenced in the same control. The rationale is read by
+   map-framework-mapping; broad, verified statements are more useful than
+   confident-sounding speculation.
 
 **CRITICAL — Condition key action applicability:**
 
@@ -215,6 +254,35 @@ Look up P in `validated.json.api_surface.operations[].parameters[]` and read
 | `reactive-detective` | `"api"` in `gateable_by` | AWS Config rule (managed or custom Lambda), Access Analyzer |
 | `reactive-corrective` | `"api"` in `gateable_by` AND `mutability != "create_only"` | SSM Automation runbook, Step Functions workflow, Lambda remediator |
 
+**When VPCE Policy is NOT a valid `preventative-request` mechanism:**
+
+VPC endpoint policies appear in the `preventative-request` mechanism family
+above, but they have a **narrower** preventive scope than the other policies
+in that row. A VPCE policy gates *who can use the VPC endpoint to reach a
+service* (Action × Principal × ResourceArn at the endpoint boundary). It
+does **not** see request-body parameters such as
+`lambda:CreateFunction.VpcConfig.SubnetIds`,
+`s3:PutObject.ServerSideEncryption`, or any nested config field of the
+caller's request payload. The endpoint-policy evaluation context is the
+endpoint itself, not the API request body.
+
+Do NOT pick `VPCE Policy` as the mechanism for a control whose
+`parameters_controlled[]` references a request-body field of a Create/Update
+operation (subnet selection, encryption-key parameter, KMS key ARN on
+create, etc.). A VPCE policy cannot enforce those at request time. The
+correct mechanism family for "<service> must be created with parameter X
+set to Y" is `SCP` / `IAM identity policy` / `IAM permission boundary`
+(when a SAR condition key for the parameter exists) and `CFN Guard` /
+`CFN Hook` / `OPA` (template-time, `preventative-proactive`).
+
+VPCE Policy is appropriate when the control gates **endpoint use**:
+restricting which principals/actions can flow through the endpoint, or
+enforcing `aws:PrincipalOrgID` on traffic that egresses the VPC. If the
+mitigation `request_parameters[]` is an *endpoint*-level concern (e.g.,
+"only org members may invoke any action via this VPCE"), VPCE Policy is
+correct and `preventative-request` applies; otherwise, route the control
+to the mechanisms above.
+
 **Emit one control per feasible posture.** For each posture in `posture_set`:
 - If feasibility holds, emit a control in `map-controls-generated.json.controls[]` with:
   - `posture`: one of the four values above
@@ -299,7 +367,7 @@ Every control MUST include these fields:
 {
   "id": "CTRL-ORG-PRV-001",
   "name": "Enforce CMK encryption on <Resource> creation via SCP",
-  "description": "SCP denies <prefix>:Create<Resource> unless encryption condition key is present",
+  "description": "Constrains <Resource> creation to require encryption at request time via SCP",
   "posture": "preventative-request",
   "source": "sar",
   "scope": "ORG",
@@ -311,7 +379,7 @@ Every control MUST include these fields:
   "actions": ["<prefix>:Create<Resource>", "<prefix>:Update<Resource>"],
   "resource_types": ["AWS::<Service>::<Resource>"],
   "assessment_gap_ids": [],
-  "security_rationale": "The mitigation requires encryption key enforcement at creation time. An SCP is the strongest mechanism because it operates at the organization level, denying any Create call that lacks the encryption key parameter regardless of the caller's IAM permissions. This ensures no resource can be created without customer-managed encryption.",
+  "security_rationale": "Supports encryption-at-rest by gating the create call on the customer-managed key parameter at request time.",
   "attack_techniques": ["T1530", "T1486"],
   "framework_keywords": ["encryption", "key management", "data protection", "policy enforcement"]
 }
@@ -343,10 +411,15 @@ Every control MUST include these fields:
 - `actions`: IAM actions restricted/monitored (empty array for non-IAM controls)
 - `resource_types`: AWS resource types affected (CFN format)
 - `assessment_gap_ids`: Assessment gaps addressed (empty array if none)
-- `security_rationale`: 2-3 sentences explaining the mitigation-to-mechanism reasoning chain. MUST include:
-  (1) what the mitigation requires, (2) why this specific mechanism was chosen, (3) what it prevents/detects.
-  This field is the PRIMARY context for downstream framework-mapping — write it as if the reader has
-  never seen the mitigation text.
+- `security_rationale`: **ONE broad sentence** stating the control's intent at objective
+  level — name the *kind* of setting it governs and the objective it supports. Do **not**
+  assert a causal guarantee, enumerate verbatim actions, or list condition keys here (those
+  live in the structured `actions[]` / `condition_keys[]` fields the generate phase consumes).
+  State only what is verified; a broad true sentence beats a precise uncertain one. Banned
+  causal-filler words (`ensures`, `guarantees`, `prevents all`, bare `prevents`/`blocks`,
+  `cannot`, absolute `only`, …) are rejected by `lint_control_prose.py`. Prefer
+  "supports / constrains / enforces at request time". This field is the PRIMARY context for
+  downstream framework-mapping — write it broad but accurate.
 - `attack_techniques`: ATT&CK technique IDs this control mitigates (empty array if `attack_surface`
   not present in validated.json). Populated by cross-referencing the control's `actions[]`,
   `condition_keys[]`, and `mechanism` against `attack_surface.applicable_techniques[].api_surface_evidence[]`.
@@ -385,6 +458,34 @@ analysis is mandatory for every service onboarding). For each control:
    - Logging controls → relevant to T1562, T1070 (evasion techniques)
 4. Every control MUST have a non-empty `attack_techniques[]` — if no direct action match
    exists, use mechanism alignment to identify relevant techniques
+
+### 2.7.1 Canonical control identity — avoid emitting structural duplicates
+
+Per-resource mitigation variants (e.g. CapacityProvider / EventSourceMapping / Layer /
+CodeSigningConfig twins of a Function control) often produce **structurally identical
+controls** that differ only by ID — same name, scope, category, mechanism,
+resource_types, actions, and posture. These inflate the control count and the coverage
+numbers without adding coverage.
+
+Two controls have the **same canonical identity** when they share:
+
+```
+(normalized name, scope, category, mechanism,
+ sorted(resource_types), sorted(actions), posture)
+```
+
+When two candidate controls would share that identity, emit **one** control and union
+the source `mitigation_ids[]` (and the other traceability lists) onto it — do not emit a
+second ID. If two controls differ only by which resource type they target but enforce
+the *same action via the same mechanism*, collapse them to one control and keep
+`resource_types[]` as a list so traceability survives; controls that gate **different
+actions** or use a **different mechanism** stay distinct.
+
+A deterministic safety net runs in `map-assemble` Phase 0 (`dedup_controls()`):
+it collapses any remaining duplicates by this same canonical key before the rest of the
+pipeline consumes the controls, and `tools/validate/validate_control_dedup.py` fails the
+map gate if two controls in `mapping-results.json` still share the key. Generating
+cleanly here keeps the catalog honest before the safety net even runs.
 
 ### 2.8 Compensating control documentation
 

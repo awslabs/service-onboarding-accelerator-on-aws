@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AttachInternetGateway",
+        "ec2:DeleteVpc",
+        "ec2:CreateVpcPeeringConnection"
+      ],
+      "Resource": "arn:aws:ec2:*:*:vpc/vpc-not-sensitive"
+    }
+  ]
+}

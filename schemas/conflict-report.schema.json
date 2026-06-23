@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/conflict-report.schema.json",
+  "title": "conflict-report.json",
+  "description": "Control-conflict / contradiction report. A deterministic pre-filter (tools/validate/detect_control_conflicts.py) surfaces candidate statement pairs that share a gated action with opposing posture; a clean LLM subagent (no prior context) dispatched by the generation review gate confirms/explains each candidate and writes the final report at .service-approval/<slug>/05-generate/conflict-report.json. Advisory at first — surfaced in the report; can become a hard gate later.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_metadata", "pairs", "verdict"],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["service"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "generated": {"type": "string"},
+        "stage": {"type": "string", "enum": ["prefilter", "judged"]}
+      }
+    },
+    "statements_scanned": {"type": "integer", "minimum": 0},
+    "candidates": {
+      "type": "array",
+      "description": "Pre-filter output: structural candidate pairs handed to the judge.",
+      "items": {"$ref": "#/$defs/candidate"}
+    },
+    "pairs": {
+      "type": "array",
+      "description": "Judge-confirmed conflicting pairs (empty when nothing confirmed).",
+      "items": {"$ref": "#/$defs/judged_pair"}
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["PENDING_JUDGE", "NO_CONFLICTS", "CONFLICTS_FOUND"],
+      "description": "PENDING_JUDGE before the subagent runs; NO_CONFLICTS / CONFLICTS_FOUND after."
+    }
+  },
+  "$defs": {
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["a", "b", "kind"],
+      "properties": {
+        "a": {"type": "string", "minLength": 1},
+        "b": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "enum": ["deny_vs_allow", "incompatible_conditions"]},
+        "shared_actions": {"type": "array", "items": {"type": "string"}},
+        "explanation": {"type": "string"}
+      }
+    },
+    "judged_pair": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["a", "b", "kind", "explanation", "severity"],
+      "properties": {
+        "a": {"type": "string", "minLength": 1},
+        "b": {"type": "string", "minLength": 1},
+        "kind": {"type": "string", "minLength": 1},
+        "explanation": {"type": "string", "minLength": 1},
+        "severity": {"type": "string", "enum": ["info", "warning", "error"]}
+      }
+    }
+  }
+}

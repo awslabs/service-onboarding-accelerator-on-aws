@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DeleteCluster",
+        "ecs:UpdateCluster",
+        "ecs:ExecuteCommand"
+      ],
+      "Resource": "arn:aws:ecs:*:*:cluster/NotASensitiveCluster"
+    }
+  ]
+}

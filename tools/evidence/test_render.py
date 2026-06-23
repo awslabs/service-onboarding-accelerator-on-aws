@@ -170,7 +170,7 @@ def test_render_attestation_guide(
     assert "04-map/mapping-results.json" in content
     assert "05-generate/" in content
     assert "06-test/test-results.json" in content
-    assert "07-summarize/APPROVAL-REPORT.md" in content
+    assert "07-summarize/SUMMARY-REPORT.md" in content
     assert "08-evidence/" in content
     assert "Verification commands for an independent reviewer" in content
     assert "python3 tools/evidence/replay.py --service=awslambda" in content
@@ -210,7 +210,7 @@ def test_render_attestation_guide_structure(
         "### 04-map/mapping-results.json",
         "### 05-generate/",
         "### 06-test/test-results.json",
-        "### 07-summarize/APPROVAL-REPORT.md",
+        "### 07-summarize/SUMMARY-REPORT.md",
         "### 08-evidence/",
     ]
     for marker in phase_markers:

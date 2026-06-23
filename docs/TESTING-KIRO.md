@@ -167,7 +167,7 @@ The agent should run all 9 phases. Watch for:
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
 - Phase 4 (Generate) spawns 3 parallel
-- Phase 6 (Summarize) writes `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md`
+- Phase 6 (Summarize) writes `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
 - Phase 7 (Evidence) runs if Phase 5 Test completed (requires --env flag)
 
 End state should be verdict `APPROVED` or `REQUIRES REMEDIATION` in the report, not silence.

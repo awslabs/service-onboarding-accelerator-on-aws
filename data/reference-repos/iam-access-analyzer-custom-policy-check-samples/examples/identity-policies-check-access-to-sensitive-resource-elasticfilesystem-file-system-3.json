@@ -1,0 +1,10 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "elasticfilesystem:ClientMount",
+      "Resource": "arn:aws:elasticfilesystem:*:*:file-system/MySensitiveFileSystemId"
+    }
+  ]
+}

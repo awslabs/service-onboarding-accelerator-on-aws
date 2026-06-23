@@ -68,8 +68,8 @@ script:
   - kiro-cli --no-interactive --trust-tools="..." "..."
   - |
     if [ $? -ne 0 ]; then
-      echo "Pipeline integrity failed — see APPROVAL-REPORT.md"
-      cat .service-approval/APPROVAL-REPORT.md
+      echo "Pipeline integrity failed — see SUMMARY-REPORT.md"
+      cat .service-approval/SUMMARY-REPORT.md
       exit 1
     fi
 ```
@@ -86,7 +86,7 @@ Set a Kiro workspace token budget in the dashboard if running on a schedule.
 ## Artifacts for review
 
 Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
-- `<slug>/07-summarize/APPROVAL-REPORT.md` — customer-facing verdict
+- `<slug>/07-summarize/SUMMARY-REPORT.md` — customer-facing verdict
 - `<slug>/05-generate/` — all generated artifacts (preventive/proactive/detective/responsive/iac)
 - `<slug>/mcp-calls.log` — audit trail of every MCP call
 - `<slug>/03-validate/validated.json` — proof of MCP verification for every item
@@ -95,7 +95,7 @@ Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
 ## Troubleshooting CI runs
 
 ### `kiro-cli: Pipeline integrity failed`
-Read `.service-approval/APPROVAL-REPORT.md` for the verdict and root cause. The
+Read `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` for the Summary Report and root cause. The
 integrity script prints which of P1–P7 failed.
 
 ### `Too few MCP calls in mcp-calls.log`

@@ -104,7 +104,7 @@ The plugin runs 9 phases automatically:
 5. **Map** — maps capabilities to control framework objectives
 6. **Generate** — produces all security control artifacts and IaC templates
 7. **Test** — deploys and validates (if `--env` provided)
-8. **Summarize** — produces APPROVAL-REPORT.md with verdict
+8. **Summarize** — produces SUMMARY-REPORT.md
 9. **Evidence** — runs CLI probes for attestation (if Test passed)
 
 You'll see MCP server connections activate as the pipeline progresses. Approve any
@@ -123,12 +123,11 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   04-map/             ← mapping-results.json, controls-catalog.md
   05-generate/        ← all generated artifacts (85+ files)
   06-test/            ← test-results.json, deployed-resources.json (if --env)
-  07-summarize/       ← APPROVAL-REPORT.md (final verdict)
+  07-summarize/       ← SUMMARY-REPORT.md (Summary Report)
   08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
 ```
 
-The key deliverable is `07-summarize/APPROVAL-REPORT.md` — contains the approval
-verdict, coverage matrix, and artifact inventory.
+The key deliverable is `07-summarize/SUMMARY-REPORT.md` — contains the coverage matrix, mitigation traceability, and artifact inventory.
 
 ---
 

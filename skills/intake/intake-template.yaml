@@ -65,7 +65,7 @@ testing:
   #                template, IAM Access Analyzer) if aws_profile is provided.
   #   skip         Do not run Phase 5. Stop after generation.
   #   manual-cli   Skip Phase 5; Summarize appends per-format deploy commands to
-  #                the approval report so you can run them yourself.
+  #                the Summary Report so you can run them yourself.
   mode: "skip"
 
   # AWS CLI profile name (required for full-deploy; optional for dry-run; unused otherwise)

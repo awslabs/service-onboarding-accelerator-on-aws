@@ -444,8 +444,14 @@ Verify these files exist before proceeding:
 
 ### Phase 4: Generate (3 sub-skills, sequential in this mode)
 
-**Step 4a — Preventive/Proactive:**
-Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
+**Step 4a — Preventive/Proactive (gated sub-pipeline, run in order):**
+1. `skills/generate-preventive-recommend/SKILL.md` — mechanism + anchor decision per
+   objective → `<slug>/05-generate/preventive-plan.json` (the gate).
+2. The authors for each `GENERATE_*` row: `skills/generate-preventive-scp/SKILL.md`,
+   `skills/generate-preventive-rcp/SKILL.md`, `skills/generate-preventive-iam/SKILL.md`
+   (these also emit proactive artifacts per `skills/generate-preventive/SKILL.md`).
+3. `skills/generate-preventive-rootcause/SKILL.md` — prove anchored + enforcing; route
+   non-preventable objectives to detective.
 Pass: `--service`, `--include-unverified` if set.
 Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
 
@@ -491,7 +497,7 @@ Resolve Phase 5 intent in this order (CLI flags > intake > default):
 
 ### Phase 6: Summarize
 Follow ALL instructions in `skills/summarize/SKILL.md` exactly.
-Report the final verdict to the user.
+Report the summary of findings to the user (this report issues no verdict).
 
 ### Phase 7: Evidence (Optional — requires AWS credentials)
 **NEW:** If `--env` was provided AND Phase 5 Test deployed resources successfully (not --dry-run):
@@ -662,13 +668,130 @@ Agent 3d: map-assemble (foreground)
 
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
 
-### Phase 4: Generate (3 sub-skills in parallel)
+**Step 3e: Mapping review gate (foreground subagent, after 3d completes)**
 
-Dispatch all 3 generate sub-skills simultaneously as background subagents:
+Before generation consumes the mapping, dispatch a foreground review subagent to
+check the mapping is well-grounded and citable. Log the gate lifecycle and run
+each validator, capturing its exit code:
+
+```bash
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source skill:map-review --verdict start \
+    --message "mapping review gate: citability + prose budget"
+
+python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
+python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
+python3 tools/validate/validate_mapping_semantics.py --slug <slug>; ms=$?
+python3 tools/validate/validate_canopy_facts.py --slug <slug>; cf=$?
+python3 tools/validate/validate_domain_applicability.py --slug <slug>; da=$?
+python3 tools/validate/validate_control_dedup.py --slug <slug>; cd=$?
+```
+
+It reports: objectives flagged with no catalog/reference support, and any control
+prose that exceeds the verified-language budget or over-claims. The prose lint
+walks both `mapping-results.json` **and** the rendered `controls-catalog.md` /
+`framework-mapping.md` siblings, so it catches a banned/overreach phrase that
+was introduced only at render time (the `.md` making a claim stronger than the
+source JSON — an "upward re-wording" divergence). It runs `--strict`, so a prose
+finding gates the map phase: re-word the offending control to objective level and
+re-render before generation consumes the mapping. The cross-check's purpose is to
+confirm every mapping can point to a citation (Canopy mitigation, reference
+example, Control Catalog, or a service-specific doc) before any control is authored.
+
+**Persist the review artifact** so the gate leaves a machine-readable trace —
+write `.service-approval/<slug>/04-map/mapping-review.json`:
+
+```json
+{
+  "_metadata": {"service": "<service>", "gate": "post-map", "generated": "service-approval v3.0.0"},
+  "validators": [
+    {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
+    {"name": "lint_control_prose", "exit_code": 0, "blocking": true},
+    {"name": "validate_mapping_semantics", "exit_code": 0, "blocking": false},
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
+    {"name": "validate_domain_applicability", "exit_code": 0, "blocking": false},
+    {"name": "validate_control_dedup", "exit_code": 0, "blocking": false}
+  ],
+  "flagged": [
+    {"objective_id": "IAM-04", "issue": "no catalog/reference support", "severity": "advisory"}
+  ]
+}
+```
+
+`validate_mapping_semantics` runs the deterministic S1/S2/S3 checks (every
+satisfied-by control id resolves, every mapped objective id exists in the parsed
+framework, no control claims an action/condition key absent from `validated.json`).
+`validate_canopy_facts` confirms every `citation.type == "canopy"` row names a
+mitigation alias that exists in the provided Canopy export and whose governed
+operations are consistent with the control's actions. Both are advisory here
+(reported in `mapping-review.json`); they also run in the post-generate gate.
+
+Then log the outcome:
+
+```bash
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_control_mappings \
+    --verdict $([ $cm -eq 0 ] && echo pass || echo warn) --message "control→catalog cross-check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:lint_control_prose \
+    --verdict $([ $lp -eq 0 ] && echo pass || echo fail) --message "control prose language budget (JSON + rendered .md)"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_mapping_semantics \
+    --verdict $([ $ms -eq 0 ] && echo pass || echo warn) --message "semantic mapping checks (S1/S2/S3)"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_canopy_facts \
+    --verdict $([ $cf -eq 0 ] && echo pass || echo warn) --message "Canopy-factual citation check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_domain_applicability \
+    --verdict $([ $da -eq 0 ] && echo pass || echo warn) --message "framework-domain applicability check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_control_dedup \
+    --verdict $([ $cd -eq 0 ] && echo pass || echo warn) --message "control de-duplication count guard"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source skill:map-review --verdict end \
+    --message "mapping review gate complete" --extra artifact=mapping-review.json
+```
+
+`validate_control_dedup` re-derives each control's canonical identity (the same key
+`map-assemble` Phase 0 collapses on) and confirms no two controls in
+`mapping-results.json` still share it — i.e. the de-duplication held. It prints
+`distinct_controls` / `total_controls`; after Phase 0 these are equal. A finding means
+a duplicate survived assembly (investigate the collapse), not that the mapper should
+re-map.
+
+`validate_domain_applicability` (CCMv4-specific) flags any platform/infra-config
+control (CloudFormation Guard, Config rule, SCP, RCP, tag policy) mapped to an
+application-code AIS objective (AIS-02/04/05), any N/A-by-default domain objective
+(DCS/UEM/BCR/IPY, TVM-10-class) marked MAPPED without an `applicability_justification`
++ `reference_url` override, and any resource-tag control mapped to a
+data-sensitivity-classification objective (DSP-03/04). Advisory here (reported in
+`mapping-review.json`); a finding means the mapper over-claimed coverage — re-map the
+flagged objective to N/A (or add a justified override) before generation consumes the
+mapping.
+
+The control→catalog cross-check (`validate_control_mappings`) is **advisory** —
+surface its flagged items and proceed. The prose lint (`lint_control_prose
+--strict`) is a **hard gate**: a non-zero exit means a control over-claims in the
+JSON or the rendered `.md`, so fix the prose and re-render before generation
+consumes the mapping.
+
+### Phase 4: Generate (3 families in parallel; preventive is a sequenced sub-pipeline)
+
+Dispatch the 3 control families simultaneously as background subagents. The
+**preventive family is one agent that runs its own sub-pipeline in order** — the
+recommender gate, the reference-anchored authors, then the root-cause critic —
+because each step gates the next and must not be parallelized.
 
 ```
-Agent 4: generate-preventive (background)
-  Prompt: Full text of skills/generate-preventive/SKILL.md + --service + --include-unverified
+Agent 4: generate-preventive (background) — runs the preventive sub-pipeline IN ORDER:
+  1. Full text of skills/generate-preventive-recommend/SKILL.md  → preventive-plan.json (gate)
+  2. For each GENERATE_* row, the matching author:
+       skills/generate-preventive-scp/SKILL.md
+       skills/generate-preventive-rcp/SKILL.md
+       skills/generate-preventive-iam/SKILL.md
+     (authors also emit proactive artifacts per skills/generate-preventive/SKILL.md)
+  3. Full text of skills/generate-preventive-rootcause/SKILL.md   → prove anchored + enforcing
+  Pass: --service + --include-unverified
   Output: <slug>/05-generate/preventive/ + <slug>/05-generate/proactive/
 
 Agent 5: generate-detective (background)
@@ -680,10 +803,122 @@ Agent 6: generate-iac (background)
   Output: <slug>/05-generate/iac/
 ```
 
-**IMPORTANT:** Dispatch all 3 in a single message with 3 Agent tool calls.
+**IMPORTANT:** Dispatch all 3 families in a single message with 3 Agent tool calls.
+The preventive agent runs its sub-skills sequentially within that one agent.
 
 When all 3 complete, run the final validation from `skills/generate/SKILL.md`.
 If any IaC templates are missing, re-dispatch the generate-iac agent.
+
+**Detective top-up for routed objectives.** Because detective runs in parallel
+with preventive here, it cannot see the routing the preventive critic writes at
+the end of its sub-pipeline. After all 3 agents complete, if
+`<slug>/05-generate/detective-routing.json` exists with any `routed[]` entry
+whose `covered_by` is null, re-dispatch `generate-detective` for a top-up pass to
+cover those objectives (its "Routed-from-preventive objectives" section). Then
+confirm the loop is closed:
+
+```bash
+python3 tools/validate/validate_detective_routing.py --slug <slug>
+```
+
+**Step 4-review: Generation review gate (foreground subagent, after generation completes)**
+
+Before summarizing, dispatch a foreground review subagent to prove every generated
+preventive artifact is both in the mapping and properly enforcing. Log the gate
+lifecycle and run each validator, capturing its exit code:
+
+```bash
+python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+    --source skill:generate-review --verdict start \
+    --message "generation review gate: anchor + enforcement + scope"
+
+python3 tools/validate/validate_reference_anchor.py --slug <slug>;   ra=$?
+python3 tools/validate/validate_preventability.py --slug <slug>;      pv=$?
+python3 tools/validate/validate_enforcement.py --slug <slug> --strict; en=$?
+python3 tools/validate/validate_action_scope.py --slug <slug> --strict; as=$?
+python3 tools/validate/validate_cross.py .service-approval/<slug>/05-generate; cx=$?
+python3 tools/validate/validate_detective_routing.py --slug <slug>;   dr=$?
+python3 tools/validate/validate_canopy_facts.py --slug <slug>;        cf=$?
+```
+
+**Conflict / contradiction detection (deterministic pre-filter → clean-subagent judge).**
+First run the deterministic pre-filter, which surfaces candidate statement pairs that
+share a gated action with opposing posture (an SCP/RCP/IAM Deny vs. an Allow the IaC
+assumes, or two Denies gating the same action with incompatible condition keys):
+
+```bash
+python3 tools/validate/detect_control_conflicts.py --slug <slug> \
+    > .service-approval/<slug>/05-generate/conflict-report.json
+```
+
+Then dispatch a **clean review subagent** (Agent tool, no prior context) whose sole job
+is to confirm or dismiss each candidate. Give it ONLY the generated control set and the
+candidate list; it returns the final `conflict-report.json` (`{pairs:[{a,b,kind,
+explanation,severity}], verdict}`, `verdict ∈ {NO_CONFLICTS, CONFLICTS_FOUND}`). The
+judge confirms/explains — it does not re-scan from scratch. Advisory at first (surface
+the confirmed pairs in the report); it can become a hard gate later.
+
+It reports: any authored preventive artifact lacking a resolvable reference anchor;
+any artifact marked not-anchored without an explicit reason; any `source_control_id`
+that does not trace back to `mapping-results.json`; any statement that is not
+evaluable (request-time key in a resource-based policy, malformed Resource ARN, key
+that does not apply to the gated action); any authored Deny action absent from the
+recommender's reviewed set; any permission-boundary that emits without the org
+prerequisite; and any objective that should be routed to detective.
+
+The anchor, enforcement, action-scope, and cross checks are **hard gates** (they
+also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisory.
+
+**Persist the review artifact** — write
+`.service-approval/<slug>/05-generate/generation-review.json`:
+
+```json
+{
+  "_metadata": {"service": "<service>", "gate": "post-generate", "generated": "service-approval v3.0.0"},
+  "validators": [
+    {"name": "validate_reference_anchor", "exit_code": 0, "blocking": true},
+    {"name": "validate_preventability", "exit_code": 0, "blocking": false},
+    {"name": "validate_enforcement", "exit_code": 0, "blocking": true},
+    {"name": "validate_action_scope", "exit_code": 0, "blocking": true},
+    {"name": "validate_cross", "exit_code": 0, "blocking": true},
+    {"name": "validate_detective_routing", "exit_code": 0, "blocking": false},
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
+    {"name": "conflict_detection", "exit_code": 0, "blocking": false}
+  ],
+  "flagged": []
+}
+```
+
+Then log each validator's outcome and close the gate:
+
+```bash
+for v in "reference_anchor:$ra:1" "preventability:$pv:0" "enforcement:$en:1" \
+         "action_scope:$as:1" "cross:$cx:1" "detective_routing:$dr:0" \
+         "canopy_facts:$cf:0"; do
+  name=${v%%:*}; rest=${v#*:}; code=${rest%%:*}
+  python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+      --source script:validate_$name \
+      --verdict $([ $code -eq 0 ] && echo pass || echo fail) --message "generation gate check"
+done
+python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+    --source skill:generate-review --verdict end \
+    --message "generation review gate complete" --extra artifact=generation-review.json
+```
+
+**Build the preventive-coverage rollup.** After the gate, produce the deterministic,
+file-backed accounting of how many preventive objectives were authored, referred, or
+routed to detective — each traceable to its control id and citation:
+
+```bash
+python3 tools/validate/build_preventive_coverage.py --slug <slug>
+```
+
+This reads `preventive-plan.json` + `preventive/rootcause-report.json` and writes
+`.service-approval/<slug>/05-generate/preventive-coverage.json`. The numbers are
+deterministic (no prose narration); Phase 6 surfaces them near the top of the report.
+
+Surface the findings before Phase 6 so the report's confidence-actions section can
+state which checks ran and passed.
 
 ### Phase 5: Test
 
@@ -693,7 +928,7 @@ subagent with the resolved `--env` / `--dry-run` / `--keep` / `--timeout` flags.
 
 ### Phase 6: Summarize
 Dispatch Summarizer as foreground subagent.
-Wait for `APPROVAL-REPORT.md`.
+Wait for `SUMMARY-REPORT.md`.
 
 ### Parallelism Summary
 
@@ -729,7 +964,7 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 
 ```
 Service Approval complete.
-Report: .service-approval/APPROVAL-REPORT.md
+Report: .service-approval/<slug>/07-summarize/SUMMARY-REPORT.md
 Controls: .service-approval/<slug>/05-generate/
-Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
+Summary of findings: see report (no verdict issued)
 ```

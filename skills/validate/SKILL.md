@@ -10,6 +10,22 @@ Read `.service-approval/<slug>/02-research/research.json` (schema v3.0 produced 
 every capability claim, API parameter, and mitigation against live MCP sources.
 Produce `.service-approval/<slug>/03-validate/validated.json`.
 
+## Source priority (which source to trust when verifying)
+
+When confirming a claim or attaching a citation, consult sources in this fixed
+order and cite the **highest-priority** source that supports the claim:
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present
+   (authoritative intent + top citation).
+2. **AWS Control Catalog API** — the control→objective authority.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general/blog/third-party content.
+
+The reference-repo index supplies the vetted *policy body* for a preventive
+control under that intent; it is the implementation library, not a verification
+source. `sar-facts.json` / `checkpoint-results.json` remain the authoritative
+*assessment* inputs. Log every MCP lookup to `mcp-calls.log`.
+
 ## Prerequisites
 
 - [ ] Confirm research.json exists (schema validation runs automatically via PostToolUse hook).
@@ -332,9 +348,14 @@ These indicate merge or enrichment failures:
 Placeholder scanning runs automatically via PostToolUse hook (validate_state.py Check S2).
 
 For each placeholder found:
-- If it's `data_classification`: infer from encryption capabilities (CMK-capable → Confidential,
-  AWS-managed → Internal, no encryption → Internal — service-managed resource)
-- If it's any other field: flag as unverified item and set `verified: false`
+- Flag as an unverified item and set `verified: false`.
+
+**Do NOT infer `data_classification`.** The tool does not determine the sensitivity
+of data a resource handles — that is the customer's determination, not something the
+accelerator can verify from capabilities. Do not derive a classification from
+encryption support or any other signal, and do not emit a `data_classification` field
+on assets. If an upstream asset still carries one, leave it unset/absent rather than
+guessing a value.
 
 ## Step 6: Count and flag unverified items
 

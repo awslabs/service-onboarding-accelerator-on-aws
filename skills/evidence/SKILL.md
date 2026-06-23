@@ -369,34 +369,18 @@ Emit AFTER teardown completes (or is skipped) and AFTER attestation-results
 is rewritten with the final teardown_status:
 
 ```bash
-# Read the verdict from APPROVAL-REPORT.md (Phase 6 wrote it). The actual
-# format is `## Verdict` H2 followed by a blank line and a bare bold line
-# `**APPROVED WITH EXCEPTIONS**`. Strip the bold markers, drop any
-# parenthesized qualifier (e.g., "APPROVED (test not run)" -> "APPROVED"
-# for sentinel purposes), uppercase, fold spaces and hyphens to underscores.
-VERDICT_TAG=$(awk '/^## Verdict/{getline; getline; print; exit}' \
-    .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md \
-    | sed -E 's/^\*+//; s/\*+$//; s/ *\(.*\)$//' \
-    | tr '[:lower:]' '[:upper:]' | tr ' -' '__')
-# e.g., "**APPROVED WITH EXCEPTIONS**" -> "APPROVED_WITH_EXCEPTIONS"
-# e.g., "**APPROVED (test not run)**" -> "APPROVED"
-
-# Defensive guard: empty VERDICT_TAG fails loudly rather than emitting a
-# malformed sentinel that the validator can't close P1 against.
-if [ -z "${VERDICT_TAG}" ]; then
-    echo "ERROR: could not extract verdict from APPROVAL-REPORT.md" >&2
-    exit 1
-fi
-
+# The terminal-state sentinel is verdict-free: the fixed token FINALIZED
+# marks that the run finalized, freezing pipeline.log against retroactive
+# remediation. No value is read from SUMMARY-REPORT.md.
 python3 -m tools.validate.log \
     --slug <slug> \
     --phase 08-evidence \
     --source pipeline:complete \
-    --verdict "${VERDICT_TAG}" \
-    --message "evidence finalized; teardown_status=${TEARDOWN_STATUS}; verdict=${VERDICT_TAG}"
+    --verdict FINALIZED \
+    --message "evidence finalized; teardown_status=${TEARDOWN_STATUS}"
 ```
 
-The validator anchors on the literal token `[pipeline:complete:<VERDICT>]`.
+The validator anchors on the literal token `[pipeline:complete:FINALIZED]`.
 If summarize already emitted the sentinel for this run (full-deploy + Phase 7
 combination should not double-emit; intake-manifest gating prevents it), the
 duplicate is harmless — the validator only checks for presence.
@@ -488,4 +472,4 @@ Phase 7 succeeds if:
 
 ---
 
-**Next Phase:** None — Phase 7 is the final verification step. The `/summarize` skill may optionally re-run to append evidence section to APPROVAL-REPORT.md.
+**Next Phase:** None — Phase 7 is the final verification step. The `/summarize` skill may optionally re-run to append evidence section to SUMMARY-REPORT.md.

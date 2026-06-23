@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::111111111111:role/MyOtherRole"
+      },
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::my-sensitive-bucket/*"
+    }
+  ]
+}

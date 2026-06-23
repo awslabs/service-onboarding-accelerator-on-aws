@@ -39,7 +39,7 @@ to your chosen compliance framework, and produces deployable artifacts — not j
 
 **Typical output:** per-service files across 5 control categories (preventive,
 proactive, detective, responsive, IaC), a framework coverage matrix, and a
-final approval report with verdict.
+final Summary Report.
 
 ---
 
@@ -450,7 +450,7 @@ How do you want to validate the generated controls?
   D. Manual CLI — show commands  (mode: manual-cli)
      Skip Phase 5. The Summarize phase appends per-format deploy commands
      (terraform apply, cdk deploy, aws cloudformation deploy) to the final
-     approval report so you can run them yourself later.
+     Summary Report so you can run them yourself later.
 ```
 
 Validation rules:

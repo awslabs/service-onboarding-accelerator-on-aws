@@ -78,31 +78,82 @@ class CliCheck:
 def decode_parameter_path(pc: str) -> tuple[str, str, str]:
     """Decode a parameters_controlled path into (service_prefix, operation, property).
 
-    Args:
-        pc: Path like "$.lambda/CreateFunction.KMSKeyArn"
+    Accepts two shapes:
+      - LONG: "$.<service>/<Operation>.<Param>"  -> ("service", "Operation", "Param")
+      - SHORT: "$.<Param>"                       -> ("", "", "Param")
+
+    The short shape is what map-generate-controls/SKILL.md prescribes for
+    most controls (e.g., "$.encryptionKeyArn"); callers fill missing svc/op
+    from sibling metadata (sar.service_prefix and the leading actions[0]
+    operation segment). The long shape is also accepted because some
+    controls and the test fixtures use it.
 
     Returns:
         Tuple of (service_prefix, operation, property_path).
-        Example: ("lambda", "CreateFunction", "KMSKeyArn")
 
     Raises:
-        ValueError: If path format is invalid.
+        ValueError: If the path doesn't start with "$." or is otherwise
+        unparseable.
     """
     if not pc.startswith("$."):
         raise ValueError(f"Invalid parameter path (must start with $.) : {pc!r}")
 
     rest = pc[2:]
-    if "/" not in rest:
-        raise ValueError(f"Invalid parameter path (missing /): {pc!r}")
-    service_prefix, op_and_prop = rest.split("/", 1)
+    if not rest:
+        raise ValueError(f"Invalid parameter path (empty after $.): {pc!r}")
 
-    if "." in op_and_prop:
-        operation, prop_path = op_and_prop.split(".", 1)
-    else:
-        operation = op_and_prop
-        prop_path = ""
+    if "/" in rest:
+        # Long form: $.<service>/<Operation>[.<Param>]
+        service_prefix, op_and_prop = rest.split("/", 1)
+        if "." in op_and_prop:
+            operation, prop_path = op_and_prop.split(".", 1)
+        else:
+            operation = op_and_prop
+            prop_path = ""
+        return service_prefix, operation, prop_path
 
-    return service_prefix, operation, prop_path
+    # Short form: $.<Param>. svc/op are unknown — caller resolves from sar
+    # (service_prefix) and actions[] (action -> operation).
+    return "", "", rest
+
+
+def _param_tail(pc: str) -> str:
+    """Return the trailing parameter component of a parameters_controlled path.
+
+    Used to compare short vs. long path shapes for the same parameter:
+        _param_tail("$.KMSKeyArn") == _param_tail("$.lambda/CreateFunction.KMSKeyArn")
+    Returns "" for malformed paths so callers can decide what to do.
+    """
+    try:
+        _, _, prop = decode_parameter_path(pc)
+    except ValueError:
+        return ""
+    # The "tail" is the leaf property name (last dotted segment), so a
+    # nested path like $.Encryption.KMSKeyArn still matches a short-form
+    # $.KMSKeyArn for synthesizer purposes.
+    return prop.rsplit(".", 1)[-1] if prop else ""
+
+
+def parameter_paths_match(a: str, b: str) -> bool:
+    """True when two parameters_controlled paths refer to the same parameter.
+
+    Compares on the trailing parameter component so a short-form path
+    ($.KMSKeyArn) matches its long-form equivalent
+    ($.lambda/CreateFunction.KMSKeyArn).
+    """
+    ta, tb = _param_tail(a), _param_tail(b)
+    return bool(ta) and ta == tb
+
+
+def _operation_from_action(action: str) -> str:
+    """Extract the operation segment from an IAM action string.
+
+    "lambda:CreateFunction" -> "CreateFunction"; returns "" if the action
+    isn't in <prefix>:<Operation> shape.
+    """
+    if not action or ":" not in action:
+        return ""
+    return action.split(":", 1)[1]
 
 
 # Stack ARN: arn:aws:cloudformation:<region>:<account>:stack/<name>/<id>
@@ -329,6 +380,71 @@ def f1_resource_get_probe(
             supplemental_evidence=f"iac-time-evidence/{control['id']}.log",
         )
 
+    # Property-fit guard. The dispatcher hands us parameters_controlled[0],
+    # but [0] is not always a field the chosen describe verb returns — some
+    # controls list a property governed at a *different* API first (e.g.,
+    # AuthType/Principal are set on AddPermission, FunctionUrlAuthType on
+    # get-function-url-config; none are returned by get-function-configuration).
+    # Probing such a property would yield a spurious FAIL on a fully compliant
+    # resource. When the mapping declares a `returns` allowlist, refine `prop`
+    # to the first *governed* property the verb actually returns (skipping the
+    # bare resource-identifier name param, which is always present and proves
+    # nothing). If none of the controlled properties are observable here, the
+    # control is genuinely not CLI-validatable via this describe call.
+    returns = desc.get("returns")
+    if returns:
+        returns_set = set(returns)
+        conditional_set = set(desc.get("conditional", []))
+        name_param = desc["name_flag"].lstrip("-").replace("-", "").lower()
+        candidate: str | None = None
+        saw_conditional = False
+        for pc in control.get("parameters_controlled", []):
+            try:
+                _, _, leaf_prop = decode_parameter_path(pc)
+            except ValueError:
+                continue
+            if not leaf_prop:
+                continue
+            leaf = leaf_prop.split(".", 1)[0]
+            leaf = re.sub(r"\[.*?\]", "", leaf)
+            leaf = re.sub(r"\{.*?\}", "", leaf)
+            if not leaf or leaf.lower() == name_param:
+                continue
+            if leaf in returns_set:
+                candidate = leaf_prop
+                break
+            if leaf in conditional_set:
+                saw_conditional = True
+        if candidate is None:
+            if saw_conditional:
+                reason = (
+                    f"F1 probe-fit: the controlled property "
+                    f"({control.get('parameters_controlled', [])}) is a conditional "
+                    f"configuration block on '{desc['service']} {desc['verb']}' — it is "
+                    f"populated only when the customer opts in (e.g., VPC attachment, "
+                    f"layers). The control's IaC-time guard is a conditional rule "
+                    f"('when <block> exists ...') that is vacuously satisfied when "
+                    f"the property is absent, so a runtime existence probe cannot prove "
+                    f"or disprove it on a deployment that did not opt in. Enforcement is "
+                    f"verified at template-time; see supplemental_evidence."
+                )
+            else:
+                reason = (
+                    f"F1 probe-fit: none of the controlled properties "
+                    f"({control.get('parameters_controlled', [])}) are returned by "
+                    f"'{desc['service']} {desc['verb']}'. The governed property is set "
+                    f"at a different API (e.g., a permission/URL-config call) and is "
+                    f"not observable in this resource's base configuration. Enforcement "
+                    f"is verified at template-time; see supplemental_evidence."
+                )
+            return _ncv(
+                control["id"],
+                REASON_POLICY_ONLY,
+                reason,
+                supplemental_evidence=f"iac-time-evidence/{control['id']}.log",
+            )
+        prop = candidate
+
     # Build argv as a list — never serialize through a shell.
     argv: list[str] = [
         "aws",
@@ -397,10 +513,29 @@ def f2_iam_simulate(control: dict, deployed: dict) -> CliCheck:
     if pc_list:
         try:
             svc, op, prop = decode_parameter_path(pc_list[0])
-            context_key = f"{svc}:{prop}"
-            context_entries.append(
-                f"ContextKeyName={context_key},ContextKeyValues=,ContextKeyType=string"
-            )
+            # Use the leaf property and strip any JSONPath array suffix
+            # (e.g. "VpcConfig.SubnetIds[*]" -> "SubnetIds"). The IAM CLI
+            # shorthand parser for --context-entries rejects '[' / ']', and
+            # the array/index suffix is a path artifact, not part of the
+            # context-key name.
+            leaf = prop.rsplit(".", 1)[-1] if prop else prop
+            # Strip path artifacts the --context-entries shorthand parser
+            # rejects: JSONPath array suffixes ("[*]", "[0]") AND tag-template
+            # braces ("Tags{key}" -> "Tags"). Both are path decorations, not
+            # part of the context-key name.
+            leaf = re.sub(r"\[.*?\]", "", leaf or "")
+            leaf = re.sub(r"\{.*?\}", "", leaf)
+            # Only emit a context entry when the key is well-formed: both a
+            # service prefix and a residue-free leaf are present. A malformed
+            # key (empty svc, empty leaf, or leftover metacharacters) would
+            # make the CLI reject the whole call (exit 252) and produce a
+            # false FAIL; the action-decision probe is still meaningful
+            # without the negative-case context entry, so we just omit it.
+            if svc and leaf and not re.search(r"[^A-Za-z0-9:_/-]", leaf):
+                context_key = f"{svc}:{leaf}"
+                context_entries.append(
+                    f"ContextKeyName={context_key},ContextKeyValues=,ContextKeyType=string"
+                )
         except ValueError:
             pass
 
@@ -692,7 +827,11 @@ def synthesize_cli(
     pc_list = control.get("parameters_controlled", [])
     iac_only = bool(control.get("iac_only", False))
 
-    # Decode first parameter to get (service_prefix, operation, property)
+    # Decode first parameter to get (service_prefix, operation, property).
+    # The decoder accepts both the long form ($.svc/Op.Prop) and the short
+    # form ($.Prop) — for short form, svc/op come back empty and we fill
+    # them from the sibling metadata below so a path-shape mismatch alone
+    # never knocks an F1-eligible control into NOT_CLI_VALIDATABLE.
     svc: str | None = None
     op: str | None = None
     prop: str | None = None
@@ -704,6 +843,14 @@ def synthesize_cli(
 
     if not svc:
         svc = sar.get("service_prefix", "")
+
+    # Short-form paths leave op empty — recover it from the leading action
+    # (e.g., "lambda:CreateFunction" -> "CreateFunction"). Controls that
+    # mix scopes (one action per CRUD verb) still get a deterministic op
+    # because actions[0] is the canonical create/mutating verb by convention.
+    actions_list = control.get("actions", [])
+    if not op and actions_list:
+        op = _operation_from_action(actions_list[0])
 
     # F6 (intentional IaC-time) — selected ONLY by explicit signal, never as
     # a fallback. Checked BEFORE F1 so a control flagged iac_only doesn't

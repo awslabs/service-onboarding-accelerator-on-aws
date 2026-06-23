@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowSpecificOidcProvider",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT ID>:oidc-provider/MyProvider"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity"
+    },
+    {
+      "Sid": "AllowOtherSTSActions",
+      "Effect": "Allow",
+      "Principal": "*",
+      "NotAction": [
+        "sts:AssumeRoleWithSAML",
+        "sts:AssumeRoleWithWebIdentity"
+      ]
+    }
+  ]
+}
