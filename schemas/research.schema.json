@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas/research.schema.json",
   "title": "research.json (merged)",
-  "description": "Phase 1 merge output combining research-mitigations + research-capabilities + research-api-surface. Produced by research skill's merge step. Consumed by Phase 2 validate. schema_version MUST be '3.0' per validate_state.py CHECK-S9. Assets MUST have data_classification and non-empty entry_points. api_surface MUST be inlined (not a _ref).",
+  "description": "Phase 1 merge output combining research-mitigations + research-capabilities + research-api-surface. Produced by research skill's merge step. Consumed by Phase 2 validate. schema_version MUST be '3.0' per validate_state.py CHECK-S9. Assets MUST have non-empty entry_points. api_surface MUST be inlined (not a _ref). The tool does not infer or emit data_classification — data sensitivity is the customer's determination.",
 
   "type": "object",
   "additionalProperties": false,
@@ -69,17 +69,11 @@
     "asset": {
       "type": "object",
       "additionalProperties": true,
-      "required": ["name", "cfn_type", "data_classification", "entry_points"],
+      "required": ["name", "cfn_type", "entry_points"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
         "cfn_type": {"type": "string", "pattern": "^AWS::"},
         "description": {"type": "string"},
-        "data_classification": {
-          "type": "string",
-          "minLength": 1,
-          "not": {"enum": ["generic", "Service resource", ""]},
-          "description": "Must be specific. Generic placeholders like 'Service resource' fail CHECK-S9."
-        },
         "entry_points": {
           "type": "array",
           "minItems": 1,

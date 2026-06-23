@@ -34,11 +34,11 @@ Failure signals:
          boundary is the MAXIMUM a principal may do, not the role's grant policy;
          the control intent belongs in the Deny + condition keys
     P11 — no LLM confidence scoring: no emitted artifact under 04-map/ or
-         05-generate/, nor the APPROVAL-REPORT, may carry a per-item confidence
+         05-generate/, nor the Summary Report, may carry a per-item confidence
          score/key/band (a `"confidence":` JSON key, a `run_confidence` key, or a
-         HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The report's
-         deterministic "Actions Taken to Increase Confidence" heading is exempt —
-         the guard targets scored/keyed confidence, not the English word.
+         HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The guard targets
+         scored/keyed confidence, not the English word, so prose that merely uses
+         the word "confidence" is not flagged.
 """
 from __future__ import annotations
 
@@ -739,9 +739,8 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
 #      used). coverage_level — a deterministic catalog cross-check — is allowed.
 #   2. A confidence BAND label (HIGH/MEDIUM/LOW/SPECULATIVE) attached to the word
 #      "confidence" on the same line of a markdown artifact (mapping .md files,
-#      the APPROVAL-REPORT). The report's deterministic
-#      "Actions Taken to Increase Confidence" heading carries no band token, so
-#      it is naturally exempt; the regex requires a band token alongside the word.
+#      the Summary Report). The regex requires a band token alongside the word, so
+#      ordinary prose that uses "confidence" without a band label is not flagged.
 
 # JSON-key form: a quoted `confidence`/`run_confidence` property used as a key.
 _CONFIDENCE_KEY_RE = re.compile(r'"(confidence|run_confidence)"\s*:')
@@ -784,7 +783,7 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
     """P11: no emitted artifact may carry a per-item confidence score/key/band.
 
     Scans every JSON under 04-map/ and 05-generate/ for confidence keys, and the
-    rendered markdown (mapping .md files + the APPROVAL-REPORT) for band labels.
+    rendered markdown (mapping .md files + the Summary Report) for band labels.
     Finalized runs are exempt (frozen artifacts cannot be remediated).
     """
     from validate_deployable import SKIP_DIRS
@@ -814,7 +813,7 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
                 _confidence_scoring_errors_in_text(text, str(rel), suffix == ".md")
             )
 
-    report = service_root / "07-summarize" / "APPROVAL-REPORT.md"
+    report = service_root / "07-summarize" / "SUMMARY-REPORT.md"
     if report.exists():
         try:
             text = report.read_text()
@@ -978,7 +977,7 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         # Phase 7 will run); checked separately below.
     ],
     "07-summarize": [
-        ("APPROVAL-REPORT.md", 2048),
+        ("SUMMARY-REPORT.md", 2048),
     ],
     "08-evidence": [
         ("cli-commands.json", 256),

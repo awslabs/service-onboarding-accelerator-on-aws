@@ -49,7 +49,7 @@ Phase 4 Generate    → <slug>/05-generate/{proactive,preventive,detective,respo
                       (preventive is a gated sub-pipeline: recommend → reference-anchored
                        authors → root-cause critic; see README "reference-anchored")
 Phase 5 Test        → <slug>/06-test/{test-results.json, deployed-resources.json} (mode set upfront in Intake: full-deploy | dry-run | skip | manual-cli)
-Phase 6 Summarize   → <slug>/07-summarize/APPROVAL-REPORT.md
+Phase 6 Summarize   → <slug>/07-summarize/SUMMARY-REPORT.md
 Phase 7 Evidence    → <slug>/08-evidence/{attestation-report.md, cli-outputs/} (requires AWS credentials)
 ```
 

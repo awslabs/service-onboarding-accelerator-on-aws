@@ -201,32 +201,15 @@ for op in api.get('api_surface', {}).get('operations', []):
         assets_by_cfn[cfn_type] = {
             'name': resource_name,
             'cfn_type': cfn_type,
-            'data_classification': '<needs enrichment from capabilities>',
             'trust_boundaries': [],
             'entry_points': [],
             'source': 'api-surface'
         }
 
-# Resolve placeholder data_classification from capabilities data
-# Infer classification from encryption tiers and resource purpose
-enc = cap.get('capabilities', {}).get('encryption', {}).get('at_rest', {})
-per_resource_enc = {e.get('resource_type', ''): e for e in enc.get('per_resource_encryption', [])}
-for cfn, asset in assets_by_cfn.items():
-    if asset.get('data_classification', '').startswith('<needs'):
-        # Try to match by resource name in encryption config
-        name_lower = asset.get('name', '').lower()
-        matched = False
-        for enc_rt, enc_info in per_resource_enc.items():
-            if name_lower in enc_rt.lower():
-                key_types = enc_info.get('key_types', [])
-                if 'Customer-managed CMK' in key_types:
-                    asset['data_classification'] = 'Confidential — supports CMK encryption'
-                else:
-                    asset['data_classification'] = 'Internal — AWS-managed encryption'
-                matched = True
-                break
-        if not matched:
-            asset['data_classification'] = 'Internal — service-managed resource'
+# NOTE: the tool does NOT infer data_classification. The sensitivity of the data a
+# resource handles is the customer's determination, not something the accelerator can
+# verify from encryption tiers or any other capability signal. Assets carry no
+# data_classification field.
 
 # Enrich assets with entry_points from API surface
 ops = api.get('api_surface', {}).get('operations', [])

@@ -57,6 +57,14 @@
           "description": "Preferred values: 'Fully Covered', 'Partially Covered', 'Supportive Only', 'N/A'. Legacy values (FULL, PARTIAL, SUPPORTS, NONE) accepted for backward compatibility with archived runs."
         },
         "reason": {"type": "string"},
+        "applicability_justification": {
+          "type": "string",
+          "description": "Required to override an N/A-by-default domain (DCS/UEM/BCR/IPY, TVM vuln-metric objectives) to MAPPED. One sentence on why the service genuinely supports this objective. Enforced by validate_domain_applicability.py."
+        },
+        "reference_url": {
+          "type": "string",
+          "description": "Public AWS doc URL backing an applicability_justification when an N/A-by-default domain objective is overridden to MAPPED."
+        },
         "controls": {
           "type": "array",
           "items": {

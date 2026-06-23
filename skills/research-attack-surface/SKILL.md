@@ -75,7 +75,7 @@ Record the detected threat model in the output:
 
 **Threat model name rules (CRITICAL for output titles):**
 
-The `threat_model_name` field flows into the APPROVAL-REPORT.md section title and the
+The `threat_model_name` field flows into the SUMMARY-REPORT.md section title and the
 print summary. Set it using these rules:
 
 | Source | `threat_model_name` value | Example output title |

@@ -20,7 +20,7 @@ When the user asks to "run service approval" or "generate security controls" for
 
 ## Verification
 
-Before writing `APPROVAL-REPORT.md`, verify all expected outputs exist:
+Before writing `SUMMARY-REPORT.md`, verify all expected outputs exist:
 - `<slug>/04-map/mapping-results.json`
 - `<slug>/04-map/controls-catalog.md`
 - `<slug>/04-map/framework-mapping.md`

@@ -19,6 +19,6 @@ Follow the skill file step by step. Write all output to `.service-approval/` in 
 
 ## Output
 Report back to the user with:
-- Path to `.service-approval/APPROVAL-REPORT.md`
+- Path to `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md`
 - Count of artifacts generated per category
 - Any phases that were skipped or failed

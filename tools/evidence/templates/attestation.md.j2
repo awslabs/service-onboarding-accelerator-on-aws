@@ -30,7 +30,7 @@ Each numbered phase directory contains one layer of the chain of custody:
 ### 01-assess/assessment-summary.md
 - **What:** 5-domain CAF assessment with GAPS compliance matrix.
 - **Upstream:** domains/*.md intermediate research + SAR + checkpoints.
-- **Downstream:** 07-summarize/APPROVAL-REPORT.md Security Posture Assessment section.
+- **Downstream:** 07-summarize/SUMMARY-REPORT.md Security Posture Assessment section.
 - **Claim it substantiates:** "All known security posture gaps for this service were identified before control generation."
 
 ### 02-research/research.json (merged)
@@ -63,11 +63,11 @@ Each numbered phase directory contains one layer of the chain of custody:
 - **Downstream:** 08-evidence (reads deployed-resources.json for ARNs).
 - **Claim it substantiates:** "The compliant-resource template actually deploys against a real AWS account and tears down cleanly."
 
-### 07-summarize/APPROVAL-REPORT.md
-- **What:** Customer-facing verdict with coverage matrix and traceability tables.
+### 07-summarize/SUMMARY-REPORT.md
+- **What:** Customer-facing summary with coverage matrix and traceability tables.
 - **Upstream:** EVERY file above.
 - **Downstream:** Human reviewer.
-- **Claim it substantiates:** "Here is the synthesized answer to 'Is this service approvable?' with evidence pointers."
+- **Claim it substantiates:** "Here is the synthesized summary of the service's control coverage, with evidence pointers."
 
 ### 08-evidence/
 - **What:** Post-deploy runtime verification that each mapped control is actually enforced.

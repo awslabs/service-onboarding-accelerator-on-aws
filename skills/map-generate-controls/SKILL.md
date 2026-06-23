@@ -459,6 +459,34 @@ analysis is mandatory for every service onboarding). For each control:
 4. Every control MUST have a non-empty `attack_techniques[]` — if no direct action match
    exists, use mechanism alignment to identify relevant techniques
 
+### 2.7.1 Canonical control identity — avoid emitting structural duplicates
+
+Per-resource mitigation variants (e.g. CapacityProvider / EventSourceMapping / Layer /
+CodeSigningConfig twins of a Function control) often produce **structurally identical
+controls** that differ only by ID — same name, scope, category, mechanism,
+resource_types, actions, and posture. These inflate the control count and the coverage
+numbers without adding coverage.
+
+Two controls have the **same canonical identity** when they share:
+
+```
+(normalized name, scope, category, mechanism,
+ sorted(resource_types), sorted(actions), posture)
+```
+
+When two candidate controls would share that identity, emit **one** control and union
+the source `mitigation_ids[]` (and the other traceability lists) onto it — do not emit a
+second ID. If two controls differ only by which resource type they target but enforce
+the *same action via the same mechanism*, collapse them to one control and keep
+`resource_types[]` as a list so traceability survives; controls that gate **different
+actions** or use a **different mechanism** stay distinct.
+
+A deterministic safety net runs in `map-assemble` Phase 0 (`dedup_controls()`):
+it collapses any remaining duplicates by this same canonical key before the rest of the
+pipeline consumes the controls, and `tools/validate/validate_control_dedup.py` fails the
+map gate if two controls in `mapping-results.json` still share the key. Generating
+cleanly here keeps the catalog honest before the safety net even runs.
+
 ### 2.8 Compensating control documentation
 
 Some capabilities are NOT available for the service (e.g., RCP not supported, no delegated admin,

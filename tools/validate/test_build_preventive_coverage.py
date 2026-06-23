@@ -105,6 +105,37 @@ def test_build_for_slug_missing_plan_returns_none(tmp_path: Path) -> None:
     assert bpc.build_for_slug("nope", root=tmp_path) is None
 
 
+def test_application_guidance_carried_for_authored_and_referred() -> None:
+    """application_guidance on a GENERATE_*/REFER_TO_REFERENCE decision is carried
+    verbatim into its coverage row; routed-to-detective rows never carry it."""
+    plan = _plan()
+    plan["decisions"][0]["application_guidance"] = {
+        "placement": "Attach to the workload OU SCP",
+        "placeholders": ["<ORG_ID>", "<WORKLOAD_OU_ID>"],
+        "test": "simulate a non-compliant create",
+        "rollback": "detach the SCP",
+    }
+    plan["decisions"][1]["application_guidance"] = {
+        "placement": "Attach as a permission boundary to the execution role",
+        "placeholders": ["the execution role ARN"],
+    }
+    # A routed-to-detective decision should drop any guidance even if present.
+    plan["decisions"][2]["application_guidance"] = {"placement": "n/a"}
+
+    cov = bpc.build_coverage(_plan_with(plan))
+    rows = {r["control_id"]: r for r in cov["controls"]}
+    assert rows["CTRL-ORG-PRV-001"]["application_guidance"]["placement"].startswith("Attach to the workload OU")
+    assert rows["CTRL-ACC-PRV-002"]["application_guidance"]["placeholders"] == ["the execution role ARN"]
+    assert "application_guidance" not in rows["CTRL-ORG-PRV-003"]
+    assert schema_errors(cov, "preventive-coverage") == []
+
+
+def _plan_with(plan: dict) -> dict:
+    """Identity helper so the guidance test reads naturally; build_coverage
+    consumes the plan dict directly."""
+    return plan
+
+
 def test_missing_citation_falls_back_to_service_doc() -> None:
     plan = {
         "_metadata": {"service": "x"},

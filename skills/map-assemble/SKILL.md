@@ -64,6 +64,41 @@ If the skill halts early (precondition failure, validation error), emit
 
 ---
 
+## Phase 0: Semantic control de-duplication (deterministic, runs first)
+
+**Canonical implementation:** `scripts/map-assemble.py` → `dedup_controls()` +
+`remap_framework_mapping()`. The script runs this BEFORE the reverse index and
+threat map are built, so the entire downstream pipeline (and the reported count)
+sees the deduped set.
+
+The control set can carry near-identical controls that differ only by ID — the
+per-resource mitigation variants (e.g. CapacityProvider / EventSourceMapping / Layer
+/ CodeSigningConfig twins of a Function control) come out structurally identical and
+inflate the count and the coverage numbers. Two controls are collapsed into one when
+they share this **canonical identity**:
+
+```
+(normalized name, scope, category, mechanism,
+ sorted(resource_types), sorted(actions), posture)
+```
+
+Collapse policy (deliberate):
+- **Survivor** = the lexicographically smallest control id in the group; its id is
+  kept (ids are NOT renumbered contiguously — the `\d{3}` pattern does not require a
+  gapless sequence, and renumbering would widen the rewrite blast radius).
+- **Traceability survives**: `mitigation_ids`, `parameters_controlled`,
+  `condition_keys`, `assessment_gap_ids`, `attack_techniques`, `framework_keywords`,
+  and `resource_types` are unioned (sorted) onto the survivor.
+- **Every reference is remapped to the survivor id**: `framework_mapping[].controls[]`
+  control_ids and `quality_gate_results.orphaned_controls`. When two now-merged ids
+  both appear under one objective, they collapse to one entry keeping the stronger
+  `coverage_level`.
+
+Because dedup runs here (before Phase 1), the threat map, reverse index, coverage
+gaps, and both rendered `.md` files are all built on the deduped set automatically.
+
+---
+
 ## Phase 1: Build Reverse Index (controls -> framework objectives)
 
 For each control, collect all framework objectives it maps to:
@@ -146,7 +181,7 @@ skills; read them from the emitted `residual_gaps` array.
 Consumers of `threat_mitigation_map[]` entries:
 - `skills/test/SKILL.md` — mitigation coverage calculation reads
   `entry.control_ids` (NOT `entry.controls`).
-- `skills/summarize/SKILL.md` — APPROVAL-REPORT coverage matrix reads
+- `skills/summarize/SKILL.md` — Summary Report coverage matrix reads
   `entry.coverage`, `entry.layers`, and `entry.residual_gaps`.
 - Framework mapping UI — reads `entry.framework_objectives`.
 

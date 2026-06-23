@@ -11,7 +11,7 @@ Generates AWS security controls and compliant IaC templates for any AWS service.
 - **Auto-remediation** — Lambda remediators, SSM runbooks, Step Functions workflows
 - **Compliant IaC** — CDK (TypeScript), Terraform (modular), CloudFormation, CDK for Terraform
 - **Validation** — Tier 1 static checks + Tier 2 AWS API policy validation (automatic via hooks)
-- **Approval report** - Summaries the overall service onboarding accelerator on AWS
+- **Summary Report** - Summarizes the overall service onboarding accelerator output on AWS
 
 
 Output lands in `.service-approval/<service-slug>/` (per-service layout) in your working directory:
@@ -24,7 +24,7 @@ Output lands in `.service-approval/<service-slug>/` (per-service layout) in your
   04-map/                 ← mapping-results.json, controls-catalog.md, framework-mapping.md
   05-generate/            ← all generated control artifacts (preventive, proactive, detective, responsive, IaC)
   06-test/                ← test-results.json, deploy logs
-  07-summarize/           ← APPROVAL-REPORT.md
+  07-summarize/           ← SUMMARY-REPORT.md
   08-evidence/            ← attestation-report.md, CLI probe outputs, attestation-results.json
   attestation.md          ← reviewer's audit guide
   mcp-calls.log           ← MCP call audit log
@@ -102,19 +102,34 @@ highest-priority source that backs it.
 
 ### How the tool builds confidence
 
-The pipeline does not issue an approve/deny verdict; instead, every run records
-the concrete, verifiable steps it took so a reviewer can see exactly what was
-checked:
+The pipeline does not issue an approve/deny verdict; instead, every run takes the
+same concrete, verifiable steps so a reviewer can see exactly what was checked.
+These steps are the same on every run, so they are documented here once rather
+than repeated in each Summary Report:
 
-- The final report opens with an **"Actions Taken to Increase Confidence"**
-  section — a factual list of the verifications performed (capabilities and
-  condition keys checked against AWS sources, which validators ran and passed,
-  reference anchoring, deployment, runtime attestation).
-- A **Preventive Coverage** accounting follows it: a file-backed
+- **Capability verification** — every service capability, API parameter, IAM
+  action, and condition key is verified against authoritative AWS sources before
+  any control is generated; unverified items are reported, not silently dropped.
+- **Validators run** — integrity, reference-anchor, preventability/root-cause, and
+  control-mapping cross-checks run at the map and generate review gates and again
+  in the Stop hook; their pass/fail is recorded in `pipeline.log`.
+- **Reference anchoring** — every preventive control either resolves to a public
+  AWS reference example or is explicitly marked not-anchored with a stated reason.
+- **Deployment** — when testing is enabled, the compliant resource template is
+  deployed to a real account, Config-rule evaluations and alarms are checked, then
+  the stack is torn down.
+- **Runtime attestation** — when Phase 7 Evidence runs, controls are attested
+  live-in-effect via read-only CLI probes and resources are torn down afterward.
+
+Each Summary Report does **not** repeat this generic list. Instead it carries only
+the **run-specific** data a reviewer needs:
+
+- A **Preventive Coverage** accounting: a file-backed
   (`preventive-coverage.json`) count of how many preventive objectives have a
   policy authored from a reference example, how many point to a reference the
   customer applies, and how many are covered by detective controls instead — each
-  count traceable to its control id and citation.
+  count traceable to its control id and citation, plus the concrete apply/adapt
+  guidance for each authored or referred policy.
 
 ### Validation efforts
 

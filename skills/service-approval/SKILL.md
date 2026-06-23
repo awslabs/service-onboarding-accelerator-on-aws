@@ -683,6 +683,8 @@ python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
 python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
 python3 tools/validate/validate_mapping_semantics.py --slug <slug>; ms=$?
 python3 tools/validate/validate_canopy_facts.py --slug <slug>; cf=$?
+python3 tools/validate/validate_domain_applicability.py --slug <slug>; da=$?
+python3 tools/validate/validate_control_dedup.py --slug <slug>; cd=$?
 ```
 
 It reports: objectives flagged with no catalog/reference support, and any control
@@ -706,7 +708,9 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
     {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
     {"name": "lint_control_prose", "exit_code": 0, "blocking": true},
     {"name": "validate_mapping_semantics", "exit_code": 0, "blocking": false},
-    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false}
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
+    {"name": "validate_domain_applicability", "exit_code": 0, "blocking": false},
+    {"name": "validate_control_dedup", "exit_code": 0, "blocking": false}
   ],
   "flagged": [
     {"objective_id": "IAM-04", "issue": "no catalog/reference support", "severity": "advisory"}
@@ -738,9 +742,32 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_canopy_facts \
     --verdict $([ $cf -eq 0 ] && echo pass || echo warn) --message "Canopy-factual citation check"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_domain_applicability \
+    --verdict $([ $da -eq 0 ] && echo pass || echo warn) --message "framework-domain applicability check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_control_dedup \
+    --verdict $([ $cd -eq 0 ] && echo pass || echo warn) --message "control de-duplication count guard"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source skill:map-review --verdict end \
     --message "mapping review gate complete" --extra artifact=mapping-review.json
 ```
+
+`validate_control_dedup` re-derives each control's canonical identity (the same key
+`map-assemble` Phase 0 collapses on) and confirms no two controls in
+`mapping-results.json` still share it — i.e. the de-duplication held. It prints
+`distinct_controls` / `total_controls`; after Phase 0 these are equal. A finding means
+a duplicate survived assembly (investigate the collapse), not that the mapper should
+re-map.
+
+`validate_domain_applicability` (CCMv4-specific) flags any platform/infra-config
+control (CloudFormation Guard, Config rule, SCP, RCP, tag policy) mapped to an
+application-code AIS objective (AIS-02/04/05), any N/A-by-default domain objective
+(DCS/UEM/BCR/IPY, TVM-10-class) marked MAPPED without an `applicability_justification`
++ `reference_url` override, and any resource-tag control mapped to a
+data-sensitivity-classification objective (DSP-03/04). Advisory here (reported in
+`mapping-review.json`); a finding means the mapper over-claimed coverage — re-map the
+flagged objective to N/A (or add a justified override) before generation consumes the
+mapping.
 
 The control→catalog cross-check (`validate_control_mappings`) is **advisory** —
 surface its flagged items and proceed. The prose lint (`lint_control_prose
@@ -901,7 +928,7 @@ subagent with the resolved `--env` / `--dry-run` / `--keep` / `--timeout` flags.
 
 ### Phase 6: Summarize
 Dispatch Summarizer as foreground subagent.
-Wait for `APPROVAL-REPORT.md`.
+Wait for `SUMMARY-REPORT.md`.
 
 ### Parallelism Summary
 
@@ -937,7 +964,7 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 
 ```
 Service Approval complete.
-Report: .service-approval/APPROVAL-REPORT.md
+Report: .service-approval/<slug>/07-summarize/SUMMARY-REPORT.md
 Controls: .service-approval/<slug>/05-generate/
 Summary of findings: see report (no verdict issued)
 ```

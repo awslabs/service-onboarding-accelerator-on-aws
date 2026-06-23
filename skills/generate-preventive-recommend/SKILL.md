@@ -253,7 +253,13 @@ Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
         "id": "<canopy-mitigation-alias>"
       },
       "route_to": null,
-      "rationale": "condition key gates CreateFunction; SCP example covers the deny-on-create pattern"
+      "rationale": "condition key gates CreateFunction; SCP example covers the deny-on-create pattern",
+      "application_guidance": {
+        "placement": "Attach to the workload OU SCP at the Organizations root or target OU",
+        "placeholders": ["<ORG_ID>", "<WORKLOAD_OU_ID>", "the function ARN pattern in Resource"],
+        "test": "aws iam simulate-custom-policy / deploy to a sandbox account and confirm a non-compliant create is denied",
+        "rollback": "Detach the SCP from the OU; no resource state changes are made by the policy"
+      }
     },
     {
       "control_id": "CTRL-ORG-PRV-007",
@@ -304,6 +310,30 @@ Every emitted decision MUST carry:
   from, the mapping's `actions[]` (e.g. a PassRole control whose mapping
   `actions[]` lists only the Lambda create/update operations must record
   `plan_actions: ["iam:PassRole"]`).
+- `application_guidance` (for `GENERATE_*` AND `REFER_TO_REFERENCE` decisions) —
+  a concrete **"what to do with this policy"** block so the customer is not left
+  with a bare citation URL. It carries:
+  - `placement` — where the policy goes (e.g. "attach to the workload OU SCP",
+    "set as the function's resource-based policy", "attach as a permission
+    boundary to the execution role").
+  - `placeholders[]` — the **specific tokens the customer must edit**: account
+    ids, `<ORG_ID>`, OU ids, role ARNs, function ARNs, KMS key ARNs. Draw these
+    from the control's real parameter/condition names (the mapping control's
+    `parameters_controlled[]` / `enforcing_condition_keys[]` and `validated.json`
+    operation parameters) — do NOT invent generic names.
+  - `test` — how to verify it before relying on it (e.g.
+    `aws iam simulate-principal-policy`, or deploy to a sandbox account and
+    confirm a non-compliant action is denied).
+  - `rollback` — how to undo it (detach the SCP/boundary, remove the resource
+    policy statement; note whether any resource state is changed).
+
+  For an **authored** control, the guidance points at the generated artifact file
+  and the exact placeholders inside it. For a **referred** control, the guidance
+  summarizes how to copy the referenced example and what to change for this
+  service/account — not just the URL. `ROUTE_DETECTIVE` rows need no guidance
+  (they produce no preventive policy to apply). `build_preventive_coverage.py`
+  carries this block into `preventive-coverage.json`, and `summarize` renders it
+  in the Summary Report preventive section.
 
 ## Step 4 — Hand-off summary
 

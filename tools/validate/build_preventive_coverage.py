@@ -105,6 +105,12 @@ def build_coverage(plan: dict, rootcause: dict | None = None) -> dict:
         }
         if anchor is not None:
             row["anchor"] = anchor
+        # Carry the "how to apply/adapt this policy" guidance through for authored
+        # and referred controls (it has no meaning for a routed-to-detective row,
+        # which produces no preventive policy to apply).
+        guidance = d.get("application_guidance")
+        if isinstance(guidance, dict) and guidance and category != "routed_to_detective":
+            row["application_guidance"] = guidance
         rows.append(row)
 
     totals = {

@@ -348,9 +348,14 @@ These indicate merge or enrichment failures:
 Placeholder scanning runs automatically via PostToolUse hook (validate_state.py Check S2).
 
 For each placeholder found:
-- If it's `data_classification`: infer from encryption capabilities (CMK-capable → Confidential,
-  AWS-managed → Internal, no encryption → Internal — service-managed resource)
-- If it's any other field: flag as unverified item and set `verified: false`
+- Flag as an unverified item and set `verified: false`.
+
+**Do NOT infer `data_classification`.** The tool does not determine the sensitivity
+of data a resource handles — that is the customer's determination, not something the
+accelerator can verify from capabilities. Do not derive a classification from
+encryption support or any other signal, and do not emit a `data_classification` field
+on assets. If an upstream asset still carries one, leave it unset/absent rather than
+guessing a value.
 
 ## Step 6: Count and flag unverified items
 

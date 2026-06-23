@@ -41,7 +41,7 @@ Full parameter reference is in [`POWER.md`](POWER.md).
 1. Reads customer inputs (`./input/` folder with .md, .json, .xlsx, .pdf, .docx)
 2. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence)
 3. Writes state and artifacts to `.service-approval/<service-slug>/` (per-service layout) in the working directory
-4. Produces `APPROVAL-REPORT.md` with a framework-coverage matrix and a verdict, plus optional CLI attestation evidence
+4. Produces `SUMMARY-REPORT.md` with a framework-coverage matrix, plus optional CLI attestation evidence
 
 ## Pipeline
 
@@ -53,7 +53,7 @@ Phase 2 Validate     → <slug>/03-validate/validated.json (cross-MCP verificati
 Phase 3 Map          → <slug>/04-map/mapping-results.json (+ framework-mapping.md)
 Phase 4 Generate     → <slug>/05-generate/ (78–111 files across preventive/proactive/detective/responsive/iac)
 Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (mode set upfront in Intake)
-Phase 6 Summarize    → <slug>/07-summarize/APPROVAL-REPORT.md
+Phase 6 Summarize    → <slug>/07-summarize/SUMMARY-REPORT.md
 Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
 ```
 

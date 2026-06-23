@@ -226,7 +226,6 @@ an asset entry:
     {
       "name": "<ResourceName>",
       "cfn_type": "AWS::<Service>::<Resource>",
-      "data_classification": "<from mitigation context — what data does this resource handle?>",
       "trust_boundaries": [],
       "entry_points": [],
       "source": "mitigations"
@@ -235,8 +234,9 @@ an asset entry:
 }
 ```
 
-Derive `data_classification` from the mitigation statements — what do they describe the
-resource as storing/processing? If unclear, set to `"<needs enrichment from capabilities>"`.
+Do **not** emit a `data_classification` field. The sensitivity of the data a resource
+handles is the customer's determination, not something the tool infers from mitigation
+statements or capabilities.
 
 The `trust_boundaries` and `entry_points` will be enriched by the capabilities and
 api-surface sub-skills respectively.
@@ -291,7 +291,6 @@ Write `.service-approval/<slug>/02-research/research-mitigations.json`:
     {
       "name": "<ResourceName>",
       "cfn_type": "AWS::<Service>::<Resource>",
-      "data_classification": "...",
       "trust_boundaries": [],
       "entry_points": [],
       "source": "mitigations"
@@ -325,7 +324,7 @@ or the `mitre-attack` MCP:
 }
 ```
 
-The threat overlay feeds into controls-catalog.md and the APPROVAL-REPORT.md threat coverage section.
+The threat overlay feeds into controls-catalog.md and the SUMMARY-REPORT.md threat coverage section.
 
 ## Print Summary
 

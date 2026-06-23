@@ -82,7 +82,6 @@ def _minimal_research(service: str, ops: list[dict], ck: list[dict]) -> dict:
             {
                 "name": "thing",
                 "cfn_type": "AWS::Example::Thing",
-                "data_classification": "Customer data",
                 "entry_points": ["api"],
             }
         ],

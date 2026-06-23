@@ -101,7 +101,21 @@
             {"type": "string", "enum": ["detective", "proactive"]}
           ]
         },
-        "rationale": {"type": "string"}
+        "rationale": {"type": "string"},
+        "application_guidance": {
+          "$comment": "Concrete 'what to do with this policy' instructions for the customer, for authored (GENERATE_*) AND referred (REFER_TO_REFERENCE) decisions. placement = where the policy goes; placeholders[] = the specific tokens the customer must edit (account ids, ORG ids, role/function ARNs, OUs), drawn from the control's real parameter/condition names; test = how to verify it works before relying on it; rollback = how to undo it. For a referred control, this summarizes how to copy the reference example and what to change — not just the URL.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "placement": {"type": "string", "minLength": 1},
+            "placeholders": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "test": {"type": "string"},
+            "rollback": {"type": "string"}
+          }
+        }
       },
       "allOf": [
         {

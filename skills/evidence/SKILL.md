@@ -371,7 +371,7 @@ is rewritten with the final teardown_status:
 ```bash
 # The terminal-state sentinel is verdict-free: the fixed token FINALIZED
 # marks that the run finalized, freezing pipeline.log against retroactive
-# remediation. No value is read from APPROVAL-REPORT.md.
+# remediation. No value is read from SUMMARY-REPORT.md.
 python3 -m tools.validate.log \
     --slug <slug> \
     --phase 08-evidence \
@@ -472,4 +472,4 @@ Phase 7 succeeds if:
 
 ---
 
-**Next Phase:** None — Phase 7 is the final verification step. The `/summarize` skill may optionally re-run to append evidence section to APPROVAL-REPORT.md.
+**Next Phase:** None — Phase 7 is the final verification step. The `/summarize` skill may optionally re-run to append evidence section to SUMMARY-REPORT.md.

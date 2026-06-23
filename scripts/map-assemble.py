@@ -57,6 +57,150 @@ def write_text(path: Path, text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Phase 0: Semantic control de-duplication
+# ---------------------------------------------------------------------------
+# The control set carries near-identical controls that differ only by ID — the
+# per-resource mitigation variants (CapacityProvider / EventSourceMapping /
+# Layer / CodeSigningConfig twins of a Function control) produce structurally
+# identical controls, inflating the count and the coverage numbers. We collapse
+# them deterministically here, BEFORE the reverse index / threat map / framework
+# crosswalk are built, so everything downstream sees the deduped set.
+#
+# Collapse policy (deliberate, risk-averse): two controls are the SAME control
+# when they share the canonical identity below — same name + scope + category +
+# mechanism + resource_types, plus actions + posture so two controls that merely
+# share a name but gate different actions stay distinct. Survivor = the
+# lexicographically smallest control id in
+# the group; the traceability list fields are unioned onto it so nothing dangles.
+# Numbering is NOT renumbered contiguously — every reference is consistently
+# remapped to the survivor id instead, which keeps the rewrite total and avoids
+# the larger blast radius of renumbering (the id pattern requires \d{3}, not a
+# gapless sequence).
+
+# Traceability list fields unioned from each collapsed duplicate onto the survivor.
+_DEDUP_UNION_FIELDS = (
+    "mitigation_ids",
+    "parameters_controlled",
+    "condition_keys",
+    "assessment_gap_ids",
+    "attack_techniques",
+    "framework_keywords",
+    "resource_types",
+)
+
+# Coverage-level strength order for collapsing an objective's control list when
+# two now-merged ids both appear under one objective (keep the strongest).
+_COVERAGE_LEVEL_RANK = {
+    "Full Coverage": 3,
+    "Partial Coverage": 2,
+    "Supportive": 1,
+    "High": 3,
+    "Medium": 2,
+    "Low": 1,
+}
+
+
+def _norm_name(name: str) -> str:
+    return " ".join((name or "").split()).lower()
+
+
+def canonical_control_key(ctrl: dict) -> tuple:
+    """Canonical identity of a control for de-duplication.
+
+    Two controls sharing this key enforce the same thing and are collapsed.
+    Keyed on name + scope + category + mechanism + resource_types plus actions +
+    posture, so controls that merely share a name but gate different
+    actions/postures remain distinct.
+    """
+    return (
+        _norm_name(ctrl.get("name", "")),
+        ctrl.get("scope", ""),
+        ctrl.get("category", ""),
+        ctrl.get("mechanism", ""),
+        tuple(sorted(ctrl.get("resource_types", []))),
+        tuple(sorted(ctrl.get("actions", []))),
+        ctrl.get("posture", ""),
+    )
+
+
+def dedup_controls(controls: list[dict]) -> tuple[list[dict], dict[str, str]]:
+    """Collapse controls that share a canonical identity into one survivor.
+
+    Returns (deduped_controls, id_remap) where id_remap maps EVERY input control
+    id (including survivors, mapped to themselves) to its survivor id. Survivor
+    is the lexicographically smallest id in each group; the traceability list
+    fields in _DEDUP_UNION_FIELDS are unioned (sorted) onto it. Deterministic:
+    groups preserve first-seen order, survivors keep their original ids.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    order: list[tuple] = []
+    for ctrl in controls:
+        key = canonical_control_key(ctrl)
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(ctrl)
+
+    deduped: list[dict] = []
+    id_remap: dict[str, str] = {}
+    for key in order:
+        group = sorted(groups[key], key=lambda c: c["id"])
+        survivor = group[0]
+        for dup in group[1:]:
+            for field in _DEDUP_UNION_FIELDS:
+                merged = list(survivor.get(field, []))
+                for v in dup.get(field, []):
+                    if v not in merged:
+                        merged.append(v)
+                if merged:
+                    survivor[field] = sorted(merged)
+            id_remap[dup["id"]] = survivor["id"]
+        # Sort the survivor's own list fields too, so output is stable whether or
+        # not the control had duplicates.
+        for field in _DEDUP_UNION_FIELDS:
+            if survivor.get(field):
+                survivor[field] = sorted(survivor[field])
+        id_remap[survivor["id"]] = survivor["id"]
+        deduped.append(survivor)
+    return deduped, id_remap
+
+
+def remap_framework_mapping(fw_mapped: dict, id_remap: dict[str, str]) -> None:
+    """Rewrite framework_mapping[].controls[].control_id to survivor ids (in place).
+
+    When two now-merged ids both appear under one objective, collapse them to one
+    entry keeping the strongest coverage_level (and its rationale). Also remaps
+    quality_gate_results.orphaned_controls if present.
+    """
+    for f in fw_mapped.get("framework_mapping", []):
+        seen: dict[str, dict] = {}
+        ordered: list[str] = []
+        for cm in f.get("controls", []):
+            new_id = id_remap.get(cm.get("control_id"), cm.get("control_id"))
+            cm["control_id"] = new_id
+            if new_id in seen:
+                # Keep the stronger coverage_level entry.
+                prev = seen[new_id]
+                prev_rank = _COVERAGE_LEVEL_RANK.get(prev.get("coverage_level", ""), 0)
+                new_rank = _COVERAGE_LEVEL_RANK.get(cm.get("coverage_level", ""), 0)
+                if new_rank > prev_rank:
+                    seen[new_id] = cm
+            else:
+                seen[new_id] = cm
+                ordered.append(new_id)
+        f["controls"] = [seen[cid] for cid in ordered]
+
+    qgr = fw_mapped.get("quality_gate_results", {})
+    if isinstance(qgr, dict) and "orphaned_controls" in qgr:
+        remapped = []
+        for oid in qgr["orphaned_controls"]:
+            new_id = id_remap.get(oid, oid)
+            if new_id not in remapped:
+                remapped.append(new_id)
+        qgr["orphaned_controls"] = remapped
+
+
+# ---------------------------------------------------------------------------
 # Phase 1: Build Reverse Index (controls -> framework objectives)
 # ---------------------------------------------------------------------------
 def build_reverse_index(fw_mapped: dict, controls: list[dict]) -> dict[str, list[str]]:
@@ -1099,6 +1243,23 @@ def main() -> int:
     validated = load_json(validate_dir / "validated.json")
 
     controls = cg["controls"]
+
+    # Phase 0: Semantic de-duplication. Collapse controls that share a canonical
+    # identity (name + scope + category + mechanism + resource_types + actions +
+    # posture) into one survivor, BEFORE the reverse index / threat map are built
+    # and BEFORE framework-mapping references are resolved, so the whole pipeline
+    # downstream sees the deduped set and the count is honest.
+    print("Phase 0: De-duplicating controls...")
+    pre_dedup_count = len(controls)
+    controls, id_remap = dedup_controls(controls)
+    remap_framework_mapping(fw_mapped, id_remap)
+    collapsed = pre_dedup_count - len(controls)
+    print(
+        f"  {pre_dedup_count} controls -> {len(controls)} distinct "
+        f"({collapsed} duplicate{'s' if collapsed != 1 else ''} collapsed)"
+    )
+    print()
+
     # existing_mitigations may be [] (valid — no customer mitigation report);
     # resolve_mitigations derives synthetic ones from assessment_gaps in that case.
     mitigations = resolve_mitigations(validated, controls)

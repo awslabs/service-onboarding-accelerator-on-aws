@@ -204,7 +204,7 @@ deploy-and-teardown behavior.
 **Sub-skill:** `skills/summarize/SKILL.md`
 
 Produces:
-- `<slug>/07-summarize/APPROVAL-REPORT.md` — the customer-facing verdict
+- `<slug>/07-summarize/SUMMARY-REPORT.md` — the customer-facing verdict
 - `<slug>/07-summarize/ARTIFACT-FLOW-MATRIX.md` — per-artifact dependency graph
 
 The verdict is one of:

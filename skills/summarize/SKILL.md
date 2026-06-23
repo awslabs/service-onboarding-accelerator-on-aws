@@ -1,12 +1,12 @@
 ---
 name: summarize-v3
-description: Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, and test evidence
+description: Produce final SUMMARY-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, and test evidence
 disable-model-invocation: false
 ---
 
 # Service Approval — Summarizer v3
 
-Read all state files and generate the final approval report at `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md`.
+Read all state files and generate the final Summary Report at `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md`.
 
 ## Prerequisites
 
@@ -33,8 +33,10 @@ Record, as neutral facts:
 - the count of unverified items (`unverified_count`);
 - whether a deployment occurred and any Phase 7 evidence outcome.
 
-These facts populate the "Actions Taken to Increase Confidence" section (Step 6) and
-the "Test Evidence" / "UNVERIFIED Items" sections. Do NOT derive or print any
+These facts populate the run-specific "Preventive Coverage" accounting (Step 6) and
+the "Test Evidence" / "UNVERIFIED Items" sections. The generic verification steps are
+NOT repeated in the report — they live once in the project README (see the
+"Verification approach" one-line pointer in Step 6). Do NOT derive or print any
 verdict label (no "APPROVED", "REQUIRES REMEDIATION", etc.).
 
 ## Step 2: Build framework coverage matrix
@@ -92,10 +94,10 @@ listing every file** — report the format and its top-level entry (e.g.
 The manifest names what was produced; the templates themselves live on disk for
 the customer to read.
 
-## Step 6: Write APPROVAL-REPORT.md
+## Step 6: Write SUMMARY-REPORT.md
 
 **CRITICAL — Terminology rules for the report:**
-The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipeline terms:
+The SUMMARY-REPORT.md is a customer-facing document. NEVER use internal/pipeline terms:
 - NO: "service approval pipeline", "pipeline generated" → YES: "47 security controls were generated"
 - NO: "--skip-test flag", "--clean flag" → YES: "Testing was deferred for this assessment"
 - NO: "deployment pipeline" → YES: "deployment process"
@@ -104,34 +106,26 @@ The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipelin
 - NO: "unverified_count = 0" → YES: "all items verified"
 - Apply all terminology rules from CLAUDE.md (see Terminology Rules section)
 
-Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections.
-Section headings are H2 (`##`) — the report's top-level title `# Service Approval
+Write `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` with these sections.
+Section headings are H2 (`##`) — the report's top-level title `# Service Summary
 Report — {Service}` is H1, so all section headers under it are H2. Downstream
 consumers anchor on H2; writing H3 here silently breaks them.
 
-## Actions Taken to Increase Confidence
-Place this section FIRST, immediately under the report title — before the executive
-summary and coverage matrix. List the concrete, verifiable actions performed during
-this run so the reader can see what was checked and proven. Populate every line from
-run state (not prose); when an action did not occur, say so factually rather than
-omitting it. Include, as applicable:
-- **Capability verification** — all service capabilities, API parameters, IAM
-  actions, and condition keys were verified against authoritative AWS sources
-  (`unverified_count` reported in "UNVERIFIED Items"); state the count checked.
-- **Validators run** — name the integrity/anchor/preventability checks that ran and
-  their results (e.g. reference-anchor enforcement, preventability/root-cause check,
-  control-mapping cross-check), reading from `pipeline.log`.
-- **Reference anchoring** — every preventive control either resolves to a public AWS
-  reference example or is explicitly marked not-anchored with a stated reason.
-- **Deployment** — if a stack was deployed: stack name/id and that it reached
-  CREATE_COMPLETE; otherwise "No live deployment was performed for this assessment."
-- **Runtime attestation** — if Phase 7 Evidence ran: how many controls were attested
-  live-in-effect via CLI probes, and that resources were torn down afterward.
+## Verification approach (one-line pointer — do NOT expand)
+Place a single short line FIRST, immediately under the report title:
 
-Render each as a short factual bullet. This section is descriptive, not a judgment.
+> The verification steps performed on every run (capability verification, validator
+> gates, reference anchoring, deployment, runtime attestation) are described in the
+> project README under "How the tool builds confidence."
+
+Do **not** render the generic "Actions Taken to Increase Confidence" bullet list in
+the report — those steps are identical on every run and are documented once in the
+README. The report carries only **run-specific** data: the Preventive Coverage
+accounting below (which is data, not boilerplate). Do not add a per-item confidence
+score or band anywhere (validator P11 enforces this).
 
 ## Preventive Coverage
-Place this section immediately after "Actions Taken to Increase Confidence". It is a
+Place this section immediately after the one-line "Verification approach" pointer. It is a
 **deterministic, file-backed** accounting — read it from
 `.service-approval/<slug>/05-generate/preventive-coverage.json` (built by
 `build_preventive_coverage.py`); do NOT hand-write or estimate the numbers. If the
@@ -155,6 +149,29 @@ The counts come straight from `totals`; each row comes from `controls[]` (its
 `category`, `mechanism`, `anchor`/`citation`, and `reason`). A reader can verify
 every number by following the control id and citation back to the generated
 artifacts. This section is descriptive, not a judgment.
+
+### Applying the preventive policies
+
+For every authored and referred control that carries an `application_guidance`
+block in `preventive-coverage.json`, render a concrete **"how to apply / adapt
+this"** subsection so the reader is not left with a bare citation URL. Read the
+fields verbatim from `controls[].application_guidance` — do NOT invent steps.
+Omit a control here only when it has no `application_guidance` (e.g. a
+routed-to-detective row, which produces no preventive policy to apply).
+
+```markdown
+#### {control_id} — how to apply
+
+- **Where it goes:** {application_guidance.placement}
+- **Edit these placeholders:** {application_guidance.placeholders joined by ", "}
+- **Test it:** {application_guidance.test}
+- **Roll back:** {application_guidance.rollback}
+```
+
+For a **referred** control, the placement/placeholders describe how to copy the
+cited reference example and what to change for this service/account; for an
+**authored** control they point at the generated artifact file and the exact
+placeholders inside it.
 
 ## Summary of Findings
 A neutral, factual recap of what this assessment produced and what remains open —
@@ -342,12 +359,12 @@ print("\n\n".join(blocks) if blocks else "No deployable IaC artifacts found.")
 PY
 ```
 
-Append the rendered blocks to `APPROVAL-REPORT.md` under this heading. Skip the
+Append the rendered blocks to `SUMMARY-REPORT.md` under this heading. Skip the
 entire section when `testing.mode` is anything other than `manual-cli`.
 
 ## Pipeline-Complete Sentinel
 
-After APPROVAL-REPORT.md is written, emit a terminal-state sentinel to
+After SUMMARY-REPORT.md is written, emit a terminal-state sentinel to
 `pipeline.log`. This signals to the Stop hook (`validate_pipeline_integrity.py`
 P1 check) that the run is finalized — the file is frozen, and remediation-only
 checks like the MCP-call-count gate cannot be retroactively satisfied.
@@ -377,7 +394,7 @@ sentinel carries no approve/deny meaning — this report does not adjudicate.
 
 Print:
 ```
-Report written: .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md
+Report written: .service-approval/<slug>/07-summarize/SUMMARY-REPORT.md
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed
 Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)

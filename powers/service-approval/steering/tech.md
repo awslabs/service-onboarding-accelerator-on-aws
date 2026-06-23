@@ -74,7 +74,7 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── deployed-resources.json  ← stack ID + ARNs (consumed by Phase 7)
     │   └── deploy-logs/*.log
     ├── 07-summarize/
-    │   ├── APPROVAL-REPORT.md
+    │   ├── SUMMARY-REPORT.md
     │   └── ARTIFACT-FLOW-MATRIX.md
     └── 08-evidence/
         ├── attestation-report.md

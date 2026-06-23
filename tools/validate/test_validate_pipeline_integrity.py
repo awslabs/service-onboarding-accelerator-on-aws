@@ -906,7 +906,7 @@ def test_confidence_band_in_report_md_fails(tmp_path: Path) -> None:
     from validate_pipeline_integrity import check_no_confidence_scoring
     sm_dir = tmp_path / "07-summarize"
     sm_dir.mkdir()
-    (sm_dir / "APPROVAL-REPORT.md").write_text(
+    (sm_dir / "SUMMARY-REPORT.md").write_text(
         "# Report\n\n| Control | Confidence |\n|--|--|\n"
         "| C-1 | HIGH confidence |\n"
     )
@@ -914,14 +914,19 @@ def test_confidence_band_in_report_md_fails(tmp_path: Path) -> None:
     assert any("P11" in e and "band" in e for e in errors), errors
 
 
-def test_actions_to_increase_confidence_heading_passes(tmp_path: Path) -> None:
-    """The deterministic 'Actions Taken to Increase Confidence' heading carries
-    no band token, so it must NOT trip P11."""
+def test_confidence_word_without_band_passes(tmp_path: Path) -> None:
+    """P11 targets a confidence BAND token, not the English word. The Summary
+    Report's one-line 'Verification approach' pointer (and any prose that uses
+    the word 'confidence' without a HIGH/MEDIUM/LOW band) must NOT trip P11. The
+    generic 'Actions Taken to Increase Confidence' boilerplate no longer appears
+    in reports — it lives once in the README — but even if the word 'confidence'
+    shows up in prose, the band-token requirement keeps the check from firing."""
     from validate_pipeline_integrity import check_no_confidence_scoring
     sm_dir = tmp_path / "07-summarize"
     sm_dir.mkdir()
-    (sm_dir / "APPROVAL-REPORT.md").write_text(
-        "# Report\n\n## Actions Taken to Increase Confidence\n\n"
+    (sm_dir / "SUMMARY-REPORT.md").write_text(
+        "# Report\n\n> The verification steps that build confidence are described "
+        "in the project README.\n\n"
         "- Every capability was MCP-verified.\n"
         "- Reference anchors resolved for each preventive policy.\n"
     )
