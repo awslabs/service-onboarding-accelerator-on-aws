@@ -13,11 +13,47 @@ sub-skill in the map pipeline. It produces quality-gated framework mappings with
 **Inputs:**
 - `.service-approval/<slug>/04-map/map-framework-parsed.json` — normalized framework objectives
 - `.service-approval/<slug>/04-map/map-controls-generated.json` — controls with rich metadata
+- `data/domain-mapping-guidance/<framework>.json` — per-domain mapping guidance (CCMv4 today)
 
 **Output:** `.service-approval/<slug>/04-map/map-framework-mapped.json`
 **Schema:** `schemas/map-framework-mapped.schema.json` — encodes status enum strictly `MAPPED` or `N/A` (iter-14 Class F15-revised), coverage enum, `control_id` pattern matching map-controls-generated, and per-mapping required fields. See also the "Schema rules" section below.
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
+
+## Execution model: per-domain specialization (CCMv4) vs single-pass (others)
+
+Mapping ~197 objectives in one pass produces keyword-driven mis-maps: a control
+gets attached to an objective whose *words* overlap but whose *intent* differs.
+To cut that, CCMv4 is mapped **per domain** — each domain is handled in a focused
+context loaded with only that domain's objectives plus curated guidance on what
+each objective actually means and which mechanisms legitimately satisfy it. The
+17 per-domain partials are then merged deterministically into the single
+`map-framework-mapped.json`.
+
+- **CCMv4 (guidance file present):** run the per-domain fan-out (the
+  service-approval orchestrator dispatches one mapping subagent per domain — see
+  Step 3c there) and merge with `scripts/merge-domain-mappings.py`. The
+  per-objective reasoning rules in Phase 1 and the guidance in Phase 0 apply
+  **per domain**.
+- **Non-CCMv4 (no `data/domain-mapping-guidance/<framework>.json` for the active
+  framework):** fall back to the **single-pass** behavior — map all objectives in
+  one pass using Phases 0–4 below, exactly as before. NIST 800-53 / CIS / ISO
+  have no guidance file yet, so they take this path; advanced-operator
+  `--framework` flags keep working unchanged.
+
+Pick the path by checking for the guidance file:
+
+```bash
+FW=ccmv4   # active framework slug (lowercased); from --framework or auto-detect
+test -f data/domain-mapping-guidance/${FW}.json \
+  && echo "per-domain fan-out (guidance found)" \
+  || echo "single-pass fallback (no guidance for ${FW})"
+```
+
+Whichever path runs, the **output contract is identical** — `framework_mapping[]`,
+`framework_coverage_summary` (incl. `by_domain`), and `quality_gate_results` in
+`map-framework-mapped.json`, consumed unchanged by `map-assemble.py`,
+`validate_state.py::check_framework_mapped`, and the schema.
 
 ---
 
@@ -59,11 +95,44 @@ of relying on keyword matching alone.
 
 ## Phase 0: Domain Applicability Screen (run BEFORE per-objective mapping)
 
-Before mapping any control, screen each framework domain for applicability to the
+Before mapping any control, screen each objective for applicability to the
 **target service class**. Several objectives describe controls a customer literally
 cannot act on for a serverless / managed / infrastructure service — mapping any
 control to them over-claims coverage. Mark these **N/A by default**; an override
 requires an explicit `applicability_justification` plus a `reference_url`.
+
+### 0.0 CCMv4: consult the per-objective guidance file (authoritative)
+
+For CCMv4 the screen is driven **per objective** from
+`data/domain-mapping-guidance/ccmv4.json`, NOT by a blunt domain-wide N/A list.
+Each objective carries a `mappable` field and `allow_mechanisms` /
+`deny_mechanisms` mechanism classes:
+
+- `mappable` → the objective is legitimately satisfiable by a platform/infra
+  config control for this service class. Map controls whose mechanism is in
+  `allow_mechanisms`; never map a control whose mechanism is in `deny_mechanisms`.
+- `default_na` → leave the objective **N/A** with the guidance `na_reason`, unless
+  the service genuinely supports it — then override to `MAPPED` with both an
+  `applicability_justification` and a `reference_url`.
+- `conditional` → mappable **only** when a genuine service capability backs it;
+  treat like `default_na` (provide the override fields) and map only
+  `allow_mechanisms`-class controls.
+
+`deny_mechanisms` is the discriminator that prevents keyword mis-maps — e.g.
+**IVS-07** (secure migration *process*) denies `transit_encryption`, so a TLS
+control never maps there; **LOG-12** (access-event logging) denies
+`misconfig_detection`; **STA-12** (supply-chain agreements) denies
+`access_control` (layer sharing). Because this is per-objective, a domain that was
+once blanket-N/A can still have a genuinely-mappable objective — e.g. **BCR-04**
+(business-continuity planning) is `mappable` to multi-AZ resilience controls even
+though the rest of BCR (backup, DR exercises) stays `default_na`.
+
+`tools/validate/validate_domain_mapping_accuracy.py` enforces this: a control
+whose mechanism class is in an objective's `deny_mechanisms` (and not in
+`allow_mechanisms`), or a `default_na` objective mapped without the override
+fields, is a finding. The blunt mechanism→domain matrix and N/A-by-default list
+in 0.1–0.3 below remain the **non-CCMv4 fallback** and a human-readable summary of
+the same intent.
 
 ### 0.1 Mechanism is not the same as application code
 
@@ -336,7 +405,29 @@ SCP / Config control to DSP-03/04 on a keyword match for "classification."
 
 ## Phase 4: Write Output
 
-Write `.service-approval/<slug>/04-map/map-framework-mapped.json`:
+**Per-domain fan-out (CCMv4):** each per-domain mapping subagent writes a
+**partial** for its domain to
+`.service-approval/<slug>/04-map/_domains/<DOMAIN>.json` containing only that
+domain's objective entries — same per-objective entry shape as `framework_mapping[]`
+below (a bare list, or an object with a `framework_mapping` key; both are
+accepted). It does NOT write `map-framework-mapped.json` directly. After all
+domains complete, the orchestrator runs the deterministic merge:
+
+```bash
+python3 scripts/merge-domain-mappings.py --slug <slug>
+```
+
+The merge concatenates the partials in canonical CCMv4 domain order, recomputes
+`framework_coverage_summary` (incl. `by_domain`) and the cross-domain quality
+gates (Rule 2 spray / Rule 3 ≤15-per-control / Rule 5 rationale / Rule 6 / Rule 7
+orphans), verifies every parsed objective appears exactly once, and writes
+`map-framework-mapped.json`. The cross-domain gates run here, not in the
+per-domain subagents (a single subagent cannot see another domain's controls).
+The merged file is byte-shape identical to the single-pass output below.
+
+**Single-pass (non-CCMv4):** write
+`.service-approval/<slug>/04-map/map-framework-mapped.json` directly, in this exact
+shape:
 
 ```json
 {
@@ -432,13 +523,22 @@ controls (like tagging) map to every objective.
 
 Output validation runs automatically via PostToolUse hook. The JSON Schema (see Schema above) hard-fails on status / coverage / control_id drift per the enum details at "Schema rules". `validate_state.py::check_framework_mapped` retains the 7 quality-gate rules (Rule 1 coverage-level consistency, Rule 2 domain spray, Rule 3 ≤15 objectives per control, Rule 5 rationale required, Rule 6 ≤5 Full Coverage per objective, Rule 7 orphaned controls) plus cross-file lookups against map-controls-generated and map-framework-parsed.
 
-The Phase 0 domain-applicability screen is checked by
-`tools/validate/validate_domain_applicability.py` (CCMv4-specific), run in the map
-review gate (Step 3e of `service-approval`): it flags platform/infra-config controls
-mapped to application-code AIS objectives (AIS-02/04/05), N/A-by-default domain
-objectives (DCS/UEM/BCR/IPY, TVM-10-class) mapped without an
-`applicability_justification` + `reference_url` override, and resource-tag controls
-mapped to data-sensitivity objectives (DSP-03/04).
+The Phase 0 domain-applicability screen is checked by two CCMv4-specific
+validators, both run in the map review gate (Step 3e of `service-approval`):
+
+- `tools/validate/validate_domain_applicability.py` flags platform/infra-config
+  controls mapped to application-code AIS objectives (AIS-02/04/05), N/A-by-default
+  domain objectives (DCS/UEM/BCR/IPY, TVM-10-class) mapped without an
+  `applicability_justification` + `reference_url` override, and resource-tag
+  controls mapped to data-sensitivity objectives (DSP-03/04). N/A-by-default within
+  that scope is read per-objective from `data/domain-mapping-guidance/ccmv4.json`
+  (so a guidance-`mappable` objective such as BCR-04 is no longer blanket-flagged).
+- `tools/validate/validate_domain_mapping_accuracy.py` reads the guidance file and
+  flags, for **every** objective, a control whose mechanism class is in the
+  objective's `deny_mechanisms` (and not in `allow_mechanisms`), or a `default_na`
+  objective mapped without the override fields. This is the per-objective accuracy
+  backstop for the per-domain mapping (e.g. a TLS control on IVS-07, a
+  misconfig-detective control on LOG-12, an access-control control on STA-12).
 
 ## Print Summary
 

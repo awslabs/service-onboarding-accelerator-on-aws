@@ -1,0 +1,2885 @@
+{
+  "schema_version": "1.0",
+  "framework": "CCMv4",
+  "framework_version": "4.0",
+  "description": "Per-domain, per-objective mapping guidance for CSA CCMv4. Gives the framework-mapping phase a focused, per-domain context: what each objective actually requires (intent), whether it is mappable for a platform/infrastructure service, and which mechanism classes may or must never satisfy it. allow_mechanisms / deny_mechanisms reference mechanism_classes ids. Consumed by map-framework-mapping (fan-out), validate_domain_applicability.py, and validate_domain_mapping_accuracy.py.",
+  "mechanism_classes": {
+    "transit_encryption": {
+      "description": "Encryption-in-transit / TLS controls (e.g. enforce or detect TLS on a data channel).",
+      "match_keywords": [
+        "tls",
+        "transit",
+        "securetransport",
+        "in transit",
+        "in-transit",
+        "encryption in transit"
+      ],
+      "match_mechanisms": []
+    },
+    "at_rest_encryption": {
+      "description": "Encryption-at-rest controls using a KMS/customer-managed key.",
+      "match_keywords": [
+        "at rest",
+        "at-rest",
+        "kms",
+        "cmk",
+        "customer-managed key",
+        "customer managed key",
+        "encryption at rest"
+      ],
+      "match_mechanisms": [
+        "KMS Key Policy"
+      ]
+    },
+    "key_lifecycle": {
+      "description": "Cryptographic key lifecycle controls (generation, rotation, revocation, destruction, inventory).",
+      "match_keywords": [
+        "key generation",
+        "key rotation",
+        "key revocation",
+        "key destruction",
+        "key lifecycle",
+        "key inventory",
+        "key activation"
+      ],
+      "match_mechanisms": []
+    },
+    "access_control": {
+      "description": "Identity/authorization controls: IAM identity policy, principal scoping, resource-based policy, sharing, least-privilege.",
+      "match_keywords": [
+        "access control",
+        "least privilege",
+        "least-privilege",
+        "principal",
+        "authorization",
+        "resource policy",
+        "resource-based policy",
+        "sharing",
+        "public access",
+        "permission boundary",
+        "trust policy",
+        "iam"
+      ],
+      "match_mechanisms": [
+        "SCP",
+        "IAM Permission Boundary",
+        "IAM Trust Policy",
+        "Resource Policy",
+        "VPC Endpoint Policy",
+        "RCP"
+      ]
+    },
+    "network_isolation": {
+      "description": "Network-isolation controls: VPC, subnet, security group, segmentation, private endpoint.",
+      "match_keywords": [
+        "network",
+        "vpc",
+        "subnet",
+        "security group",
+        "isolation",
+        "private endpoint",
+        "segmentation",
+        "firewall"
+      ],
+      "match_mechanisms": []
+    },
+    "resilience": {
+      "description": "Availability / resilience controls: multi-AZ placement, redundancy, failover, recovery.",
+      "match_keywords": [
+        "availability",
+        "multi-az",
+        "multi az",
+        "high availability",
+        "resilience",
+        "redundancy",
+        "failover",
+        "recovery"
+      ],
+      "match_mechanisms": []
+    },
+    "access_event_logging": {
+      "description": "Controls that LOG access / invocation / activity events (who accessed what), e.g. CloudTrail data/management events.",
+      "match_keywords": [
+        "access log",
+        "activity log",
+        "invocation log",
+        "cloudtrail",
+        "audit log",
+        "data event",
+        "management event",
+        "who accessed",
+        "accountability log"
+      ],
+      "match_mechanisms": [
+        "CloudTrail"
+      ]
+    },
+    "misconfig_detection": {
+      "description": "Detective controls that flag resource MISCONFIGURATION / posture / drift (not access logging).",
+      "match_keywords": [
+        "drift",
+        "misconfiguration",
+        "baseline deviation",
+        "posture",
+        "non-compliant",
+        "noncompliant"
+      ],
+      "match_mechanisms": [
+        "AWS Config Rule"
+      ]
+    },
+    "tagging_classification": {
+      "description": "Tag-based controls that classify or label a resource (not the sensitivity of data inside it).",
+      "match_keywords": [
+        "tag policy",
+        "tagging",
+        "resource tag",
+        "requesttag",
+        "tagkeys",
+        "tag key"
+      ],
+      "match_mechanisms": [
+        "Tag Policy"
+      ]
+    },
+    "change_control": {
+      "description": "Change-management / configuration-baseline controls.",
+      "match_keywords": [
+        "change management",
+        "baseline",
+        "configuration management",
+        "unauthorized change",
+        "change restoration"
+      ],
+      "match_mechanisms": []
+    },
+    "vulnerability_management": {
+      "description": "Vulnerability scanning, patching, malware, CVE, Inspector pairing.",
+      "match_keywords": [
+        "vulnerability",
+        "patch",
+        "scan",
+        "cve",
+        "inspector",
+        "malware"
+      ],
+      "match_mechanisms": []
+    }
+  },
+  "domains": [
+    {
+      "domain_id": "A&A",
+      "domain_name": "Audit & Assurance",
+      "intent": "Governs the organization's audit and assurance program \u2014 establishing, running, and remediating internal/external audits. Predominantly organizational process objectives.",
+      "objectives": [
+        {
+          "objective_id": "A&A-01",
+          "title": "Audit and Assurance Policy and Procedures",
+          "intent": "Requires a documented, maintained audit and assurance policy \u2014 an organizational governance artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "A&A-02",
+          "title": "Independent Assessments",
+          "intent": "Requires independent third-party assessments \u2014 an organizational audit activity.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "access_event_logging",
+            "misconfig_detection"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "A&A-03",
+          "title": "Risk Based Planning Assessment",
+          "intent": "Requires risk-based audit planning \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "A&A-04",
+          "title": "Requirements Compliance",
+          "intent": "Requires verifying compliance with audit requirements; Config rules report posture but do not constitute an audit program.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "misconfig_detection",
+            "access_event_logging"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "A&A-05",
+          "title": "Audit Management Process",
+          "intent": "Requires managing the audit lifecycle \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "A&A-06",
+          "title": "Remediation",
+          "intent": "Requires tracking remediation of audit findings \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "misconfig_detection"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "AIS",
+      "domain_name": "Application & Interface Security",
+      "intent": "Governs the security of application code and the interfaces it exposes. Code/design/testing objectives concern the workload's own source and cannot be satisfied by platform/infra-config mechanisms.",
+      "objectives": [
+        {
+          "objective_id": "AIS-01",
+          "title": "Application and Interface Security Policy and Procedures",
+          "intent": "Requires an application/interface security policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "AIS-02",
+          "title": "Application Security Baseline Requirements",
+          "intent": "Requires application security baselines for the workload's own code/build; platform/infra-config mechanisms inspect IAM requests, resource configuration, or IaC templates \u2014 never application source.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Application-code security is the customer's responsibility; no platform/infra-config control inspects function/application code.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "AIS-03",
+          "title": "Application Security Metrics",
+          "intent": "Requires producing application security metrics \u2014 a workload/AppSec responsibility, not a resource configuration.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "AIS-04",
+          "title": "Secure Application Design and Development",
+          "intent": "Requires secure application design and development of the workload's own code; platform/infra-config mechanisms cannot inspect application source.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Application-code security is the customer's responsibility; no platform/infra-config control inspects function/application code.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "AIS-05",
+          "title": "Automated Application Security Testing",
+          "intent": "Requires automated security testing of the application's own code; platform/infra-config mechanisms cannot inspect application source.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Application-code security testing is the customer's responsibility; no platform/infra-config control inspects function/application code.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "AIS-06",
+          "title": "Automated Secure Application Deployment",
+          "intent": "Requires automated, secure deployment of application changes; deploy-time template validation and least-privilege deployment scoping support secure deployment.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "change_control",
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "AIS-07",
+          "title": "Application Vulnerability Remediation",
+          "intent": "Requires remediating vulnerabilities in the application's own code/dependencies \u2014 the customer's workload responsibility.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Application-code vulnerability remediation is the customer's responsibility; no platform/infra-config control inspects function/application code.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "BCR",
+      "domain_name": "Business Continuity Management and Operational Resilience",
+      "intent": "Governs business-continuity and operational-resilience planning. Most objectives are organizational (plans, exercises, backups); resilience of the deployed resources (multi-AZ) is a concrete technical contribution to continuity planning.",
+      "objectives": [
+        {
+          "objective_id": "BCR-01",
+          "title": "Business Continuity Management Policy and Procedures",
+          "intent": "Requires a business-continuity-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-02",
+          "title": "Risk Assessment and Impact Analysis",
+          "intent": "Requires business risk assessment and impact analysis \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-03",
+          "title": "Business Continuity Strategy",
+          "intent": "Requires a business-continuity strategy \u2014 an organizational artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-04",
+          "title": "Business Continuity Planning",
+          "intent": "Requires a business-continuity plan that keeps the service available through disruptions; multi-AZ placement and redundancy of the deployed resources are concrete technical contributions to continuity planning.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "resilience"
+          ],
+          "deny_mechanisms": [
+            "misconfig_detection",
+            "change_control"
+          ]
+        },
+        {
+          "objective_id": "BCR-05",
+          "title": "Documentation",
+          "intent": "Requires documenting business-continuity plans \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-06",
+          "title": "Business Continuity Exercises",
+          "intent": "Requires conducting business-continuity exercises \u2014 an organizational activity.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-07",
+          "title": "Communication",
+          "intent": "Requires a business-continuity communication plan \u2014 an organizational artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-08",
+          "title": "Backup",
+          "intent": "Requires data backup and restoration verification; map only where the service exposes a genuine backup/replication API \u2014 multi-AZ is not backup.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Backup of code/state is the customer's responsibility outside a managed service unless it exposes a genuine backup/restoration API; multi-AZ is not backup.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-09",
+          "title": "Disaster Response Plan",
+          "intent": "Requires a disaster-response plan \u2014 an organizational process; multi-AZ is not a DR exercise.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-10",
+          "title": "Response Plan Exercise",
+          "intent": "Requires exercising the disaster-response plan \u2014 an organizational activity.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "BCR-11",
+          "title": "Equipment Redundancy",
+          "intent": "Requires physical equipment redundancy \u2014 AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical equipment redundancy is AWS-managed under the shared-responsibility model.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "CCC",
+      "domain_name": "Change Control and Configuration Management",
+      "intent": "Governs change control and configuration management \u2014 baselines, drift, and protection against unauthorized change. Deploy-time validation and drift detection are concrete change-management technology.",
+      "objectives": [
+        {
+          "objective_id": "CCC-01",
+          "title": "Change Management Policy and Procedures",
+          "intent": "Requires a change-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CCC-02",
+          "title": "Quality Testing",
+          "intent": "Requires quality testing of changes before release; deploy-time template validation is a quality gate on infrastructure changes, but testing of the change itself is largely a release process.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "change_control"
+          ],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CCC-03",
+          "title": "Change Management Technology",
+          "intent": "Requires technology to manage and track changes; deploy-time template validation and drift detection are change-management technology.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "change_control",
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CCC-04",
+          "title": "Unauthorized Change Protection",
+          "intent": "Requires protection against unauthorized changes; SCP/IAM guardrails restrict who can change resources and drift detection surfaces unauthorized changes.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "change_control",
+            "access_control",
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [
+            "access_event_logging"
+          ]
+        },
+        {
+          "objective_id": "CCC-05",
+          "title": "Change Agreements",
+          "intent": "Requires change agreements with stakeholders \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CCC-06",
+          "title": "Change Management Baseline",
+          "intent": "Requires a defined configuration baseline; Guard rules and Config rules encode and check the baseline.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "change_control",
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CCC-07",
+          "title": "Detection of Baseline Deviation",
+          "intent": "Requires detecting deviation from the configuration baseline; Config drift detection flags deviations.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "change_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CCC-08",
+          "title": "Exception Management",
+          "intent": "Requires managing change exceptions \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CCC-09",
+          "title": "Change Restoration",
+          "intent": "Requires the ability to restore service after a failed change; automation runbooks support rollback/restoration where they exist.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "change_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "CEK",
+      "domain_name": "Cryptography, Encryption & Key Management",
+      "intent": "Governs cryptography, encryption, and key management. Encryption-at-rest/in-transit and key-policy controls implement the technical objectives; the lifecycle/governance objectives need a genuine key-management capability.",
+      "objectives": [
+        {
+          "objective_id": "CEK-01",
+          "title": "Encryption and Key Management Policy and Procedures",
+          "intent": "Requires an encryption/key-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-02",
+          "title": "CEK Roles and Responsibilities",
+          "intent": "Requires assigning cryptography roles and responsibilities \u2014 organizational.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-03",
+          "title": "Data Encryption",
+          "intent": "Requires data be encrypted; KMS-key-enforcing controls and TLS controls implement encryption of data at rest and in transit.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "at_rest_encryption",
+            "transit_encryption"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CEK-04",
+          "title": "Encryption Algorithm",
+          "intent": "Requires approved encryption algorithms/strength; CMK enforcement constrains the keys and algorithms used.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "at_rest_encryption"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CEK-05",
+          "title": "Encryption Change Management",
+          "intent": "Requires managing changes to encryption \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-06",
+          "title": "Encryption Change Cost Benefit Analysis",
+          "intent": "Requires cost-benefit analysis of encryption changes \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-07",
+          "title": "Encryption Risk Management",
+          "intent": "Requires encryption risk management \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-08",
+          "title": "CSC Key Management Capability",
+          "intent": "Requires the customer be able to manage their own keys; customer-managed KMS key controls provide this capability.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "at_rest_encryption",
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CEK-09",
+          "title": "Encryption and Key Management Audit",
+          "intent": "Requires auditing encryption and key configuration; Config rules detecting unencrypted or non-CMK resources audit encryption posture.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [
+            "access_event_logging"
+          ]
+        },
+        {
+          "objective_id": "CEK-10",
+          "title": "Key Generation",
+          "intent": "Requires controlled key generation; KMS key policy/CMK enforcement governs how keys are generated.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "key_lifecycle",
+            "at_rest_encryption"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CEK-11",
+          "title": "Key Purpose",
+          "intent": "Requires keys be used only for their intended purpose; KMS key policy constrains key usage.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CEK-12",
+          "title": "Key Rotation",
+          "intent": "Requires key rotation; controls enforcing or detecting CMK rotation implement this.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "CEK-13",
+          "title": "Key Revocation",
+          "intent": "Requires key revocation; map only where a genuine key-management control governs revocation.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-14",
+          "title": "Key Destruction",
+          "intent": "Requires secure key destruction; map only where a genuine key-management control governs destruction.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-15",
+          "title": "Key Activation",
+          "intent": "Requires controlled key activation; map only where a genuine key-management control governs activation.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-16",
+          "title": "Key Suspension",
+          "intent": "Requires key suspension; map only where a genuine key-management control governs suspension.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-17",
+          "title": "Key Deactivation",
+          "intent": "Requires key deactivation; map only where a genuine key-management control governs deactivation.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-18",
+          "title": "Key Archival",
+          "intent": "Requires key archival; map only where a genuine key-management control governs archival.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-19",
+          "title": "Key Compromise",
+          "intent": "Requires handling key compromise; map only where a genuine key-management control governs compromise response.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-20",
+          "title": "Key Recovery",
+          "intent": "Requires key recovery; map only where a genuine key-management control governs recovery.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "CEK-21",
+          "title": "Key Inventory Management",
+          "intent": "Requires maintaining a key inventory; controls that enumerate or detect keys in use support inventory management.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "key_lifecycle",
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "DCS",
+      "domain_name": "Datacenter Security",
+      "intent": "Governs physical datacenter and media security \u2014 AWS-managed under the shared-responsibility model for a managed service.",
+      "objectives": [
+        {
+          "objective_id": "DCS-01",
+          "title": "Off-Site Equipment Disposal Policy and Procedures",
+          "intent": "Off-Site Equipment Disposal Policy and Procedures: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-02",
+          "title": "Off-Site Transfer Authorization Policy and Procedures",
+          "intent": "Off-Site Transfer Authorization Policy and Procedures: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-03",
+          "title": "Secure Area Policy and Procedures",
+          "intent": "Secure Area Policy and Procedures: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-04",
+          "title": "Secure Media Transportation Policy and Procedures",
+          "intent": "Secure Media Transportation Policy and Procedures: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-05",
+          "title": "Assets Classification",
+          "intent": "Assets Classification: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-06",
+          "title": "Assets Cataloguing and Tracking",
+          "intent": "Assets Cataloguing and Tracking: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "misconfig_detection",
+            "tagging_classification"
+          ],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-07",
+          "title": "Controlled Access Points",
+          "intent": "Controlled Access Points: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-08",
+          "title": "Equipment Identification",
+          "intent": "Equipment Identification: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-09",
+          "title": "Secure Area Authorization",
+          "intent": "Secure Area Authorization: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-10",
+          "title": "Surveillance System",
+          "intent": "Surveillance System: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-11",
+          "title": "Unauthorized Access Response Training",
+          "intent": "Unauthorized Access Response Training: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-12",
+          "title": "Cabling Security",
+          "intent": "Cabling Security: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-13",
+          "title": "Environmental Systems",
+          "intent": "Environmental Systems: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-14",
+          "title": "Secure Utilities",
+          "intent": "Secure Utilities: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DCS-15",
+          "title": "Equipment Location",
+          "intent": "Equipment Location: Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Physical datacenter and media security is AWS-managed under the shared-responsibility model for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "DSP",
+      "domain_name": "Data Security and Privacy Lifecycle Management",
+      "intent": "Governs the data-security and privacy lifecycle. Encryption and access controls satisfy the technical protection objectives; data inventory/classification concern the sensitivity of data, not resources.",
+      "objectives": [
+        {
+          "objective_id": "DSP-01",
+          "title": "Security and Privacy Policy and Procedures",
+          "intent": "Requires a data-security and privacy policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-02",
+          "title": "Secure Disposal",
+          "intent": "Requires secure disposal of data; cryptographic erasure via key destruction supports it where the service stores customer data under a CMK.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [
+            "at_rest_encryption"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-03",
+          "title": "Data Inventory",
+          "intent": "Requires an inventory of data by sensitivity \u2014 classifies the data itself, not resources; a resource-tag control does not satisfy it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ],
+          "na_reason": "Classifies the sensitivity of data, not resources; map only with a genuine data-classification capability such as Amazon Macie.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-04",
+          "title": "Data Classification",
+          "intent": "Requires classifying data by sensitivity \u2014 classifies the data itself, not resources; a resource-tag control labels the resource, not the data inside it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ],
+          "na_reason": "Classifies the sensitivity of data, not resources; map only with a genuine data-classification capability such as Amazon Macie.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-05",
+          "title": "Data Flow Documentation",
+          "intent": "Requires documenting data flows \u2014 an organizational artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-06",
+          "title": "Data Ownership and Stewardship",
+          "intent": "Requires assigning data ownership and stewardship \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-07",
+          "title": "Data Protection by Design and Default",
+          "intent": "Requires data protection by design and default; encryption-enforcing and least-privilege controls implement protective defaults for the resource.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "at_rest_encryption",
+            "transit_encryption",
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "DSP-08",
+          "title": "Data Privacy by Design and Default",
+          "intent": "Requires data privacy by design and default; access controls contribute, but privacy-by-design is largely a workload/process concern.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-09",
+          "title": "Data Protection Impact Assessment",
+          "intent": "Requires a data-protection impact assessment \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-10",
+          "title": "Sensitive Data Transfer",
+          "intent": "Requires protecting sensitive data in transfer; TLS and encryption controls protect data movement.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "transit_encryption",
+            "at_rest_encryption"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "DSP-11",
+          "title": "Personal Data Access, Reversal, Rectification and Deletion",
+          "intent": "Requires handling personal-data access/rectification/deletion requests \u2014 an organizational/application process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-12",
+          "title": "Limitation of Purpose in Personal Data Processing",
+          "intent": "Requires limiting the purpose of personal-data processing \u2014 a workload/process concern.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-13",
+          "title": "Personal Data Sub-processing",
+          "intent": "Requires governing personal-data sub-processing \u2014 a contractual process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-14",
+          "title": "Disclosure of Data Sub-processors",
+          "intent": "Requires disclosing data sub-processors \u2014 a contractual process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-15",
+          "title": "Limitation of Production Data Use",
+          "intent": "Requires limiting use of production data \u2014 a workload/process concern.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-16",
+          "title": "Data Retention and Deletion",
+          "intent": "Requires data retention and deletion; lifecycle/cryptographic-erasure controls support it where the service stores customer data.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "key_lifecycle"
+          ],
+          "deny_mechanisms": [
+            "at_rest_encryption"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-17",
+          "title": "Sensitive Data Protection",
+          "intent": "Requires protecting sensitive data; encryption and access controls protect sensitive data held by the resource.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "at_rest_encryption",
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "DSP-18",
+          "title": "Disclosure Notification",
+          "intent": "Requires disclosure notification on data events \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "DSP-19",
+          "title": "Data Location",
+          "intent": "Requires controlling data location/residency; region/condition controls support it where the service exposes residency controls.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [
+            "network_isolation"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "GRC",
+      "domain_name": "Governance, Risk and Compliance",
+      "intent": "Governs the organization's governance, risk, and compliance program \u2014 predominantly organizational policy objectives.",
+      "objectives": [
+        {
+          "objective_id": "GRC-01",
+          "title": "Governance Program Policy and Procedures",
+          "intent": "Requires a governance program policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-02",
+          "title": "Risk Management Program",
+          "intent": "Requires a risk-management program \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-03",
+          "title": "Organizational Policy Reviews",
+          "intent": "Requires periodic organizational policy reviews \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-04",
+          "title": "Policy Exception Process",
+          "intent": "Requires a policy-exception process \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-05",
+          "title": "Information Security Program",
+          "intent": "Requires an information-security program \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-06",
+          "title": "Governance Responsibility Model",
+          "intent": "Requires defining a governance responsibility model \u2014 organizational.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-07",
+          "title": "Information System Regulatory Mapping",
+          "intent": "Requires mapping information systems to regulatory requirements; Config/conformance-pack and tag-classification controls support governance automation where used.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "tagging_classification"
+          ],
+          "deny_mechanisms": [
+            "vulnerability_management",
+            "change_control"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "GRC-08",
+          "title": "Special Interest Groups",
+          "intent": "Requires participation in special interest groups \u2014 an organizational activity.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "HRS",
+      "domain_name": "Human Resources",
+      "intent": "Governs human-resources security \u2014 screening, agreements, training, and personnel processes. Organizational; no resource-configuration control applies.",
+      "objectives": [
+        {
+          "objective_id": "HRS-01",
+          "title": "Background Screening Policy and Procedures",
+          "intent": "Background Screening Policy and Procedures: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-02",
+          "title": "Acceptable Use of Technology Policy and Procedures",
+          "intent": "Acceptable Use of Technology Policy and Procedures: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-03",
+          "title": "Clean Desk Policy and Procedures",
+          "intent": "Clean Desk Policy and Procedures: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-04",
+          "title": "Remote and Home Working Policy and Procedures",
+          "intent": "Remote and Home Working Policy and Procedures: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-05",
+          "title": "Asset returns",
+          "intent": "Asset returns: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-06",
+          "title": "Employment Termination",
+          "intent": "Employment Termination: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-07",
+          "title": "Employment Agreement Process",
+          "intent": "Employment Agreement Process: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-08",
+          "title": "Employment Agreement Content",
+          "intent": "Employment Agreement Content: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-09",
+          "title": "Personnel Roles and Responsibilities",
+          "intent": "Personnel Roles and Responsibilities: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "access_control"
+          ],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-10",
+          "title": "Non-Disclosure Agreements",
+          "intent": "Non-Disclosure Agreements: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-11",
+          "title": "Security Awareness Training",
+          "intent": "Security Awareness Training: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-12",
+          "title": "Personal and Sensitive Data Awareness and Training",
+          "intent": "Personal and Sensitive Data Awareness and Training: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "HRS-13",
+          "title": "Compliance User Responsibility",
+          "intent": "Compliance User Responsibility: Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Human-resources/personnel security is an organizational process; no resource-configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "IAM",
+      "domain_name": "Identity & Access Management",
+      "intent": "Governs identity and access management. Authorization, least-privilege, and privileged-access controls implement the technical objectives; the credential/password and review-process objectives are organizational or IAM-service-level.",
+      "objectives": [
+        {
+          "objective_id": "IAM-01",
+          "title": "Identity and Access Management Policy and Procedures",
+          "intent": "Requires an identity-and-access-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-02",
+          "title": "Strong Password Policy and Procedures",
+          "intent": "Requires a strong password policy \u2014 an IAM-account-level/identity-provider concern, not a target-resource configuration.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Password policy is an IAM-account/identity-provider concern, not a target-resource configuration.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-03",
+          "title": "Identity Inventory",
+          "intent": "Requires an identity inventory; tag/Config controls support inventory of identities/roles where applied.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "tagging_classification",
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-04",
+          "title": "Separation of Duties",
+          "intent": "Requires separation of duties; SCP/IAM controls partition privileged actions across principals.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IAM-05",
+          "title": "Least Privilege",
+          "intent": "Requires least privilege; permission-boundary and IAM-policy controls restrict actions to the approved set.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IAM-06",
+          "title": "User Access Provisioning",
+          "intent": "Requires controlled user-access provisioning; IAM controls support provisioning where they govern role assignment.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-07",
+          "title": "User Access Changes and Revocation",
+          "intent": "Requires access changes/revocation; IAM controls support timely revocation where they govern role assignment.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-08",
+          "title": "User Access Review",
+          "intent": "Requires periodic user-access reviews \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-09",
+          "title": "Segregation of Privileged Access Roles",
+          "intent": "Requires segregating privileged-access roles; SCP/IAM controls separate privileged roles.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IAM-10",
+          "title": "Management of Privileged Access Roles",
+          "intent": "Requires managing privileged-access roles; IAM/trust-policy controls govern who may assume privileged roles.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IAM-11",
+          "title": "CSCs Approval for Agreed Privileged Access Roles",
+          "intent": "Requires customer approval for agreed privileged-access roles \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-12",
+          "title": "Safeguard Logs Integrity",
+          "intent": "Requires safeguarding log integrity; controls protecting log access/configuration safeguard log integrity.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_event_logging",
+            "access_control",
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IAM-13",
+          "title": "Uniquely Identifiable Users",
+          "intent": "Requires uniquely identifiable users; controls enforcing per-principal identity support it where applicable.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-14",
+          "title": "Strong Authentication",
+          "intent": "Requires strong authentication; request-time controls enforcing authenticated access support it.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-15",
+          "title": "Passwords Management",
+          "intent": "Requires password management \u2014 an IAM-account/identity-provider concern.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Password management is an IAM-account/identity-provider concern, not a target-resource configuration.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IAM-16",
+          "title": "Authorization Mechanisms",
+          "intent": "Requires authorization mechanisms; IAM/SCP/resource-policy controls implement authorization decisions.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        }
+      ]
+    },
+    {
+      "domain_id": "IPY",
+      "domain_name": "Interoperability & Portability",
+      "intent": "Governs interoperability and portability \u2014 predominantly contractual/portability-process objectives that need a genuine portability capability.",
+      "objectives": [
+        {
+          "objective_id": "IPY-01",
+          "title": "Interoperability and Portability Policy and Procedures",
+          "intent": "Requires an interoperability/portability policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IPY-02",
+          "title": "Application Interface Availability",
+          "intent": "Requires application-interface availability; map only where the service exposes a documented, governed interface capability.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_control"
+          ],
+          "deny_mechanisms": [
+            "resilience"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IPY-03",
+          "title": "Secure Interoperability and Portability Management",
+          "intent": "Requires secure interoperability/portability management \u2014 a cross-cloud portability concern that needs a genuine portability capability.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Cross-cloud portability management does not apply without a genuine portability capability.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IPY-04",
+          "title": "Data Portability Contractual Obligations",
+          "intent": "Requires data-portability contractual obligations \u2014 a contractual process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "IVS",
+      "domain_name": "Infrastructure & Virtualization Security",
+      "intent": "Governs infrastructure and virtualization security \u2014 network isolation, segmentation, and defense of the deployed resources. Migration and documentation objectives concern process, not runtime configuration.",
+      "objectives": [
+        {
+          "objective_id": "IVS-01",
+          "title": "Infrastructure and Virtualization Security Policy and Procedures",
+          "intent": "Requires an infrastructure/virtualization security policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IVS-02",
+          "title": "Capacity and Resource Planning",
+          "intent": "Requires capacity and resource planning; multi-AZ/resilient placement controls support capacity and availability planning.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "resilience"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IVS-03",
+          "title": "Network Security",
+          "intent": "Requires network security; VPC/subnet/security-group controls implement network isolation for the resource.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "network_isolation"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IVS-04",
+          "title": "OS Hardening and Base Controls",
+          "intent": "Requires OS hardening and base controls; for a managed service the OS is AWS-managed \u2014 map only configuration the customer genuinely controls.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "change_control"
+          ],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IVS-05",
+          "title": "Production and Non-Production Environments",
+          "intent": "Requires separating production and non-production environments; network-isolation and access controls partition environments.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "network_isolation",
+            "access_control"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IVS-06",
+          "title": "Segmentation and Segregation",
+          "intent": "Requires segmentation and segregation; VPC/subnet/security-group controls segment the resource's network.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "network_isolation"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "IVS-07",
+          "title": "Migration to Cloud Environments",
+          "intent": "Requires a secure process for migrating workloads to the cloud \u2014 migration planning and execution, NOT runtime data-transfer encryption; a TLS/encryption-in-transit control does not satisfy it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "transit_encryption"
+          ],
+          "na_reason": "Secure migration to cloud environments is a planning/process objective; runtime transfer-encryption controls do not satisfy it, and this pipeline generates no migration-process control.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IVS-08",
+          "title": "Network Architecture Documentation",
+          "intent": "Requires network-architecture documentation \u2014 an organizational artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "IVS-09",
+          "title": "Network Defense",
+          "intent": "Requires network defense; network-isolation and traffic-restricting controls defend the resource's network.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "network_isolation"
+          ],
+          "deny_mechanisms": []
+        }
+      ]
+    },
+    {
+      "domain_id": "LOG",
+      "domain_name": "Logging and Monitoring",
+      "intent": "Governs logging and monitoring. Controls that record access/activity events and protect logs satisfy the technical objectives; some objectives concern the logging service rather than the target resource.",
+      "objectives": [
+        {
+          "objective_id": "LOG-01",
+          "title": "Logging and Monitoring Policy and Procedures",
+          "intent": "Requires a logging-and-monitoring policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "LOG-02",
+          "title": "Audit Logs Protection",
+          "intent": "Requires protecting audit logs; controls restricting log access/configuration protect audit logs.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control",
+            "access_event_logging"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "LOG-03",
+          "title": "Security Monitoring and Alerting",
+          "intent": "Requires security monitoring and alerting; detective controls that monitor and alert on the resource implement it.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "access_event_logging"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "LOG-04",
+          "title": "Audit Logs Access and Accountability",
+          "intent": "Requires audit-log access accountability; map only where a control governs who accesses the logs \u2014 often a logging-service/IAM concern.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_event_logging",
+            "access_control"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "LOG-05",
+          "title": "Audit Logs Monitoring and Response",
+          "intent": "Requires monitoring and responding to audit logs; detective/responsive controls over the resource implement it.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "access_event_logging"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "LOG-06",
+          "title": "Clock Synchronization",
+          "intent": "Requires clock synchronization \u2014 a platform-level concern AWS manages for a managed service.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Clock synchronization is AWS-managed for a managed service.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "LOG-07",
+          "title": "Logging Scope",
+          "intent": "Requires a defined logging scope; controls enabling activity/access logging for the resource set the logging scope.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_event_logging"
+          ],
+          "deny_mechanisms": [
+            "misconfig_detection"
+          ]
+        },
+        {
+          "objective_id": "LOG-08",
+          "title": "Log Records",
+          "intent": "Requires complete log records; controls enabling detailed activity logging produce the required records.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_event_logging"
+          ],
+          "deny_mechanisms": [
+            "misconfig_detection"
+          ]
+        },
+        {
+          "objective_id": "LOG-09",
+          "title": "Log Protection",
+          "intent": "Requires log protection; controls restricting log tampering/access protect logs.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "access_control",
+            "access_event_logging"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "LOG-10",
+          "title": "Encryption Monitoring and Reporting",
+          "intent": "Requires encryption monitoring and reporting; Config rules detecting unencrypted resources monitor and report encryption posture.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "LOG-11",
+          "title": "Transaction/Activity Logging",
+          "intent": "Requires transaction/activity logging; map only where a control governs activity logging for the resource.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_event_logging"
+          ],
+          "deny_mechanisms": [
+            "misconfig_detection"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "LOG-12",
+          "title": "Access Control Logs",
+          "intent": "Requires logging who accessed what \u2014 access-control event logging \u2014 NOT detecting misconfiguration; map only to controls that record access/invocation events, not to misconfiguration-detective controls.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "access_event_logging"
+          ],
+          "deny_mechanisms": [
+            "misconfig_detection"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "LOG-13",
+          "title": "Failures and Anomalies Reporting",
+          "intent": "Requires reporting failures and anomalies; detective controls that surface anomalies in the resource implement it.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "access_event_logging"
+          ],
+          "deny_mechanisms": []
+        }
+      ]
+    },
+    {
+      "domain_id": "SEF",
+      "domain_name": "Security Incident Management, E-Discovery, & Cloud Forensics",
+      "intent": "Governs security-incident management, e-discovery, and forensics \u2014 predominantly organizational incident-response process objectives.",
+      "objectives": [
+        {
+          "objective_id": "SEF-01",
+          "title": "Security Incident Management Policy and Procedures",
+          "intent": "Requires a security-incident-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-02",
+          "title": "Service Management Policy and Procedures",
+          "intent": "Requires a service-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-03",
+          "title": "Incident Response Plans",
+          "intent": "Requires incident-response plans; detective/responsive automation supports execution, but the plan itself is an organizational artifact.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [
+            "change_control",
+            "resilience"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-04",
+          "title": "Incident Response Testing",
+          "intent": "Requires incident-response testing \u2014 an organizational activity.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-05",
+          "title": "Incident Response Metrics",
+          "intent": "Requires incident-response metrics \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-06",
+          "title": "Event Triage Processes",
+          "intent": "Requires event triage; detective controls and logs feed triage, but the triage process is organizational.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "misconfig_detection",
+            "access_event_logging"
+          ],
+          "deny_mechanisms": [
+            "change_control",
+            "resilience"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-07",
+          "title": "Security Breach Notification",
+          "intent": "Requires security-breach notification \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "SEF-08",
+          "title": "Points of Contact Maintenance",
+          "intent": "Requires maintaining points of contact \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "STA",
+      "domain_name": "Supply Chain Management, Transparency, and Accountability",
+      "intent": "Governs supply-chain management, transparency, and accountability \u2014 shared-responsibility, contractual, and supply-chain-agreement objectives. These concern agreements and inventory, not access control of shared artifacts.",
+      "objectives": [
+        {
+          "objective_id": "STA-01",
+          "title": "SSRM Policy and Procedures",
+          "intent": "Requires a shared-responsibility (SSRM) policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-02",
+          "title": "SSRM Supply Chain",
+          "intent": "Requires an SSRM supply-chain mapping \u2014 an organizational artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-03",
+          "title": "SSRM Guidance",
+          "intent": "Requires SSRM guidance to customers \u2014 an organizational artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-04",
+          "title": "SSRM Control Ownership",
+          "intent": "Requires SSRM control ownership assignment \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-05",
+          "title": "SSRM Documentation Review",
+          "intent": "Requires SSRM documentation review \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-06",
+          "title": "SSRM Control Implementation",
+          "intent": "Requires implementing the shared-responsibility-assigned controls; this is the cross-cutting result of the other controls, not a distinct mechanism a single control maps to.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Implementing shared-responsibility-assigned controls is the cross-cutting result of the other mapped controls, not a distinct objective a single control satisfies.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-07",
+          "title": "Supply Chain Inventory",
+          "intent": "Requires a supply-chain inventory; tag/Config controls support inventory of dependencies where applied.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-08",
+          "title": "Supply Chain Risk Management",
+          "intent": "Requires supply-chain risk management \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-09",
+          "title": "Primary Service and Contractual Agreement",
+          "intent": "Requires a primary service and contractual agreement \u2014 a contractual artifact.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-10",
+          "title": "Supply Chain Agreement Review",
+          "intent": "Requires reviewing supply-chain agreements \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-11",
+          "title": "Internal Compliance Testing",
+          "intent": "Requires internal compliance testing; Config/conformance-pack controls support internal compliance testing where used.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "misconfig_detection"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-12",
+          "title": "Supply Chain Service Agreement Compliance",
+          "intent": "Requires demonstrating supply-chain partners' compliance with service agreements \u2014 an agreement/compliance-management activity; access-control over shared artifacts (e.g. layer-version sharing) is not a supply-chain agreement and does not satisfy it.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "access_control"
+          ],
+          "na_reason": "Supply-chain service-agreement compliance is an agreement-management activity; access control over shared artifacts does not satisfy it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-13",
+          "title": "Supply Chain Governance Review",
+          "intent": "Requires supply-chain governance review \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "STA-14",
+          "title": "Supply Chain Data Security Assessment",
+          "intent": "Requires assessing supply-chain partners' data security \u2014 an organizational assessment process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "TVM",
+      "domain_name": "Threat & Vulnerability Management",
+      "intent": "Governs threat and vulnerability management \u2014 scanning, remediation, and metrics. A managed/serverless service pairs with a scanning service but does not itself produce vulnerability metrics.",
+      "objectives": [
+        {
+          "objective_id": "TVM-01",
+          "title": "Threat and Vulnerability Management Policy and Procedures",
+          "intent": "Requires a threat-and-vulnerability-management policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-02",
+          "title": "Malware Protection Policy and Procedures",
+          "intent": "Requires a malware-protection policy \u2014 organizational governance.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-03",
+          "title": "Vulnerability Remediation Schedule",
+          "intent": "Requires a vulnerability-remediation schedule \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-04",
+          "title": "Detection Updates",
+          "intent": "Requires keeping detection signatures updated; map only where the service pairs with a scanning capability that maintains updates.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "vulnerability_management"
+          ],
+          "deny_mechanisms": [
+            "misconfig_detection"
+          ],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-05",
+          "title": "External Library Vulnerabilities",
+          "intent": "Requires managing external-library vulnerabilities; pairing the workload with a scanning service (e.g. Amazon Inspector) addresses external-dependency vulnerabilities.",
+          "mappable": "mappable",
+          "allow_mechanisms": [
+            "vulnerability_management"
+          ],
+          "deny_mechanisms": []
+        },
+        {
+          "objective_id": "TVM-06",
+          "title": "Penetration Testing",
+          "intent": "Requires penetration testing \u2014 an organizational activity.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-07",
+          "title": "Vulnerability Identification",
+          "intent": "Requires vulnerability identification; map only where the service pairs with a scanning capability.",
+          "mappable": "conditional",
+          "allow_mechanisms": [
+            "vulnerability_management"
+          ],
+          "deny_mechanisms": [],
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-08",
+          "title": "Vulnerability Prioritization",
+          "intent": "Requires prioritizing vulnerabilities \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-09",
+          "title": "Vulnerability Management Reporting",
+          "intent": "Requires vulnerability-management reporting \u2014 an organizational process.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "TVM-10",
+          "title": "Vulnerability Management Metrics",
+          "intent": "Requires vulnerability-management metrics (CVE counts, mean-time-to-remediate); a managed/serverless service does not itself produce vulnerability metrics.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "A managed/serverless service does not itself produce vulnerability metrics.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    },
+    {
+      "domain_id": "UEM",
+      "domain_name": "Universal Endpoint Management",
+      "intent": "Governs universal endpoint (device) management \u2014 does not apply to a serverless/managed service that exposes no managed endpoints.",
+      "objectives": [
+        {
+          "objective_id": "UEM-01",
+          "title": "Endpoint Devices Policy and Procedures",
+          "intent": "Endpoint Devices Policy and Procedures: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-02",
+          "title": "Application and Service Approval",
+          "intent": "Application and Service Approval: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-03",
+          "title": "Compatibility",
+          "intent": "Compatibility: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-04",
+          "title": "Endpoint Inventory",
+          "intent": "Endpoint Inventory: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-05",
+          "title": "Endpoint Management",
+          "intent": "Endpoint Management: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-06",
+          "title": "Automatic Lock Screen",
+          "intent": "Automatic Lock Screen: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-07",
+          "title": "Operating Systems",
+          "intent": "Operating Systems: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-08",
+          "title": "Storage Encryption",
+          "intent": "Storage Encryption: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "at_rest_encryption"
+          ],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-09",
+          "title": "Anti-Malware Detection and Prevention",
+          "intent": "Anti-Malware Detection and Prevention: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "vulnerability_management"
+          ],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-10",
+          "title": "Software Firewall",
+          "intent": "Software Firewall: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-11",
+          "title": "Data Loss Prevention",
+          "intent": "Data Loss Prevention: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [
+            "tagging_classification"
+          ],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-12",
+          "title": "Remote Locate",
+          "intent": "Remote Locate: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-13",
+          "title": "Remote Wipe",
+          "intent": "Remote Wipe: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        },
+        {
+          "objective_id": "UEM-14",
+          "title": "Third-Party Endpoint Security Posture",
+          "intent": "Third-Party Endpoint Security Posture: Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "mappable": "default_na",
+          "allow_mechanisms": [],
+          "deny_mechanisms": [],
+          "na_reason": "Endpoint/device management does not apply to a serverless/managed service that exposes no managed endpoints.",
+          "override_requires": [
+            "applicability_justification",
+            "reference_url"
+          ]
+        }
+      ]
+    }
+  ]
+}

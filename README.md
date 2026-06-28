@@ -155,6 +155,14 @@ Validation runs at several layers, not only at deploy time:
 - **Conflict detection.** A deterministic pre-filter surfaces control pairs that
   contradict each other (a Deny on an action another control allows, or two
   Denies with incompatible conditions), and a clean reviewer confirms each.
+- **Per-domain mapping accuracy (CCMv4).** Framework mapping is specialized by
+  domain: each CCMv4 domain is mapped in a focused context loaded with only that
+  domain's objectives plus curated guidance on what each objective requires and
+  which control mechanisms legitimately satisfy it (and which must never), cutting
+  the keyword-driven mis-maps a single 197-objective pass produces. Two
+  deterministic validators back the guidance — one screens objectives that are
+  not applicable to a managed/serverless service, the other flags any control
+  whose mechanism class is denied for the objective it was mapped to.
 
 ### Artifact flow
 

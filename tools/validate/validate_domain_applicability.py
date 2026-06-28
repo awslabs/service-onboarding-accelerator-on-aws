@@ -14,12 +14,17 @@ datacenter-security product. Two recurring over-claims this validator catches:
      code, dependencies, or runtime behavior, so they cannot satisfy the
      objective.
 
-  2. Inapplicable-domain over-claim — an objective in a domain that is N/A by
-     default for a serverless / managed / infrastructure service (CCMv4 DCS
-     datacenter, UEM endpoint management, BCR business-continuity, IPY
-     portability, and the TVM vulnerability-metric objective TVM-10) marked
-     MAPPED without an explicit `applicability_justification` + `reference_url`
-     override.
+  2. Inapplicable-objective over-claim — an objective that is N/A by default for a
+     serverless / managed / infrastructure service marked MAPPED without an
+     explicit `applicability_justification` + `reference_url` override. The set of
+     N/A-by-default objectives is read per-objective from the CCMv4 domain-guidance
+     KB (`data/domain-mapping-guidance/ccmv4.json`, each objective's `mappable`
+     field) when present, so an objective the guidance marks `mappable` — e.g.
+     BCR-04 business-continuity planning, satisfied by multi-AZ resilience — is no
+     longer collateral damage of a blanket domain-N/A rule, while the backup/DR and
+     datacenter/endpoint objectives stay N/A-by-default. When the guidance file is
+     absent the validator falls back to the historical hardcoded domain set
+     (DCS / UEM / BCR / IPY + the TVM-10 vulnerability-metric objective).
 
 A third, optional check flags a resource-tag mechanism mapped to a
 data-sensitivity-classification objective (CCMv4 DSP-03 / DSP-04): tagging a
@@ -46,6 +51,10 @@ import json
 import os
 import sys
 from pathlib import Path
+
+# Repo root = three levels up (tools/validate/<this>.py).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_GUIDANCE_PATH = _REPO_ROOT / "data" / "domain-mapping-guidance" / "ccmv4.json"
 
 # --- CCMv4 applicability policy (matched by objective-id prefix) -------------
 
@@ -96,8 +105,55 @@ def _load_json(path: str | Path) -> dict:
         return json.load(fh)
 
 
+def load_na_by_default(guidance_path: str | Path | None = None) -> dict[str, str] | None:
+    """Build objective_id -> na_reason from the CCMv4 domain-guidance KB.
+
+    Returns the per-objective N/A-by-default map (every objective whose guidance
+    `mappable` is "default_na"), or None when the guidance file is absent — in
+    which case the caller falls back to the historical hardcoded domain set so
+    behavior is unchanged on a checkout without the KB.
+    """
+    p = Path(guidance_path) if guidance_path else _GUIDANCE_PATH
+    if not p.exists():
+        return None
+    guidance = _load_json(p)
+    out: dict[str, str] = {}
+    for domain in guidance.get("domains", []):
+        for obj in domain.get("objectives", []):
+            if obj.get("mappable") == "default_na":
+                oid = obj.get("objective_id")
+                if oid:
+                    out[oid] = obj.get("na_reason", "N/A by default for this service class")
+    return out
+
+
 def _domain_prefix(objective_id: str) -> str:
     return objective_id.split("-", 1)[0] if objective_id else ""
+
+
+def _na_by_default_reason(
+    oid: str, prefix: str, na_objectives: dict[str, str] | None
+) -> str | None:
+    """Reason an objective is N/A by default for this screen, or None if it is not.
+
+    This screen stays scoped to the domains it has always covered (DCS / UEM / BCR
+    / IPY + the TVM-10 vulnerability-metric objective); the comprehensive,
+    every-default_na check lives in validate_domain_mapping_accuracy.py. Within
+    that scope, when the guidance KB is loaded (`na_objectives` is a dict),
+    N/A-by-default is decided per-objective from the guidance `mappable` field —
+    so a guidance `mappable`/`conditional` objective in a historically-N/A domain
+    (e.g. BCR-04 business-continuity planning, satisfied by multi-AZ resilience) is
+    no longer collateral damage of the blanket domain rule, while the backup/DR and
+    datacenter/endpoint objectives stay N/A-by-default. When the guidance is absent
+    (`na_objectives` is None), fall back to the hardcoded domain/objective reason.
+    """
+    in_scope = prefix in NA_BY_DEFAULT_DOMAINS or oid in NA_BY_DEFAULT_OBJECTIVES
+    if not in_scope:
+        return None
+    if na_objectives is not None:
+        # Guidance is the per-objective source of truth within the screen's scope.
+        return na_objectives.get(oid)
+    return NA_BY_DEFAULT_DOMAINS.get(prefix) or NA_BY_DEFAULT_OBJECTIVES.get(oid)
 
 
 def _is_platform_config(mechanism: str) -> bool:
@@ -110,7 +166,9 @@ def _is_tag_mechanism(mechanism: str) -> bool:
 
 
 def check_applicability(
-    fw_mapped: dict, controls_by_id: dict[str, dict] | None
+    fw_mapped: dict,
+    controls_by_id: dict[str, dict] | None,
+    na_objectives: dict[str, str] | None = None,
 ) -> list[str]:
     """Validate domain applicability. Returns error strings (empty = clean).
 
@@ -118,6 +176,12 @@ def check_applicability(
     and supplies each control's `mechanism`. When None, the mechanism-dependent
     checks (app-code over-claim, DSP tag over-claim) are skipped; the
     N/A-by-default field check still runs.
+
+    `na_objectives` is the per-objective N/A-by-default map from the CCMv4
+    domain-guidance KB (objective_id -> na_reason). When provided, N/A-by-default
+    is decided per-objective from the guidance (so a `mappable` objective such as
+    BCR-04 no longer flags). When None, the historical hardcoded domain/objective
+    sets are used instead, preserving prior behavior on a checkout without the KB.
     """
     errors: list[str] = []
     mappings = fw_mapped.get("framework_mapping", [])
@@ -161,8 +225,10 @@ def check_applicability(
                         f"application code."
                     )
 
-        # Check 2 — N/A-by-default domain mapped without justification.
-        na_reason = NA_BY_DEFAULT_DOMAINS.get(prefix) or NA_BY_DEFAULT_OBJECTIVES.get(oid)
+        # Check 2 — N/A-by-default objective mapped without justification.
+        # Per-objective from the guidance KB when loaded; hardcoded domain/object
+        # sets as the fallback (see _na_by_default_reason).
+        na_reason = _na_by_default_reason(oid, prefix, na_objectives)
         if na_reason:
             justification = (entry.get("applicability_justification") or "").strip()
             ref = (entry.get("reference_url") or "").strip()
@@ -192,8 +258,15 @@ def check_applicability(
     return errors
 
 
-def check_service(service_root: Path) -> list[str]:
-    """Validate a service's map-framework-mapped.json (no-op if absent)."""
+def check_service(
+    service_root: Path, na_objectives: dict[str, str] | None = None
+) -> list[str]:
+    """Validate a service's map-framework-mapped.json (no-op if absent).
+
+    Loads the CCMv4 domain-guidance N/A-by-default map by default so BCR-04 and
+    other guidance-`mappable` objectives are no longer blanket-flagged; pass
+    `na_objectives` explicitly to override (tests).
+    """
     map_dir = service_root / "04-map"
     mapped_path = map_dir / "map-framework-mapped.json"
     if not mapped_path.exists():
@@ -204,7 +277,9 @@ def check_service(service_root: Path) -> list[str]:
     if cg_path.exists():
         cg = _load_json(cg_path)
         controls_by_id = {c["id"]: c for c in cg.get("controls", []) if c.get("id")}
-    return check_applicability(fw_mapped, controls_by_id)
+    if na_objectives is None:
+        na_objectives = load_na_by_default()
+    return check_applicability(fw_mapped, controls_by_id, na_objectives)
 
 
 def main() -> None:

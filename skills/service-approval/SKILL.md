@@ -433,7 +433,13 @@ Wait for `.service-approval/<slug>/04-map/map-controls-generated.json`.
 
 **Step 3c — Framework Mapping:**
 Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`.
-Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
+For **CCMv4** (a `data/domain-mapping-guidance/ccmv4.json` guidance file exists),
+map **per domain**: handle each of the 17 CCMv4 domains in its own focused pass
+loaded with only that domain's objectives + that domain's guidance + the shared
+controls, write each as a partial to `04-map/_domains/<DOMAIN>.json`, then run the
+deterministic merge `python3 scripts/merge-domain-mappings.py --slug <slug>`.
+For **non-CCMv4** frameworks (no guidance file), run the single-pass behavior.
+Either way, wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 
 **Step 3d — Assemble:**
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
@@ -642,9 +648,43 @@ Agent 3b: map-generate-controls (background)
 
 **IMPORTANT:** Dispatch both in a single message with 2 Agent tool calls.
 
-**Step 3c: Framework mapping (foreground, after 3a+3b complete)**
+**Step 3c: Framework mapping (after 3a+3b complete)**
 
-When both complete, dispatch as foreground subagent:
+This is the most reasoning-heavy step. The dispatch shape depends on the framework:
+
+***CCMv4 — per-domain fan-out + deterministic merge.*** A single 197-objective
+pass produces keyword-driven mis-maps; instead map each domain in its own focused
+context. Dispatch **one mapping subagent per CCMv4 domain** (17: A&A, AIS, BCR,
+CCC, CEK, DCS, DSP, GRC, HRS, IAM, IPY, IVS, LOG, SEF, STA, TVM, UEM), each loaded
+with ONLY: that domain's objectives from `map-framework-parsed.json`, that
+domain's guidance from `data/domain-mapping-guidance/ccmv4.json`, the full
+`map-controls-generated.json` (controls are shared), and the per-objective
+reasoning rules from `skills/map-framework-mapping/SKILL.md`.
+
+```
+Agent 3c.<DOMAIN> (one per domain — parallelizable):
+  Prompt: Full text of skills/map-framework-mapping/SKILL.md
+          + "Map ONLY domain <DOMAIN>. Objectives: <that domain's entries>.
+             Guidance: <that domain's ccmv4.json entry>."
+  Output: 04-map/_domains/<DOMAIN>.json   (this domain's framework_mapping[] partial)
+```
+
+Dispatch the domains in batches that respect the **concurrency cap** — Parallel
+Mode runs at most a handful of background subagents at once, so launch them in
+waves (e.g. groups of ~4) rather than 17 at once. Do NOT set `model` — subagents
+inherit the caller's model. When all 17 partials exist, run the deterministic
+merge (no subagent — it is pure assembly):
+
+```bash
+python3 scripts/merge-domain-mappings.py --slug <slug>
+```
+
+The merge concatenates partials in canonical domain order, recomputes the coverage
+summary + cross-domain quality gates (Rule 2 spray / Rule 3 / Rule 5 / 6 / 7), and
+writes `map-framework-mapped.json`. Wait for that file.
+
+***Non-CCMv4 — single foreground pass*** (no guidance file for the active
+framework, e.g. NIST 800-53 / CIS / ISO):
 
 ```
 Agent 3c: map-framework-mapping (foreground)
@@ -653,7 +693,8 @@ Agent 3c: map-framework-mapping (foreground)
   Output: map-framework-mapped.json
 ```
 
-This is the most reasoning-heavy step — MUST run in foreground to ensure quality gates pass.
+Either path MUST run in foreground (or complete fully) before Step 3d, so the
+quality gates are satisfied. The output contract is identical for both paths.
 
 **Step 3d: Assembly (foreground, after 3c completes)**
 
@@ -684,6 +725,7 @@ python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
 python3 tools/validate/validate_mapping_semantics.py --slug <slug>; ms=$?
 python3 tools/validate/validate_canopy_facts.py --slug <slug>; cf=$?
 python3 tools/validate/validate_domain_applicability.py --slug <slug>; da=$?
+python3 tools/validate/validate_domain_mapping_accuracy.py --slug <slug>; ma=$?
 python3 tools/validate/validate_control_dedup.py --slug <slug>; cd=$?
 ```
 
@@ -710,6 +752,7 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
     {"name": "validate_mapping_semantics", "exit_code": 0, "blocking": false},
     {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
     {"name": "validate_domain_applicability", "exit_code": 0, "blocking": false},
+    {"name": "validate_domain_mapping_accuracy", "exit_code": 0, "blocking": false},
     {"name": "validate_control_dedup", "exit_code": 0, "blocking": false}
   ],
   "flagged": [
@@ -745,6 +788,9 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_domain_applicability \
     --verdict $([ $da -eq 0 ] && echo pass || echo warn) --message "framework-domain applicability check"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_domain_mapping_accuracy \
+    --verdict $([ $ma -eq 0 ] && echo pass || echo warn) --message "per-objective domain mapping-accuracy check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_control_dedup \
     --verdict $([ $cd -eq 0 ] && echo pass || echo warn) --message "control de-duplication count guard"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
@@ -764,10 +810,22 @@ control (CloudFormation Guard, Config rule, SCP, RCP, tag policy) mapped to an
 application-code AIS objective (AIS-02/04/05), any N/A-by-default domain objective
 (DCS/UEM/BCR/IPY, TVM-10-class) marked MAPPED without an `applicability_justification`
 + `reference_url` override, and any resource-tag control mapped to a
-data-sensitivity-classification objective (DSP-03/04). Advisory here (reported in
-`mapping-review.json`); a finding means the mapper over-claimed coverage — re-map the
-flagged objective to N/A (or add a justified override) before generation consumes the
-mapping.
+data-sensitivity-classification objective (DSP-03/04). N/A-by-default within that
+scope is read per-objective from `data/domain-mapping-guidance/ccmv4.json`, so a
+guidance-`mappable` objective (e.g. BCR-04, satisfied by multi-AZ resilience) is no
+longer blanket-flagged.
+
+`validate_domain_mapping_accuracy` (CCMv4-specific) is the per-objective accuracy
+backstop for the per-domain mapping: it reads the same guidance file and, for every
+mapped objective, flags a control whose mechanism class is in that objective's
+`deny_mechanisms` (and not in `allow_mechanisms`) — e.g. a TLS control mapped to
+IVS-07 (migration *process*), a misconfiguration-detective control mapped to LOG-12
+(access-event logging), or an access-control/layer-sharing control mapped to STA-12
+(supply-chain agreements) — plus any `default_na` objective mapped without the
+override fields. Both are advisory here (reported in `mapping-review.json`; promote
+to a hard gate once the guidance is proven on real runs); a finding means the mapper
+over-claimed — re-map the flagged objective to N/A (or add a justified override)
+before generation consumes the mapping.
 
 The control→catalog cross-check (`validate_control_mappings`) is **advisory** —
 surface its flagged items and proceed. The prose lint (`lint_control_prose
@@ -942,10 +1000,12 @@ Phase 1: Research         (4 agents in parallel, then merge)
   1d: ATT&CK Surface      (background) ─┤
                                         └─ 1e: Merge (foreground)
 Phase 2: Validate         (1 agent, foreground)
-Phase 3: Map              (2 agents in parallel, then 2 sequential)
+Phase 3: Map              (2 agents in parallel, then per-domain fan-out + merge)
   3a: Parse Framework     (background) ─┐
   3b: Generate Controls   (background) ─┤
-                                        ├─ 3c: Framework Mapping (foreground)
+                                        ├─ 3c: Framework Mapping
+                                        │     CCMv4: 1 subagent per domain (waves) → merge
+                                        │     other: 1 foreground pass
                                         └─ 3d: Assemble          (foreground)
 Phase 4: Generate         (3 agents in parallel, then validate)
 Phase 5: Test             (1 agent, foreground — gated by intake.testing.mode)

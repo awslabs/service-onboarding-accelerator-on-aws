@@ -127,6 +127,57 @@ def test_na_by_default_objective_marked_na_is_clean():
     assert vda.check_applicability(doc, None) == []
 
 
+# --- Guidance-driven N/A-by-default (BCR-04 no longer blanket-flagged) -------
+
+# The real CCMv4 guidance KB drives the per-objective N/A-by-default decision.
+_GUIDANCE_NA = vda.load_na_by_default()
+
+
+def test_guidance_na_map_loads():
+    assert _GUIDANCE_NA is not None, "CCMv4 guidance KB must exist"
+    # BCR-04 is mappable in the guidance, so it is NOT in the default_na map.
+    assert "BCR-04" not in _GUIDANCE_NA
+    # BCR-08 (Backup) stays default_na.
+    assert "BCR-08" in _GUIDANCE_NA
+
+
+def test_bcr04_mapped_without_override_not_flagged_with_guidance():
+    # The core feedback-item-4 fix: BCR-04 mapped without override must NOT flag
+    # when the guidance is in effect (it is guidance-mappable, multi-AZ resilience).
+    doc = _mapped([
+        {"objective_id": "BCR-04", "status": "MAPPED", "controls": []},
+    ])
+    assert vda.check_applicability(doc, None, _GUIDANCE_NA) == []
+
+
+def test_bcr08_mapped_without_override_still_flagged_with_guidance():
+    # BCR backup/DR objectives still require the override even with guidance.
+    doc = _mapped([
+        {"objective_id": "BCR-08", "status": "MAPPED", "controls": []},
+    ])
+    errors = vda.check_applicability(doc, None, _GUIDANCE_NA)
+    assert len(errors) == 1 and "BCR-08" in errors[0]
+
+
+def test_dcs_still_flagged_with_guidance():
+    # DCS stays N/A-by-default per the guidance too.
+    doc = _mapped([
+        {"objective_id": "DCS-05", "status": "MAPPED", "controls": []},
+    ])
+    assert len(vda.check_applicability(doc, None, _GUIDANCE_NA)) == 1
+
+
+def test_applicability_scope_unchanged_with_guidance():
+    # The screen stays scoped to its historical domains: a default_na objective
+    # OUTSIDE that scope (e.g. AIS-02) is not flagged by check-2 here — the
+    # comprehensive default_na check is the accuracy validator's job.
+    doc = _mapped([
+        {"objective_id": "AIS-02", "status": "MAPPED", "controls": []},
+    ])
+    errors = vda.check_applicability(doc, None, _GUIDANCE_NA)
+    assert not any("N/A-by-default" in e for e in errors)
+
+
 # --- Check 3: DSP data-classification over-claim ----------------------------
 
 def test_tag_policy_to_dsp03_flagged():
