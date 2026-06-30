@@ -531,6 +531,39 @@ if uncovered:
 
 ---
 
+## Phase 3b: Mitigation Intent Tagging (MANDATORY)
+
+After generating all controls and verifying mitigation coverage, tag each control with
+a canonical `mitigation_intent` and `security_domain` derived from its source mitigation
+statement. This step is **deterministic** — no LLM reasoning needed.
+
+**Input:** `data/mitigation-intent-patterns.json` — controlled vocabulary of ~20 intent
+patterns with `match_statements[]` (case-insensitive substring/regex patterns matched
+against the mitigation `statement` field).
+
+**Algorithm:**
+1. For each control, find its source mitigation(s) via `mitigation_ids[]`
+2. For each source mitigation, get the `statement` text from `validated.json.existing_mitigations[]`
+3. Match the statement against `data/mitigation-intent-patterns.json` patterns (first match wins)
+4. Set `mitigation_intent` = matched pattern's `intent_id`
+5. Set `security_domain` = matched pattern's `security_domain`
+6. If no pattern matches, set `mitigation_intent` = `"unclassified"` and
+   `security_domain` = `null` — the mapping skill will flag these for manual review
+
+**Example:**
+- Mitigation statement: "An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)"
+- Matches pattern: `"encrypted with an AWS KMS Customer Managed Key"`
+- Result: `mitigation_intent: "cmk_encryption"`, `security_domain: "data_protection_at_rest"`
+
+**Why this matters:** The `mitigation_intent` field constrains downstream framework mapping.
+A control tagged `cmk_encryption` can only map to objectives in the encryption/data-protection
+domains — it CANNOT be mapped to IAM, logging, or network objectives regardless of keyword overlap.
+
+When a control traces to multiple mitigations with different intents (e.g., a consolidated
+Config rule), use the intent of the **primary mitigation** (first in `mitigation_ids[]` array).
+
+---
+
 ## Phase 4: Write Output
 
 Write `.service-approval/<slug>/04-map/map-controls-generated.json`:
@@ -556,7 +589,9 @@ Write `.service-approval/<slug>/04-map/map-controls-generated.json`:
       "resource_types": ["AWS::<Service>::<Resource>"],
       "assessment_gap_ids": [],
       "security_rationale": "...",
-      "framework_keywords": ["encryption", "key management"]
+      "framework_keywords": ["encryption", "key management"],
+      "mitigation_intent": "cmk_encryption",
+      "security_domain": "data_protection_at_rest"
     }
   ],
   "control_summary": {

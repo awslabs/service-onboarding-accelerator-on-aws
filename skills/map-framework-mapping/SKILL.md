@@ -62,9 +62,10 @@ Whichever path runs, the **output contract is identical** — `framework_mapping
 ```bash
 test -f .service-approval/<slug>/04-map/map-framework-parsed.json && echo "framework: OK" || echo "ERROR"
 test -f .service-approval/<slug>/04-map/map-controls-generated.json && echo "controls: OK" || echo "ERROR"
+test -f .service-approval/<slug>/04-map/applicability-matrix.json && echo "applicability: OK" || echo "WARN: no matrix — all objectives assumed applicable"
 ```
 
-Load both inputs:
+Load all inputs:
 ```bash
 python3 -c "
 import json
@@ -72,6 +73,15 @@ fw = json.load(open('.service-approval/<slug>/04-map/map-framework-parsed.json')
 cg = json.load(open('.service-approval/<slug>/04-map/map-controls-generated.json'))
 print(f'Framework: {fw[\"framework\"][\"name\"]} — {len(fw[\"framework_objectives\"])} objectives')
 print(f'Controls: {len(cg[\"controls\"])}')
+# Load applicability matrix if present
+import os
+matrix_path = '.service-approval/<slug>/04-map/applicability-matrix.json'
+if os.path.exists(matrix_path):
+    mx = json.load(open(matrix_path))
+    na_count = sum(1 for v in mx['objective_applicability'].values() if not v['applicable'])
+    print(f'Applicability matrix: {na_count} objectives pre-screened as N/A')
+else:
+    print('Applicability matrix: not present — all objectives assumed applicable')
 "
 ```
 
@@ -84,12 +94,62 @@ For each control, you have access to:
 - `mechanism` — the AWS enforcement mechanism
 - `security_rationale` — 2-3 sentence reasoning chain from mitigation goal to enforcement
 - `framework_keywords` — domain/mechanism keywords for candidate matching
+- `mitigation_intent` — canonical intent classification (e.g., `cmk_encryption`, `vpc_placement`)
+- `security_domain` — security concern category (e.g., `data_protection_at_rest`, `network_isolation`)
 - `condition_keys`, `actions`, `resource_types` — technical details
 - `mitigation_ids`, `parameters_controlled` — traceability
 
-**The `security_rationale` field is your PRIMARY context.** It explains why this control exists
-and what security goal it achieves. Use it to reason about framework objective alignment instead
-of relying on keyword matching alone.
+**The `mitigation_intent` and `security_domain` fields are your PRIMARY constraint.** They tell
+you exactly what the control does in a structured form. A control with `mitigation_intent:
+cmk_encryption` CANNOT be mapped to an IAM or network objective — it can only map to
+encryption/data-protection objectives. Use these fields FIRST to determine eligibility, then
+use `security_rationale` to confirm fit and write the rationale.
+
+**The `security_rationale` field is your SECONDARY context.** It explains why this control exists
+and what security goal it achieves. Use it to write the mapping rationale — but do NOT use it
+to override the eligibility constraint from `mitigation_intent`.
+
+---
+
+## Pre-Phase: Applicability Matrix Screen (BEFORE per-objective mapping)
+
+If `.service-approval/<slug>/04-map/applicability-matrix.json` exists, load it and
+apply it as a hard pre-filter:
+
+1. For each objective in `applicability-matrix.json` where `applicable: false`:
+   - Set `status: "N/A"` immediately
+   - Use the matrix's `reason` field as the objective's N/A reason
+   - Do NOT attempt to map any controls to it
+2. For objectives where `max_coverage` is set (e.g., `"Partial Coverage"`):
+   - The objective IS mappable, but no control may exceed that coverage ceiling
+3. For objectives not in the matrix: assume applicable (backward compatibility)
+
+This screen runs BEFORE Phase 0 (domain-applicability guidance). Where both the matrix
+and the Phase 0 guidance agree an objective is N/A, use the matrix reason. Where they
+disagree, the **more restrictive** rule wins (i.e., if either says N/A, it's N/A).
+
+---
+
+## Mechanism Coverage Ceilings (HARD RULE — applies to ALL objectives)
+
+Regardless of how well a control aligns with an objective's intent, the coverage level
+assigned MUST NOT exceed the ceiling for the control's `mechanism` type:
+
+| Mechanism | Max for enforcement objectives | Max for detection/monitoring objectives | Max for capability objectives |
+|-----------|-------------------------------|----------------------------------------|-------------------------------|
+| SCP / RCP | Full Coverage | Supportive | Supportive |
+| IAM Permission Boundary | Partial Coverage | N/A | N/A |
+| IAM Trust Policy | Partial Coverage | N/A | Partial Coverage |
+| KMS Key Policy | Partial Coverage | N/A | Full Coverage (CEK-08 only) |
+| Resource Policy | Partial Coverage | N/A | Partial Coverage |
+| CloudFormation Guard / Hook | Partial Coverage (gates CFn path only) | N/A | N/A |
+| AWS Config Rule | **Partial Coverage** (detects, does not enforce) | **Full Coverage** | N/A |
+| Tag Policy | Supportive | Supportive | N/A |
+| SSM Automation | Partial Coverage | N/A | N/A |
+
+**Key insight:** A Config Rule CANNOT be Full Coverage for an enforcement objective.
+It detects drift but does not prevent the non-compliant state from being created.
+Only preventive mechanisms (SCP, RCP) can be Full Coverage for enforcement.
 
 ---
 

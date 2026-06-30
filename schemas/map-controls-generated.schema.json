@@ -153,6 +153,30 @@
           "items": {"type": "string"},
           "description": "Optional — MITRE ATT&CK technique IDs (e.g. T1078) the control addresses. iter-13 addition when a threat model is provided."
         },
+        "mitigation_intent": {
+          "type": "string",
+          "description": "Canonical intent classification derived from the source mitigation statement. Matched against data/mitigation-intent-patterns.json patterns. Used by map-framework-mapping to constrain which objectives a control may map to."
+        },
+        "security_domain": {
+          "type": "string",
+          "enum": [
+            "data_protection_at_rest",
+            "data_protection_in_transit",
+            "network_isolation",
+            "availability_resilience",
+            "observability",
+            "authentication",
+            "identity_trust",
+            "access_control",
+            "governance",
+            "operational_safety",
+            "disaster_recovery",
+            "supply_chain_integrity",
+            "reliability",
+            "compute_isolation"
+          ],
+          "description": "Security domain classification from data/mitigation-intent-patterns.json. Groups controls by what security concern they address."
+        },
         "_metadata": {
           "type": "object",
           "additionalProperties": true

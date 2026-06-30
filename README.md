@@ -2,6 +2,67 @@
 
 Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a 9-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) and maps everything to CCMv4. Other frameworks (NIST 800-53, CIS, ISO 27001) remain available behind the `--framework=<type>` CLI flag for advanced operators; the interactive intake narrows to CCMv4.
 
+---
+
+## What's Changed: Domain-Specialization Mapping Accuracy Improvements
+
+This branch (`feat/domain-specialization`) introduces a 3-layer accuracy improvement to the framework mapping pipeline. The core problem: the mapping step was producing false-positive mappings and inflated coverage levels because it relied on LLM keyword matching without deterministic constraints on what each control can legitimately satisfy.
+
+### New: Service Applicability Screen (Step A)
+
+Before any mapping begins, the tool now derives service capabilities directly from the Canopy threat model input and screens objectives for applicability:
+
+- **`data/service-classification-rules.json`** — 17 capability detection rules that scan Canopy mitigation statements and entity types to derive capabilities (VPC, CMK, logging, backup, patching, etc.)
+- **`data/objective-applicability-rules.json`** — 28 rules that map CCMv4 objective categories to capability prerequisites. Determines which objectives are N/A *before* mapping starts.
+- **`scripts/compute-applicability-matrix.py`** — Deterministic script that takes a Canopy JSON, derives capabilities, and outputs an applicability matrix.
+
+**Result:** Datacenter (DCS), endpoint (UEM), HR (HRS), and patching (TVM) objectives are automatically N/A for serverless/managed services. Backup objectives (BCR-08) are N/A only when the service has no backup API.
+
+### New: Mitigation Intent Tagging (Step B)
+
+Each generated control is now tagged with a canonical `mitigation_intent` and `security_domain` derived from the source Canopy mitigation statement:
+
+- **`data/mitigation-intent-patterns.json`** — 19+ intent patterns with match rules against Canopy's controlled vocabulary. Example: "encrypted with an AWS KMS Customer Managed Key" → `intent_id: cmk_encryption`, `security_domain: data_protection_at_rest`.
+- **Schema update:** `schemas/map-controls-generated.schema.json` now includes `mitigation_intent` and `security_domain` fields.
+- **Skill update:** `skills/map-generate-controls/skill.md` Phase 3b adds deterministic intent tagging.
+
+**Result:** A tagging control tagged `ownership_tagging` CANNOT be mapped to LOG-09 or IAM-13 regardless of keyword overlap.
+
+### New: Constrained Mapping with Coverage Ceilings (Step C)
+
+The framework mapping skill now enforces hard constraints:
+
+- **Applicability pre-filter:** Objectives marked N/A in the matrix are skipped immediately.
+- **Mechanism coverage ceilings:** A Config Rule can NEVER be "Full Coverage" for an enforcement objective (max: Partial). Only SCPs/RCPs can be Full for enforcement.
+- **`tools/validate/validate_intent_eligibility.py`** — New validator that catches: (1) N/A objectives that got mapped, (2) coverage levels exceeding mechanism ceilings.
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `data/service-classification-rules.json` | Created |
+| `data/objective-applicability-rules.json` | Created |
+| `data/mitigation-intent-patterns.json` | Created |
+| `scripts/compute-applicability-matrix.py` | Created |
+| `tools/validate/validate_intent_eligibility.py` | Created |
+| `schemas/map-controls-generated.schema.json` | Modified (added `mitigation_intent`, `security_domain`) |
+| `skills/map-generate-controls/skill.md` | Modified (added Phase 3b intent tagging) |
+| `skills/map-framework-mapping/skill.md` | Modified (added applicability pre-filter + coverage ceilings) |
+| `skills/map/skill.md` | Modified (added Step 2b applicability matrix computation) |
+
+### Verification
+
+```bash
+# Test applicability matrix on a Canopy JSON
+python3 scripts/compute-applicability-matrix.py <canopy-json> --output /tmp/matrix.json
+
+# Validate an existing mapping against intent eligibility + ceilings
+python3 tools/validate/validate_intent_eligibility.py <map-framework-mapped.json> \
+  --controls <map-controls-generated.json> --matrix <applicability-matrix.json>
+```
+
+---
+
 ## What it produces
 
 - **Control mapping** - Maps threats and controls to security and compliance frameworks (e.g CCMv4, MITRE)

@@ -155,7 +155,27 @@ Agent 2: map-generate-controls (background)
 **IMPORTANT:** Dispatch both in a single message with 2 Agent tool calls.
 Do NOT set `model` parameter — let subagents inherit the caller's model.
 
-### Step 3: Framework mapping (after 1+2 complete)
+### Step 2b: Compute Applicability Matrix (after Step 2 completes)
+
+After `map-generate-controls` completes (which means the Canopy input has been
+fully parsed), compute the service applicability matrix:
+
+```bash
+python3 scripts/compute-applicability-matrix.py <canopy-json-path> \
+  --output .service-approval/<slug>/04-map/applicability-matrix.json
+```
+
+This script:
+1. Scans the Canopy threat model's mitigations and entities
+2. Derives service capabilities (VPC, CMK, logging, backup, patching, etc.)
+3. Evaluates objective-applicability-rules to determine which objectives are N/A
+4. Writes `applicability-matrix.json` consumed by map-framework-mapping
+
+The Canopy JSON path is the same file provided as input to the pipeline (in the
+`input/` folder). If no Canopy JSON is available, skip this step — the mapping
+skill will assume all objectives are applicable (backward-compatible behavior).
+
+### Step 3: Framework mapping (after 1+2+2b complete)
 
 This is the most reasoning-heavy step. The dispatch shape depends on the framework
 (see "Execution model" in `skills/map-framework-mapping/SKILL.md`):

@@ -1,0 +1,214 @@
+{
+  "schema_version": "1.0",
+  "description": "Rules for deriving service capabilities from Canopy threat model inputs. Each rule scans the mitigations[] statement text or entities[] entityType to determine whether a capability is present. The derived capabilities drive the objective-applicability-rules.json to screen objectives before mapping.",
+  "capability_rules": [
+    {
+      "capability_id": "network_model:vpc_capable",
+      "description": "Service supports VPC placement (subnets, security groups, ENIs)",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "should be in an Amazon VPC",
+          "VPC network placement",
+          "Elastic Network Interface",
+          "private subnets",
+          "security group"
+        ]
+      }
+    },
+    {
+      "capability_id": "encryption_model:cmk_capable",
+      "description": "Service supports customer-managed KMS key encryption at rest",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "AWS KMS Customer Managed Key",
+          "customer-managed KMS key",
+          "KmsKeyArn",
+          "encryptionKeyArn",
+          "encrypted with an AWS KMS"
+        ]
+      }
+    },
+    {
+      "capability_id": "encryption_model:encryption_at_rest",
+      "description": "Service supports encryption at rest (any key type)",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "encryption at rest enabled",
+          "encrypted with an AWS KMS",
+          "StorageEncrypted"
+        ]
+      }
+    },
+    {
+      "capability_id": "identity_model:execution_role",
+      "description": "Service uses IAM execution/service roles",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "execution role",
+          "service role",
+          "IAM.*role should only be assumable",
+          "role should be accessed only by trusted"
+        ]
+      }
+    },
+    {
+      "capability_id": "identity_model:resource_policy",
+      "description": "Service supports resource-based policies",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "resource.*policy should limit permissions",
+          "resource policy should only be accessed",
+          "resource.*policy.*trusted"
+        ]
+      }
+    },
+    {
+      "capability_id": "logging_model:cloudwatch_logs",
+      "description": "Service supports sending logs to CloudWatch Logs",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "send.*logs to CloudWatch",
+          "CloudWatch Logs",
+          "log delivery",
+          "CloudWatch Logs exports",
+          "debug logs to CloudWatch"
+        ]
+      }
+    },
+    {
+      "capability_id": "logging_model:cloudtrail_data_events",
+      "description": "Service supports CloudTrail data events for invocation logging",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "CloudTrail data events",
+          "invocation.*CloudTrail"
+        ],
+        "entity_information_contains_any": [
+          "CloudTrail data events",
+          "data events for.*invocations"
+        ]
+      }
+    },
+    {
+      "capability_id": "resilience_model:multi_az",
+      "description": "Service supports multi-AZ deployment",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "more than one availability zone",
+          "multi-AZ",
+          "Multi-AZ"
+        ]
+      }
+    },
+    {
+      "capability_id": "backup_model:cross_region_replication",
+      "description": "Service supports cross-region replication or backup",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "replicated to at least one other AWS region",
+          "cross-region replication",
+          "cross-Region"
+        ]
+      }
+    },
+    {
+      "capability_id": "backup_model:managed_backup",
+      "description": "Service has managed backup/snapshot capabilities",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "automated backup",
+          "backup retention",
+          "snapshot"
+        ],
+        "entity_information_contains_any": [
+          "automated backup",
+          "point-in-time recovery",
+          "BackupRetentionPeriod"
+        ]
+      }
+    },
+    {
+      "capability_id": "patching_model:customer_managed",
+      "description": "Customer is responsible for OS/software patching",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "patching",
+          "OS hardening",
+          "operating system"
+        ],
+        "entity_information_contains_any": [
+          "customer.*patch",
+          "ApplyPendingMaintenanceAction",
+          "custom runtime",
+          "custom DB engine version"
+        ]
+      }
+    },
+    {
+      "capability_id": "authentication_model:iam_auth",
+      "description": "Service supports IAM-based authentication for data-plane access",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "IAM database authentication",
+          "SigV4 authentication",
+          "AWS IAM for.*auth",
+          "AWS IAM for inbound authorization"
+        ]
+      }
+    },
+    {
+      "capability_id": "authentication_model:oidc_jwt",
+      "description": "Service supports OIDC/JWT-based authentication",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "OIDC.*identity provider",
+          "JWT authorizer",
+          "OIDC to authenticate"
+        ]
+      }
+    },
+    {
+      "capability_id": "access_control:public_access_configurable",
+      "description": "Service has a public access toggle that can be misconfigured",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "should not allow unauthenticated access",
+          "not allow.*public access",
+          "publicly accessible"
+        ]
+      }
+    },
+    {
+      "capability_id": "supply_chain:code_signing",
+      "description": "Service supports code signing for deployment artifacts",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "code-signing",
+          "code signing"
+        ]
+      }
+    },
+    {
+      "capability_id": "governance:tagging",
+      "description": "Service supports resource tagging",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "tagged with information that describes the owner",
+          "should not be tagged with personally identifiable"
+        ]
+      }
+    },
+    {
+      "capability_id": "transit_encryption:tls",
+      "description": "Service supports or requires TLS for data in transit",
+      "detect_by": {
+        "mitigation_statement_contains_any": [
+          "require encryption in transit",
+          "TLS source access",
+          "require.*secure.*transport",
+          "RequireTLS"
+        ]
+      }
+    }
+  ]
+}
