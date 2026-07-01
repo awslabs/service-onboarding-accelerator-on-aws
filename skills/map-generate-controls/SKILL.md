@@ -564,6 +564,47 @@ Config rule), use the intent of the **primary mitigation** (first in `mitigation
 
 ---
 
+## Phase 3c: Canopy Traceability Threading (MANDATORY)
+
+After intent tagging, thread the source mitigation's Canopy identity and MITRE ATT&CK
+techniques onto each control. This step is **deterministic** — the MITRE techniques are
+recovered from the Canopy source, never invented or fetched from an external service.
+
+**Why.** A Canopy mitigation carries an `alias` (e.g. `Mitigation.LAMBDA.Function.1`) and a
+UUID; the MITRE ATT&CK technique IDs live on the *threat* objects the mitigation addresses.
+Threading these onto controls lets the final `framework-mapping.md` cite the exact Canopy
+mitigation and MITRE technique behind every mapped row.
+
+**Resolver:** `scripts/canopy_trace.py` walks the golden-source chain
+`mitigation.mappings[type=="THREAT"].id → threats[].id → threat.mappings[type=="FRAMEWORK",
+frameworkName=="MITRE ATT&CK"].id` to build, per mitigation, `{alias, statement,
+mitre_techniques[], threat_aliases[]}`.
+
+**Algorithm:**
+1. For each control, collect the `alias` of each source mitigation (from
+   `validated.json.existing_mitigations[]`, matched by `mitigation_ids[]`) and stamp it as
+   `mitigation_aliases[]` on the control.
+2. Run the resolver over the Canopy input and thread onto each control (additive fields):
+   ```python
+   import importlib.util, json
+   spec = importlib.util.spec_from_file_location("canopy_trace", "scripts/canopy_trace.py")
+   ct = importlib.util.module_from_spec(spec); spec.loader.exec_module(ct)
+   canopy = json.load(open("<the Canopy input json>"))   # the intake threat-model file
+   ct.thread_controls(controls, canopy)
+   ```
+   Each control gains `mitigation_alias`, `mitigation_aliases[]`, `mitigation_uuid`,
+   `mitigation_uuids[]`, `mitre_techniques[]`, and `trace_source: "canopy"`.
+3. **No-Canopy / synthetic controls.** A control derived from an assessment gap (no real
+   Canopy mitigation behind it) has no resolvable alias — the resolver marks it
+   `trace_source: "assessment_gap"` with an empty `mitre_techniques[]`. This is expected,
+   not an error.
+
+**Provenance note:** `mitre_techniques[]` here is resolved deterministically from the Canopy
+source and is authoritative for downstream citation. It is distinct from the heuristic
+`attack_techniques[]` (§2.7), which is derived by action/mechanism alignment; keep both.
+
+---
+
 ## Phase 4: Write Output
 
 Write `.service-approval/<slug>/04-map/map-controls-generated.json`:
