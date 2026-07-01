@@ -129,3 +129,119 @@ def test_bcr_backup_dr_stay_default_na(objectives):
     by_id = _by_id(objectives)
     for oid in ("BCR-01", "BCR-08", "BCR-09", "BCR-11"):
         assert by_id[oid]["mappable"] == "default_na", oid
+
+
+# --- Coverage-ceiling policy (Full is opt-in) --------------------------------
+
+VALID_COVERAGE = {"Full Coverage", "Partial Coverage", "Supportive"}
+
+
+def test_default_ceiling_is_partial(kb):
+    assert kb.get("default_coverage_ceiling") == "Partial Coverage"
+
+
+def test_mechanism_class_ceilings_reference_real_classes(kb):
+    classes = set(kb["mechanism_classes"])
+    ceilings = kb.get("mechanism_class_ceilings", {})
+    assert ceilings, "mechanism_class_ceilings must be present"
+    for cls, level in ceilings.items():
+        assert cls in classes, f"ceiling for unknown class {cls}"
+        assert level in VALID_COVERAGE, f"{cls}: bad coverage {level}"
+
+
+def test_per_objective_ceilings_reference_real_classes(kb, objectives):
+    classes = set(kb["mechanism_classes"])
+    for o in objectives:
+        for cls, level in o.get("coverage_ceilings", {}).items():
+            assert cls in classes, f"{o['objective_id']}: ceiling for unknown class {cls}"
+            assert level in VALID_COVERAGE, f"{o['objective_id']}: bad coverage {level}"
+
+
+def test_cek_encryption_objectives_capped_at_partial(objectives):
+    """CEK-03/CEK-08 cannot be Full from CMK-existence/TLS-presence alone."""
+    by_id = _by_id(objectives)
+    for oid in ("CEK-03", "CEK-08"):
+        ceil = by_id[oid].get("coverage_ceilings", {})
+        assert ceil.get("at_rest_encryption") == "Partial Coverage", oid
+
+
+# --- supply_chain class + code-signing home ----------------------------------
+
+def test_supply_chain_class_exists(kb):
+    assert "supply_chain" in kb["mechanism_classes"]
+
+
+def test_dsp10_denies_supply_chain(objectives):
+    """Code-signing (code integrity) must not satisfy data-in-transit protection."""
+    o = _by_id(objectives)["DSP-10"]
+    assert "supply_chain" in o["deny_mechanisms"]
+
+
+def test_dsp01_denies_encryption(objectives):
+    """A technical encryption control must never map to the data-security policy objective."""
+    o = _by_id(objectives)["DSP-01"]
+    assert o["mappable"] == "default_na"
+    assert "at_rest_encryption" in o["deny_mechanisms"]
+    assert "transit_encryption" in o["deny_mechanisms"]
+
+
+def test_code_signing_has_a_home(objectives):
+    """Code-signing routes to a change-integrity objective, not DSP-10."""
+    o = _by_id(objectives)["CCC-04"]
+    assert "supply_chain" in o["allow_mechanisms"]
+
+
+# --- Log-protection trio: log creation != log protection ---------------------
+
+def test_log_protection_denies_log_creation(objectives):
+    by_id = _by_id(objectives)
+    for oid in ("LOG-02", "LOG-09", "IAM-12"):
+        o = by_id[oid]
+        assert "access_event_logging" in o["deny_mechanisms"], oid
+        assert "access_event_logging" not in o["allow_mechanisms"], oid
+
+
+def test_log_protection_allows_encryption_at_rest_capped(objectives):
+    """Encrypting the log store at rest is a legitimate log-protection facet, but
+    only one facet — allow it capped at Partial so it cannot false-FAIL nor
+    over-claim Full."""
+    by_id = _by_id(objectives)
+    for oid in ("LOG-02", "LOG-09", "IAM-12"):
+        o = by_id[oid]
+        assert "at_rest_encryption" in o["allow_mechanisms"], oid
+        assert o.get("coverage_ceilings", {}).get("at_rest_encryption") == "Partial Coverage", oid
+
+
+def test_monitoring_objectives_cap_log_recording_at_partial(objectives):
+    """Recording events (access_event_logging) is not monitoring/alerting/response;
+    LOG-03/05/13 cap it at Partial so a record-only control cannot claim Full."""
+    by_id = _by_id(objectives)
+    for oid in ("LOG-03", "LOG-05", "LOG-13"):
+        o = by_id[oid]
+        assert o.get("coverage_ceilings", {}).get("access_event_logging") == "Partial Coverage", oid
+
+
+def test_cek10_key_generation_caps_at_rest_encryption(objectives):
+    """Encrypting data with a CMK does not prove how the key was generated;
+    CEK-10 caps the at_rest_encryption path at Partial."""
+    o = _by_id(objectives)["CEK-10"]
+    assert o.get("coverage_ceilings", {}).get("at_rest_encryption") == "Partial Coverage"
+
+
+def test_log_protection_serverless_category_na(objectives):
+    """A serverless-compute service owns no log store to protect."""
+    by_id = _by_id(objectives)
+    for oid in ("LOG-02", "LOG-09"):
+        cat = by_id[oid].get("by_service_category", {})
+        assert cat.get("serverless_compute", {}).get("mappable") == "default_na", oid
+
+
+def test_by_service_category_shapes_valid(kb, objectives):
+    classes = set(kb["mechanism_classes"])
+    valid_mappable = {"mappable", "default_na", "conditional"}
+    for o in objectives:
+        for catname, ov in o.get("by_service_category", {}).items():
+            if "mappable" in ov:
+                assert ov["mappable"] in valid_mappable, (o["objective_id"], catname)
+            for cls in ov.get("allow_mechanisms", []) + ov.get("deny_mechanisms", []):
+                assert cls in classes, f"{o['objective_id']}/{catname}: unknown class {cls}"

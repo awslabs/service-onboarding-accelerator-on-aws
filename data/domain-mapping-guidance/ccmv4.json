@@ -164,6 +164,18 @@
         "malware"
       ],
       "match_mechanisms": []
+    },
+    "supply_chain": {
+      "description": "Software supply-chain / artifact-integrity controls: code signing, signature verification, trusted-publisher enforcement of deployment artifacts.",
+      "match_keywords": [
+        "code signing",
+        "code-signing",
+        "signing configuration",
+        "signature verification",
+        "trusted publisher",
+        "artifact integrity"
+      ],
+      "match_mechanisms": []
     }
   },
   "domains": [
@@ -563,7 +575,8 @@
           "allow_mechanisms": [
             "change_control",
             "access_control",
-            "misconfig_detection"
+            "misconfig_detection",
+            "supply_chain"
           ],
           "deny_mechanisms": [
             "access_event_logging"
@@ -673,7 +686,11 @@
             "at_rest_encryption",
             "transit_encryption"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [],
+          "coverage_ceilings": {
+            "at_rest_encryption": "Partial Coverage",
+            "transit_encryption": "Partial Coverage"
+          }
         },
         {
           "objective_id": "CEK-04",
@@ -733,7 +750,11 @@
             "at_rest_encryption",
             "key_lifecycle"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [],
+          "coverage_ceilings": {
+            "at_rest_encryption": "Partial Coverage",
+            "key_lifecycle": "Partial Coverage"
+          }
         },
         {
           "objective_id": "CEK-09",
@@ -756,7 +777,10 @@
             "key_lifecycle",
             "at_rest_encryption"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [],
+          "coverage_ceilings": {
+            "at_rest_encryption": "Partial Coverage"
+          }
         },
         {
           "objective_id": "CEK-11",
@@ -1123,7 +1147,10 @@
           "intent": "Requires a data-security and privacy policy \u2014 organizational governance.",
           "mappable": "default_na",
           "allow_mechanisms": [],
-          "deny_mechanisms": [],
+          "deny_mechanisms": [
+            "at_rest_encryption",
+            "transit_encryption"
+          ],
           "na_reason": "Organizational governance/process objective; no platform or infrastructure configuration control implements it.",
           "override_requires": [
             "applicability_justification",
@@ -1250,7 +1277,9 @@
             "transit_encryption",
             "at_rest_encryption"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [
+            "supply_chain"
+          ]
         },
         {
           "objective_id": "DSP-11",
@@ -1817,11 +1846,16 @@
           "intent": "Requires safeguarding log integrity; controls protecting log access/configuration safeguard log integrity.",
           "mappable": "mappable",
           "allow_mechanisms": [
-            "access_event_logging",
             "access_control",
-            "misconfig_detection"
+            "misconfig_detection",
+            "at_rest_encryption"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [
+            "access_event_logging"
+          ],
+          "coverage_ceilings": {
+            "at_rest_encryption": "Partial Coverage"
+          }
         },
         {
           "objective_id": "IAM-13",
@@ -2079,9 +2113,20 @@
           "mappable": "mappable",
           "allow_mechanisms": [
             "access_control",
+            "at_rest_encryption"
+          ],
+          "deny_mechanisms": [
             "access_event_logging"
           ],
-          "deny_mechanisms": []
+          "by_service_category": {
+            "serverless_compute": {
+              "mappable": "default_na",
+              "na_reason": "Serverless compute owns no audit-log store to protect; the log store (CloudWatch Logs group, CloudTrail trail, S3 log bucket) is a separate service's resource. Log-store protection is N/A here."
+            }
+          },
+          "coverage_ceilings": {
+            "at_rest_encryption": "Partial Coverage"
+          }
         },
         {
           "objective_id": "LOG-03",
@@ -2092,7 +2137,10 @@
             "misconfig_detection",
             "access_event_logging"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [],
+          "coverage_ceilings": {
+            "access_event_logging": "Partial Coverage"
+          }
         },
         {
           "objective_id": "LOG-04",
@@ -2118,7 +2166,10 @@
             "misconfig_detection",
             "access_event_logging"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [],
+          "coverage_ceilings": {
+            "access_event_logging": "Partial Coverage"
+          }
         },
         {
           "objective_id": "LOG-06",
@@ -2164,9 +2215,20 @@
           "mappable": "mappable",
           "allow_mechanisms": [
             "access_control",
+            "at_rest_encryption"
+          ],
+          "deny_mechanisms": [
             "access_event_logging"
           ],
-          "deny_mechanisms": []
+          "by_service_category": {
+            "serverless_compute": {
+              "mappable": "default_na",
+              "na_reason": "Serverless compute owns no audit-log store to protect; the log store (CloudWatch Logs group, CloudTrail trail, S3 log bucket) is a separate service's resource. Log-store protection is N/A here."
+            }
+          },
+          "coverage_ceilings": {
+            "at_rest_encryption": "Partial Coverage"
+          }
         },
         {
           "objective_id": "LOG-10",
@@ -2219,7 +2281,10 @@
             "misconfig_detection",
             "access_event_logging"
           ],
-          "deny_mechanisms": []
+          "deny_mechanisms": [],
+          "coverage_ceilings": {
+            "access_event_logging": "Partial Coverage"
+          }
         }
       ]
     },
@@ -2881,5 +2946,20 @@
         }
       ]
     }
-  ]
+  ],
+  "default_coverage_ceiling": "Partial Coverage",
+  "mechanism_class_ceilings": {
+    "transit_encryption": "Full Coverage",
+    "at_rest_encryption": "Full Coverage",
+    "access_control": "Full Coverage",
+    "network_isolation": "Full Coverage",
+    "resilience": "Full Coverage",
+    "access_event_logging": "Full Coverage",
+    "key_lifecycle": "Partial Coverage",
+    "misconfig_detection": "Partial Coverage",
+    "change_control": "Partial Coverage",
+    "vulnerability_management": "Partial Coverage",
+    "tagging_classification": "Supportive",
+    "supply_chain": "Partial Coverage"
+  }
 }

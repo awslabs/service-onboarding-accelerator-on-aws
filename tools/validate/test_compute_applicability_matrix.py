@@ -96,8 +96,10 @@ def test_serverless_category_derived():
 # --- applicability screen: unknown never forces N/A -------------------------
 
 def test_unknown_capability_defers_to_kb_default():
-    """A serverless service with no backup signal must NOT list CEK-03/LOG-02 as
-    N/A — those defer to the KB default (absent from the matrix)."""
+    """A serverless service with no encryption/monitoring signal must NOT list
+    CEK-03 as N/A — encryption objectives defer to the KB default (absent from
+    the matrix). (LOG-02 is a category fact for serverless and IS screened; see
+    test_log_protection_na_for_serverless.)"""
     canopy = _canopy([
         "An AWS Lambda function IAM execution role should be accessed only by trusted identities",
         "An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)",
@@ -108,7 +110,7 @@ def test_unknown_capability_defers_to_kb_default():
         json.loads((REPO / "data" / "objective-applicability-rules.json").read_text()),
     )
     assert "CEK-03" not in result
-    assert "LOG-02" not in result
+    assert "CEK-08" not in result
 
 
 def test_tvm10_na_for_serverless_via_category_not_prose():
@@ -144,6 +146,18 @@ def test_backup_capability_unlocks_bcr08_over_category_na():
     assert result["BCR-08"]["derived_from"]["rule"] == "capability_unlock"
 
 
+def test_log_protection_na_for_serverless():
+    """LOG-02/LOG-09 (protect the log store) are N/A for serverless_compute — the
+    override must fire at screen time, not merely exist in the KB."""
+    result = cam.evaluate_applicability(
+        {}, ["serverless_compute"],
+        json.loads((REPO / "data" / "objective-applicability-rules.json").read_text()),
+    )
+    for oid in ("LOG-02", "LOG-09"):
+        assert result[oid]["applicable"] is False
+        assert result[oid]["derived_from"]["rule"] == "category_na"
+
+
 def test_intrinsic_na_capability_independent():
     result = cam.evaluate_applicability(
         {}, [], json.loads((REPO / "data" / "objective-applicability-rules.json").read_text())
@@ -167,9 +181,12 @@ def test_real_lambda_matrix_acceptance():
     oa = result["objective_applicability"]
     assert oa["TVM-10"]["applicable"] is False
     assert oa["BCR-08"]["applicable"] is False
-    # Encryption/log objectives defer to KB default, not force-N/A.
+    # LOG-02/09 are a serverless category fact (owns no log store) -> N/A.
+    assert oa["LOG-02"]["applicable"] is False
+    assert oa["LOG-09"]["applicable"] is False
+    # Encryption objectives defer to KB default, not force-N/A.
     assert "CEK-03" not in oa
-    assert "LOG-02" not in oa
+    assert "CEK-08" not in oa
     # Every N/A carries a reason + derived_from.
     for oid, e in oa.items():
         if not e["applicable"]:

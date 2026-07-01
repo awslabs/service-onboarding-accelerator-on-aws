@@ -12,6 +12,19 @@
     "framework": {"type": "string", "minLength": 1},
     "framework_version": {"type": "string"},
     "description": {"type": "string"},
+    "default_coverage_ceiling": {
+      "type": "string",
+      "enum": ["Full Coverage", "Partial Coverage", "Supportive"],
+      "description": "The maximum coverage a mapped control may claim when neither the mechanism class nor the objective raises it. Default is 'Partial Coverage' — Full Coverage is opt-in, matching the reality that most controls partially satisfy an objective."
+    },
+    "mechanism_class_ceilings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["Full Coverage", "Partial Coverage", "Supportive"]
+      },
+      "description": "Per-mechanism-class coverage ceiling. Keys are mechanism_classes ids. A class not listed uses default_coverage_ceiling. Only classes that can fully implement an objective's named mechanism (e.g. preventive access_control / network_isolation) are raised to Full Coverage; detective classes cap lower."
+    },
     "mechanism_classes": {
       "type": "object",
       "minProperties": 1,
@@ -90,6 +103,35 @@
           "type": "array",
           "items": {"type": "string"},
           "description": "Optional illustrative maps / does-not-map notes."
+        },
+        "coverage_ceilings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["Full Coverage", "Partial Coverage", "Supportive"]
+          },
+          "description": "Per-objective, per-mechanism-class coverage ceiling override. Keys are mechanism_classes ids. Takes precedence over mechanism_class_ceilings and default_coverage_ceiling. Used to cap an objective a class can only partially satisfy (e.g. CEK-03 caps at_rest_encryption at Partial because it needs classification-driven encryption, not just CMK existence)."
+        },
+        "by_service_category": {
+          "type": "object",
+          "description": "Optional per-service-category overrides. Keys are service category labels (serverless_compute, storage, database, networking, ...). A category present here overrides the objective-level mappable/allow/deny/ceilings when the service resolves to that category. Authored ONLY where a category genuinely differs (e.g. LOG-02 log-store protection is default_na for serverless_compute but mappable for storage).",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mappable": {"type": "string", "enum": ["mappable", "default_na", "conditional"]},
+              "allow_mechanisms": {"type": "array", "items": {"type": "string"}},
+              "deny_mechanisms": {"type": "array", "items": {"type": "string"}},
+              "coverage_ceilings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": ["Full Coverage", "Partial Coverage", "Supportive"]
+                }
+              },
+              "na_reason": {"type": "string"}
+            }
+          }
         }
       }
     }
