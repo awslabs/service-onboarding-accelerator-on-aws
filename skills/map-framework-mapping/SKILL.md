@@ -37,9 +37,18 @@ each objective actually means and which mechanisms legitimately satisfy it. The
   **per domain**.
 - **Non-CCMv4 (no `data/domain-mapping-guidance/<framework>.json` for the active
   framework):** fall back to the **single-pass** behavior — map all objectives in
-  one pass using Phases 0–4 below, exactly as before. NIST 800-53 / CIS / ISO
-  have no guidance file yet, so they take this path; advanced-operator
-  `--framework` flags keep working unchanged.
+  one pass using Phases 0–4 below. NIST 800-53 / CIS / ISO have no guidance file
+  yet, so they take this path; advanced-operator `--framework` flags keep working.
+  **If a `custom_to_ccmv4_anchor.json` is present** (written by map-parse-framework
+  Step 5 for a custom framework), reason with the anchored CCMv4 objective's
+  guidance: for a custom objective with `status:"anchored"`, look up its
+  `ccmv4_ids[]` in `data/domain-mapping-guidance/ccmv4.json` and apply that
+  objective's allow/deny classes and coverage ceilings, and record the anchor in
+  the citation (`"anchored_to": "CCMv4 <id>"`, plus the `anchor_score`). For a
+  custom objective with `status:"uncertain"` (best anchor below threshold), map it
+  `UNCERTAIN` with a `review_reason` naming the weak anchor — never force-fit weak
+  guidance. When several `ccmv4_ids` are returned, prefer the first (best-scoring)
+  and only borrow a second's guidance when both clearly apply.
 
 Pick the path by checking for the guidance file:
 
