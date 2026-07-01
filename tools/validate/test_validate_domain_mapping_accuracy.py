@@ -325,24 +325,28 @@ def test_category_applicable_is_clean():
 
 # --- Check 5: citation-as-gate -----------------------------------------------
 
-def _cited(oid, cid, requirement="the specific sub-requirement", source="canopy",
-           confidence="high"):
+def _cited(oid, cid, requirement="the specific sub-requirement", source="canopy"):
     return _mapped([
         {"objective_id": oid, "status": "MAPPED",
-         "controls": [{"control_id": cid, "rationale": "r", "confidence": confidence,
+         "controls": [{"control_id": cid, "rationale": "r",
                        "citation": {"objective_requirement": requirement,
                                     "source": source}}]},
     ])
 
 
 def test_confident_mapped_without_citation_fails():
-    """When the mapping opts into citations, a confident MAPPED row with no
-    concrete citation FAILs — it must be UNCERTAIN instead."""
+    """When the mapping opts into citations (another row carries one), a MAPPED
+    row with no concrete citation FAILs — it must be UNCERTAIN instead."""
     doc = _mapped([
         {"objective_id": "IAM-05", "status": "MAPPED",
-         "controls": [{"control_id": "C1", "rationale": "r", "confidence": "high"}]},
+         "controls": [{"control_id": "C1", "rationale": "r"}]},
+        # A second row carries a citation → the mapping opts into the gate.
+        {"objective_id": "IAM-09", "status": "MAPPED",
+         "controls": [{"control_id": "C2", "rationale": "r",
+                       "citation": {"objective_requirement": "x", "source": "canopy"}}]},
     ])
-    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
+    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]),
+                      _ctrl("C2", "SCP", name="privileged role segregation", keywords=["iam"]))
     errors = vma.check_accuracy(doc, controls, GUIDANCE)
     assert any("IAM-05" in e and "citation" in e for e in errors)
 
@@ -359,26 +363,15 @@ def test_uncertain_row_without_citation_is_advisory():
     doc = _mapped([
         {"objective_id": "IAM-05", "status": "UNCERTAIN",
          "review_reason": "cannot produce a concrete linkage",
-         "controls": [{"control_id": "C1", "rationale": "r", "confidence": "uncertain"}]},
+         "controls": [{"control_id": "C1", "rationale": "r"}]},
     ])
     controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
     assert vma.check_accuracy(doc, controls, GUIDANCE) == []
 
 
-def test_uncertain_confidence_row_without_citation_is_advisory():
-    """A MAPPED row explicitly flagged confidence:uncertain also escapes the gate."""
-    doc = _mapped([
-        {"objective_id": "IAM-05", "status": "MAPPED",
-         "controls": [{"control_id": "C1", "rationale": "r", "confidence": "uncertain",
-                       "review_reason": "weak linkage"}]},
-    ])
-    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
-    assert not any("citation" in e for e in vma.check_accuracy(doc, controls, GUIDANCE))
-
-
 def test_legacy_mapping_without_citations_not_retrofailed():
-    """A mapping that never opts into citations (no citation/confidence/UNCERTAIN
-    anywhere) is not retro-failed by the citation gate."""
+    """A mapping that never opts into citations (no citation/UNCERTAIN anywhere)
+    is not retro-failed by the citation gate."""
     doc = _mapped([
         {"objective_id": "IAM-05", "status": "MAPPED",
          "controls": [{"control_id": "C1", "rationale": "r"}]},
@@ -432,8 +425,7 @@ def test_hallucination_log_protection_plus_log_creation_fails():
 def test_log_protection_with_access_control_passes():
     """The corrected mapping: LOG-09 + an access-control (restrict log access) → clean."""
     doc = _mapped([{"objective_id": "LOG-09", "status": "MAPPED",
-                    "controls": [{"control_id": "C1", "rationale": "r",
-                                  "confidence": "uncertain"}]}])
+                    "controls": [{"control_id": "C1", "rationale": "r"}]}])
     controls = _ctrls(_ctrl("C1", "Resource Policy",
                             name="Restrict who can modify or delete the log group",
                             keywords=["access control", "resource policy"]))

@@ -86,7 +86,7 @@
         "required": ["objective_id", "status"],
         "properties": {
           "objective_id": {"type": "string"},
-          "status": {"type": "string", "enum": ["MAPPED", "N/A"]}
+          "status": {"type": "string", "enum": ["MAPPED", "N/A", "UNCERTAIN"]}
         }
       }
     },

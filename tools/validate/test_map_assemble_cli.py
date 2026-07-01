@@ -78,3 +78,59 @@ def test_module_main_function_exists() -> None:
     rename that would silently break the CLI shape."""
     module = _load_module()
     assert hasattr(module, "main"), "scripts/map-assemble.py must expose main()"
+
+
+# --- Citation / MITRE cell rendering (W4 additive output) --------------------
+
+def test_citation_cell_renders_requirement_alias_source() -> None:
+    m = _load_module()
+    cm = {"control_id": "C1", "citation": {
+        "objective_requirement": "least privilege", "source": "canopy",
+        "mitigation_alias": "Mitigation.LAMBDA.Function.6"}}
+    cell = m._citation_cell(cm, {})
+    assert "least privilege" in cell
+    assert "Mitigation.LAMBDA.Function.6" in cell
+    assert "(canopy)" in cell
+
+
+def test_citation_cell_falls_back_to_control_trace() -> None:
+    """A citation-free legacy row still shows the control's threaded Canopy alias."""
+    m = _load_module()
+    cell = m._citation_cell({"control_id": "C1"},
+                            {"mitigation_alias": "Mitigation.X.1", "trace_source": "canopy"})
+    assert "Mitigation.X.1" in cell and "(canopy)" in cell
+
+
+def test_citation_cell_assessment_gap() -> None:
+    m = _load_module()
+    assert m._citation_cell({"control_id": "C2"}, {"trace_source": "assessment_gap"}) \
+        == "(assessment_gap)"
+
+
+def test_mitre_cell_unions_and_sorts() -> None:
+    m = _load_module()
+    cm = {"citation": {"mitre_techniques": ["T1537"]}}
+    ctrl = {"mitre_techniques": ["T1530", "T1537"]}
+    assert m._mitre_cell(cm, ctrl) == "T1530, T1537"
+
+
+def test_mitre_cell_empty_is_dash() -> None:
+    m = _load_module()
+    assert m._mitre_cell({}, {}) == "—"
+
+
+def test_coverage_summary_preserves_uncertain() -> None:
+    """build_framework_coverage_summary must carry the merge's uncertain count
+    through unchanged (UNCERTAIN is excluded from mapped/coverage)."""
+    m = _load_module()
+    fw_mapped = {
+        "framework_mapping": [
+            {"objective_id": "IAM-01", "status": "MAPPED", "coverage": "Partially Covered",
+             "controls": []},
+            {"objective_id": "IAM-13", "status": "UNCERTAIN", "coverage": "N/A", "controls": []},
+        ],
+        "framework_coverage_summary": {"mapped": 1, "not_applicable": 0, "uncertain": 1},
+    }
+    summary = m.build_framework_coverage_summary(fw_mapped)
+    assert summary["uncertain"] == 1
+    assert summary["mapped"] == 1

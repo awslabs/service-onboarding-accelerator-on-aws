@@ -678,6 +678,38 @@ _MECH_GOVERNS = {
 }
 
 
+def _citation_cell(cm: dict, ctrl: dict) -> str:
+    """Render the citation cell for a mapped-control row in framework-mapping.md.
+
+    Prefers the row-level citation (objective_requirement + source + mitigation
+    alias). Falls back to the control's threaded Canopy alias so the rendered md
+    still shows the Canopy source even for a citation-free legacy mapping.
+    """
+    cit = cm.get("citation") if isinstance(cm.get("citation"), dict) else {}
+    bits: list[str] = []
+    req = (cit.get("objective_requirement") or "").strip()
+    if req:
+        bits.append(req)
+    alias = cit.get("mitigation_alias") or ctrl.get("mitigation_alias")
+    if alias:
+        bits.append(f"`{alias}`")
+    source = (cit.get("source") or ctrl.get("trace_source") or "").strip()
+    if source:
+        bits.append(f"({source})")
+    return " ".join(bits) if bits else "—"
+
+
+def _mitre_cell(cm: dict, ctrl: dict) -> str:
+    """Render the MITRE ATT&CK cell — techniques resolved from the Canopy source."""
+    techniques: list[str] = []
+    cit = cm.get("citation") if isinstance(cm.get("citation"), dict) else {}
+    for src in (cit.get("mitre_techniques"), ctrl.get("mitre_techniques")):
+        if isinstance(src, list):
+            techniques.extend(t for t in src if isinstance(t, str))
+    seen = sorted(set(techniques))
+    return ", ".join(seen) if seen else "—"
+
+
 def _governs_phrase(ctrl: dict) -> str:
     """Plain-language description of the kind of setting a control governs.
 
@@ -886,6 +918,10 @@ def write_framework_mapping(
     total_obj = summary.get("total_objectives", len(fw_mapped["framework_mapping"]))
     mapped_count = summary.get("mapped", 0)
     na_count = summary.get("not_applicable", 0)
+    uncertain_count = summary.get(
+        "uncertain",
+        sum(1 for f in fw_mapped["framework_mapping"] if f.get("status") == "UNCERTAIN"),
+    )
 
     # Count coverage levels (canonical labels, legacy aliases accepted)
     full_count = sum(
@@ -915,6 +951,8 @@ def write_framework_mapping(
     lines.append(f"**Framework Objectives Total:** {total_obj}  ")
     lines.append(f"**Objectives Mapped:** {mapped_count}  ")
     lines.append(f"**Objectives Not Applicable:** {na_count}  ")
+    if uncertain_count:
+        lines.append(f"**Objectives Uncertain (review needed):** {uncertain_count}  ")
     lines.append(f"**Domains Covered:** {domains_covered} / {total_domains}  ")
     lines.append("")
 
@@ -925,6 +963,8 @@ def write_framework_mapping(
     lines.append(f"| Total Objectives | {total_obj} |")
     lines.append(f"| Mapped | {mapped_count} |")
     lines.append(f"| Not Applicable | {na_count} |")
+    if uncertain_count:
+        lines.append(f"| Uncertain (review needed) | {uncertain_count} |")
     lines.append(f"| Fully Covered | {full_count} |")
     lines.append(f"| Partially Covered | {partial_count} |")
     lines.append(f"| Supportive Only | {supportive_count} |")
@@ -955,13 +995,15 @@ def write_framework_mapping(
     for domain in sorted(domain_mappings):
         mappings = domain_mappings[domain]
         mapped_objs = [m for m in mappings if m["status"] == "MAPPED"]
-        na_objs = [m for m in mappings if m["status"] != "MAPPED"]
+        uncertain_objs = [m for m in mappings if m["status"] == "UNCERTAIN"]
+        na_objs = [m for m in mappings if m["status"] == "N/A"]
 
         lines.append(f"### {domain}\n")
         lines.append("")
-        lines.append(
-            f"*{len(mapped_objs)} mapped, {len(na_objs)} not applicable*\n"
-        )
+        summary_bits = [f"{len(mapped_objs)} mapped", f"{len(na_objs)} not applicable"]
+        if uncertain_objs:
+            summary_bits.append(f"{len(uncertain_objs)} uncertain")
+        lines.append(f"*{', '.join(summary_bits)}*\n")
         lines.append("")
 
         if mapped_objs:
@@ -970,10 +1012,10 @@ def write_framework_mapping(
                 lines.append("")
                 if obj.get("controls"):
                     lines.append(
-                        "| Control ID | Title | Category | Scope | Coverage Level | Rationale |"
+                        "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Citation | MITRE |"
                     )
                     lines.append(
-                        "|------------|-------|----------|-------|----------------|-----------|"
+                        "|------------|-------|----------|-------|----------------|-----------|----------|-------|"
                     )
                     for cm in obj["controls"]:
                         cid = cm["control_id"]
@@ -988,12 +1030,25 @@ def write_framework_mapping(
                         level = cm.get("coverage_level", "?")
                         rat = cm.get("rationale", "")
                         lines.append(
-                            f"| {cid} | {title} | {cat} | {scope} | {level} | {rat} |"
+                            f"| {cid} | {title} | {cat} | {scope} | {level} | {rat} "
+                            f"| {_citation_cell(cm, ctrl)} | {_mitre_cell(cm, ctrl)} |"
                         )
                     lines.append("")
 
                 lines.append(f"*Reason*: {obj.get('reason', '')}\n")
                 lines.append("")
+
+        if uncertain_objs:
+            lines.append("**Uncertain Objectives (review needed)**:\n")
+            lines.append("")
+            for obj in uncertain_objs:
+                rr = obj.get("review_reason") or obj.get("reason", "")
+                cids = ", ".join(c.get("control_id", "?") for c in obj.get("controls", [])) or "—"
+                lines.append(
+                    f"- **{obj['objective_id']}: {obj.get('title', '')}** — candidate "
+                    f"control(s): {cids}. *Why uncertain*: {rr}"
+                )
+            lines.append("")
 
         if na_objs:
             lines.append(f"**Not Applicable Objectives**: {', '.join(o['objective_id'] for o in na_objs)}\n")

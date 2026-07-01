@@ -16,7 +16,7 @@ sub-skill in the map pipeline. It produces quality-gated framework mappings with
 - `data/domain-mapping-guidance/<framework>.json` — per-domain mapping guidance (CCMv4 today)
 
 **Output:** `.service-approval/<slug>/04-map/map-framework-mapped.json`
-**Schema:** `schemas/map-framework-mapped.schema.json` — encodes status enum strictly `MAPPED` or `N/A` (iter-14 Class F15-revised), coverage enum, `control_id` pattern matching map-controls-generated, and per-mapping required fields. See also the "Schema rules" section below.
+**Schema:** `schemas/map-framework-mapped.schema.json` — encodes the status enum (`MAPPED`, `N/A`, or `UNCERTAIN`), coverage enum, `control_id` pattern matching map-controls-generated, and per-mapping required fields. See also the "Schema rules" section below.
 
 This is one of 4 focused map sub-skills. Each writes to a separate intermediate state file.
 
@@ -114,15 +114,23 @@ to override the eligibility constraint from `mitigation_intent`.
 ## Pre-Phase: Applicability Matrix Screen (BEFORE per-objective mapping)
 
 If `.service-approval/<slug>/04-map/applicability-matrix.json` exists, load it and
-apply it as a hard pre-filter:
+apply it as a hard pre-filter. The matrix lists **only** objectives with a
+positive structural decision (an N/A, or a capability-unlocked applicable) plus
+the service's `service_categories`; an objective **absent** from the matrix
+defers to the KB default — never force it N/A.
 
-1. For each objective in `applicability-matrix.json` where `applicable: false`:
+1. For each entry in `objective_applicability` where `applicable: false`:
    - Set `status: "N/A"` immediately
-   - Use the matrix's `reason` field as the objective's N/A reason
+   - Use the entry's `reason` (and `derived_from`) as the objective's N/A reason
    - Do NOT attempt to map any controls to it
-2. For objectives where `max_coverage` is set (e.g., `"Partial Coverage"`):
+2. For entries where `max_coverage` is set (e.g., `"Partial Coverage"`):
    - The objective IS mappable, but no control may exceed that coverage ceiling
-3. For objectives not in the matrix: assume applicable (backward compatibility)
+3. Read `service_categories` from the matrix and carry it forward: when an
+   objective's guidance carries a `by_service_category` block for one of the
+   service's categories, that block's `mappable` / `allow_mechanisms` /
+   `deny_mechanisms` / `coverage_ceilings` override the objective-level defaults
+   for this run (e.g. LOG-02/LOG-09 are `default_na` for `serverless_compute`).
+4. For objectives not in the matrix: apply the KB default (backward compatibility).
 
 This screen runs BEFORE Phase 0 (domain-applicability guidance). Where both the matrix
 and the Phase 0 guidance agree an objective is N/A, use the matrix reason. Where they
@@ -132,24 +140,30 @@ disagree, the **more restrictive** rule wins (i.e., if either says N/A, it's N/A
 
 ## Mechanism Coverage Ceilings (HARD RULE — applies to ALL objectives)
 
-Regardless of how well a control aligns with an objective's intent, the coverage level
-assigned MUST NOT exceed the ceiling for the control's `mechanism` type:
+**Full Coverage is opt-in, not the default.** Most controls partially satisfy an
+objective; a control may claim `Full Coverage` only when its mechanism class
+*fully implements the mechanism the objective names*. The ceilings are data in the
+CCMv4 guidance file (`data/domain-mapping-guidance/ccmv4.json`), resolved per
+mechanism class:
 
-| Mechanism | Max for enforcement objectives | Max for detection/monitoring objectives | Max for capability objectives |
-|-----------|-------------------------------|----------------------------------------|-------------------------------|
-| SCP / RCP | Full Coverage | Supportive | Supportive |
-| IAM Permission Boundary | Partial Coverage | N/A | N/A |
-| IAM Trust Policy | Partial Coverage | N/A | Partial Coverage |
-| KMS Key Policy | Partial Coverage | N/A | Full Coverage (CEK-08 only) |
-| Resource Policy | Partial Coverage | N/A | Partial Coverage |
-| CloudFormation Guard / Hook | Partial Coverage (gates CFn path only) | N/A | N/A |
-| AWS Config Rule | **Partial Coverage** (detects, does not enforce) | **Full Coverage** | N/A |
-| Tag Policy | Supportive | Supportive | N/A |
-| SSM Automation | Partial Coverage | N/A | N/A |
+- Per-objective `coverage_ceilings[class]` (the tightest — e.g. CEK-03 caps
+  `at_rest_encryption` at Partial because it needs classification-driven
+  encryption, not merely CMK existence), else
+- KB-level `mechanism_class_ceilings[class]` (e.g. `misconfig_detection` and
+  `change_control` cap at Partial; `tagging_classification` caps at Supportive;
+  preventive classes such as `access_control` / `network_isolation` /
+  `at_rest_encryption` may reach Full), else
+- `default_coverage_ceiling` (`Partial Coverage`).
 
-**Key insight:** A Config Rule CANNOT be Full Coverage for an enforcement objective.
-It detects drift but does not prevent the non-compliant state from being created.
-Only preventive mechanisms (SCP, RCP) can be Full Coverage for enforcement.
+A control that matches several *allowed* classes is judged by its strongest
+legitimate class. The category override (Pre-Phase step 3) may tighten a ceiling
+for the service's category.
+
+**Key insight:** a detective Config rule cannot be `Full Coverage` for an
+enforcement objective — it detects drift but does not prevent the non-compliant
+state. `tools/validate/validate_domain_mapping_accuracy.py` reads these KB
+ceilings and FAILs any MAPPED control that exceeds its effective ceiling, so
+assign coverage from the KB, not from optimism.
 
 ---
 
@@ -348,6 +362,51 @@ After mapping controls to an objective, assign the objective's overall coverage 
 - `Supportive Only` is the maximum for objectives with only `Supportive` controls
 - Never assign `Fully Covered` when all controls are `Supportive`
 
+### 1.3 Citation-as-gate (REQUIRED for every MAPPED row)
+
+Every `MAPPED` control row MUST carry a `citation` object that shows its work —
+the specific evidence that this control satisfies this objective. This is what
+converts "silently wrong" into "explicitly uncertain."
+
+```json
+"citation": {
+  "control_id": "CTRL-RES-PRV-001",
+  "mechanism_class": "at_rest_encryption",
+  "objective_requirement": "<the specific sub-requirement of THIS objective the control satisfies>",
+  "mitigation_alias": "Mitigation.LAMBDA.Function.3",
+  "mitigation_uuid": "…",
+  "mitre_techniques": ["T1530"],
+  "source": "canopy"           // canopy | assessment_gap | aws_doc
+}
+```
+
+Decide per row (the row's `status` is the signal — there is no separate
+confidence score field):
+
+- **You can name the concrete linkage** (this control's mechanism ↔ this
+  objective's named sub-requirement, backed by a Canopy mitigation or an AWS
+  doc): emit `status:"MAPPED"` with the full citation
+  (`objective_requirement` + `source` are what make it concrete).
+- **You believe there is a relationship but cannot produce that concrete
+  linkage**: DO NOT assert it as MAPPED and DO NOT silently drop it. Emit the row
+  with `status:"UNCERTAIN"` and a `review_reason` naming what linkage is missing.
+  UNCERTAIN rows are surfaced in a "review needed" section, excluded from
+  coverage %, and never block the phase — they are the honest middle between a
+  confident map and an N/A.
+
+`validate_domain_mapping_accuracy.py` FAILs a `MAPPED` row that carries no
+concrete citation (`objective_requirement` + `source`): fix the citation or
+demote the row to `UNCERTAIN`. It does NOT fail an `UNCERTAIN` row.
+
+### 1.4 Traceability (attach the Canopy source + MITRE)
+
+Each control was threaded with `mitigation_alias`, `mitigation_uuid`, and
+`mitre_techniques[]` in map-generate-controls (Phase 3c, resolved deterministically
+from the Canopy source). Copy those onto the citation so the rendered
+`framework-mapping.md` can cite the exact Canopy mitigation and MITRE techniques
+behind the mapping. A control with `trace_source:"assessment_gap"` has no Canopy
+alias — set `source:"assessment_gap"` and leave the mitigation/MITRE fields empty.
+
 ---
 
 ## Phase 2: Quality Gates (MANDATORY)
@@ -504,7 +563,32 @@ shape:
         {
           "control_id": "CTRL-ACC-PRV-001",
           "coverage_level": "Full Coverage",
-          "rationale": "Permission boundary restricts service actions to approved set, directly implementing least-privilege access provisioning"
+          "rationale": "Permission boundary restricts service actions to approved set, directly implementing least-privilege access provisioning",
+          "citation": {
+            "mechanism_class": "access_control",
+            "objective_requirement": "provisioning identities with least privilege",
+            "mitigation_alias": "Mitigation.LAMBDA.Function.6",
+            "mitigation_uuid": "…",
+            "mitre_techniques": ["T1078"],
+            "source": "canopy"
+          }
+        }
+      ]
+    },
+    {
+      "objective_id": "IAM-13",
+      "domain": "Identity & Access Management",
+      "title": "...",
+      "status": "UNCERTAIN",
+      "coverage": "N/A",
+      "reason": "Candidate control relates to authorization but the specific sub-requirement linkage could not be evidenced.",
+      "review_reason": "No Canopy mitigation or AWS doc concretely ties this control's mechanism to the objective's uniquely-identified-user requirement.",
+      "controls": [
+        {
+          "control_id": "CTRL-ACC-PRV-002",
+          "coverage_level": "Supportive",
+          "rationale": "Resource policy scopes principals — may support user identification but the linkage is not concrete.",
+          "review_reason": "cannot cite the specific sub-requirement satisfied"
         }
       ]
     },
@@ -520,11 +604,12 @@ shape:
   ],
   "framework_coverage_summary": {
     "total_objectives": 197,
-    "mapped": 137,
+    "mapped": 135,
     "not_applicable": 60,
+    "uncertain": 2,
     "by_domain": {
-      "IAM": { "total": 16, "mapped": 14, "not_applicable": 2, "coverage_percentage": 87.5 },
-      "CEK": { "total": 21, "mapped": 19, "not_applicable": 2, "coverage_percentage": 90.5 }
+      "IAM": { "total": 16, "mapped": 13, "not_applicable": 2, "uncertain": 1, "coverage_percentage": 81.3 },
+      "CEK": { "total": 21, "mapped": 19, "not_applicable": 2, "uncertain": 0, "coverage_percentage": 90.5 }
     }
   },
   "quality_gate_results": {
@@ -541,20 +626,19 @@ shape:
 ```
 
 **Schema rules:**
-- `framework_mapping` MUST include ALL objectives (mapped + N/A) — every one from map-framework-parsed.json
+- `framework_mapping` MUST include ALL objectives (mapped + N/A + uncertain) — every one from map-framework-parsed.json
 - Each entry MUST have: `objective_id`, `domain`, `title`, `status`, `coverage`, `reason`, `controls`
-- `status` MUST be EXACTLY `"MAPPED"` or `"N/A"` — case-sensitive, no substitutes.
-  Do NOT use `"UNMAPPED"`, `"NOT_APPLICABLE"`, `"n/a"`, or any other variant. Downstream
-  validators (`validate_state.py` CHECK-S13 at line 892; `validate_pipeline_integrity.py`
-  at line 263) count `status == "N/A"` verbatim for summary metrics and rationale-completeness
-  checks; other tokens silently bypass those checks. `validate_state.py` also enum-validates
-  `status` at CHECK-S13 — unknown values now fail fast.
-- `coverage` MUST be one of `"Fully Covered"`, `"Partially Covered"`, `"Supportive Only"`, `"N/A"`
-- `controls[]` MUST be array of `{control_id, coverage_level, rationale}` objects
+- `status` MUST be EXACTLY `"MAPPED"`, `"N/A"`, or `"UNCERTAIN"` — case-sensitive, no
+  substitutes. Do NOT use `"UNMAPPED"`, `"NOT_APPLICABLE"`, `"n/a"`, or any other variant.
+  `MAPPED` = a confident, cited mapping; `N/A` = not applicable; `UNCERTAIN` = a
+  believed-but-uncitable relationship, surfaced for review, excluded from coverage %,
+  never blocking. An `UNCERTAIN` row MUST carry a `review_reason`.
+- `coverage` MUST be one of `"Fully Covered"`, `"Partially Covered"`, `"Supportive Only"`, `"N/A"` (use `"N/A"` for UNCERTAIN rows — they do not count toward coverage)
+- `controls[]` MUST be array of `{control_id, coverage_level, rationale}` objects; a `MAPPED` row's controls MUST additionally carry a concrete `citation` (`objective_requirement` + `source`; see Phase 1.3) — otherwise the row must be `UNCERTAIN`
 - `coverage_level` MUST be EXACTLY one of `"Full Coverage"`, `"Partial Coverage"`, `"Supportive"`
   — these are the only valid values. Do NOT emit `"High"`, `"Medium"`, `"Low"` or any other variant.
-- `rationale` is REQUIRED on every control mapping
-- `framework_coverage_summary` MUST be populated with per-domain breakdown
+- `rationale` is REQUIRED on every control mapping; `citation` is REQUIRED on every confident MAPPED control (else the row must be UNCERTAIN)
+- `framework_coverage_summary` MUST be populated with per-domain breakdown (incl. `uncertain`)
 - `quality_gate_results` MUST report PASS/FAIL for each rule
 - `orphaned_controls` lists control IDs not mapped to any objective
 
@@ -594,11 +678,13 @@ validators, both run in the map review gate (Step 3e of `service-approval`):
   that scope is read per-objective from `data/domain-mapping-guidance/ccmv4.json`
   (so a guidance-`mappable` objective such as BCR-04 is no longer blanket-flagged).
 - `tools/validate/validate_domain_mapping_accuracy.py` reads the guidance file and
-  flags, for **every** objective, a control whose mechanism class is in the
-  objective's `deny_mechanisms` (and not in `allow_mechanisms`), or a `default_na`
-  objective mapped without the override fields. This is the per-objective accuracy
-  backstop for the per-domain mapping (e.g. a TLS control on IVS-07, a
-  misconfig-detective control on LOG-12, an access-control control on STA-12).
+  the sibling `applicability-matrix.json` and flags, for **every** objective: a
+  control whose mechanism class is in the objective's `deny_mechanisms` (and not in
+  `allow_mechanisms`); a `default_na` objective mapped without the override fields;
+  a row MAPPED for an objective the matrix marked not-applicable for the service's
+  category; a control whose `coverage_level` exceeds the KB ceiling for its class;
+  and a confident `MAPPED` control that carries no concrete `citation` (which must
+  be `UNCERTAIN` instead). `UNCERTAIN` rows are advisory — surfaced, never failed.
 
 ## Print Summary
 
@@ -607,6 +693,7 @@ Map (Framework Mapping) complete:
   Framework: {name} — {total} objectives
   Mapped: {mapped} ({mapped_pct}%)
   N/A: {na}
+  Uncertain (review needed): {uncertain}
   Quality gates: all PASS
   Orphaned controls: {count}
   Output: .service-approval/<slug>/04-map/map-framework-mapped.json

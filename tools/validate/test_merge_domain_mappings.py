@@ -110,9 +110,27 @@ def test_by_domain_arithmetic():
     assert summary["mapped"] == 1
     assert summary["not_applicable"] == 2
     assert summary["by_domain"]["IAM"] == {
-        "total": 2, "mapped": 1, "not_applicable": 1, "coverage_percentage": 50.0
+        "total": 2, "mapped": 1, "not_applicable": 1, "uncertain": 0,
+        "coverage_percentage": 50.0
     }
     assert summary["by_domain"]["BCR"]["coverage_percentage"] == 0.0
+
+
+def test_uncertain_excluded_from_coverage():
+    """UNCERTAIN counts separately: not mapped, not N/A, and out of coverage %."""
+    mappings = [
+        _entry("IAM-01", "Identity & Access Management", controls=[_ctrl("CTRL-ACC-PRV-001")]),
+        _entry("IAM-02", "Identity & Access Management", status="UNCERTAIN"),
+        _entry("IAM-03", "Identity & Access Management", status="N/A"),
+    ]
+    parsed_objs = [{"id": "IAM-01"}, {"id": "IAM-02"}, {"id": "IAM-03"}]
+    summary = mdm.build_coverage_summary(mappings, parsed_objs)
+    assert summary["mapped"] == 1
+    assert summary["not_applicable"] == 1
+    assert summary["uncertain"] == 1
+    iam = summary["by_domain"]["IAM"]
+    assert iam == {"total": 3, "mapped": 1, "not_applicable": 1, "uncertain": 1,
+                   "coverage_percentage": round(1 / 3 * 100, 1)}
 
 
 # --- quality gates -----------------------------------------------------------

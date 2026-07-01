@@ -273,6 +273,7 @@ def check_accuracy(
         return errors
 
     matrix_app = (matrix or {}).get("objective_applicability", {})
+    uses_citations = _mapping_uses_citations(fw_mapped)
 
     for entry in mappings:
         oid = entry.get("objective_id", "")
@@ -348,33 +349,33 @@ def check_accuracy(
                         f"implements the named mechanism."
                     )
 
-            # Check 5 — citation-as-gate: a confident MAPPED row must carry a
-            # concrete citation (sub-requirement + source). Without one it must
-            # be surfaced as UNCERTAIN, not asserted as MAPPED. Only enforced
-            # when the mapping opts into citations (any row carries one) — a
-            # legacy mapping with no citations at all is not retro-failed.
-            if _mapping_uses_citations(fw_mapped) and \
-                    (cm.get("confidence") or "").strip() != "uncertain" and \
-                    not _has_concrete_citation(entry, cm):
+            # Check 5 — citation-as-gate: a MAPPED row must carry a concrete
+            # citation (sub-requirement + source). Without one it must be
+            # surfaced as UNCERTAIN, not asserted as MAPPED. Only enforced when
+            # the mapping opts into citations (any row/control carries one, or any
+            # row is UNCERTAIN) — a legacy citation-free mapping is not retro-failed.
+            # (Status is already MAPPED here; UNCERTAIN rows are skipped at the top
+            # of the loop, so they are never subject to this gate.)
+            if uses_citations and not _has_concrete_citation(entry, cm):
                 errors.append(
-                    f"domain-mapping-accuracy: {oid} maps {cid} as a confident "
-                    f"MAPPED row but carries no concrete citation "
-                    f"(objective_requirement + source). Add the citation or set "
-                    f"status UNCERTAIN with a review_reason."
+                    f"domain-mapping-accuracy: {oid} maps {cid} as a MAPPED row "
+                    f"but carries no concrete citation (objective_requirement + "
+                    f"source). Add the citation or set status UNCERTAIN with a "
+                    f"review_reason."
                 )
 
     return errors
 
 
 def _mapping_uses_citations(fw_mapped: dict) -> bool:
-    """True when this mapping opts into citations (any row/control carries one, or
-    any row is UNCERTAIN). Legacy mappings with no citation surface at all are not
-    retro-failed by the citation gate."""
+    """True when this mapping opts into citations (any row/control carries a
+    citation, or any row is UNCERTAIN). Legacy mappings with no citation surface at
+    all are not retro-failed by the citation gate."""
     for entry in fw_mapped.get("framework_mapping", []):
         if entry.get("status") == "UNCERTAIN" or isinstance(entry.get("citation"), dict):
             return True
         for cm in entry.get("controls", []):
-            if isinstance(cm.get("citation"), dict) or cm.get("confidence"):
+            if isinstance(cm.get("citation"), dict):
                 return True
     return False
 

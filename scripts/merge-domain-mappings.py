@@ -124,21 +124,32 @@ def order_entries(
 def build_coverage_summary(
     mappings: list[dict], parsed_objectives: list[dict]
 ) -> dict:
-    """Recompute framework_coverage_summary, including per-domain breakdown."""
+    """Recompute framework_coverage_summary, including per-domain breakdown.
+
+    UNCERTAIN is a distinct status: a row the mapper believes relates to the
+    objective but cannot cite concretely. It is counted separately and excluded
+    from both the mapped and the not_applicable tallies — it does not inflate
+    coverage % (numerator: mapped only), and it is surfaced for review rather
+    than silently asserted or dropped.
+    """
     total = len(parsed_objectives)
     mapped = sum(1 for m in mappings if m.get("status") == "MAPPED")
     na = sum(1 for m in mappings if m.get("status") == "N/A")
+    uncertain = sum(1 for m in mappings if m.get("status") == "UNCERTAIN")
 
     # by_domain keyed by objective-id prefix.
     by_domain: dict[str, dict] = {}
     for m in mappings:
         prefix = _domain_prefix(m.get("objective_id", ""))
         d = by_domain.setdefault(
-            prefix, {"total": 0, "mapped": 0, "not_applicable": 0}
+            prefix, {"total": 0, "mapped": 0, "not_applicable": 0, "uncertain": 0}
         )
         d["total"] += 1
-        if m.get("status") == "MAPPED":
+        status = m.get("status")
+        if status == "MAPPED":
             d["mapped"] += 1
+        elif status == "UNCERTAIN":
+            d["uncertain"] += 1
         else:
             d["not_applicable"] += 1
     for d in by_domain.values():
@@ -150,6 +161,7 @@ def build_coverage_summary(
         "total_objectives": total,
         "mapped": mapped,
         "not_applicable": na,
+        "uncertain": uncertain,
         "by_domain": dict(sorted(by_domain.items())),
     }
 
@@ -352,7 +364,8 @@ def main() -> int:
     summary = merged["framework_coverage_summary"]
     print(f"  Wrote {out_path}")
     print(f"  Objectives: {summary['total_objectives']} "
-          f"(mapped={summary['mapped']}, N/A={summary['not_applicable']})")
+          f"(mapped={summary['mapped']}, N/A={summary['not_applicable']}, "
+          f"uncertain={summary.get('uncertain', 0)})")
     print(f"  Domains: {len(summary['by_domain'])}")
     qg = merged["quality_gate_results"]
     fails = [k for k, v in qg.items() if v == "FAIL"]
