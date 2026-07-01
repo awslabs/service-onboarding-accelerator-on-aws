@@ -108,11 +108,16 @@ For each control, you have access to:
 - `condition_keys`, `actions`, `resource_types` — technical details
 - `mitigation_ids`, `parameters_controlled` — traceability
 
-**The `mitigation_intent` and `security_domain` fields are your PRIMARY constraint.** They tell
-you exactly what the control does in a structured form. A control with `mitigation_intent:
-cmk_encryption` CANNOT be mapped to an IAM or network objective — it can only map to
-encryption/data-protection objectives. Use these fields FIRST to determine eligibility, then
-use `security_rationale` to confirm fit and write the rationale.
+**The objective's `allow_mechanisms` / `deny_mechanisms` (from the guidance KB) are the
+authoritative eligibility gate — one vocabulary, the mechanism classes.** A control is
+classified into mechanism classes from its `mechanism` + keywords (the same
+`classify_control` the accuracy validator uses); it may map to an objective only if one
+of its classes is in that objective's `allow_mechanisms` and none is in `deny_mechanisms`.
+The `mitigation_intent` and `security_domain` tags are a **supporting hint** in the same
+spirit (a control tagged `cmk_encryption` should not land on an IAM or network objective),
+but they do not override the mechanism-class gate — where they disagree, the KB
+allow/deny wins. Use the tags to build candidates fast, then confirm against the
+allow/deny classes.
 
 **The `security_rationale` field is your SECONDARY context.** It explains why this control exists
 and what security goal it achieves. Use it to write the mapping rationale — but do NOT use it

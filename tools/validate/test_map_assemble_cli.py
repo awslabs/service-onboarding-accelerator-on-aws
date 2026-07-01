@@ -80,7 +80,7 @@ def test_module_main_function_exists() -> None:
     assert hasattr(module, "main"), "scripts/map-assemble.py must expose main()"
 
 
-# --- Citation / MITRE cell rendering (W4 additive output) --------------------
+# --- Citation / MITRE cell rendering (additive mapping output) ---------------
 
 def test_citation_cell_renders_requirement_alias_source() -> None:
     m = _load_module()

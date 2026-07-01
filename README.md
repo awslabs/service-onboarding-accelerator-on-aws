@@ -4,61 +4,83 @@ Generates AWS security controls and compliant IaC templates for any AWS service.
 
 ---
 
-## What's Changed: Domain-Specialization Mapping Accuracy Improvements
+## Mapping accuracy: a deterministic, citation-gated layer
 
-This branch (`feat/domain-specialization`) introduces a 3-layer accuracy improvement to the framework mapping pipeline. The core problem: the mapping step was producing false-positive mappings and inflated coverage levels because it relied on LLM keyword matching without deterministic constraints on what each control can legitimately satisfy.
+The framework-mapping phase constrains what each control may claim, so a control
+is only mapped to an objective it genuinely satisfies — and every confident
+mapping shows its evidence. The controls that drive it:
 
-### New: Service Applicability Screen (Step A)
+### Service applicability screen
 
-Before any mapping begins, the tool now derives service capabilities directly from the Canopy threat model input and screens objectives for applicability:
+Before mapping begins, the tool derives the service's capabilities and category
+from the Canopy threat model and screens objectives for applicability:
 
-- **`data/service-capability-rules.json`** — capability detection rules that scan Canopy mitigation *statements only* (never entity description prose) to derive three-valued capability flags (present / absent / unknown) for VPC, CMK, logging, patching, backup, etc.
-- **`data/service-category-rules.json`** — derives the service's category label(s) (serverless_compute, storage, database, networking, …) from those capability flags; a service may hold multiple categories.
-- **`data/objective-applicability-rules.json`** — rules that mark objectives N/A only for a positive structural reason (an organizational objective, or a category fact such as "serverless compute has no customer-managed OS to patch"). An unknown capability never forces N/A — it defers to the KB default.
-- **`scripts/compute-applicability-matrix.py`** — Deterministic script that takes a Canopy JSON, derives capabilities + categories, and outputs an applicability matrix in which every N/A cites the rule and evidence that drove it.
+- **`data/service-capability-rules.json`** — capability flags derived from Canopy
+  mitigation *statements only* (never entity description prose, which describes
+  the resource but asserts no customer capability). Each flag is three-valued —
+  present / absent / unknown — with a required polarity so "AWS manages patching"
+  cannot assert a customer capability.
+- **`data/service-category-rules.json`** — the service's category label(s)
+  (serverless_compute, storage, database, networking, …) derived from those
+  flags; a service may hold several.
+- **`data/objective-applicability-rules.json`** — marks an objective N/A only for
+  a positive structural reason (an organizational objective, or a category fact
+  such as "serverless compute has no customer-managed OS to patch"). An unknown
+  capability never forces N/A — it defers to the guidance-KB default.
+- **`scripts/compute-applicability-matrix.py`** — takes a Canopy JSON and writes
+  an applicability matrix in which every N/A cites the rule and evidence
+  (`derived_from`) that drove it.
 
-**Result:** Datacenter (DCS), endpoint (UEM), HR (HRS), and patching (TVM) objectives are automatically N/A for serverless services; backup objectives (BCR-08) are N/A for serverless unless a backup/replication API is definitively present. No capability is ever inferred from descriptive prose.
+Datacenter (DCS), endpoint (UEM), HR (HRS), and patching (TVM) objectives are
+automatically N/A for serverless services; backup objectives (BCR-08) are N/A for
+serverless unless a backup/replication API is definitively present. No capability
+is ever inferred from descriptive prose.
 
-### New: Mitigation Intent Tagging (Step B)
+### Canopy traceability (alias + UUID + MITRE)
 
-Each generated control is now tagged with a canonical `mitigation_intent` and `security_domain` derived from the source Canopy mitigation statement:
+**`scripts/canopy_trace.py`** resolves, per Canopy mitigation, its alias, UUID, and
+MITRE ATT&CK techniques — walking `mitigation → THREAT mapping → threat →
+FRAMEWORK mapping` entirely inside the golden-source file (no external lookup).
+map-generate-controls threads these onto each control so the final mapping can
+cite the exact Canopy mitigation and MITRE technique behind every row.
 
-- **`data/mitigation-intent-patterns.json`** — 19+ intent patterns with match rules against Canopy's controlled vocabulary. Example: "encrypted with an AWS KMS Customer Managed Key" → `intent_id: cmk_encryption`, `security_domain: data_protection_at_rest`.
-- **Schema update:** `schemas/map-controls-generated.schema.json` now includes `mitigation_intent` and `security_domain` fields.
-- **Skill update:** `skills/map-generate-controls/skill.md` Phase 3b adds deterministic intent tagging.
+### Per-domain guidance with coverage ceilings
 
-**Result:** A tagging control tagged `ownership_tagging` CANNOT be mapped to LOG-09 or IAM-13 regardless of keyword overlap.
+**`data/domain-mapping-guidance/ccmv4.json`** records, per objective, which
+mechanism classes may (`allow_mechanisms`) or must never (`deny_mechanisms`)
+satisfy it, plus coverage ceilings. Full Coverage is opt-in: a class that only
+partially implements an objective's named mechanism (a detective Config rule, or
+CMK-existence for classification-driven encryption) is capped at Partial.
+Per-service-category overrides (`by_service_category`) let one objective behave
+differently for, say, a serverless vs a storage service.
 
-### New: Constrained Mapping with Coverage Ceilings (Step C)
+### Citation-as-gate + UNCERTAIN status
 
-The framework mapping skill now enforces hard constraints:
+Every confident `MAPPED` row carries a `citation` (the specific objective
+sub-requirement satisfied + its source — Canopy mitigation, reference example, or
+AWS doc). A relationship the mapper believes but cannot cite concretely is emitted
+as **`UNCERTAIN`** with a `review_reason` — surfaced for review, excluded from
+coverage %, never silently asserted or dropped.
 
-- **Applicability pre-filter:** Objectives marked N/A in the matrix are skipped immediately.
-- **Mechanism coverage ceilings:** Full Coverage is opt-in. A mechanism class that only partially implements an objective's named mechanism (e.g. a detective Config rule, or CMK-existence for classification-driven encryption) is capped at Partial by the KB.
-- **`tools/validate/validate_domain_mapping_accuracy.py`** — the deterministic backstop that catches: (1) N/A / not-applicable objectives that got mapped, (2) coverage levels exceeding the mechanism-class ceiling, (3) denied-class mis-maps, and (4) confident mappings that carry no citation (they must be UNCERTAIN instead).
+**`tools/validate/validate_domain_mapping_accuracy.py`** is the deterministic
+backstop: it FAILs (1) a row mapped to a not-applicable objective, (2) a coverage
+level over the mechanism-class ceiling, (3) a denied-class mis-map, and (4) a
+confident `MAPPED` row with no concrete citation (which must be `UNCERTAIN`).
 
-### Files Created/Modified
+### Custom / non-CCMv4 frameworks
 
-| File | Action |
-|------|--------|
-| `data/service-capability-rules.json` | Created |
-| `data/service-category-rules.json` | Created |
-| `data/objective-applicability-rules.json` | Created |
-| `data/mitigation-intent-patterns.json` | Created |
-| `scripts/compute-applicability-matrix.py` | Created |
-| `tools/validate/validate_domain_mapping_accuracy.py` | Extended (ceiling + citation + category-applicability checks) |
-| `schemas/map-controls-generated.schema.json` | Modified (added `mitigation_intent`, `security_domain`) |
-| `skills/map-generate-controls/skill.md` | Modified (added Phase 3b intent tagging) |
-| `skills/map-framework-mapping/skill.md` | Modified (added applicability pre-filter + coverage ceilings) |
-| `skills/map/skill.md` | Modified (added Step 2b applicability matrix computation) |
+**`scripts/anchor-custom-framework.py`** anchors a custom framework's objectives to
+their nearest CCMv4 objective(s) by description (a deterministic TF-IDF cosine), so
+the CCMv4 guidance can be reused. A weak anchor yields an `UNCERTAIN` mapping rather
+than a confident wrong one.
 
-### Verification
+### Verify
 
 ```bash
-# Test applicability matrix on a Canopy JSON
+# Compute the applicability matrix from a Canopy JSON
 python3 scripts/compute-applicability-matrix.py <canopy-json> --output /tmp/matrix.json
 
-# Validate an existing mapping against ceilings + citations + applicability
+# Validate a mapping against ceilings + citations + applicability
 python3 tools/validate/validate_domain_mapping_accuracy.py <map-framework-mapped.json> \
   --controls <map-controls-generated.json> --matrix <applicability-matrix.json>
 ```
