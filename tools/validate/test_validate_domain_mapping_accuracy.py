@@ -255,3 +255,187 @@ def test_check_service_reads_mapping(tmp_path):
     ))
     errors = vma.check_service(tmp_path, GUIDANCE)
     assert any("IVS-07" in e and "transit_encryption" in e for e in errors)
+
+
+# --- Check 4: coverage-ceiling -----------------------------------------------
+
+def _map_ctrl(oid, cid, coverage_level):
+    return _mapped([
+        {"objective_id": oid, "status": "MAPPED",
+         "controls": [{"control_id": cid, "coverage_level": coverage_level,
+                       "rationale": "r"}]},
+    ])
+
+
+def test_cek03_full_coverage_exceeds_ceiling_fails():
+    """CEK-03 caps at_rest_encryption at Partial; a CMK control claiming Full FAILs."""
+    doc = _map_ctrl("CEK-03", "C1", "Full Coverage")
+    controls = _ctrls(_ctrl("C1", "KMS Key Policy",
+                            name="Enforce CMK encryption at rest"))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert any("CEK-03" in e and "cap" in e.lower() for e in errors)
+
+
+def test_cek03_partial_coverage_within_ceiling_passes():
+    doc = _map_ctrl("CEK-03", "C1", "Partial Coverage")
+    controls = _ctrls(_ctrl("C1", "KMS Key Policy",
+                            name="Enforce CMK encryption at rest"))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert not any("cap" in e.lower() for e in errors)
+
+
+def test_access_control_full_coverage_allowed():
+    """access_control class ceiling is Full; an SCP claiming Full on IAM-05 is fine."""
+    doc = _map_ctrl("IAM-05", "C1", "Full Coverage")
+    controls = _ctrls(_ctrl("C1", "SCP", name="Enforce least-privilege boundary",
+                            keywords=["least privilege", "iam"]))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert not any("cap" in e.lower() for e in errors)
+
+
+# --- Check 3: category-applicability -----------------------------------------
+
+def _serverless_matrix(*na_objectives):
+    return {
+        "service_categories": ["serverless_compute"],
+        "objective_applicability": {
+            oid: {"applicable": False, "reason": "serverless category fact"}
+            for oid in na_objectives
+        },
+    }
+
+
+def test_category_na_but_mapped_fails():
+    doc = _mapped([{"objective_id": "LOG-02", "status": "MAPPED",
+                    "controls": [{"control_id": "C1", "rationale": "r"}]}])
+    controls = _ctrls(_ctrl("C1", "Resource Policy", name="Restrict log access"))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE, _serverless_matrix("LOG-02"))
+    assert any("LOG-02" in e and "not applicable" in e for e in errors)
+
+
+def test_category_applicable_is_clean():
+    doc = _mapped([{"objective_id": "LOG-02", "status": "MAPPED",
+                    "controls": [{"control_id": "C1", "rationale": "r"}]}])
+    controls = _ctrls(_ctrl("C1", "Resource Policy", name="Restrict log access",
+                            keywords=["access control"]))
+    # No matrix N/A entry for LOG-02 → category check is silent.
+    errors = vma.check_accuracy(doc, controls, GUIDANCE, _serverless_matrix("TVM-10"))
+    assert not any("not applicable" in e for e in errors)
+
+
+# --- Check 5: citation-as-gate -----------------------------------------------
+
+def _cited(oid, cid, requirement="the specific sub-requirement", source="canopy",
+           confidence="high"):
+    return _mapped([
+        {"objective_id": oid, "status": "MAPPED",
+         "controls": [{"control_id": cid, "rationale": "r", "confidence": confidence,
+                       "citation": {"objective_requirement": requirement,
+                                    "source": source}}]},
+    ])
+
+
+def test_confident_mapped_without_citation_fails():
+    """When the mapping opts into citations, a confident MAPPED row with no
+    concrete citation FAILs — it must be UNCERTAIN instead."""
+    doc = _mapped([
+        {"objective_id": "IAM-05", "status": "MAPPED",
+         "controls": [{"control_id": "C1", "rationale": "r", "confidence": "high"}]},
+    ])
+    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert any("IAM-05" in e and "citation" in e for e in errors)
+
+
+def test_confident_mapped_with_citation_passes():
+    doc = _cited("IAM-05", "C1")
+    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert not any("citation" in e for e in errors)
+
+
+def test_uncertain_row_without_citation_is_advisory():
+    """An UNCERTAIN row is the escape hatch — no citation required, never fails."""
+    doc = _mapped([
+        {"objective_id": "IAM-05", "status": "UNCERTAIN",
+         "review_reason": "cannot produce a concrete linkage",
+         "controls": [{"control_id": "C1", "rationale": "r", "confidence": "uncertain"}]},
+    ])
+    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
+    assert vma.check_accuracy(doc, controls, GUIDANCE) == []
+
+
+def test_uncertain_confidence_row_without_citation_is_advisory():
+    """A MAPPED row explicitly flagged confidence:uncertain also escapes the gate."""
+    doc = _mapped([
+        {"objective_id": "IAM-05", "status": "MAPPED",
+         "controls": [{"control_id": "C1", "rationale": "r", "confidence": "uncertain",
+                       "review_reason": "weak linkage"}]},
+    ])
+    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
+    assert not any("citation" in e for e in vma.check_accuracy(doc, controls, GUIDANCE))
+
+
+def test_legacy_mapping_without_citations_not_retrofailed():
+    """A mapping that never opts into citations (no citation/confidence/UNCERTAIN
+    anywhere) is not retro-failed by the citation gate."""
+    doc = _mapped([
+        {"objective_id": "IAM-05", "status": "MAPPED",
+         "controls": [{"control_id": "C1", "rationale": "r"}]},
+    ])
+    controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]))
+    assert not any("citation" in e for e in vma.check_accuracy(doc, controls, GUIDANCE))
+
+
+# --- The four named hallucinations as regression fixtures --------------------
+
+def test_hallucination_dsp01_plus_encryption_fails():
+    """DSP-01 (data-security policy doc) + an encryption control → FAIL."""
+    doc = _mapped([{"objective_id": "DSP-01", "status": "MAPPED",
+                    "controls": [{"control_id": "C1", "rationale": "r"}]}])
+    controls = _ctrls(_ctrl("C1", "KMS Key Policy", name="Enforce CMK encryption at rest"))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert any("DSP-01" in e and "at_rest_encryption" in e for e in errors)
+
+
+def test_hallucination_dsp10_plus_code_signing_fails():
+    """DSP-10 (data-in-transit) + a code-signing (supply_chain) control → FAIL."""
+    doc = _mapped([{"objective_id": "DSP-10", "status": "MAPPED",
+                    "controls": [{"control_id": "C1", "rationale": "r"}]}])
+    controls = _ctrls(_ctrl("C1", "AWS Config Rule",
+                            name="Detect functions without code signing configuration",
+                            keywords=["code signing"]))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert any("DSP-10" in e and "supply_chain" in e for e in errors)
+
+
+def test_hallucination_cek03_full_fails():
+    """CEK-03 claimed Full from a CMK-existence control → FAIL (ceiling)."""
+    doc = _map_ctrl("CEK-03", "C1", "Full Coverage")
+    controls = _ctrls(_ctrl("C1", "AWS Config Rule",
+                            name="Detect resources without CMK encryption at rest"))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert any("CEK-03" in e for e in errors)
+
+
+def test_hallucination_log_protection_plus_log_creation_fails():
+    """LOG-09 (protect logs) + a log-CREATING control (access_event_logging) → FAIL."""
+    doc = _mapped([{"objective_id": "LOG-09", "status": "MAPPED",
+                    "controls": [{"control_id": "C1", "rationale": "r"}]}])
+    controls = _ctrls(_ctrl("C1", "CloudTrail",
+                            name="Record function invocation access events",
+                            keywords=["cloudtrail", "audit log"]))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert any("LOG-09" in e and "access_event_logging" in e for e in errors)
+
+
+def test_log_protection_with_access_control_passes():
+    """The corrected mapping: LOG-09 + an access-control (restrict log access) → clean."""
+    doc = _mapped([{"objective_id": "LOG-09", "status": "MAPPED",
+                    "controls": [{"control_id": "C1", "rationale": "r",
+                                  "confidence": "uncertain"}]}])
+    controls = _ctrls(_ctrl("C1", "Resource Policy",
+                            name="Restrict who can modify or delete the log group",
+                            keywords=["access control", "resource policy"]))
+    errors = vma.check_accuracy(doc, controls, GUIDANCE)
+    assert errors == []

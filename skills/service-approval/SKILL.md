@@ -729,6 +729,14 @@ python3 tools/validate/validate_domain_mapping_accuracy.py --slug <slug>; ma=$?
 python3 tools/validate/validate_control_dedup.py --slug <slug>; cd=$?
 ```
 
+`validate_domain_mapping_accuracy.py` reads the sibling `applicability-matrix.json`
+(written by `compute-applicability-matrix.py` in Step 2b) when present, so its
+category-applicability and coverage-ceiling checks are active. It is the single
+deterministic backstop for per-objective mapping accuracy: denied-class mis-maps,
+`default_na`-without-override, category-not-applicable, coverage over the
+mechanism-class ceiling, and confident-MAPPED-without-citation (which must be
+`UNCERTAIN` instead). An `UNCERTAIN` row is advisory — surfaced, never failed.
+
 It reports: objectives flagged with no catalog/reference support, and any control
 prose that exceeds the verified-language budget or over-claims. The prose lint
 walks both `mapping-results.json` **and** the rendered `controls-catalog.md` /

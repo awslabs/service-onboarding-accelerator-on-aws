@@ -34,8 +34,8 @@ Each generated control is now tagged with a canonical `mitigation_intent` and `s
 The framework mapping skill now enforces hard constraints:
 
 - **Applicability pre-filter:** Objectives marked N/A in the matrix are skipped immediately.
-- **Mechanism coverage ceilings:** A Config Rule can NEVER be "Full Coverage" for an enforcement objective (max: Partial). Only SCPs/RCPs can be Full for enforcement.
-- **`tools/validate/validate_intent_eligibility.py`** — New validator that catches: (1) N/A objectives that got mapped, (2) coverage levels exceeding mechanism ceilings.
+- **Mechanism coverage ceilings:** Full Coverage is opt-in. A mechanism class that only partially implements an objective's named mechanism (e.g. a detective Config rule, or CMK-existence for classification-driven encryption) is capped at Partial by the KB.
+- **`tools/validate/validate_domain_mapping_accuracy.py`** — the deterministic backstop that catches: (1) N/A / not-applicable objectives that got mapped, (2) coverage levels exceeding the mechanism-class ceiling, (3) denied-class mis-maps, and (4) confident mappings that carry no citation (they must be UNCERTAIN instead).
 
 ### Files Created/Modified
 
@@ -46,7 +46,7 @@ The framework mapping skill now enforces hard constraints:
 | `data/objective-applicability-rules.json` | Created |
 | `data/mitigation-intent-patterns.json` | Created |
 | `scripts/compute-applicability-matrix.py` | Created |
-| `tools/validate/validate_intent_eligibility.py` | Created |
+| `tools/validate/validate_domain_mapping_accuracy.py` | Extended (ceiling + citation + category-applicability checks) |
 | `schemas/map-controls-generated.schema.json` | Modified (added `mitigation_intent`, `security_domain`) |
 | `skills/map-generate-controls/skill.md` | Modified (added Phase 3b intent tagging) |
 | `skills/map-framework-mapping/skill.md` | Modified (added applicability pre-filter + coverage ceilings) |
@@ -58,8 +58,8 @@ The framework mapping skill now enforces hard constraints:
 # Test applicability matrix on a Canopy JSON
 python3 scripts/compute-applicability-matrix.py <canopy-json> --output /tmp/matrix.json
 
-# Validate an existing mapping against intent eligibility + ceilings
-python3 tools/validate/validate_intent_eligibility.py <map-framework-mapped.json> \
+# Validate an existing mapping against ceilings + citations + applicability
+python3 tools/validate/validate_domain_mapping_accuracy.py <map-framework-mapped.json> \
   --controls <map-controls-generated.json> --matrix <applicability-matrix.json>
 ```
 
