@@ -12,11 +12,12 @@ This branch (`feat/domain-specialization`) introduces a 3-layer accuracy improve
 
 Before any mapping begins, the tool now derives service capabilities directly from the Canopy threat model input and screens objectives for applicability:
 
-- **`data/service-classification-rules.json`** — 17 capability detection rules that scan Canopy mitigation statements and entity types to derive capabilities (VPC, CMK, logging, backup, patching, etc.)
-- **`data/objective-applicability-rules.json`** — 28 rules that map CCMv4 objective categories to capability prerequisites. Determines which objectives are N/A *before* mapping starts.
-- **`scripts/compute-applicability-matrix.py`** — Deterministic script that takes a Canopy JSON, derives capabilities, and outputs an applicability matrix.
+- **`data/service-capability-rules.json`** — capability detection rules that scan Canopy mitigation *statements only* (never entity description prose) to derive three-valued capability flags (present / absent / unknown) for VPC, CMK, logging, patching, backup, etc.
+- **`data/service-category-rules.json`** — derives the service's category label(s) (serverless_compute, storage, database, networking, …) from those capability flags; a service may hold multiple categories.
+- **`data/objective-applicability-rules.json`** — rules that mark objectives N/A only for a positive structural reason (an organizational objective, or a category fact such as "serverless compute has no customer-managed OS to patch"). An unknown capability never forces N/A — it defers to the KB default.
+- **`scripts/compute-applicability-matrix.py`** — Deterministic script that takes a Canopy JSON, derives capabilities + categories, and outputs an applicability matrix in which every N/A cites the rule and evidence that drove it.
 
-**Result:** Datacenter (DCS), endpoint (UEM), HR (HRS), and patching (TVM) objectives are automatically N/A for serverless/managed services. Backup objectives (BCR-08) are N/A only when the service has no backup API.
+**Result:** Datacenter (DCS), endpoint (UEM), HR (HRS), and patching (TVM) objectives are automatically N/A for serverless services; backup objectives (BCR-08) are N/A for serverless unless a backup/replication API is definitively present. No capability is ever inferred from descriptive prose.
 
 ### New: Mitigation Intent Tagging (Step B)
 
@@ -40,7 +41,8 @@ The framework mapping skill now enforces hard constraints:
 
 | File | Action |
 |------|--------|
-| `data/service-classification-rules.json` | Created |
+| `data/service-capability-rules.json` | Created |
+| `data/service-category-rules.json` | Created |
 | `data/objective-applicability-rules.json` | Created |
 | `data/mitigation-intent-patterns.json` | Created |
 | `scripts/compute-applicability-matrix.py` | Created |

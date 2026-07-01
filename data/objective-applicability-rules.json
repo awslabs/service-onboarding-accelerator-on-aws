@@ -1,264 +1,52 @@
 {
-  "schema_version": "1.0",
-  "description": "Maps compliance framework objective categories to service capability prerequisites. Used by compute-applicability-matrix.py to determine which objectives are applicable to the target service before framework mapping begins. Objective IDs use CCMv4 as the reference but the category descriptions are generic enough to match similar objectives in other frameworks.",
-  "rules": [
+  "schema_version": "2.0",
+  "description": "Screens framework objectives for applicability to a target service BEFORE mapping, using capability flags (service-capability-rules.json) and derived category labels (service-category-rules.json). Three rule kinds, each risk-averse: an objective is only marked N/A when there is a POSITIVE structural reason (an organizational/shared-responsibility objective, or a category fact that the service's category structurally lacks the capability). An UNKNOWN capability NEVER forces N/A — it defers to the objective's KB default (data/domain-mapping-guidance/<framework>.json). Objective IDs reference CCMv4. Consumed by scripts/compute-applicability-matrix.py.",
+  "semantics": {
+    "intrinsic_na_rules": "Objectives that no per-service platform/infrastructure control can satisfy for ANY service (physical datacenter, endpoint/HR, organizational governance). Always N/A. Independent of capabilities.",
+    "category_na_rules": "Objectives that are N/A for services IN a given category, because that category structurally lacks the capability the objective needs (e.g. serverless_compute has no customer-managed OS to patch and no customer-managed backup API). Fires only when the service carries one of na_for_categories. A category fact, not a per-export absence.",
+    "capability_unlock_rules": "Objectives the KB defaults to N/A that become applicable ONLY when a required capability is definitively PRESENT (e.g. a backup-capable service unlocks BCR-08). Present -> applicable (optionally capped by max_coverage). Absent/unknown -> no override (KB default stands). These never force N/A."
+  },
+  "intrinsic_na_rules": [
     {
       "category": "physical_datacenter",
-      "description": "Physical and environmental security of data center facilities",
       "objective_ids": ["DCS-01", "DCS-02", "DCS-03", "DCS-04", "DCS-05", "DCS-06", "DCS-07", "DCS-08", "DCS-09", "DCS-10", "DCS-11", "DCS-12", "DCS-13", "DCS-14", "DCS-15"],
-      "applicable_when": "never",
-      "reason": "Physical datacenter security is managed by AWS under the shared responsibility model. No customer-deployable platform/infrastructure control can satisfy these objectives for any AWS service."
+      "reason": "Physical and environmental datacenter security is managed by AWS under the shared-responsibility model; no customer-deployable service control satisfies these."
     },
     {
       "category": "endpoint_device_management",
-      "description": "Management and security of user endpoints and devices",
       "objective_ids": ["UEM-01", "UEM-02", "UEM-03", "UEM-04", "UEM-05", "UEM-06", "UEM-07", "UEM-08", "UEM-09", "UEM-10", "UEM-11", "UEM-12", "UEM-13", "UEM-14"],
-      "applicable_when": "never",
-      "reason": "Endpoint/device management is an organizational IT control domain. No AWS cloud service control satisfies endpoint management objectives."
+      "reason": "Endpoint/device management is an organizational IT domain; no AWS service control satisfies it."
     },
     {
       "category": "human_resources_security",
-      "description": "Personnel security, training, and HR processes",
       "objective_ids": ["HRS-01", "HRS-02", "HRS-03", "HRS-04", "HRS-05", "HRS-06", "HRS-07", "HRS-08", "HRS-09", "HRS-10", "HRS-11", "HRS-12", "HRS-13"],
-      "applicable_when": "never",
-      "reason": "Human resources security controls are organizational processes. No technical AWS service control satisfies HR objectives."
+      "reason": "Personnel/HR security controls are organizational processes; no technical service control satisfies them."
     },
     {
       "category": "audit_assurance_governance",
-      "description": "Organizational audit programs, policies, and governance processes",
       "objective_ids": ["A&A-01", "A&A-02", "A&A-03", "A&A-04", "A&A-05", "A&A-06"],
-      "applicable_when": "never",
-      "reason": "Audit and assurance objectives describe organizational governance programs (audit planning, independent assessments, remediation tracking). No platform/infrastructure configuration control implements these."
-    },
+      "reason": "Audit and assurance objectives describe organizational governance programs; no platform/infrastructure configuration control implements them."
+    }
+  ],
+  "category_na_rules": [
     {
-      "category": "interoperability_portability",
-      "description": "Cross-cloud data portability and interoperability",
-      "objective_ids": ["IPY-01", "IPY-02", "IPY-03", "IPY-04"],
-      "applicable_when": "never",
-      "reason": "Cross-cloud data portability objectives are not satisfiable by AWS-native platform controls unless the service exposes a specific portability API."
-    },
-    {
-      "category": "application_code_security",
-      "description": "Security of application source code, development, and testing",
-      "objective_ids": ["AIS-01", "AIS-02", "AIS-03", "AIS-04", "AIS-05", "AIS-07"],
-      "applicable_when": "never_for_infra_controls",
-      "reason": "Application-code security (secure development, SAST/DAST testing, AppSec baselines) is the customer workload responsibility. Platform/infrastructure configuration controls (SCP, Config Rules, CFn Guard, Tag Policies) inspect IAM requests, resource configuration, or IaC templates — never application source code, dependencies, or runtime behavior."
-    },
-    {
-      "category": "secure_deployment",
-      "description": "Automated secure application deployment",
-      "objective_ids": ["AIS-06"],
-      "applicable_when": "always",
-      "reason": "Deploy-time template validation and least-privilege deployment controls support automated secure deployment for any service with CloudFormation/IaC support."
-    },
-    {
-      "category": "patching_vulnerability_metrics",
-      "description": "OS/software patching, vulnerability scanning metrics, mean-time-to-remediate",
       "objective_ids": ["TVM-01", "TVM-02", "TVM-03", "TVM-04", "TVM-06", "TVM-07", "TVM-08", "TVM-09", "TVM-10"],
-      "applicable_when": "service_has_capability:patching_model:customer_managed",
-      "reason": "Patching and vulnerability-metric objectives apply only when the customer manages OS/software patching. Serverless and fully-managed services (Lambda, EFS, managed AI services) are patched by AWS — these objectives are N/A."
+      "na_for_categories": ["serverless_compute"],
+      "reason": "Serverless compute has no customer-managed operating system or runtime to patch or scan — AWS patches the execution environment. OS/software patching and vulnerability-metric objectives are N/A.",
+      "capability_note": "Fires on the category, NOT on any per-export mention of a runtime; a descriptive 'custom runtime' string in an entity information field must never assert customer patching."
     },
     {
-      "category": "external_library_vulnerability",
-      "description": "Managing vulnerabilities in external libraries and dependencies",
-      "objective_ids": ["TVM-05"],
-      "applicable_when": "service_has_capability:supply_chain:code_signing",
-      "reason": "External library vulnerability management applies to services where the customer deploys code with dependencies (Lambda with layers, container images). Code-signing mitigations indicate the service has this exposure."
-    },
-    {
-      "category": "backup_exercises",
-      "description": "Backup verification, DR exercises, and response plan testing",
       "objective_ids": ["BCR-08", "BCR-09", "BCR-10", "BCR-11"],
-      "applicable_when": "service_has_capability:backup_model:managed_backup OR backup_model:cross_region_replication",
-      "reason": "Backup and DR exercise objectives apply only when the service exposes backup, snapshot, or replication APIs that a customer can configure. Multi-AZ alone is NOT backup."
-    },
+      "na_for_categories": ["serverless_compute"],
+      "reason": "Serverless compute exposes no customer-configurable backup, snapshot, or DR-exercise API; backup-verification and DR-exercise objectives are N/A. Multi-AZ placement is resilience, not backup."
+    }
+  ],
+  "capability_unlock_rules": [
     {
-      "category": "business_continuity_planning",
-      "description": "Continuity planning, resilience of deployed resources",
-      "objective_ids": ["BCR-04"],
-      "applicable_when": "service_has_capability:resilience_model:multi_az",
-      "reason": "Multi-AZ placement and redundancy controls are a concrete technical contribution to business continuity planning.",
+      "objective_ids": ["BCR-08", "BCR-09", "BCR-10", "BCR-11"],
+      "requires_any_capability": ["managed_backup", "cross_region_replication"],
+      "reason_when_present": "Service exposes a customer-configurable backup/snapshot/replication API, so backup-verification and DR-exercise objectives are in scope.",
       "max_coverage": "Partial Coverage"
-    },
-    {
-      "category": "business_continuity_governance",
-      "description": "BCM policies, strategies, documentation, communication",
-      "objective_ids": ["BCR-01", "BCR-02", "BCR-03", "BCR-05", "BCR-06", "BCR-07"],
-      "applicable_when": "never",
-      "reason": "Business continuity governance (policies, strategies, exercises, communication plans) are organizational artifacts. No platform control implements these."
-    },
-    {
-      "category": "network_security",
-      "description": "Network isolation, segmentation, firewall, VPC security",
-      "objective_ids": ["IVS-02", "IVS-03", "IVS-05", "IVS-06", "IVS-09"],
-      "applicable_when": "service_has_capability:network_model:vpc_capable",
-      "reason": "Network security objectives (segmentation, defense, environment separation) require the service to have VPC/subnet/security-group placement capabilities."
-    },
-    {
-      "category": "encryption_key_management",
-      "description": "Encryption at rest, key generation, rotation, inventory, algorithm selection",
-      "objective_ids": ["CEK-03", "CEK-04", "CEK-08", "CEK-09", "CEK-10", "CEK-11", "CEK-12", "CEK-21"],
-      "applicable_when": "service_has_capability:encryption_model:cmk_capable",
-      "reason": "Key management objectives require the service to support customer-managed KMS keys."
-    },
-    {
-      "category": "encryption_policy_governance",
-      "description": "Encryption policies and procedures (organizational)",
-      "objective_ids": ["CEK-01", "CEK-02"],
-      "applicable_when": "never",
-      "reason": "Encryption policy governance is an organizational process objective."
-    },
-    {
-      "category": "key_lifecycle_advanced",
-      "description": "Key revocation, destruction, activation, suspension, deactivation, archival, compromise, recovery",
-      "objective_ids": ["CEK-13", "CEK-14", "CEK-15", "CEK-16", "CEK-17", "CEK-18", "CEK-19", "CEK-20"],
-      "applicable_when": "service_has_capability:encryption_model:cmk_capable",
-      "reason": "Advanced key lifecycle objectives are conditional — the service must support CMK to have any key lifecycle exposure. Actual key lifecycle is managed by KMS, so these are at best Supportive for the service itself.",
-      "max_coverage": "Supportive"
-    },
-    {
-      "category": "access_event_logging",
-      "description": "Logging who accessed what, activity/transaction logging, access control logs",
-      "objective_ids": ["LOG-04", "LOG-07", "LOG-08", "LOG-11", "LOG-12"],
-      "applicable_when": "service_has_capability:logging_model:cloudwatch_logs OR logging_model:cloudtrail_data_events",
-      "reason": "Access-event logging objectives require the service to generate access/activity logs (CloudTrail data events or native application logs to CloudWatch)."
-    },
-    {
-      "category": "security_monitoring",
-      "description": "Security monitoring, alerting, encryption monitoring",
-      "objective_ids": ["LOG-03", "LOG-05", "LOG-10", "LOG-13"],
-      "applicable_when": "always",
-      "reason": "Security monitoring and detection objectives are satisfiable by AWS Config rules (misconfiguration detection) for any service that has mitigations."
-    },
-    {
-      "category": "logging_governance",
-      "description": "Logging policies, clock synchronization",
-      "objective_ids": ["LOG-01", "LOG-06"],
-      "applicable_when": "never",
-      "reason": "Logging policy governance and clock synchronization are organizational/infrastructure-level concerns not addressed by per-service controls."
-    },
-    {
-      "category": "change_management",
-      "description": "Change management technology, unauthorized change protection, baseline management, deviation detection",
-      "objective_ids": ["CCC-03", "CCC-04", "CCC-06", "CCC-07"],
-      "applicable_when": "always",
-      "reason": "Change management objectives are satisfiable by CloudFormation Guard (deploy-time validation) and AWS Config rules (drift detection) for any service with IaC and Config support."
-    },
-    {
-      "category": "change_governance",
-      "description": "Change management policies and procedures",
-      "objective_ids": ["CCC-01", "CCC-05", "CCC-08"],
-      "applicable_when": "never",
-      "reason": "Change management governance (policies, procedures) are organizational artifacts."
-    },
-    {
-      "category": "quality_testing",
-      "description": "Quality testing as a change management gate",
-      "objective_ids": ["CCC-02"],
-      "applicable_when": "always",
-      "reason": "Deploy-time template validation (CFn Guard) acts as a quality gate on infrastructure changes.",
-      "max_coverage": "Partial Coverage"
-    },
-    {
-      "category": "change_restoration",
-      "description": "Rolling back configuration to known-good state",
-      "objective_ids": ["CCC-09"],
-      "applicable_when": "service_has_capability:backup_model:managed_backup OR service_has_mitigations_with_corrective_controls",
-      "reason": "Change restoration requires the service to have corrective/remediation controls (SSM Automation) or rollback capability."
-    },
-    {
-      "category": "identity_access_management",
-      "description": "IAM policies, least privilege, separation of duties, role management, authentication, authorization",
-      "objective_ids": ["IAM-04", "IAM-05", "IAM-06", "IAM-07", "IAM-09", "IAM-10", "IAM-12", "IAM-13", "IAM-14", "IAM-16"],
-      "applicable_when": "service_has_capability:identity_model:execution_role OR identity_model:resource_policy",
-      "reason": "IAM objectives require the service to have IAM-governable access surfaces (execution roles, resource policies, permission boundaries)."
-    },
-    {
-      "category": "identity_governance",
-      "description": "IAM policies and procedures, identity inventory",
-      "objective_ids": ["IAM-01", "IAM-02", "IAM-03", "IAM-08", "IAM-11", "IAM-15"],
-      "applicable_when": "never",
-      "reason": "Identity governance objectives (policies, procedures, identity inventory) are organizational processes not addressed by per-service controls.",
-      "exceptions": {
-        "IAM-03": {
-          "applicable_when": "service_has_capability:governance:tagging",
-          "reason": "Identity inventory can be conditionally supported by tagging controls that aid resource attribution.",
-          "max_coverage": "Supportive"
-        }
-      }
-    },
-    {
-      "category": "data_protection",
-      "description": "Data protection by design, sensitive data transfer, sensitive data protection",
-      "objective_ids": ["DSP-07", "DSP-10", "DSP-17"],
-      "applicable_when": "service_has_capability:encryption_model:cmk_capable OR transit_encryption:tls",
-      "reason": "Data protection objectives are satisfiable when the service supports encryption (at rest or in transit) and access control."
-    },
-    {
-      "category": "data_lifecycle_governance",
-      "description": "Data classification, retention, disposal, privacy policies",
-      "objective_ids": ["DSP-01", "DSP-02", "DSP-03", "DSP-04", "DSP-05", "DSP-06", "DSP-08", "DSP-09", "DSP-11", "DSP-12", "DSP-13", "DSP-14", "DSP-15", "DSP-16", "DSP-18", "DSP-19"],
-      "applicable_when": "never",
-      "reason": "Data lifecycle governance (classification, retention, disposal, privacy impact assessments) are organizational/workload-level concerns. A resource-configuration control classifies the resource, not the sensitivity of data inside it.",
-      "exceptions": {
-        "DSP-08": {
-          "applicable_when": "service_has_capability:identity_model:resource_policy",
-          "reason": "Data privacy by design can be conditionally supported by access-control defaults.",
-          "max_coverage": "Supportive"
-        }
-      }
-    },
-    {
-      "category": "governance_regulatory_mapping",
-      "description": "Regulatory mapping, compliance reporting",
-      "objective_ids": ["GRC-07"],
-      "applicable_when": "service_has_capability:governance:tagging",
-      "reason": "Information system regulatory mapping can be supported by tagging/classification controls that associate resources with regulatory context.",
-      "max_coverage": "Supportive"
-    },
-    {
-      "category": "governance_policies",
-      "description": "GRC policies, risk management, information security programs",
-      "objective_ids": ["GRC-01", "GRC-02", "GRC-03", "GRC-04", "GRC-05", "GRC-06", "GRC-08"],
-      "applicable_when": "never",
-      "reason": "Governance, risk, and compliance policy objectives are organizational artifacts."
-    },
-    {
-      "category": "incident_response",
-      "description": "Incident response plans, event triage, forensics",
-      "objective_ids": ["SEF-03", "SEF-06"],
-      "applicable_when": "service_has_capability:logging_model:cloudwatch_logs OR logging_model:cloudtrail_data_events",
-      "reason": "Incident response and event triage objectives can be supported by detective/logging controls that feed the triage process.",
-      "max_coverage": "Supportive"
-    },
-    {
-      "category": "incident_governance",
-      "description": "Incident management policies, contact maintenance, forensic procedures",
-      "objective_ids": ["SEF-01", "SEF-02", "SEF-04", "SEF-05", "SEF-07", "SEF-08"],
-      "applicable_when": "never",
-      "reason": "Incident management governance objectives are organizational processes."
-    },
-    {
-      "category": "supply_chain_governance",
-      "description": "Supply chain management, accountability, agreements, compliance testing",
-      "objective_ids": ["STA-01", "STA-02", "STA-03", "STA-04", "STA-05", "STA-06", "STA-07", "STA-08", "STA-09", "STA-10", "STA-12", "STA-13", "STA-14"],
-      "applicable_when": "never",
-      "reason": "Supply chain management objectives are organizational/contractual processes."
-    },
-    {
-      "category": "internal_compliance_testing",
-      "description": "Internal compliance testing and conformance assessment",
-      "objective_ids": ["STA-11"],
-      "applicable_when": "always",
-      "reason": "AWS Config rules provide an internal-compliance-testing mechanism for any service.",
-      "max_coverage": "Supportive"
-    },
-    {
-      "category": "log_protection",
-      "description": "Audit log protection, access control over log infrastructure",
-      "objective_ids": ["LOG-02", "LOG-09"],
-      "applicable_when": "service_has_capability:identity_model:resource_policy OR logging_model:cloudwatch_logs",
-      "reason": "Log protection objectives can be supported by access controls that restrict who can reach the logged resource surface."
     }
   ]
 }

@@ -1,0 +1,187 @@
+{
+  "schema_version": "1.0",
+  "description": "Derives service capability FLAGS from a Canopy threat model, scanning mitigation STATEMENTS only — never entity descriptions/information prose. A mitigation statement is a normative assertion about how the service must be configured ('An AWS Lambda function should be encrypted with a KMS CMK'); an entity 'information' field is descriptive marketing prose ('a custom runtime ... reused across functions') that must never assert a customer capability. Each flag is three-valued: present (a statement positively asserts the capability), absent (a statement asserts the capability is NOT the customer's to control, e.g. AWS-managed), or unknown (neither — the export is silent). Downstream, unknown NEVER forces an objective N/A; it defers to the KB default. Consumed by scripts/compute-applicability-matrix.py.",
+  "polarity_note": "present_when matches a statement that asserts the customer configures/controls the capability. absent_when matches a statement that asserts the capability is out of the customer's hands (AWS-managed). If both match, absent wins (a service can mention a capability only to say AWS owns it). If neither matches, the flag is unknown — not present and not absent.",
+  "capability_rules": [
+    {
+      "capability_id": "customer_manages_keys",
+      "description": "Customer supplies/controls a KMS customer-managed key for encryption at rest.",
+      "present_when": [
+        "customer managed key",
+        "customer-managed key",
+        "customer-managed kms",
+        "encrypted with an aws kms",
+        "kmskeyarn",
+        "encryptionkeyarn"
+      ],
+      "absent_when": [
+        "encryption is managed by aws",
+        "aws-owned key only",
+        "cannot supply a customer-managed key"
+      ]
+    },
+    {
+      "capability_id": "has_network_surface",
+      "description": "Service can be placed in a customer VPC / subnets / ENIs / security groups.",
+      "present_when": [
+        "in an amazon vpc",
+        "elastic network interface",
+        "private subnets",
+        "security group"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "multi_az_capable",
+      "description": "Service can be spread across more than one Availability Zone by the customer.",
+      "present_when": [
+        "more than one availability zone",
+        "multi-az",
+        "multiple availability zones"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "tls_transit",
+      "description": "Service supports / requires TLS encryption of data in transit under customer control.",
+      "present_when": [
+        "encryption of data in transit",
+        "require encryption in transit",
+        "tls source access",
+        "requiretls",
+        "secure transport"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "emits_access_logs",
+      "description": "Service emits access/activity logs the customer can enable (CloudWatch Logs, CloudTrail data events).",
+      "present_when": [
+        "logs to cloudwatch",
+        "cloudwatch logs",
+        "cloudtrail data events",
+        "system logs to cloudwatch",
+        "application and system logs"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "execution_role",
+      "description": "Service assumes a customer-controlled IAM execution/service role.",
+      "present_when": [
+        "execution role",
+        "iam service role",
+        "service role should only be assumable",
+        "iam.*role should only be assumable",
+        "role should be accessed only by trusted"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "resource_policy_capable",
+      "description": "Service exposes a resource-based policy / version policy the customer scopes.",
+      "present_when": [
+        "resource based policy",
+        "resource-based policy",
+        "version policy should limit",
+        "permission should only be accessed",
+        "permissions to a subset of iam principals"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "public_access_configurable",
+      "description": "Service has a public-access surface that can be misconfigured (function URL, resource policy).",
+      "present_when": [
+        "should not allow unauthenticated access",
+        "not allow.*public access",
+        "publicly accessible",
+        "function url"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "code_signing",
+      "description": "Service supports code-signing of deployment artifacts (code integrity, NOT data-in-transit).",
+      "present_when": [
+        "code signing",
+        "code-signing"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "tagging",
+      "description": "Service resources can be tagged for attribution/classification.",
+      "present_when": [
+        "should be tagged with information",
+        "tagged with information that describes"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "customer_managed_patching",
+      "description": "Customer is responsible for OS/software patching of the service's runtime. Serverless/fully-managed services are patched by AWS — this flag must NOT fire from a descriptive mention of a 'custom runtime' or 'operating system'; only a statement placing patching responsibility on the customer counts.",
+      "present_when": [
+        "customer.*responsible.*patch",
+        "customer.*manage.*patch",
+        "customer-managed patching",
+        "patch the operating system",
+        "apply.*os.*patch",
+        "applypendingmaintenanceaction"
+      ],
+      "absent_when": [
+        "patched by aws",
+        "aws manages.*patch",
+        "aws is responsible for patching",
+        "no operating system for the customer to patch"
+      ]
+    },
+    {
+      "capability_id": "managed_backup",
+      "description": "Service exposes a customer-configurable backup/snapshot/PITR API.",
+      "present_when": [
+        "automated backup",
+        "backup retention",
+        "point-in-time recovery",
+        "create.*snapshot",
+        "backupretentionperiod"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "cross_region_replication",
+      "description": "Service supports customer-configurable cross-region replication.",
+      "present_when": [
+        "replicated to at least one other aws region",
+        "cross-region replication",
+        "cross-region.*replicat"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "owns_durable_storage",
+      "description": "Service owns durable storage the customer manages (objects, volumes, tables) — a data-at-rest store, not ephemeral compute state.",
+      "present_when": [
+        "object versioning",
+        "durable storage",
+        "stored objects",
+        "bucket policy",
+        "storageencrypted"
+      ],
+      "absent_when": []
+    },
+    {
+      "capability_id": "owns_log_store",
+      "description": "Service IS the log store (log group / trail / log bucket) whose modify/delete the customer can restrict — the surface LOG-02/LOG-09 (log protection) actually govern. A service that merely EMITS logs to CloudWatch does not own the log store; CloudWatch/CloudTrail do.",
+      "present_when": [
+        "protect.*audit log",
+        "restrict.*modify.*log",
+        "restrict.*delete.*log",
+        "log group.*retention lock",
+        "log store.*immutab",
+        "object lock.*log"
+      ],
+      "absent_when": []
+    }
+  ]
+}

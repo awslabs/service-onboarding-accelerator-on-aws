@@ -166,10 +166,15 @@ python3 scripts/compute-applicability-matrix.py <canopy-json-path> \
 ```
 
 This script:
-1. Scans the Canopy threat model's mitigations and entities
-2. Derives service capabilities (VPC, CMK, logging, backup, patching, etc.)
-3. Evaluates objective-applicability-rules to determine which objectives are N/A
-4. Writes `applicability-matrix.json` consumed by map-framework-mapping
+1. Scans the Canopy threat model's mitigation **statements only** (never entity
+   description prose, which must never assert a customer capability)
+2. Derives three-valued capability flags (present / absent / unknown) and the
+   service's category label(s)
+3. Evaluates objective-applicability-rules — marking an objective N/A only for a
+   positive structural reason (organizational objective or category fact); an
+   unknown capability defers to the KB default rather than forcing N/A
+4. Writes `applicability-matrix.json` (every N/A cites its rule + evidence),
+   consumed by map-framework-mapping
 
 The Canopy JSON path is the same file provided as input to the pipeline (in the
 `input/` folder). If no Canopy JSON is available, skip this step — the mapping
