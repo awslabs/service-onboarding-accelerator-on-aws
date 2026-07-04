@@ -940,22 +940,6 @@ def write_framework_mapping(
         sum(1 for f in fw_mapped["framework_mapping"] if f.get("status") == "UNCERTAIN"),
     )
 
-    # Count coverage levels (canonical labels, legacy aliases accepted)
-    full_count = sum(
-        1
-        for f in fw_mapped["framework_mapping"]
-        if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_FULL
-    )
-    partial_count = sum(
-        1
-        for f in fw_mapped["framework_mapping"]
-        if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_PARTIAL
-    )
-    supportive_count = sum(
-        1
-        for f in fw_mapped["framework_mapping"]
-        if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_SUPPORTIVE
-    )
     domains_covered = sum(
         1 for d in summary.get("by_domain", {}).values() if d.get("mapped", 0) > 0
     )
@@ -980,11 +964,7 @@ def write_framework_mapping(
     lines.append(f"| Total Objectives | {total_obj} |")
     lines.append(f"| Mapped | {mapped_count} |")
     lines.append(f"| Not Applicable | {na_count} |")
-    if uncertain_count:
-        lines.append(f"| Uncertain (review needed) | {uncertain_count} |")
-    lines.append(f"| Fully Covered | {full_count} |")
-    lines.append(f"| Partially Covered | {partial_count} |")
-    lines.append(f"| Supportive Only | {supportive_count} |")
+    lines.append(f"| Uncertain (review needed) | {uncertain_count} |")
     lines.append("")
 
     # Domain coverage summary table
