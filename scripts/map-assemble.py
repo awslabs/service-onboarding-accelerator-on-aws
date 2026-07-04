@@ -837,12 +837,75 @@ def _action_family(ctrl: dict) -> str:
     return f"`{actions[0]}` and related `{prefix}:` actions"
 
 
+def _mitigation_statement_indexes(
+    mitigations: list[dict], threat_mitigation_map: list[dict]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Build (by_alias, by_id) statement lookups for the catalog citation line.
+
+    The verbatim mitigation statement is pulled from the resolved mitigation
+    list (customer `existing_mitigations` or the synthetic assessment-gap
+    mitigations), keyed by Canopy alias and by mitigation id. The
+    threat_mitigation_map (keyed by mitigation_id) is a fallback so a control
+    that only carries `mitigation_ids` still resolves a statement.
+    """
+    by_alias: dict[str, str] = {}
+    by_id: dict[str, str] = {}
+    for mit in mitigations or []:
+        if not isinstance(mit, dict):
+            continue
+        stmt = (mit.get("statement") or "").strip()
+        if mit.get("alias"):
+            by_alias.setdefault(mit["alias"], stmt)
+        if mit.get("id"):
+            by_id.setdefault(mit["id"], stmt)
+    for t in threat_mitigation_map or []:
+        mid = t.get("mitigation_id")
+        if mid and mid not in by_id:
+            by_id[mid] = (t.get("statement") or "").strip()
+    return by_alias, by_id
+
+
+def _catalog_citation_lines(
+    ctrl: dict, by_alias: dict[str, str], by_id: dict[str, str]
+) -> list[str]:
+    """Render the Canopy citation (or assessment-gap label) lines for a control.
+
+    Every control derives from a Canopy mitigation (alias + UUID + verbatim
+    statement, cited here) or from an assessment gap (labelled as a
+    recommendation with no Canopy source). Control IDs are minted by this tool
+    because Canopy does not carry control IDs.
+    """
+    out: list[str] = []
+    if ctrl.get("trace_source") == "assessment_gap" or not ctrl.get("mitigation_alias"):
+        out.append(
+            "- **Source:** assessment gap (no Canopy mitigation; recommended control)"
+        )
+        return out
+
+    alias = ctrl["mitigation_alias"]
+    uuid = ctrl.get("mitigation_uuid", "")
+    statement = by_alias.get(alias, "")
+    if not statement:
+        for mid in ctrl.get("mitigation_ids", []):
+            if by_id.get(mid):
+                statement = by_id[mid]
+                break
+    cite = f"- **Canopy mitigation:** `{alias}`"
+    if uuid:
+        cite += f" (UUID `{uuid}`)"
+    out.append(cite)
+    if statement:
+        out.append(f"- **Canopy statement:** {statement}")
+    return out
+
+
 def write_controls_catalog(
     controls: list[dict],
     threat_mitigation_map: list[dict],
     attack_coverage: dict,
     service: str,
     path: Path,
+    mitigations: list[dict] | None = None,
 ) -> None:
     # Resource list (union across all controls), mitigations addressed count.
     resources = sorted(
@@ -850,6 +913,9 @@ def write_controls_catalog(
     )
     mitigations_addressed = len(
         {t["mitigation_id"] for t in threat_mitigation_map if t.get("control_ids")}
+    )
+    by_alias, by_id = _mitigation_statement_indexes(
+        mitigations or [], threat_mitigation_map
     )
 
     lines = []
@@ -867,6 +933,13 @@ def write_controls_catalog(
         "recorded in `mapping-results.json` (the machine-readable source the "
         "generate phase consumes); the catalog stays objective-level so it does "
         "not over-state specifics."
+    )
+    lines.append("")
+    lines.append(
+        "> Every control is derived from a Canopy mitigation (its alias and "
+        "statement are cited below each control); control IDs are assigned by "
+        "this tool because Canopy does not carry control IDs. Controls with no "
+        "Canopy source are labelled as recommendations (assessment-gap driven)."
     )
     lines.append("")
 
@@ -969,6 +1042,9 @@ def write_controls_catalog(
                 lines.append(
                     f"- **Mitigations:** {', '.join(ctrl.get('mitigation_ids', []))}"
                 )
+                # Canopy provenance: alias + UUID + verbatim statement, or an
+                # explicit assessment-gap recommendation label.
+                lines.extend(_catalog_citation_lines(ctrl, by_alias, by_id))
                 if ctrl.get("framework_objectives"):
                     lines.append(
                         f"- **Framework Objectives:** {', '.join(ctrl['framework_objectives'])}"
@@ -1457,7 +1533,10 @@ def main() -> int:
     # Phase 5: Write controls-catalog.md
     print("Phase 5: Writing controls-catalog.md...")
     catalog_path = map_dir / "controls-catalog.md"
-    write_controls_catalog(controls, threat_mitigation_map, attack_coverage, service, catalog_path)
+    write_controls_catalog(
+        controls, threat_mitigation_map, attack_coverage, service, catalog_path,
+        mitigations=mitigations,
+    )
     print()
 
     # Phase 6: Write framework-mapping.md
