@@ -980,17 +980,23 @@ def write_framework_mapping(
         )
     lines.append("")
 
-    # Detailed mappings by domain
+    # Detailed mappings — every objective, in framework order, under its domain.
+    # The report lists ALL objectives sequentially (mapped, N/A, and uncertain)
+    # as `<ID>: <title>` so a reviewer can scan top-to-bottom and see each one
+    # with its content or its N/A reason. Domain sub-headings are retained;
+    # objectives appear in the merged framework order within each domain.
     lines.append("## Detailed Mappings by Domain\n")
     lines.append("")
 
-    # Group mappings by domain
-    domain_mappings: dict[str, list[dict]] = defaultdict(list)
+    # Group mappings by domain, preserving the framework (canonical) order in
+    # which each domain first appears and the objective order within it.
+    domain_mappings: dict[str, list[dict]] = {}
     for f in fw_mapped["framework_mapping"]:
-        domain_mappings[f["domain"]].append(f)
+        domain_mappings.setdefault(f["domain"], []).append(f)
 
-    for domain in sorted(domain_mappings):
-        mappings = domain_mappings[domain]
+    rendered_objective_ids: list[str] = []
+
+    for domain, mappings in domain_mappings.items():
         mapped_objs = [m for m in mappings if m["status"] == "MAPPED"]
         uncertain_objs = [m for m in mappings if m["status"] == "UNCERTAIN"]
         na_objs = [m for m in mappings if m["status"] == "N/A"]
@@ -1003,9 +1009,16 @@ def write_framework_mapping(
         lines.append(f"*{', '.join(summary_bits)}*\n")
         lines.append("")
 
-        if mapped_objs:
-            for obj in mapped_objs:
-                lines.append(f"**{obj['objective_id']}: {obj['title']}** -- Coverage: {obj['coverage']}\n")
+        # Sequential: render every objective in this domain in order, whatever
+        # its status. No objective is collapsed into a trailing ID list.
+        for obj in mappings:
+            rendered_objective_ids.append(obj["objective_id"])
+            oid = obj["objective_id"]
+            title = obj.get("title", "")
+            status = obj.get("status")
+
+            if status == "MAPPED":
+                lines.append(f"**{oid}: {title}** — Coverage: {obj.get('coverage', '')}\n")
                 lines.append("")
                 if obj.get("controls"):
                     lines.append(
@@ -1023,33 +1036,44 @@ def write_framework_mapping(
                         scope = SCOPE_LABELS.get(
                             ctrl.get("scope", ""), ctrl.get("scope", "?")
                         )
-                        title = ctrl.get("name", "?")
+                        ctrl_title = ctrl.get("name", "?")
                         level = cm.get("coverage_level", "?")
                         rat = cm.get("rationale", "")
                         lines.append(
-                            f"| {cid} | {title} | {cat} | {scope} | {level} | {rat} "
+                            f"| {cid} | {ctrl_title} | {cat} | {scope} | {level} | {rat} "
                             f"| {_citation_cell(cm, ctrl)} | {_mitre_cell(cm, ctrl)} |"
                         )
                     lines.append("")
-
                 lines.append(f"*Reason*: {obj.get('reason', '')}\n")
                 lines.append("")
 
-        if uncertain_objs:
-            lines.append("**Uncertain Objectives (review needed)**:\n")
-            lines.append("")
-            for obj in uncertain_objs:
+            elif status == "UNCERTAIN":
                 rr = obj.get("review_reason") or obj.get("reason", "")
-                cids = ", ".join(c.get("control_id", "?") for c in obj.get("controls", [])) or "—"
+                cids = ", ".join(
+                    c.get("control_id", "?") for c in obj.get("controls", [])
+                ) or "—"
                 lines.append(
-                    f"- **{obj['objective_id']}: {obj.get('title', '')}** — candidate "
-                    f"control(s): {cids}. *Why uncertain*: {rr}"
+                    f"**{oid}: {title}** — UNCERTAIN (review needed) — {rr}"
                 )
-            lines.append("")
+                lines.append(f"*Candidate control(s)*: {cids}\n")
+                lines.append("")
 
-        if na_objs:
-            lines.append(f"**Not Applicable Objectives**: {', '.join(o['objective_id'] for o in na_objs)}\n")
-            lines.append("")
+            else:  # N/A
+                lines.append(f"**{oid}: {title}** — N/A — {obj.get('reason', '')}\n")
+                lines.append("")
+
+    # Render-time completeness assertion: every objective from the merged mapping
+    # must appear exactly once, so a dropped objective is caught here rather than
+    # discovered by a reader scanning the report.
+    all_objective_ids = [f["objective_id"] for f in fw_mapped["framework_mapping"]]
+    if sorted(rendered_objective_ids) != sorted(all_objective_ids):
+        missing = set(all_objective_ids) - set(rendered_objective_ids)
+        extra = set(rendered_objective_ids) - set(all_objective_ids)
+        raise ValueError(
+            "framework-mapping render dropped or duplicated objectives — "
+            f"rendered {len(rendered_objective_ids)} of {len(all_objective_ids)} "
+            f"(missing={sorted(missing)[:10]}, extra={sorted(extra)[:10]})"
+        )
 
     # Unmapped controls section
     orphans = coverage_gaps.get("control_orphan", [])
