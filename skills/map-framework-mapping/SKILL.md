@@ -389,10 +389,18 @@ converts "silently wrong" into "explicitly uncertain."
   "objective_requirement": "<the specific sub-requirement of THIS objective the control satisfies>",
   "mitigation_alias": "Mitigation.LAMBDA.Function.3",
   "mitigation_uuid": "…",
+  "mitigation_statement": "<the mitigation's Canopy statement, VERBATIM — copy from the control's threaded mitigation_statement, do not paraphrase>",
   "mitre_techniques": ["T1530"],
   "source": "canopy"           // canopy | assessment_gap | aws_doc
 }
 ```
+
+When `source == "canopy"`, copy `mitigation_statement` **verbatim** from the
+control's threaded `mitigation_statement` field (resolved deterministically from
+the Canopy export by map-generate-controls). A deterministic validator confirms
+this text appears verbatim in the Canopy export's `mitigations[].statement`; a
+paraphrased or invented statement FAILs the map gate. If you cannot copy the
+statement verbatim, omit the `mitigation_statement` field rather than paraphrase.
 
 Decide per row (the row's `status` is the signal — there is no separate
 confidence score field):
@@ -414,12 +422,14 @@ demote the row to `UNCERTAIN`. It does NOT fail an `UNCERTAIN` row.
 
 ### 1.4 Traceability (attach the Canopy source + MITRE)
 
-Each control was threaded with `mitigation_alias`, `mitigation_uuid`, and
-`mitre_techniques[]` in map-generate-controls (Phase 3c, resolved deterministically
-from the Canopy source). Copy those onto the citation so the rendered
-`framework-mapping.md` can cite the exact Canopy mitigation and MITRE techniques
-behind the mapping. A control with `trace_source:"assessment_gap"` has no Canopy
-alias — set `source:"assessment_gap"` and leave the mitigation/MITRE fields empty.
+Each control was threaded with `mitigation_alias`, `mitigation_uuid`,
+`mitigation_statement`, and `mitre_techniques[]` in map-generate-controls (Phase
+3c, resolved deterministically from the Canopy source). Copy those onto the
+citation so the rendered `framework-mapping.md` can cite the exact Canopy
+mitigation and MITRE techniques behind the mapping, and so the citation can be
+provenance-checked against the export. A control with `trace_source:"assessment_gap"`
+has no Canopy alias — set `source:"assessment_gap"` and leave the
+mitigation/MITRE fields empty.
 
 ---
 

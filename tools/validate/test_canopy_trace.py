@@ -72,6 +72,12 @@ def test_thread_onto_canopy_control() -> None:
     assert ctrl["trace_source"] == "canopy"
     assert ctrl["mitigation_uuid"] == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     assert ctrl["mitre_techniques"] == ["T1530", "T1537"]
+    # The verbatim Canopy statement is threaded so a downstream citation can
+    # quote it and be provenance-checked against the export.
+    assert ctrl["mitigation_statement"] == (
+        "Capacity provider operator role IAM service role should only be "
+        "assumable by the Lambda principal."
+    )
     # Backward-compat: the M- id list is untouched.
     assert ctrl["mitigation_ids"] == ["M-CapacityProvider.0"]
 

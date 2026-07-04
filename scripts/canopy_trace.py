@@ -147,6 +147,7 @@ def thread_onto_control(control: dict[str, Any], alias_index: dict[str, dict]) -
     mitre: set[str] = set()
     uuids: list[str] = []
     resolved_aliases: list[str] = []
+    statement_by_alias: dict[str, str] = {}
     for alias in aliases:
         rec = alias_index.get(alias)
         if not rec:
@@ -155,6 +156,8 @@ def thread_onto_control(control: dict[str, Any], alias_index: dict[str, dict]) -
         if rec.get("mitigation_uuid"):
             uuids.append(rec["mitigation_uuid"])
         mitre.update(rec.get("mitre_techniques", []))
+        if rec.get("statement"):
+            statement_by_alias[alias] = rec["statement"]
 
     if resolved_aliases:
         control["mitigation_alias"] = resolved_aliases[0]
@@ -163,6 +166,11 @@ def thread_onto_control(control: dict[str, Any], alias_index: dict[str, dict]) -
         if uuids:
             control["mitigation_uuid"] = sorted(set(uuids))[0]
         control["mitre_techniques"] = sorted(mitre)
+        # Verbatim Canopy statement of the primary mitigation, so a downstream
+        # citation can quote it and be provenance-checked against the export.
+        primary_stmt = statement_by_alias.get(control["mitigation_alias"], "")
+        if primary_stmt:
+            control["mitigation_statement"] = primary_stmt
         control["trace_source"] = "canopy"
     else:
         # Synthetic / no-Canopy control: empty traceability, explicit marker.
