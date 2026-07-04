@@ -1066,41 +1066,11 @@ def write_framework_mapping(
             lines.append(f"| {o['control_id']} | {o['name']} |")
         lines.append("")
 
-    # Coverage gaps section
-    lines.append("## Coverage Gaps\n")
-    lines.append("")
-
-    mit_gaps = coverage_gaps.get("mitigation_gap", [])
-    if mit_gaps:
-        lines.append(f"### Mitigations Without Controls ({len(mit_gaps)})\n")
-        lines.append("")
-        for mg in mit_gaps:
-            lines.append(f"- **{mg['mitigation_id']}**: {mg['statement']}")
-        lines.append("")
-
-    single = coverage_gaps.get("single_layer", [])
-    if single:
-        lines.append(f"### Single-Layer Coverage ({len(single)})\n")
-        lines.append("")
-        lines.append("| Mitigation | Present Layer | Missing Layer |")
-        lines.append("|------------|---------------|---------------|")
-        for s in single:
-            lines.append(
-                f"| {s['mitigation_id']} | {s['present_layer']} | {s['missing_layer']} |"
-            )
-        lines.append("")
-
-    fw_gaps = coverage_gaps.get("framework_gap", [])
-    if fw_gaps:
-        lines.append(
-            f"### Framework Objectives with Supportive-Only Coverage ({len(fw_gaps)})\n"
-        )
-        lines.append("")
-        for fg in fw_gaps:
-            lines.append(
-                f"- **{fg['objective_id']}** ({fg['domain']}): {fg['title']}"
-            )
-        lines.append("")
+    # NOTE: the customer-facing report intentionally omits a "Coverage Gaps"
+    # section. The underlying data still lives in mapping-results.json
+    # (`coverage_gaps`) for downstream consumers and internal gates; it is
+    # simply not rendered here because every control now cites its Canopy
+    # mitigation directly in the catalog.
 
     # Mitigation traceability table
     lines.append("## Mitigation Traceability\n")
