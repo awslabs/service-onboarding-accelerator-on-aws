@@ -595,7 +595,7 @@ SCOPE_LABELS = {"ORG": "Organisation", "ACC": "Account", "RES": "Resource"}
 CATEGORY_ORDER = {"PRO": 0, "PRV": 1, "DET": 2, "COR": 3}
 CATEGORY_LABELS = {
     "PRO": "Proactive",
-    "PRV": "Preventive",
+    "PRV": "Preventative",
     "DET": "Detective",
     "COR": "Responsive",
 }
@@ -792,21 +792,38 @@ def write_controls_catalog(
     )
     lines.append("")
 
-    # Control categories reference table
+    # Control categories reference table. Purpose + implementation primitives are
+    # the canonical category definitions (kept in sync with the authoring skill).
     lines.append("## Control Categories\n")
     lines.append("")
-    lines.append("| Category | Purpose |")
-    lines.append("|----------|---------|")
-    lines.append("| **Preventive** | Designed to prevent an event from occurring |")
-    lines.append("| **Proactive** | Designed to prevent the creation of noncompliant resources |")
-    lines.append("| **Detective** | Designed to detect, log, and alert after an event has occurred |")
-    lines.append("| **Responsive** | Designed to drive remediation of adverse events or deviations from your security baseline |")
+    lines.append("| Category | Purpose | Implementation primitives |")
+    lines.append("|----------|---------|---------------------------|")
+    lines.append(
+        "| **Proactive** | Validate resource configuration before creation and block "
+        "non-compliant resources from being created | CloudFormation Hooks (via Control "
+        "Tower), CloudFormation Guard (CI/CD), OPA rules (CI/CD) |"
+    )
+    lines.append(
+        "| **Preventative** | Stop non-compliant actions — hard guardrails that deny API "
+        "calls regardless of the caller's IAM permissions | SCPs (org), RCPs (resource), "
+        "Declarative Policies (service), IAM permissions boundaries (entity), VPC endpoint "
+        "policies |"
+    )
+    lines.append(
+        "| **Detective** | Identify non-compliance after deployment | AWS Config rules, "
+        "Security Hub controls, GuardDuty findings, CloudTrail, Amazon Inspector |"
+    )
+    lines.append(
+        "| **Corrective (Responsive)** | Remediate after detection | SSM Automation "
+        "runbooks, Config auto-remediation (→ SSM), Lambda remediation, Security Hub "
+        "automated response, EventBridge → remediation workflows |"
+    )
     lines.append("")
 
     # Control matrix summary table
     lines.append("## Control Matrix Summary\n")
     lines.append("")
-    lines.append("|  | Proactive | Preventive | Detective | Responsive | Total |")
+    lines.append("|  | Proactive | Preventative | Detective | Responsive | Total |")
     lines.append("|---|---|---|---|---|---|")
 
     matrix: dict[str, dict[str, int]] = {}

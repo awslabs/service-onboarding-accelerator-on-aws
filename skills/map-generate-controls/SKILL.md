@@ -308,14 +308,43 @@ will fail the hook.
 
 Assign each control a primary **category** (X-axis) and a **scope level** (Y-axis):
 
-**Categories (X-axis):**
+**Categories (X-axis) — canonical definitions.** Each category is defined by
+*what it does* (purpose) and the AWS *implementation primitives* that realise it.
+This is the single authoritative definition of the four categories; the
+customer-facing `controls-catalog.md` renders the same purpose text.
+
+| Category | Code | Purpose | Implementation primitives |
+|----------|------|---------|---------------------------|
+| Proactive | PRO | Validate resource configuration *before creation* and block non-compliant resources from being created | CloudFormation Hooks (via Control Tower), CloudFormation Guard (CI/CD), OPA rules (CI/CD) |
+| Preventative | PRV | Stop non-compliant *actions* — hard guardrails that deny API calls regardless of the caller's IAM permissions | SCPs (org), RCPs (resource), Declarative Policies (service), IAM permissions boundaries (entity), VPC endpoint policies |
+| Detective | DET | Identify non-compliance *after deployment* | AWS Config rules, Security Hub controls, GuardDuty findings, CloudTrail, Amazon Inspector |
+| Corrective (Responsive) | COR | Remediate after detection | SSM Automation runbooks, Config auto-remediation (→ SSM), Lambda remediation, Security Hub automated response, EventBridge → remediation workflows |
+
+**Category ↔ posture correspondence.** This pipeline carries two vocabularies for
+the same distinction: the four control *categories* above (PRO/PRV/DET/COR, the
+schema enum on `controls[].category`) and the four *postures* on
+`controls[].posture` (§2.2.1). They map one-to-one:
+
+| Category | Posture |
+|----------|---------|
+| PRO (Proactive) | `preventative-proactive` |
+| PRV (Preventative) | `preventative-request` |
+| DET (Detective) | `reactive-detective` |
+| COR (Corrective/Responsive) | `reactive-corrective` |
+
+Use the spelling **"preventative"** in prose throughout (the posture vocabulary
+already does); the schema code stays `PRV`. "Responsive" is the short label used
+for the COR column and the scope-matrix axis; "Corrective" is its category name.
+
+The Examples-oriented restatement below keeps the previous phrasing for quick
+reference — the purpose + primitives table above is authoritative:
 
 | Category | Code | Definition | Examples |
 |----------|------|-----------|----------|
 | Proactive | PRO | Prevents non-compliant resources from being created | CFN Guard, SCP deny, Config proactive rules, OPA |
-| Preventive | PRV | Blocks unauthorized actions at runtime | IAM policies, resource policies, SCPs, VPC SGs, KMS key policies |
+| Preventative | PRV | Blocks unauthorized actions at runtime | IAM policies, resource policies, SCPs, VPC SGs, KMS key policies |
 | Detective | DET | Identifies non-compliant or suspicious state after the fact | Config rules, CloudTrail analysis, CloudWatch alarms |
-| Corrective | COR | Automatically remediates non-compliant state (Responsive controls) | SSM runbooks, Lambda remediation, EventBridge workflows |
+| Corrective (Responsive) | COR | Automatically remediates non-compliant state | SSM runbooks, Lambda remediation, EventBridge workflows |
 
 **Scope Levels (Y-axis):**
 
