@@ -456,11 +456,17 @@ def identify_coverage_gaps(
         if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_SUPPORTIVE
     ]
 
-    # control_orphan: controls not mapped to any objective
+    # Uncited controls: controls that could not be cited to a framework
+    # objective. Every control derives from a Canopy mitigation (or an
+    # assessment gap), so an uncited control is NOT a lost control — we simply
+    # could not cite a specific objective it satisfies. For each we compute a
+    # deterministic why-uncited rationale before listing it, so the count trends
+    # toward zero and a reviewer can see the ones already covered by a sibling.
+    uncited_controls = build_uncited_controls(controls, fw_mapped, ctrl_to_objs)
+    # Back-compat alias: `control_orphan` retains the {control_id, name} shape any
+    # existing consumer expects; `uncited_controls` adds the rationale fields.
     control_orphan = [
-        {"control_id": c["id"], "name": c["name"]}
-        for c in controls
-        if not ctrl_to_objs.get(c["id"])
+        {"control_id": u["control_id"], "name": u["name"]} for u in uncited_controls
     ]
 
     # posture_gap: Rule C1 infeasibility entries forwarded from upstream
@@ -482,8 +488,80 @@ def identify_coverage_gaps(
         "single_layer": single_layer,
         "framework_gap": framework_gap,
         "control_orphan": control_orphan,
+        "uncited_controls": uncited_controls,
         "posture_gap": posture_gap,
     }
+
+
+def build_uncited_controls(
+    controls: list[dict],
+    fw_mapped: dict,
+    ctrl_to_objs: dict[str, list[str]],
+) -> list[dict]:
+    """Compute the why-uncited rationale for every control not cited to an objective.
+
+    A control is "uncited" when it maps to no MAPPED objective. For each we derive
+    a deterministic reason class (no LLM):
+
+    - **covered_by_sibling** — a control sharing one of this control's
+      `mitigation_ids` DID map to an objective. The mitigation is therefore
+      already covered; this control is a redundant twin. We name the sibling and
+      the objective(s) it covers.
+    - **assessment_gap** — the control derives from an assessment gap, not a
+      Canopy mitigation (`trace_source == "assessment_gap"`); it is a
+      recommendation with no Canopy source.
+    - **candidates_ruled_out** — the control's candidate objectives were all
+      ruled N/A or UNCERTAIN for this service (the default when neither of the
+      above applies).
+    """
+    # mitigation_id -> [(control_id, objective_ids...)] for controls that DID map.
+    mit_to_mapped_ctrls: dict[str, list[tuple[str, list[str]]]] = defaultdict(list)
+    for c in controls:
+        objs = ctrl_to_objs.get(c["id"]) or []
+        if objs:
+            for mid in c.get("mitigation_ids", []):
+                mit_to_mapped_ctrls[mid].append((c["id"], sorted(objs)))
+
+    out: list[dict] = []
+    for c in controls:
+        if ctrl_to_objs.get(c["id"]):
+            continue  # this control IS cited to an objective
+
+        reason_class = "candidates_ruled_out"
+        why = (
+            "candidate objectives were ruled N/A or UNCERTAIN for this service"
+        )
+
+        # covered_by_sibling: a control sharing a mitigation with this one mapped.
+        sibling_note = None
+        for mid in c.get("mitigation_ids", []):
+            for sib_id, sib_objs in mit_to_mapped_ctrls.get(mid, []):
+                if sib_id != c["id"]:
+                    sibling_note = (
+                        f"covered by sibling control {sib_id} on "
+                        f"{', '.join(sib_objs)} (shares mitigation {mid})"
+                    )
+                    break
+            if sibling_note:
+                break
+
+        if sibling_note:
+            reason_class = "covered_by_sibling"
+            why = sibling_note
+        elif c.get("trace_source") == "assessment_gap":
+            reason_class = "assessment_gap"
+            why = "assessment-gap control — recommendation, no Canopy mitigation"
+
+        out.append(
+            {
+                "control_id": c["id"],
+                "name": c["name"],
+                "mitigation_ids": list(c.get("mitigation_ids", [])),
+                "reason_class": reason_class,
+                "why_uncited": why,
+            }
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1075,19 +1153,30 @@ def write_framework_mapping(
             f"(missing={sorted(missing)[:10]}, extra={sorted(extra)[:10]})"
         )
 
-    # Unmapped controls section
-    orphans = coverage_gaps.get("control_orphan", [])
-    if orphans:
-        lines.append("## Unmapped Controls\n")
+    # Controls that could not be cited to an objective. Reframed from "unmapped":
+    # every control derives from a Canopy mitigation (or an assessment gap), so
+    # these are candidate recommendations, not lost controls. Each carries a
+    # deterministic why-uncited rationale (covered-by-sibling / assessment-gap /
+    # candidates ruled out) so a reviewer can see which are already covered.
+    uncited = coverage_gaps.get("uncited_controls") or coverage_gaps.get(
+        "control_orphan", []
+    )
+    if uncited:
+        lines.append("## Controls Not Yet Cited to an Objective (Potential Recommendations)\n")
         lines.append("")
         lines.append(
-            "Controls not mapped to any framework objective:\n"
+            "These controls derive from a Canopy mitigation (or an assessment "
+            "gap) but the mapper could not cite a specific framework objective "
+            "they satisfy. They are surfaced as candidate recommendations for "
+            "review, not dropped. A control marked *covered by sibling* is "
+            "already addressed by another control on the same mitigation."
         )
         lines.append("")
-        lines.append("| Control ID | Name |")
-        lines.append("|------------|------|")
-        for o in orphans:
-            lines.append(f"| {o['control_id']} | {o['name']} |")
+        lines.append("| Control ID | Name | Why not yet cited |")
+        lines.append("|------------|------|-------------------|")
+        for o in uncited:
+            why = o.get("why_uncited", "candidate objectives were ruled N/A or UNCERTAIN for this service")
+            lines.append(f"| {o['control_id']} | {o['name']} | {why} |")
         lines.append("")
 
     # NOTE: the customer-facing report intentionally omits a "Coverage Gaps"
