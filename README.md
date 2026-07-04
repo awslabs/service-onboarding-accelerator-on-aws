@@ -36,13 +36,28 @@ automatically N/A for serverless services; backup objectives (BCR-08) are N/A fo
 serverless unless a backup/replication API is definitively present. No capability
 is ever inferred from descriptive prose.
 
-### Canopy traceability (alias + UUID + MITRE)
+### Canopy traceability (alias + UUID + statement + MITRE)
 
-**`scripts/canopy_trace.py`** resolves, per Canopy mitigation, its alias, UUID, and
-MITRE ATT&CK techniques — walking `mitigation → THREAT mapping → threat →
-FRAMEWORK mapping` entirely inside the golden-source file (no external lookup).
-map-generate-controls threads these onto each control so the final mapping can
-cite the exact Canopy mitigation and MITRE technique behind every row.
+**`scripts/canopy_trace.py`** resolves, per Canopy mitigation, its alias, UUID,
+verbatim statement, and MITRE ATT&CK techniques — walking `mitigation → THREAT
+mapping → threat → FRAMEWORK mapping` entirely inside the golden-source file (no
+external lookup). map-generate-controls threads these onto each control so the
+final mapping can cite the exact Canopy mitigation and MITRE technique behind
+every row. The **control catalog** then prints, under each control, its Canopy
+alias, UUID, and verbatim statement (control IDs are minted by the tool because
+Canopy carries none); a control derived from an assessment gap rather than a
+Canopy mitigation is labelled a recommendation.
+
+### Citation verification against Canopy
+
+**`tools/validate/validate_canopy_facts.py`** confirms every Canopy-cited row is
+factual against the provided Canopy export: the cited alias exists, its governed
+operations are consistent with the control's actions, and any quoted mitigation
+statement appears **verbatim** (normalized for case/whitespace/punctuation) in
+the export's `mitigations[].statement`. It runs `--strict` in the map and
+post-generate gates, so a fabricated alias, drifted operation, or invented
+statement blocks the phase. `MAPPED` rows are checked; `UNCERTAIN` rows and
+assessment-gap citations are exempt.
 
 ### Per-domain guidance with coverage ceilings
 
@@ -66,6 +81,21 @@ coverage %, never silently asserted or dropped.
 backstop: it FAILs (1) a row mapped to a not-applicable objective, (2) a coverage
 level over the mechanism-class ceiling, (3) a denied-class mis-map, and (4) a
 confident `MAPPED` row with no concrete citation (which must be `UNCERTAIN`).
+
+### Report format
+
+`framework-mapping.md` lists **every** framework objective sequentially by
+`ID: Title` under its domain — mapped objectives with their control table, N/A
+objectives with their reason, and UNCERTAIN objectives flagged for review — so a
+reader can scan top-to-bottom and see each objective's disposition (a render-time
+check asserts no objective is dropped). The coverage summary shows only Total /
+Mapped / Not Applicable / Uncertain. Controls that could not be cited to an
+objective are surfaced as **potential recommendations** with a deterministic
+"why not yet cited" rationale (covered by a sibling control, candidate objectives
+ruled out, or assessment-gap recommendation) rather than reported as lost.
+Mitigation-level rollups (coverage-gap and mitigation-traceability tables) live in
+`mapping-results.json` for downstream tooling and are not rendered in the
+customer reports.
 
 ### Custom / non-CCMv4 frameworks
 
