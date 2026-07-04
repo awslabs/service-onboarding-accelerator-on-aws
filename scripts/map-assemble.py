@@ -1067,28 +1067,12 @@ def write_framework_mapping(
         lines.append("")
 
     # NOTE: the customer-facing report intentionally omits a "Coverage Gaps"
-    # section. The underlying data still lives in mapping-results.json
-    # (`coverage_gaps`) for downstream consumers and internal gates; it is
-    # simply not rendered here because every control now cites its Canopy
-    # mitigation directly in the catalog.
-
-    # Mitigation traceability table
-    lines.append("## Mitigation Traceability\n")
-    lines.append("")
-    lines.append(
-        "| Mitigation ID | Resource Type | Coverage | Preventive | Detective | Responsive |"
-    )
-    lines.append(
-        "|---------------|---------------|----------|------------|-----------|------------|"
-    )
-    for t in threat_mitigation_map:
-        prev = len(t["layers"]["preventive"]) + len(t["layers"]["proactive"])
-        det = len(t["layers"]["detective"])
-        cor = len(t["layers"]["responsive"])
-        lines.append(
-            f"| {t['mitigation_id']} | {t['resource_type']} | {t['coverage']} | {prev} | {det} | {cor} |"
-        )
-    lines.append("")
+    # section and a "Mitigation Traceability" table. The underlying data still
+    # lives in mapping-results.json (`coverage_gaps`, `threat_mitigation_map`)
+    # for downstream consumers and internal gates; it is simply not rendered
+    # here because every control now cites its Canopy mitigation directly in
+    # the catalog, and the mitigation-level rollup is not actionable for the
+    # customer reading this report.
 
     write_text(path, "\n".join(lines))
 

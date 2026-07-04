@@ -1,6 +1,6 @@
 ---
 name: summarize-v3
-description: Produce final SUMMARY-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, and test evidence
+description: Produce final SUMMARY-REPORT.md with framework coverage matrix, control inventory, and test evidence
 disable-model-invocation: false
 ---
 
@@ -48,19 +48,13 @@ Read `mapping-results.json` `framework_mapping[]`. Build a table:
 Where "Satisfied By" = comma-separated control IDs that map to this framework objective.
 Use the framework name dynamically from `mapping-results.json.framework.name`.
 
-## Step 3: Build mitigation traceability matrix
+## Step 3: (reserved)
 
-Read `mapping-results.json` `threat_mitigation_map[]`. Build a table:
-
-| Mitigation ID | Statement | Resource Type | Controls | Framework Objectives | Coverage |
-
-Where "Statement" = `statement` field.
-Where "Controls" = `control_ids[]` from the mitigation entry (joined, comma-separated).
-Where "Framework Objectives" = `framework_objectives[]` from the mitigation entry. If this field
-is absent, derive it: for each control id in the mitigation's `control_ids[]`, look up that control
-in the top-level `controls[]` and collect its `framework_objectives[]`. Deduplicate and sort.
-
-This shows end-to-end traceability from customer mitigations through controls to framework objectives.
+This report does NOT render a standalone mitigation-traceability table. Every
+control cites the Canopy mitigation it derives from directly in the control
+catalog, so a separate mitigation→control rollup is redundant for the customer.
+The `threat_mitigation_map[]` data remains in `mapping-results.json` for internal
+gates and downstream consumers; do not build a customer-facing table from it.
 
 ## Step 4: Build control inventory
 
@@ -203,10 +197,6 @@ Use the framework name dynamically from `mapping-results.json.framework.name`:
 > Note: as of 2026-05-16, interactive runs are narrowed to CCMv4 by intake.
 > The non-CCMv4 branches above are reachable only when an advanced operator
 > bypasses intake with `--framework=<type>`.
-
-## Mitigation Traceability
-[Full table from Step 3 — all customer mitigations with control and framework mappings]
-Include coverage summary: N/N mitigations fully covered, N partially covered, N uncovered.
 
 ## Threat Model Coverage
 **Always included** — MITRE ATT&CK analysis is mandatory for every service onboarding.
