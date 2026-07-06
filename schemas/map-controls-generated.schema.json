@@ -171,6 +171,10 @@
           "items": {"type": "string"},
           "description": "Optional — all Canopy mitigation UUIDs this control derives from."
         },
+        "mitigation_statement": {
+          "type": "string",
+          "description": "Optional — verbatim Canopy statement of the primary source mitigation, threaded by scripts/canopy_trace.py so a downstream citation can quote it and be provenance-checked against the export. Present only on controls with trace_source == 'canopy'."
+        },
         "mitre_techniques": {
           "type": "array",
           "items": {"type": "string"},
