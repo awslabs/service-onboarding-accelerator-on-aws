@@ -180,7 +180,7 @@ def test_framework_mapping_summary_has_only_four_rows(tmp_path) -> None:
     m = _load_module()
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC"}])
+                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
     assert "| Mapped |" in md
     assert "| Not Applicable |" in md
     assert "| Uncertain (review needed) |" in md
@@ -194,7 +194,7 @@ def test_framework_mapping_lists_every_objective_sequentially(tmp_path) -> None:
     m = _load_module()
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC"}])
+                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
     assert "**IAM-01: IAM Policy**" in md
     assert "**IAM-02: Unique user IDs**" in md and "UNCERTAIN (review needed)" in md
     assert "**DCS-01: Physical security**" in md and "N/A — AWS-managed" in md
@@ -205,7 +205,7 @@ def test_framework_mapping_drops_removed_sections(tmp_path) -> None:
     m = _load_module()
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC"}])
+                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
     assert "## Coverage Gaps" not in md
     assert "## Mitigation Traceability" not in md
 
@@ -217,26 +217,33 @@ def test_framework_mapping_render_asserts_completeness(tmp_path) -> None:
     # Normal fixture renders without raising.
     _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                               [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                "category": "PRV", "scope": "ACC"}])
+                                "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
 
 
-def test_uncited_section_renamed_with_rationale(tmp_path) -> None:
-    """Uncited-controls section is renamed and carries a why-uncited column."""
+def test_suggestions_section_renamed_with_source_column(tmp_path) -> None:
+    """Bottom section is 'Suggestions for Review' with a Source column, not the
+    old 'Potential Recommendations' / 'Why not yet cited' shape."""
     m = _load_module()
     cg = {"uncited_controls": [
-        {"control_id": "CTRL-ACC-DET-009", "name": "Twin",
-         "reason_class": "covered_by_sibling",
-         "why_uncited": "covered by sibling control CTRL-ACC-PRV-001 on IAM-01"}]}
+        {"control_id": "CTRL-ACC-PRO-026", "name": "Compensate for absent RCP support",
+         "trace_source": "assessment_gap",
+         "source": "[AWS Organizations — RCP supported services]"
+                   "(https://docs.aws.amazon.com/organizations/latest/userguide/"
+                   "orgs_manage_policies_rcps.html#rcp-supported-services)"}]}
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC"}], cg)
-    assert "Controls Not Yet Cited to an Objective" in md
-    assert "Unmapped Controls" not in md
-    assert "covered by sibling control CTRL-ACC-PRV-001" in md
+                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}], cg)
+    assert "Controls Not Sourced from Canopy (Suggestions for Review)" in md
+    assert "Potential Recommendations" not in md
+    assert "Why not yet cited" not in md
+    assert "Not Yet Cited to an Objective" not in md
+    assert "| Control ID | Name | Source |" in md
+    assert "rcp-supported-services" in md
 
 
-def test_build_uncited_controls_reason_classes() -> None:
-    """Reason classes: covered_by_sibling / assessment_gap / candidates_ruled_out."""
+def test_build_uncited_controls_emits_only_non_canopy() -> None:
+    """Only trace_source != 'canopy' controls are emitted (with a Source field);
+    Canopy controls — including defense-in-depth twins — are never listed."""
     m = _load_module()
     controls = [
         {"id": "CTRL-ACC-PRV-001", "name": "A", "mitigation_ids": ["M-L.1"],
@@ -244,28 +251,74 @@ def test_build_uncited_controls_reason_classes() -> None:
         {"id": "CTRL-ACC-DET-001", "name": "A-twin", "mitigation_ids": ["M-L.1"],
          "trace_source": "canopy"},
         {"id": "CTRL-RES-DET-009", "name": "Gap", "mitigation_ids": ["M-GAP-3.0"],
-         "trace_source": "assessment_gap"},
-        {"id": "CTRL-ORG-PRV-050", "name": "Lonely", "mitigation_ids": ["M-Z.0"],
+         "trace_source": "assessment_gap",
+         "doc_reference": {"url": "https://docs.aws.amazon.com/x.html", "title": "X"}},
+        {"id": "CTRL-ORG-PRV-050", "name": "Lonely-canopy", "mitigation_ids": ["M-Z.0"],
          "trace_source": "canopy"},
     ]
     ctrl_to_objs = {"CTRL-ACC-PRV-001": ["IAM-01"]}
     out = {u["control_id"]: u for u in m.build_uncited_controls(controls, {}, ctrl_to_objs)}
-    assert "CTRL-ACC-PRV-001" not in out  # it IS cited
-    assert out["CTRL-ACC-DET-001"]["reason_class"] == "covered_by_sibling"
-    assert out["CTRL-RES-DET-009"]["reason_class"] == "assessment_gap"
-    assert out["CTRL-ORG-PRV-050"]["reason_class"] == "candidates_ruled_out"
+    # Only the assessment_gap control is emitted — every Canopy control is excluded.
+    assert set(out) == {"CTRL-RES-DET-009"}
+    assert out["CTRL-RES-DET-009"]["source"] == "[X](https://docs.aws.amazon.com/x.html)"
+    assert "why_uncited" not in out["CTRL-RES-DET-009"]
+    assert "reason_class" not in out["CTRL-RES-DET-009"]
+
+
+def test_control_source_ref_variants() -> None:
+    """control_source_ref prefers doc_reference (obj/str), then reference_url."""
+    m = _load_module()
+    assert m.control_source_ref(
+        {"doc_reference": {"url": "https://docs.aws.amazon.com/a.html", "title": "A"}}
+    ) == "[A](https://docs.aws.amazon.com/a.html)"
+    assert m.control_source_ref(
+        {"doc_reference": {"url": "https://docs.aws.amazon.com/b.html"}}
+    ) == "https://docs.aws.amazon.com/b.html"
+    assert m.control_source_ref(
+        {"doc_reference": "https://docs.aws.amazon.com/c.html"}
+    ) == "https://docs.aws.amazon.com/c.html"
+    assert m.control_source_ref(
+        {"reference_url": "https://docs.aws.amazon.com/d.html"}
+    ) == "https://docs.aws.amazon.com/d.html"
+    assert "pending" in m.control_source_ref({})
+
+
+def test_main_mapping_cites_only_canopy_controls(tmp_path) -> None:
+    """A non-Canopy control mapped to an objective is filtered out of the main
+    per-objective table (main = Canopy-only)."""
+    m = _load_module()
+    fw = _fw_mapped_fixture()
+    # Add a non-Canopy control row to the mapped IAM-01 objective.
+    fw["framework_mapping"][0]["controls"].append(
+        {"control_id": "CTRL-ACC-PRO-026", "coverage_level": "Partial Coverage",
+         "rationale": "compensating", "citation": {"objective_requirement": "x",
+                                                    "source": "assessment_gap"}})
+    controls = [
+        {"id": "CTRL-ACC-PRV-001", "name": "PB", "category": "PRV", "scope": "ACC",
+         "trace_source": "canopy"},
+        {"id": "CTRL-ACC-PRO-026", "name": "Compensating", "category": "PRO",
+         "scope": "ACC", "trace_source": "assessment_gap"},
+    ]
+    md = _render_framework_mapping(m, tmp_path, fw, controls)
+    # Under IAM-01 the Canopy control renders; the non-Canopy one does not.
+    assert "CTRL-ACC-PRV-001" in md
+    assert "CTRL-ACC-PRO-026" not in md
 
 
 def test_identify_coverage_gaps_keeps_control_orphan_alias() -> None:
-    """control_orphan retains the {control_id, name} back-compat shape while
-    uncited_controls adds the rationale."""
+    """control_orphan retains the {control_id, name} back-compat shape and lists
+    only non-Canopy controls (Canopy controls stay in the main mapping)."""
     m = _load_module()
-    controls = [{"id": "CTRL-ORG-PRV-050", "name": "Lonely",
-                 "mitigation_ids": ["M-Z.0"], "trace_source": "canopy"}]
+    controls = [
+        {"id": "CTRL-RES-DET-009", "name": "Gap", "mitigation_ids": ["M-GAP-3.0"],
+         "trace_source": "assessment_gap"},
+        {"id": "CTRL-ORG-PRV-050", "name": "Lonely-canopy",
+         "mitigation_ids": ["M-Z.0"], "trace_source": "canopy"},
+    ]
     fw_mapped = {"framework_mapping": []}
     gaps = m.identify_coverage_gaps([], controls, fw_mapped, {})
-    assert gaps["control_orphan"] == [{"control_id": "CTRL-ORG-PRV-050", "name": "Lonely"}]
-    assert gaps["uncited_controls"][0]["why_uncited"]
+    assert gaps["control_orphan"] == [{"control_id": "CTRL-RES-DET-009", "name": "Gap"}]
+    assert gaps["uncited_controls"][0]["source"]
 
 
 def test_catalog_cites_canopy_and_labels_gap(tmp_path) -> None:

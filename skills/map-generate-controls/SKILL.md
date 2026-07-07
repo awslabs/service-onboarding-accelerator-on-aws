@@ -525,6 +525,35 @@ cannot be implemented:
 - Describe what compensating measures should be taken
 - Include in the controls array like any other control
 
+### 2.8.1 Doc reference for non-Canopy controls (`doc_reference`)
+
+Controls that are NOT sourced from a Canopy mitigation (`trace_source: "assessment_gap"` —
+the compensating / assessment-gap controls from §2.6 and §2.8) do not carry a Canopy
+citation, so the framework-mapping report cites an **AWS documentation** source for them
+instead. Attach a `doc_reference` to every such control:
+
+```json
+"doc_reference": {
+  "url": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services",
+  "title": "AWS Organizations — List of AWS services that support RCPs"
+}
+```
+
+Rules:
+- The `url` MUST be a real `https://docs.aws.amazon.com/...` page, **MCP-verified**
+  (`awsknowledge` / `aws-documentation`) and logged to `mcp-calls.log` — never a
+  training-data guess (see "Verify, never hardcode").
+- Make it **as specific as possible** so a reviewer can cross-check it: deep-link to the
+  exact page and, where the page has one, the `#section` anchor for the relevant list or
+  section (e.g. the RCP supported-services list, the declarative-policy supported-services
+  list) rather than a service landing page.
+- Pick the page that documents *why* the compensating control exists — typically the AWS
+  doc that establishes the capability gap the control compensates for (e.g. the RCP or
+  declarative-policy supported-services list when the service is absent from it).
+- Canopy-sourced controls (`trace_source: "canopy"`) do NOT get a `doc_reference` — they
+  cite their Canopy mitigation. `doc_reference` is optional in the schema and present only
+  on non-Canopy controls.
+
 ---
 
 ## Phase 3: Mitigation Coverage Completeness Check (MANDATORY)

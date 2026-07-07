@@ -148,6 +148,20 @@
           "items": {"type": "string"},
           "description": "Optional — iter-13 addition linking the control back to GAP-NN entries from assessment-summary.md."
         },
+        "doc_reference": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url"],
+          "properties": {
+            "url": {
+              "type": "string",
+              "pattern": "^https://docs\\.aws\\.amazon\\.com/.*",
+              "description": "Deep-link to the specific AWS documentation page (ideally with a #section anchor) that backs a control not sourced from a Canopy mitigation. MCP-verified (awsknowledge / aws-documentation) and logged to mcp-calls.log; never a training-data guess."
+            },
+            "title": {"type": "string", "minLength": 1}
+          },
+          "description": "Optional — specific AWS-documentation reference for a non-Canopy (trace_source != 'canopy') control, so the framework-mapping Source column can cite a cross-checkable page. Present on assessment-gap / compensating controls; absent on Canopy-sourced controls (they cite the mitigation instead)."
+        },
         "attack_techniques": {
           "type": "array",
           "items": {"type": "string"},

@@ -360,6 +360,31 @@ accordingly.
 - **N/A** with a reason (e.g., "Managed by AWS under shared responsibility",
   "Organisational HR control", "No backup/DR API for this service")
 
+**Step 6: Map defense-in-depth twins — do NOT stop at one control per objective.**
+Multiple control IDs legitimately mapping to one objective is **expected**, not spray:
+a single mitigation is commonly implemented as a preventive/proactive twin (SCP, RCP,
+CloudFormation Guard) plus a detective twin (AWS Config rule) plus a responsive twin (SSM
+Automation), and each is a distinct layer of defense. When a Canopy control shares one of
+its `mitigation_ids` with a control you already mapped to an objective, evaluate that
+control for the **same** objective too:
+- Map it as its **own row** with its own `rationale` describing *its* mechanism (the Config
+  rule detects drift; the SSM automation remediates it) and the **same** `citation` — copy
+  the shared mitigation's `mitigation_alias` / `mitigation_uuid` / `mitigation_statement`
+  (verbatim) and `mitre_techniques[]` exactly as on the twin's citation.
+- Its `coverage_level` is set from **its own** mechanism class and the KB ceiling, not the
+  twin's — a detective Config rule or responsive SSM automation is `Partial Coverage` or
+  `Supportive`, never `Full Coverage`, so a defense-in-depth twin rarely trips Rule 6
+  (≤5 Full Coverage per objective). It maps only if its mechanism class is in the
+  objective's `allow_mechanisms` and none is in `deny_mechanisms` (same eligibility gate as
+  any other control).
+- Do NOT banish a redundant twin to an "uncited" / suggestions list just because a sibling
+  already maps. **Every Canopy-sourced control must appear as a MAPPED row under an
+  objective its mechanism class legitimately satisfies** (or, only if genuinely no objective
+  fits its mechanism, be left unmapped — never dumped to the non-Canopy suggestions
+  section). The assemble step lists ONLY non-Canopy (`trace_source != "canopy"`) controls in
+  "Suggestions for Review"; a Canopy control that reaches no objective is a mapping gap to
+  fix here, not a suggestion.
+
 ### 1.2 Objective coverage rollup (coverage-level consistency)
 
 After mapping controls to an objective, assign the objective's overall coverage using these HARD RULES:
@@ -512,7 +537,13 @@ After building the initial mapping, check for controls not mapped to any objecti
 1. Read the control's mechanism and `security_rationale`
 2. Search framework objectives for alignment by mechanism (not just domain keyword)
 3. If a genuine match exists, add the mapping with a specific rationale
-4. Only leave a control orphaned if it truly has no framework objective match
+4. A Canopy-sourced control (`trace_source == "canopy"`) that shares a mitigation with an
+   already-mapped control is a **defense-in-depth twin**, not an orphan — map it to the
+   same objective per Phase 1 Step 6 rather than leaving it orphaned.
+5. Only leave a control orphaned if it truly has no framework objective match its mechanism
+   class satisfies. A leftover Canopy orphan is a signal to re-check Step 6 — it must not be
+   silently dropped or pushed to the non-Canopy "Suggestions for Review" section (that
+   section is `trace_source != "canopy"` controls only).
 
 ---
 
