@@ -33,6 +33,10 @@ def test_anchored_artifact_passes(tmp_path):
             "_metadata": {
                 "posture": "preventative-request",
                 "reference": {"example_id": "real-anchor-id", "repo": "r", "url": "u"},
+                "applicability": {
+                    "applies_to": "the resource subset the policy targets",
+                    "usage_notes": "scope to those resources; do not apply broadly",
+                },
             },
             "Version": "2012-10-17",
             "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
@@ -189,7 +193,7 @@ def test_trust_policy_refer_artifact_passes(tmp_path):
 
 
 def test_check_service_scans_preventive_dir(tmp_path, monkeypatch):
-    prev = tmp_path / "05-generate" / "preventive"
+    prev = tmp_path / "05-recommended-guidance" / "preventive"
     prev.mkdir(parents=True)
     _write(
         prev / "good.json",
@@ -210,7 +214,7 @@ def test_integrity_wrapper_surfaces_violations(tmp_path, monkeypatch):
     """validate_pipeline_integrity.check_reference_anchors delegates to vra."""
     import validate_pipeline_integrity as vpi
 
-    prev = tmp_path / "05-generate" / "preventive"
+    prev = tmp_path / "05-recommended-guidance" / "preventive"
     prev.mkdir(parents=True)
     _write(
         prev / "bad.json",
@@ -330,7 +334,7 @@ def test_check_service_loads_mapping_for_orphan_check(tmp_path):
     (map_dir / "mapping-results.json").write_text(
         json.dumps({"controls": [{"id": "CTRL-ORG-PRV-001", "category": "PRV"}]})
     )
-    prev = tmp_path / "05-generate" / "preventive"
+    prev = tmp_path / "05-recommended-guidance" / "preventive"
     prev.mkdir(parents=True)
     _write(
         prev / "orphan.json",
@@ -348,3 +352,87 @@ def test_check_service_loads_mapping_for_orphan_check(tmp_path):
     with mock.patch.object(vra, "_known_ids", lambda: {"real-anchor-id"}):
         errors = vra.check_service(tmp_path)
     assert any("orphan" in e and "CTRL-ORG-PRV-999" in e for e in errors), errors
+
+
+# --- applicability conditional (URL-cited artifact must carry applicability) ---
+
+
+def test_url_cited_artifact_without_applicability_fails(tmp_path):
+    """An artifact whose reference anchor surfaces a URL but carries no
+    _metadata.applicability hard-fails the anchor gate."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id", "repo": "r", "url": "u"},
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("no _metadata.applicability" in e for e in errors), errors
+
+
+def test_url_cited_artifact_with_applicability_passes(tmp_path):
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id", "repo": "r", "url": "u"},
+                "applicability": {
+                    "applies_to": "the targeted resource subset",
+                    "usage_notes": "scope narrowly; do not apply broadly",
+                },
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    assert vra.check_artifact(path, KNOWN) == []
+
+
+def test_citation_url_without_applicability_fails(tmp_path):
+    """The URL can come from _metadata.citation.url too (a reference/service-doc
+    citation), not only the reference anchor."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id"},
+                "citation": {"type": "reference", "id": "real-anchor-id", "url": "u"},
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("no _metadata.applicability" in e for e in errors), errors
+
+
+def test_url_cited_artifact_with_empty_applicability_field_fails(tmp_path):
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id", "repo": "r", "url": "u"},
+                "applicability": {"applies_to": "something", "usage_notes": "  "},
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    errors = vra.check_artifact(path, KNOWN)
+    assert any("usage_notes" in e and "empty" in e for e in errors), errors
+
+
+def test_canopy_only_no_url_without_applicability_passes(tmp_path):
+    """A canopy-only artifact (citation id, no URL, no reference URL) surfaces no
+    external link, so applicability is not required."""
+    path = _write(
+        tmp_path / "scp-policy.json",
+        {
+            "_metadata": {
+                "reference": {"example_id": "real-anchor-id"},
+                "citation": {"type": "canopy", "id": "M-fn.0"},
+            },
+            "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
+        },
+    )
+    assert vra.check_artifact(path, KNOWN) == []

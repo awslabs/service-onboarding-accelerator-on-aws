@@ -72,8 +72,8 @@ def test_glob_action_matches_concrete() -> None:
 
 def test_build_prefilter_report_scans_dir(tmp_path: Path) -> None:
     root = tmp_path / ".service-approval" / "svc"
-    prev = root / "05-generate" / "preventive"
-    iac = root / "05-generate" / "iac"
+    prev = root / "05-recommended-guidance" / "preventive"
+    iac = root / "05-recommended-guidance" / "iac"
     prev.mkdir(parents=True)
     iac.mkdir(parents=True)
     (prev / "scp.json").write_text(json.dumps({

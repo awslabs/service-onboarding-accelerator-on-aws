@@ -2,7 +2,7 @@
 """
 Stop hook: pipeline integrity + cross-artifact + deployability validation.
 
-Runs three validators against `.service-approval/<slug>/05-generate/` when
+Runs three validators against `.service-approval/<slug>/05-recommended-guidance/` when
 the agent signals completion:
 
   - `validate_pipeline_integrity` (P1-P7) — strict-by-default; integrity
@@ -56,7 +56,7 @@ def _should_snooze(controls_dir: str, current_first_integrity: str | None) -> bo
     """Detect the N-identical-fires loop.
 
     Reads `pipeline.log` at `<controls_dir>/../pipeline.log` (controls_dir
-    is `<slug>/05-generate`; pipeline.log lives at `<slug>/pipeline.log`).
+    is `<slug>/05-recommended-guidance`; pipeline.log lives at `<slug>/pipeline.log`).
 
     Returns True iff:
       1. Last `_SNOOZE_THRESHOLD` hook:stop entries are all `fail`.
@@ -82,7 +82,7 @@ def _should_snooze(controls_dir: str, current_first_integrity: str | None) -> bo
     # Any non-`hook:stop:fail` event resets — including events that land AFTER
     # the most recent fail (i.e., the most recent log line is a skill:end or
     # mcp:call). Earlier behavior only reset on events between fails, which
-    # silently snoozed `[fail, fail, fail, skill:test:start]` and contradicted
+    # silently snoozed `[fail, fail, fail, skill:map:start]` and contradicted
     # the docstring's plain reading. Now matches the docstring.
     tail_fails: list[str] = []
     for ln in reversed(lines):
@@ -130,8 +130,8 @@ def main():
         service_path = os.path.join(output_dir, item)
         if not os.path.isdir(service_path):
             continue
-        # Check for 05-generate/ with actual control files
-        controls_dir = os.path.join(service_path, "05-generate")
+        # Check for 05-recommended-guidance/ with actual control files
+        controls_dir = os.path.join(service_path, "05-recommended-guidance")
         if os.path.isdir(controls_dir):
             has_controls = any(
                 os.path.isdir(os.path.join(controls_dir, subdir))
@@ -171,7 +171,7 @@ def main():
         # Log a pass entry to each service's log so the audit trail isn't
         # silent on a clean run.
         for controls_dir in service_dirs:
-            # controls_dir = .../service-approval/<slug>/05-generate
+            # controls_dir = .../service-approval/<slug>/05-recommended-guidance
             log_hook_fire(
                 "stop",
                 "pass",

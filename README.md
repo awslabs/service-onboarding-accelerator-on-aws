@@ -1,6 +1,6 @@
 # Service Approval Plugin
 
-Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a 9-phase pipeline (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) and maps everything to CCMv4. Other frameworks (NIST 800-53, CIS, ISO 27001) remain available behind the `--framework=<type>` CLI flag for advanced operators; the interactive intake narrows to CCMv4.
+Generates AWS security controls and compliant IaC templates for any AWS service. Orchestrates a pipeline (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) and maps everything to CCMv4. Other frameworks (NIST 800-53, CIS, ISO 27001) remain available behind the `--framework=<type>` CLI flag for advanced operators; the interactive intake narrows to CCMv4. It recommends the controls + IaC; you deploy them yourself.
 
 ---
 
@@ -137,11 +137,8 @@ Output lands in `.service-approval/<service-slug>/` (per-service layout) in your
   02-research/            ← research.json (merged from 4 sub-skills)
   03-validate/            ← validated.json
   04-map/                 ← mapping-results.json, controls-catalog.md, framework-mapping.md
-  05-generate/            ← all generated control artifacts (preventive, proactive, detective, responsive, IaC)
-  06-test/                ← test-results.json, deploy logs
-  07-summarize/           ← SUMMARY-REPORT.md
-  08-evidence/            ← attestation-report.md, CLI probe outputs, attestation-results.json
-  attestation.md          ← reviewer's audit guide
+  05-recommended-guidance/ ← all generated control artifacts (preventive, proactive, detective, responsive, IaC)
+  06-summarize/           ← SUMMARY-REPORT.md
   mcp-calls.log           ← MCP call audit log
 ```
 
@@ -150,7 +147,7 @@ Output lands in `.service-approval/<service-slug>/` (per-service layout) in your
 
 ### Key Features
 
-The pipeline runs as 26 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
+The pipeline runs as 24 discrete skills under [`skills/`](skills/). Each one is a standalone [Agent Skills](https://agentskills.io) folder with its own `SKILL.md` — so the same skills work across Claude Code, Kiro, GitHub Copilot, and any other agentskills.io-compatible client.
 
 ### Preventive controls are reference-anchored
 
@@ -230,11 +227,6 @@ than repeated in each Summary Report:
   in the Stop hook; their pass/fail is recorded in `pipeline.log`.
 - **Reference anchoring** — every preventive control either resolves to a public
   AWS reference example or is explicitly marked not-anchored with a stated reason.
-- **Deployment** — when testing is enabled, the compliant resource template is
-  deployed to a real account, Config-rule evaluations and alarms are checked, then
-  the stack is torn down.
-- **Runtime attestation** — when Phase 7 Evidence runs, controls are attested
-  live-in-effect via read-only CLI probes and resources are torn down afterward.
 
 Each Summary Report does **not** repeat this generic list. Instead it carries only
 the **run-specific** data a reviewer needs:
@@ -248,7 +240,7 @@ the **run-specific** data a reviewer needs:
 
 ### Validation efforts
 
-Validation runs at several layers, not only at deploy time:
+Validation runs at several layers:
 
 - **Two review gates.** A post-map gate checks the mapping is citable and its
   prose stays objective-level (the prose lint scans both the JSON and the
@@ -284,12 +276,12 @@ Validation runs at several layers, not only at deploy time:
 Each phase consumes the previous phase's output — the pipeline is a strict DAG:
 
 ```
-Input Files ──► Assess ──► Research ──► Validate ──► Map ──► Generate ──► Test ──► Summarize ──► Evidence
-                  │           │            │          │         │           │          │              │
-              sar-facts   research.json  validated  mapping  controls/  test-      approval-   attestation-
-              checkpoints  (merged from  .json      results  (per-svc)  results    report.md   report.md
-              assessment    4 sub-skills)           .json                          artifact-   attestation-
-                                                                                  flow-matrix  results.json
+Input Files ──► Assess ──► Research ──► Validate ──► Map ──► Recommended Guidance ──► Summarize
+                  │           │            │          │              │                    │
+              sar-facts   research.json  validated  mapping     controls/            SUMMARY-
+              checkpoints  (merged from  .json      results     (per-svc)            REPORT.md
+              assessment    4 sub-skills)           .json                            artifact-
+                                                                                     flow-matrix
 ```
 
 **Phase 1 (Research)** runs 4 parallel sub-skills — mitigations, capabilities, API surface,
@@ -302,7 +294,7 @@ and ATT&CK attack surface — then merges into `research.json` (schema v3.0).
 - ATT&CK technique coverage (17/21 techniques covered)
 - Coverage gap analysis
 
-**Phase 4 (Generate)** produces deployable artifacts across 5 categories. Exact file
+**Phase 4 (Recommended Guidance)** produces deployable artifacts across 5 categories. Exact file
 counts vary by service surface area (resource type count, API operation count, org-policy
 applicability). The ranges below reflect observed output across validated services:
 
@@ -315,7 +307,7 @@ applicability). The ranges below reflect observed output across validated servic
 | IaC | 17-31 | CDK TypeScript, CloudFormation YAML, CDKTF, modular Terraform (per-resource modules + shared + root) |
 
 A detailed per-artifact input/output matrix with dependency tracking is generated in
-`.service-approval/<slug>/07-summarize/ARTIFACT-FLOW-MATRIX.md` (per-service).
+`.service-approval/<slug>/06-summarize/ARTIFACT-FLOW-MATRIX.md` (per-service).
 
 ---
 
@@ -377,13 +369,8 @@ Note: if you do not provide any values, or custom threat models / frameworks in 
 |------|-------------|---------|
 | `./input-folder` | Folder with input files (`.md`, `.json`, `.xlsx`, `.pdf`, `.docx`) | None |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`, `s3`, `kms`) | Required if no folder |
-| `--env=<profile>` | AWS CLI profile for Tester and Tier 2 validation | None (skips) |
 | `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | `ccmv4` (asked at intake; flag bypasses the prompt) |
 | `--framework-file=<path>` | Explicit path to framework file | Auto-detect from input |
-| `--skip-test` | Skip deployment validation | false |
-| `--dry-run` | Lint artifacts only, no deployment | false |
-| `--timeout=<minutes>` | Config evaluation timeout | 30 |
-| `--keep` | Keep deployed test resources after run | false |
 | `--include-unverified` | Include unverified findings in generation | false |
 | `--clean` | Delete existing `.service-approval/` state before run | false |
 
@@ -409,10 +396,10 @@ syntactically valid and policy-sound, and run automatically at session end:
 Run manually:
 ```bash
 # Tier 1 only
-python3 tools/validate/validate_deployable.py --tier1-only .service-approval/<slug>/05-generate/
+python3 tools/validate/validate_deployable.py --tier1-only .service-approval/<slug>/05-recommended-guidance/
 
 # Tier 1 + Tier 2
-python3 tools/validate/validate_deployable.py --profile delegated-admin .service-approval/<slug>/05-generate/
+python3 tools/validate/validate_deployable.py --profile delegated-admin .service-approval/<slug>/05-recommended-guidance/
 ```
 
 

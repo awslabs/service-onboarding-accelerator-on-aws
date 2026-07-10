@@ -22,7 +22,7 @@ These rules cover Organisation×Proactive, Organisation×Preventive,
 Account×Proactive, Account×Preventive, Resource×Proactive, and
 Resource×Preventive cells.
 
-**Output:** `.service-approval/<slug>/05-generate/preventive/` and `.service-approval/<slug>/05-generate/proactive/`
+**Output:** `.service-approval/<slug>/05-recommended-guidance/preventive/` and `.service-approval/<slug>/05-recommended-guidance/proactive/`
 
 ---
 
@@ -31,7 +31,7 @@ Resource×Preventive cells.
 ```bash
 test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
 test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
-mkdir -p .service-approval/<slug>/05-generate/{preventive,proactive/opa-policies}
+mkdir -p .service-approval/<slug>/05-recommended-guidance/{preventive,proactive/opa-policies}
 ```
 
 Load controls from `mapping-results.json` and API surface from `validated.json`:
@@ -582,7 +582,7 @@ Both must be fixed together — trace to the source of the discrepancy.
   definitions. Create `proactive/custom-policies/` and write a `.py` or `.yaml` policy file for
   each custom check. A Checkov config referencing non-existent custom policies will fail at runtime.
   ```bash
-  mkdir -p .service-approval/<slug>/05-generate/proactive/custom-policies
+  mkdir -p .service-approval/<slug>/05-recommended-guidance/proactive/custom-policies
   ```
   Each custom policy file must define the check ID, resource type, and evaluation logic.
 
@@ -936,5 +936,5 @@ Generate (preventive/proactive) complete:
   Acc×Preventive:   permission-boundary
   Res×Proactive:    cfn-guard resource rules
   Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
-  Output: .service-approval/<slug>/05-generate/preventive/, .service-approval/<slug>/05-generate/proactive/
+  Output: .service-approval/<slug>/05-recommended-guidance/preventive/, .service-approval/<slug>/05-recommended-guidance/proactive/
 ```

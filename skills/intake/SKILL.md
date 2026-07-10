@@ -1,8 +1,8 @@
 ---
 name: intake
 description: >
-  Precursor intake phase for the Service Approval pipeline. Collects service name, input type,
-  and testing preferences. Produces intake-manifest.json consumed by all downstream phases.
+  Precursor intake phase for the Service Approval pipeline. Collects service name and input type.
+  Produces intake-manifest.json consumed by all downstream phases.
   Supports file-based input (intake YAML) for repeatable, batch-friendly execution.
 disable-model-invocation: false
 argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive]"
@@ -35,7 +35,8 @@ AWS service. It produces:
 | **Threat model** | MITRE ATT&CK technique mapping with tactic coverage analysis (always included) |
 
 The pipeline verifies every claim via MCP servers (no hardcoded training data), maps controls
-to your chosen compliance framework, and produces deployable artifacts — not just documentation.
+to your chosen compliance framework, and produces recommended controls + compliant IaC that
+you deploy yourself — not just documentation.
 
 **Typical output:** per-service files across 5 control categories (preventive,
 proactive, detective, responsive, IaC), a framework coverage matrix, and a
@@ -70,7 +71,7 @@ form. After the user confirms, **offer to save** the answers to
 ### Mode 4: CLI flags
 
 ```bash
-service-approval --service=s3 ./input --env=my-profile --framework=ccmv4
+service-approval --service=s3 ./input --framework=ccmv4
 ```
 
 All required fields provided via flags — no prompts needed. `--interactive`
@@ -107,9 +108,6 @@ passed), render a digestible summary and prompt:
 ┌─ Existing intake found: ./service-approval-intake.yaml ─┐
 │  Service:        {friendly_name} ({service-id})         │
 │  Framework:      {framework_type}                       │
-│  Testing mode:   {full-deploy | dry-run | skip | manual-cli} │
-│  AWS profile:    {profile or n/a}                       │
-│  Region:         {region}                               │
 │  ATT&CK Mapping: {Yes | No}                             │
 └─────────────────────────────────────────────────────────┘
 
@@ -228,9 +226,8 @@ they never saw.
 1. Step 0 — Input folder bootstrap (only if `./input/` missing)
 2. Step 1 — Service name
 3. Step 2 — Input type
-4. Step 3 — Testing requirements
-5. Step 4 — Additional options
-6. Final summary (always — never skipped)
+4. Step 3 — Additional options
+5. Final summary (always — never skipped)
 
 ---
 
@@ -425,45 +422,7 @@ Are you providing any of the following? (select all that apply)
 - If no framework file is provided, leave `framework_type` unset
   (the user's intake reply determines whether CCMv4 is included).
 
-### 3. Testing Requirements (required — default: `skip`)
-
-This is the single point where the user declares how Phase 5 (Test) should run.
-There is no later human-in-the-loop gate — whatever is chosen here is what the
-pipeline does.
-
-```
-How do you want to validate the generated controls?
-
-  A. Full deploy + validate  (mode: full-deploy)
-     Deploys the compliant resource template into an AWS account, waits for
-     Config rule evaluations, checks CloudWatch alarms, then tears down.
-     Requires an AWS CLI profile.
-
-  B. Dry-run validation only  (mode: dry-run)
-     Runs static checks (terraform validate, cfn-lint, CDK tsc, CFN Guard
-     syntax, py_compile). Optionally CloudFormation validate-template + IAM
-     Access Analyzer if a profile is provided. No deployment.
-
-  C. Skip testing  (mode: skip)
-     Stop after generation. Artifacts remain on disk for manual review.
-
-  D. Manual CLI — show commands  (mode: manual-cli)
-     Skip Phase 5. The Summarize phase appends per-format deploy commands
-     (terraform apply, cdk deploy, aws cloudformation deploy) to the final
-     Summary Report so you can run them yourself later.
-```
-
-Validation rules:
-- `full-deploy` requires `aws_profile`; if missing, re-prompt. If the profile
-  is not configured in `~/.aws/credentials` or `~/.aws/config`, warn and
-  downgrade to `mode: skip`.
-- `dry-run` accepts a profile (enables Tier 2 static checks) but does not
-  require one.
-- `manual-cli` does not require a profile — the cheat-sheet uses
-  `<AWS_PROFILE>` placeholders.
-- Default when the user declines to choose: `skip`.
-
-### 4. Additional Options (optional)
+### 3. Additional Options (optional)
 
 ```
 Additional options:
@@ -521,13 +480,6 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
       {"path": "...", "type": "threat_model|framework|mitigation_report|context"}
     ]
   },
-  "testing": {
-    "mode": "full-deploy|dry-run|skip|manual-cli",
-    "aws_profile": "{profile-name or null}",
-    "region": "{region or us-east-1}",
-    "keep": false,
-    "timeout_minutes": 30
-  },
   "output": {
     "include_attack_surface": true|false,
     "include_artifact_matrix": true|false
@@ -535,32 +487,13 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
   "pipeline_flags": {
     "service": "{service-name}",
     "input_folder": "{path or null}",
-    "env": "{profile or null}",
-    "region": "{region}",
     "framework": "{type}",
     "framework_file": "{path or null}",
-    "skip_test": true|false,
-    "dry_run": true|false,
-    "keep": true|false,
-    "timeout": 30,
     "include_unverified": false,
     "clean": false
   }
 }
 ```
-
-**Derivation from `testing.mode` to `pipeline_flags`:**
-
-| `testing.mode` | `skip_test` | `dry_run` | `env`               | Phase 5 effect                         |
-|----------------|-------------|-----------|---------------------|----------------------------------------|
-| `full-deploy`  | false       | false     | `testing.aws_profile` | `test` full mode                     |
-| `dry-run`      | false       | true      | `testing.aws_profile` or null | `test` `--dry-run` (Tier 1/2)  |
-| `skip`         | true        | false     | null                | Phase 5 skipped                        |
-| `manual-cli`   | true        | false     | null                | Phase 5 skipped; Summarize prints CLI cheat-sheet |
-
-CLI flag overrides: if the user passes `--env`, `--skip-test`, or `--dry-run`
-to the orchestrator, those override the intake-derived flags (CLI > intake >
-defaults).
 
 **Note:** `iac_formats` and `iac_support` are NOT in the intake manifest. They are
 determined by Phase 0 (Assess) and written to `<slug>/01-assess/iac-support.json`.
@@ -580,9 +513,6 @@ After collecting inputs, present a summary:
 │  Service:        {friendly_name} ({service-id})             │
 │  Input:          {description of inputs}                    │
 │  Framework:      {framework_type}                           │
-│  Testing mode:   {full-deploy | dry-run | skip | manual-cli}│
-│  AWS profile:    {profile or n/a}                           │
-│  Region:         {region}                                   │
 │  ATT&CK Mapping: {Yes | No}                                 │
 ├─────────────────────────────────────────────────────────────┤
 │  Note: IaC output formats will be determined in Phase 0     │
@@ -603,11 +533,8 @@ Proceed? (Y/n)
 | Plugin root cannot be located for seeding | Warn, disable choices [3] and [5], keep [1]/[2]/[4] available |
 | CSA auto-download returns HTML / non-xlsx | Delete partial file, fall back to opening browser + printing URL, wait for user to drop file |
 | Input folder path invalid | Ask user to correct the path |
-| `testing.mode == full-deploy` but `aws_profile` missing | Re-prompt for profile; if still missing, downgrade to `mode: skip` |
-| AWS profile not configured in `~/.aws/` | Warn and downgrade `testing.mode` to `skip` |
 | Intake YAML file not found | Fall back to interactive mode |
 | Intake YAML missing required fields | Report which fields are missing, halt |
-| Intake YAML has invalid `testing.mode` | List valid modes (full-deploy, dry-run, skip, manual-cli), halt |
 
 ---
 
@@ -619,10 +546,8 @@ Proceed? (Y/n)
 | Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface` |
 | Phase 2 (Validate) | `service` |
 | Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
-| Phase 4 (Generate) | Reads `<slug>/01-assess/iac-support.json` (from Phase 0), NOT intake |
-| Phase 5 (Test) | `testing.mode`, `testing.aws_profile`, `testing.region`, `testing.timeout_minutes` (orchestrator translates to `--env` / `--skip-test` / `--dry-run`). Note: Phase 5 always passes `--keep` to smoke-deploy-test.sh when Phase 7 is in scope; `testing.keep` itself is consumed by Phase 7, not Phase 5. |
-| Phase 6 (Summarize) | Full manifest for report metadata; `testing.mode` drives the manual-cli cheat-sheet render when mode == `manual-cli` |
-| Phase 7 (Evidence) | `testing.keep` — when `true`, Phase 7 skips its end-of-run teardown (stack stays alive for manual debugging); when `false` (default), Phase 7 tears down the stack from `06-test/deployed-resources.json` after evidence collection completes. |
+| Phase 4 (Recommended Guidance) | Reads `<slug>/01-assess/iac-support.json` (from Phase 0), NOT intake |
+| Phase 5 (Summarize) | Full manifest for report metadata |
 
 ---
 
@@ -634,7 +559,6 @@ Intake complete:
   SAR slug: {slug}
   Inputs: {N} files ({types})
   Framework: {framework_type}
-  Testing mode: {full-deploy|dry-run|skip|manual-cli} (profile: {name or n/a}, region: {region})
   Staging: .service-approval/_staging/{STAGING_TS}/00-intake/intake-manifest.json
 
 Canonical service slug will be derived in Phase 0 (Assess).

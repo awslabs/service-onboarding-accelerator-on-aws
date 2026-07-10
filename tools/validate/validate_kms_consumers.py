@@ -12,7 +12,7 @@ Supports:
     escape hatch: handled by the generate-iac skill Rule 4 itself).
 
 Called from hook_post_tool_use.py via validate_controls.validate_file when the
-written file is under .service-approval/<slug>/05-generate/iac/ (or legacy /controls/iac/).
+written file is under .service-approval/<slug>/05-recommended-guidance/iac/ (or legacy /controls/iac/).
 
 Exit codes (CLI):
     0 — pass (or file not applicable)
@@ -455,9 +455,9 @@ def validate_kms_consumers(file_path: str) -> list[str]:
     """Public entry — called from validate_controls.validate_file."""
     norm = file_path.replace("\\", "/")
     # Check for IaC directory in both old and new layouts
-    # New: .service-approval/<slug>/05-generate/iac/
+    # New: .service-approval/<slug>/05-recommended-guidance/iac/
     # Old (legacy): .service-approval/controls/iac/
-    if "/controls/iac/" not in norm and "/05-generate/iac/" not in norm and "/iac/" not in norm:
+    if "/controls/iac/" not in norm and "/05-recommended-guidance/iac/" not in norm and "/iac/" not in norm:
         return []
     lower = file_path.lower()
     if lower.endswith((".cfn.yaml", ".cfn.yml")) or (

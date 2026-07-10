@@ -330,7 +330,7 @@ def _load_json(path: str | Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--slug", help="service slug under .service-approval/")
-    parser.add_argument("--preventive-dir", help="path to 05-generate/preventive/")
+    parser.add_argument("--preventive-dir", help="path to 05-recommended-guidance/preventive/")
     parser.add_argument("--validated", help="path to validated.json")
     parser.add_argument(
         "--strict", action="store_true",
@@ -341,7 +341,7 @@ def main() -> None:
 
     if args.slug:
         base = Path(os.getcwd()) / ".service-approval" / args.slug
-        preventive_dir = Path(args.preventive_dir or base / "05-generate" / "preventive")
+        preventive_dir = Path(args.preventive_dir or base / "05-recommended-guidance" / "preventive")
         validated_path = args.validated or base / "03-validate" / "validated.json"
     else:
         if not (args.preventive_dir and args.validated):

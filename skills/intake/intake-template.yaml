@@ -56,35 +56,6 @@ input:
     # if CSA returns a login wall instead of an xlsx)
     auto_download_ccmv4: false
 
-testing:
-  # How should Phase 5 (Test) run?
-  #   full-deploy  Deploy compliant resource template, wait for Config, tear down
-  #                (requires aws_profile)
-  #   dry-run      Static checks only — terraform validate, cfn-lint, CDK tsc,
-  #                CFN Guard syntax, py_compile. Optional Tier 2 (CFN validate-
-  #                template, IAM Access Analyzer) if aws_profile is provided.
-  #   skip         Do not run Phase 5. Stop after generation.
-  #   manual-cli   Skip Phase 5; Summarize appends per-format deploy commands to
-  #                the Summary Report so you can run them yourself.
-  mode: "skip"
-
-  # AWS CLI profile name (required for full-deploy; optional for dry-run; unused otherwise)
-  aws_profile: null
-
-  # Target region for test deployment
-  region: "us-east-1"
-
-  # Keep deployed resources alive after Phase 7 Evidence completes (full-deploy only).
-  # Phase 5 ALWAYS leaves the stack alive when Phase 7 is in scope so Phase 7
-  # can probe the deployed resources via CLI. This flag controls whether
-  # Phase 7 tears down at the end:
-  #   false (default): Phase 7 tears down the stack after evidence collection
-  #   true:            Phase 7 skips teardown — stack remains for manual debugging
-  keep: false
-
-  # Config rule evaluation timeout in minutes (full-deploy only)
-  timeout_minutes: 30
-
 options:
   # Include MITRE ATT&CK threat mapping (adds ~15 min)
   include_attack_surface: true

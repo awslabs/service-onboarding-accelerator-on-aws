@@ -221,9 +221,9 @@ def test_log_skill_uses_skill_source(tmp_sa, monkeypatch):
 
 def test_log_script_uses_script_source(tmp_sa, monkeypatch):
     monkeypatch.chdir(tmp_sa[0])
-    log_script("awslambda", "06-test", "smoke-deploy-test", "start", "stack=test")
+    log_script("awslambda", "04-map", "map-assemble", "start", "controls=12")
     content = (tmp_sa[2] / "pipeline.log").read_text()
-    assert "[script:smoke-deploy-test:start]" in content
+    assert "[script:map-assemble:start]" in content
 
 
 # ---------------------------------------------------------------------------

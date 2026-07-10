@@ -92,7 +92,7 @@ def test_rollup_validates_against_schema() -> None:
 
 
 def test_build_for_slug_writes_file(tmp_path: Path) -> None:
-    base = tmp_path / ".service-approval" / "lambda" / "05-generate"
+    base = tmp_path / ".service-approval" / "lambda" / "05-recommended-guidance"
     (base / "preventive").mkdir(parents=True)
     (base / "preventive-plan.json").write_text(json.dumps(_plan()))
     cov = bpc.build_for_slug("lambda", root=tmp_path)
@@ -134,6 +134,48 @@ def _plan_with(plan: dict) -> dict:
     """Identity helper so the guidance test reads naturally; build_coverage
     consumes the plan dict directly."""
     return plan
+
+
+def test_applicability_carried_for_authored_and_referred() -> None:
+    """applicability on a GENERATE_*/REFER_TO_REFERENCE decision is carried
+    verbatim into its coverage row; routed-to-detective rows never carry it;
+    a decision without applicability (and without a URL) is still valid."""
+    plan = _plan()
+    plan["decisions"][0]["applicability"] = {
+        "applies_to": "functions matching the automation ARN prefix",
+        "usage_notes": "scope to automation-managed functions; do not apply to app-team functions",
+    }
+    plan["decisions"][1]["applicability"] = {
+        "applies_to": "roles governed by the boundary",
+        "usage_notes": "attach org-wide; do not use as an identity policy",
+    }
+    # A routed-to-detective decision must drop applicability even if present.
+    plan["decisions"][2]["applicability"] = {"applies_to": "n/a", "usage_notes": "n/a"}
+
+    cov = bpc.build_coverage(plan)
+    rows = {r["control_id"]: r for r in cov["controls"]}
+    assert rows["CTRL-ORG-PRV-001"]["applicability"]["applies_to"].startswith("functions matching")
+    assert rows["CTRL-ACC-PRV-002"]["applicability"]["usage_notes"].startswith("attach org-wide")
+    assert "applicability" not in rows["CTRL-ORG-PRV-003"]
+    assert schema_errors(cov, "preventive-coverage") == []
+
+
+def test_decision_without_applicability_is_valid() -> None:
+    """A plan/coverage row that carries no applicability (canopy-only, no URL, or
+    absent) still builds and validates — applicability is carried only when present."""
+    plan = {
+        "_metadata": {"service": "x"},
+        "decisions": [
+            {"control_id": "CTRL-ORG-PRV-005", "mechanism": "SCP",
+             "decision": "GENERATE_SCP",
+             "anchor": {"example_id": "e", "repo": "r", "url": "u"},
+             "citation": {"type": "canopy", "id": "M-x.0"},
+             "rationale": "gated"},
+        ],
+    }
+    cov = bpc.build_coverage(plan)
+    assert "applicability" not in cov["controls"][0]
+    assert schema_errors(cov, "preventive-coverage") == []
 
 
 def test_missing_citation_falls_back_to_service_doc() -> None:

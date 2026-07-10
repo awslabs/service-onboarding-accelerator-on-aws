@@ -111,6 +111,12 @@ def build_coverage(plan: dict, rootcause: dict | None = None) -> dict:
         guidance = d.get("application_guidance")
         if isinstance(guidance, dict) and guidance and category != "routed_to_detective":
             row["application_guidance"] = guidance
+        # Carry the applicability (what the cited policy targets + where not to
+        # apply it) through the same way: only for a non-empty dict, and never for
+        # a routed-to-detective row (which surfaces no policy URL to clarify).
+        applicability = d.get("applicability")
+        if isinstance(applicability, dict) and applicability and category != "routed_to_detective":
+            row["applicability"] = applicability
         rows.append(row)
 
     totals = {
@@ -140,7 +146,7 @@ def build_coverage(plan: dict, rootcause: dict | None = None) -> dict:
 def build_for_slug(slug: str, root: Path | None = None) -> dict | None:
     """Build the rollup for a service slug under .service-approval/. Writes the
     file and returns the dict, or None when the plan is missing/unreadable."""
-    base = (root or Path(os.getcwd())) / ".service-approval" / slug / "05-generate"
+    base = (root or Path(os.getcwd())) / ".service-approval" / slug / "05-recommended-guidance"
     plan = _load_json(base / "preventive-plan.json")
     if not isinstance(plan, dict):
         return None

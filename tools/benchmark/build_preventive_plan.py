@@ -114,6 +114,25 @@ def build_plan(mapping: dict, validated: dict) -> dict:
                 "url": best["source_url"],
             }
 
+        # An anchored GENERATE_* decision surfaces a policy URL to the customer,
+        # so it must carry an applicability block (what the policy targets + how
+        # to use it). Derive it deterministically from the control's real actions
+        # and enforcing condition keys — the skill refines the prose per-run.
+        actions = [a for a in (control.get("actions") or []) if a]
+        action_phrase = ", ".join(actions) if actions else "the governed actions"
+        key_phrase = ", ".join(keys) if keys else "the enforcing condition key"
+        applicability = {
+            "applies_to": (
+                f"the {mechanism or 'policy'} target resources selected by "
+                f"{key_phrase}, for {action_phrase}"
+            ),
+            "usage_notes": (
+                f"apply only where {key_phrase} legitimately gates {action_phrase}; "
+                f"do not apply it to resources whose owning teams must retain those "
+                f"actions"
+            ),
+        }
+
         decisions.append({
             "control_id": cid,
             "source_control_id": cid,
@@ -129,6 +148,7 @@ def build_plan(mapping: dict, validated: dict) -> dict:
             "citation": intent_citation,
             "route_to": None,
             "rationale": f"condition key gates the target action; anchored to {best['id']}",
+            "applicability": applicability,
         })
 
     return {

@@ -39,12 +39,12 @@ _REGION_LINE_RE = re.compile(
 def _make_workspace(tmp_path: Path, slug: str, intake_region: str | None) -> Path:
     """Create a minimal .service-approval/<slug>/ tree the script accepts.
 
-    The 05-generate/iac/ subdir must exist so slug auto-discovery works,
+    The 05-recommended-guidance/iac/ subdir must exist so slug auto-discovery works,
     but we leave it without templates so neither terraform nor
     cloudformation actually run — the script falls through to "no
     smoke-test.tfvars" / "no smoke-test-params.json" SKIP branches.
     """
-    iac = tmp_path / ".service-approval" / slug / "05-generate" / "iac"
+    iac = tmp_path / ".service-approval" / slug / "05-recommended-guidance" / "iac"
     iac.mkdir(parents=True)
     (iac / "cloudformation").mkdir()
     (iac / "terraform").mkdir()

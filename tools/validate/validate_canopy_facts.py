@@ -302,7 +302,7 @@ def check_service(service_root: Path) -> list[str]:
     canopy = _load_json(canopy_path)
     if not isinstance(canopy, dict):
         return []
-    plan = _load_json(service_root / "05-generate" / "preventive-plan.json")
+    plan = _load_json(service_root / "05-recommended-guidance" / "preventive-plan.json")
     mapping = _load_json(service_root / "04-map" / "mapping-results.json")
     fw_mapped = _load_json(service_root / "04-map" / "map-framework-mapped.json")
     return check(canopy, plan if isinstance(plan, dict) else None,

@@ -2,8 +2,8 @@
 """
 Pipeline integrity validator.
 
-Detects agents that skip the 9-phase pipeline (Intake → Assess → Research →
-Validate → Map → Generate → Test → Summarize → Evidence) and emit hardcoded
+Detects agents that skip the pipeline (Intake → Assess → Research →
+Validate → Map → Recommended Guidance → Summarize) and emit hardcoded
 artifacts instead of running real MCP-driven research/validation/generation.
 
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
@@ -22,7 +22,7 @@ Failure signals:
          its declared outputs (mapping-results.json, controls-catalog.md,
          framework-mapping.md, etc.) at min-size thresholds
     P8 — reference-anchor enforcement: every preventive policy artifact under
-         05-generate/preventive/ must carry a _metadata.reference resolving to
+         05-recommended-guidance/preventive/ must carry a _metadata.reference resolving to
          a real entry in data/reference-repos/index.yaml (gap/skip stubs and
          documentation files exempt)
     P9 — ARN resource-delimiter validation: every Resource/NotResource ARN in a
@@ -34,7 +34,7 @@ Failure signals:
          boundary is the MAXIMUM a principal may do, not the role's grant policy;
          the control intent belongs in the Deny + condition keys
     P11 — no LLM confidence scoring: no emitted artifact under 04-map/ or
-         05-generate/, nor the Summary Report, may carry a per-item confidence
+         05-recommended-guidance/, nor the Summary Report, may carry a per-item confidence
          score/key/band (a `"confidence":` JSON key, a `run_confidence` key, or a
          HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The guard targets
          scored/keyed confidence, not the English word, so prose that merely uses
@@ -305,7 +305,7 @@ _CROSS_SERVICE_WILDCARD_ONLY = frozenset({
 def _load_wildcard_only_actions(controls_dir: Path) -> set[str]:
     """Load the set of `<prefix>:<action>` strings AWS SAR marks wildcard-only.
 
-    `controls_dir` is `<slug>/05-generate`. Two per-service state files are
+    `controls_dir` is `<slug>/05-recommended-guidance`. Two per-service state files are
     consulted in addition to the cross-service floor:
       1. `<slug>/01-assess/sar-facts.json` — `wildcard_only_actions[]` enumerates
          actions Phase 0 explicitly classified as wildcard-only (typically
@@ -593,7 +593,7 @@ def check_arn_shapes(service_root: Path) -> list[str]:
     delimiters come from sar-facts.json, so the check works for any service.
     """
     errors: list[str] = []
-    controls_dir = service_root / "05-generate"
+    controls_dir = service_root / "05-recommended-guidance"
     if not controls_dir.exists():
         return errors
     if is_finalized(service_root):
@@ -704,7 +704,7 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
     keys — flag it. Deny statements and read/list/invoke Allows are fine.
     """
     errors: list[str] = []
-    preventive_dir = service_root / "05-generate" / "preventive"
+    preventive_dir = service_root / "05-recommended-guidance" / "preventive"
     if not preventive_dir.exists():
         return errors
     if is_finalized(service_root):
@@ -730,7 +730,7 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
         statements = data["Statement"]
         if not isinstance(statements, list):
             statements = [statements]
-        rel = policy_file.relative_to(service_root / "05-generate")
+        rel = policy_file.relative_to(service_root / "05-recommended-guidance")
         for i, stmt in enumerate(statements):
             if not isinstance(stmt, dict) or stmt.get("Effect") != "Allow":
                 continue
@@ -754,7 +754,7 @@ def check_boundary_minimality(service_root: Path) -> list[str]:
 # LLM confidence scoring was permanently removed from the pipeline. It must not
 # reappear in any artifact a run emits. Two signals are caught:
 #   1. A JSON `"confidence":` / `"run_confidence":` key on any object under
-#      04-map/ or 05-generate/ (the machine-readable form the deprecated feature
+#      04-map/ or 05-recommended-guidance/ (the machine-readable form the deprecated feature
 #      used). coverage_level — a deterministic catalog cross-check — is allowed.
 #   2. A confidence BAND label (HIGH/MEDIUM/LOW/SPECULATIVE) attached to the word
 #      "confidence" on the same line of a markdown artifact (mapping .md files,
@@ -801,7 +801,7 @@ def _confidence_scoring_errors_in_text(text: str, rel: str, is_markdown: bool) -
 def check_no_confidence_scoring(service_root: Path) -> list[str]:
     """P11: no emitted artifact may carry a per-item confidence score/key/band.
 
-    Scans every JSON under 04-map/ and 05-generate/ for confidence keys, and the
+    Scans every JSON under 04-map/ and 05-recommended-guidance/ for confidence keys, and the
     rendered markdown (mapping .md files + the Summary Report) for band labels.
     Finalized runs are exempt (frozen artifacts cannot be remediated).
     """
@@ -811,7 +811,7 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
         return []
 
     errors: list[str] = []
-    scan_dirs = [service_root / "04-map", service_root / "05-generate"]
+    scan_dirs = [service_root / "04-map", service_root / "05-recommended-guidance"]
     for base in scan_dirs:
         if not base.exists():
             continue
@@ -832,7 +832,7 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
                 _confidence_scoring_errors_in_text(text, str(rel), suffix == ".md")
             )
 
-    report = service_root / "07-summarize" / "SUMMARY-REPORT.md"
+    report = service_root / "06-summarize" / "SUMMARY-REPORT.md"
     if report.exists():
         try:
             text = report.read_text()
@@ -920,9 +920,16 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
 
     pct = (mapped / total * 100) if total else 0
     if pct < MIN_FRAMEWORK_COVERAGE_PCT:
+        # The canonical objective-level justification field in the mapping
+        # schema is `reason` (schemas/mapping-results.schema.json). Some older
+        # outputs used `rationale`; accept either so the check reads whichever
+        # the row carries.
+        def _justification(f):
+            return f.get("reason") or f.get("rationale") or ""
+
         missing_rationale = sum(
             1 for f in na
-            if not f.get("rationale") or len(f.get("rationale", "")) < 30
+            if len(_justification(f)) < 30
         )
         if missing_rationale:
             errors.append(
@@ -943,8 +950,7 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
 # missing outputs mean the run was incomplete and downstream consumers
 # will silently break.
 #
-# Phase dir absence is OK (the phase didn't run — Intake's testing.mode
-# == "skip" legitimately skips Phase 5 + Phase 7, for instance).
+# Phase dir absence is OK (the phase didn't run).
 #
 # Min sizes are calibrated for the typical Lambda/S3-scale service:
 #   * JSON state files: 1024 bytes (~30 keys, schema-required)
@@ -985,23 +991,13 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("controls-catalog.md", 3072),
         ("framework-mapping.md", 5120),
     ],
-    "05-generate": [
-        # 05-generate/ contains category subdirs, not single files.
+    "05-recommended-guidance": [
+        # 05-recommended-guidance/ contains category subdirs, not single files.
         # Existence of at least one of {preventive, proactive, detective,
         # responsive, iac} signals the phase ran. Empty dir = incomplete.
     ],
-    "06-test": [
-        ("test-results.json", 256),
-        # deployed-resources.json only required for full-deploy (where
-        # Phase 7 will run); checked separately below.
-    ],
-    "07-summarize": [
+    "06-summarize": [
         ("SUMMARY-REPORT.md", 2048),
-    ],
-    "08-evidence": [
-        ("cli-commands.json", 256),
-        ("attestation-results.json", 256),
-        ("attestation-report.md", 1024),
     ],
 }
 
@@ -1011,16 +1007,7 @@ def check_phase_outputs(service_root: Path) -> list[str]:
 
     Walks each phase dir under service_root and asserts that every required
     output exists and meets its minimum size threshold. A phase dir not
-    present is considered "phase did not run" and skipped silently — the
-    user may have set testing.mode=skip, --dry-run, etc. A phase dir that
-    contains a `phase-skipped.json` sentinel is treated the same way: the
-    phase deliberately skipped itself (e.g. Evidence skips when Test ran
-    dry-run and deployed nothing), so its required outputs are not expected.
-
-    The full-deploy → Phase 7 contract gets an extra check: if 06-test/
-    exists with deployed-resources.json AND 08-evidence/ exists, the linkage
-    is sound; if 06-test/test-results.json says full-deploy succeeded but
-    deployed-resources.json is missing, Phase 7 cannot run.
+    present is considered "phase did not run" and skipped silently.
     """
     errors: list[str] = []
 
@@ -1028,8 +1015,6 @@ def check_phase_outputs(service_root: Path) -> list[str]:
         phase_dir = service_root / phase_name
         if not phase_dir.exists():
             continue  # phase did not run — OK
-        if (phase_dir / "phase-skipped.json").exists():
-            continue  # phase deliberately skipped itself — outputs not expected
 
         for filename, min_size in required:
             artifact = phase_dir / filename
@@ -1050,11 +1035,11 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                     f"truncated write. Re-run the {phase_name.split('-', 1)[1]} skill."
                 )
 
-    # 05-generate/: at least one category subdir must contain real files.
+    # 05-recommended-guidance/: at least one category subdir must contain real files.
     # `any(cat_dir.rglob("*"))` would return True for an empty subdir tree
     # (any directory entry counts), letting an empty `preventive/empty/`
     # satisfy the gate. Require at least one actual file.
-    generate_dir = service_root / "05-generate"
+    generate_dir = service_root / "05-recommended-guidance"
     if generate_dir.exists():
         categories = ["preventive", "proactive", "detective", "responsive", "iac"]
         any_populated = False
@@ -1065,21 +1050,8 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                 break
         if not any_populated:
             errors.append(
-                f"P7 {service_root.name}/05-generate/: phase ran but produced "
-                f"NO files in any of {categories}. Re-run generate."
-            )
-
-    # full-deploy → Phase 7 contract: if 08-evidence/ exists, then
-    # 06-test/deployed-resources.json must also exist (Phase 7 reads it).
-    evidence_dir = service_root / "08-evidence"
-    if evidence_dir.exists() and not (evidence_dir / "phase-skipped.json").exists():
-        deployed_resources = service_root / "06-test" / "deployed-resources.json"
-        if not deployed_resources.exists():
-            errors.append(
-                f"P7 {service_root.name}/06-test/deployed-resources.json: MISSING "
-                f"but 08-evidence/ exists. Phase 7 needs deployed-resources.json "
-                f"to know which stack/ARNs to probe; without it, every CLI verdict "
-                f"will be ERROR. Re-run Phase 5 with full-deploy mode."
+                f"P7 {service_root.name}/05-recommended-guidance/: phase ran but produced "
+                f"NO files in any of {categories}. Re-run recommended-guidance."
             )
 
     return errors
@@ -1168,8 +1140,8 @@ def validate_pipeline(root: Path) -> list[str]:
         if validate_dir.exists():
             errors.extend(check_validated_notes(validate_dir))
 
-        # Check controls in 05-generate/
-        controls_dir = service_root / "05-generate"
+        # Check controls in 05-recommended-guidance/
+        controls_dir = service_root / "05-recommended-guidance"
         if controls_dir.exists():
             errors.extend(check_iam_policies(controls_dir))
             iac_dir = controls_dir / "iac"

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas/conflict-report.schema.json",
   "title": "conflict-report.json",
-  "description": "Control-conflict / contradiction report. A deterministic pre-filter (tools/validate/detect_control_conflicts.py) surfaces candidate statement pairs that share a gated action with opposing posture; a clean LLM subagent (no prior context) dispatched by the generation review gate confirms/explains each candidate and writes the final report at .service-approval/<slug>/05-generate/conflict-report.json. Advisory at first — surfaced in the report; can become a hard gate later.",
+  "description": "Control-conflict / contradiction report. A deterministic pre-filter (tools/validate/detect_control_conflicts.py) surfaces candidate statement pairs that share a gated action with opposing posture; a clean LLM subagent (no prior context) dispatched by the generation review gate confirms/explains each candidate and writes the final report at .service-approval/<slug>/05-recommended-guidance/conflict-report.json. Advisory at first — surfaced in the report; can become a hard gate later.",
   "type": "object",
   "additionalProperties": false,
   "required": ["_metadata", "pairs", "verdict"],

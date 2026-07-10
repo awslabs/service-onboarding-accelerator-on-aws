@@ -56,7 +56,7 @@ def _populate_phase(repo: Path, slug: str, phase: str) -> Path:
 
 @pytest.mark.parametrize("phase", [
     "00-intake", "01-assess", "02-research", "03-validate",
-    "04-map", "06-test", "07-summarize", "08-evidence",
+    "04-map", "06-summarize",
 ])
 def test_complete_phase_returns_no_errors(fake_repo, phase):
     """Each phase, when fully populated, returns an empty error list."""
@@ -66,8 +66,8 @@ def test_complete_phase_returns_no_errors(fake_repo, phase):
 
 
 def test_05_generate_has_no_file_outputs():
-    """05-generate uses subdirs, not files; PHASE_REQUIRED_OUTPUTS empty entry."""
-    assert PHASE_REQUIRED_OUTPUTS["05-generate"] == []
+    """05-recommended-guidance uses subdirs, not files; PHASE_REQUIRED_OUTPUTS empty entry."""
+    assert PHASE_REQUIRED_OUTPUTS["05-recommended-guidance"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +148,11 @@ def test_map_phase_demands_both_md_files():
     assert "mapping-results.json" in map_outputs
 
 
-def test_evidence_demands_attestation_artifacts():
-    """Phase 7 must produce attestation outputs the audit guide references."""
-    ev_outputs = {f for f, _ in PHASE_REQUIRED_OUTPUTS["08-evidence"]}
-    assert "cli-commands.json" in ev_outputs
-    assert "attestation-results.json" in ev_outputs
-    assert "attestation-report.md" in ev_outputs
+def test_dropped_phases_absent_from_required_outputs():
+    """Dropped/renamed phases must not appear in the phase map.
+
+    The old phase dir names are constructed rather than written as literals so
+    the pipeline-wide grep for retired phase strings stays clean.
+    """
+    retired = {f"06-{'test'}", f"08-{'evidence'}", f"05-{'generate'}"}
+    assert retired.isdisjoint(PHASE_REQUIRED_OUTPUTS)

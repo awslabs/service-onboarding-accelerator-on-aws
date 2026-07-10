@@ -96,7 +96,9 @@
       "match_statements": [
         "resource.*policy should limit permissions to a subset",
         "resource policy should limit permissions",
-        "resource policy.*trusted.*principals"
+        "resource policy.*trusted.*principals",
+        "policy should limit permissions to a subset",
+        "policy should be accessed only by trusted"
       ],
       "security_domain": "access_control",
       "description": "Resource-based policy must restrict access to an approved subset of IAM principals."
@@ -144,7 +146,9 @@
         "require encryption of data in transit",
         "TLS source access configurations",
         "require.*secure.*transport",
-        "encryption in transit"
+        "encryption in transit",
+        "encrypted in transit",
+        "connections to be encrypted"
       ],
       "security_domain": "data_protection_in_transit",
       "description": "Data in transit must be encrypted using TLS."

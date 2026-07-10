@@ -18,11 +18,11 @@ complete:
    preventive control — its objective routes to detective instead.
 
 **Input:**
-- `.service-approval/<slug>/05-generate/preventive/` — the authored artifacts
-- `.service-approval/<slug>/05-generate/preventive-plan.json` — the recommender plan
+- `.service-approval/<slug>/05-recommended-guidance/preventive/` — the authored artifacts
+- `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` — the recommender plan
 - `.service-approval/<slug>/03-validate/validated.json`, `04-map/mapping-results.json`
 
-**Output:** `.service-approval/<slug>/05-generate/preventive/rootcause-report.json`
+**Output:** `.service-approval/<slug>/05-recommended-guidance/preventive/rootcause-report.json`
 (a report, exempt from the anchor gate as a documentation file — its basename is
 in `validate_reference_anchor._DOC_ONLY_BASENAMES`) and, when a not-preventable
 objective slipped through, a routing note for the detective generator.
@@ -139,7 +139,7 @@ For every objective routed to detective, write a machine-readable contract the
 detective generator consumes. Without this, routing is a dead-end report and the
 objective gets no coverage.
 
-Write `.service-approval/<slug>/05-generate/detective-routing.json`
+Write `.service-approval/<slug>/05-recommended-guidance/detective-routing.json`
 (schema: `schemas/detective-routing.schema.json`):
 
 ```json

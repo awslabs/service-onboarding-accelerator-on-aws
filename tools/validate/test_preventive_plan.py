@@ -33,6 +33,10 @@ GOOD_SCP = {
     "citation": {"type": "reference", "id": "anchor-1", "url": "u"},
     "route_to": None,
     "rationale": "ok",
+    "applicability": {
+        "applies_to": "the resource subset the policy targets",
+        "usage_notes": "scope to those resources; do not apply broadly",
+    },
 }
 ROUTE = {
     "control_id": "CTRL-ORG-PRV-007",

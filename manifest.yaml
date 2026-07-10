@@ -109,14 +109,8 @@ skills:
   - slug: generate-iac
     role: phase-4c
     parallel_group: generate
-  - slug: test
-    role: phase-5
-    optional: true
   - slug: summarize
-    role: phase-6
-  - slug: evidence
-    role: phase-7
-    optional: true
+    role: phase-5
 
 # ---------------------------------------------------------------------------
 # MCP servers — registered across every client's manifest.

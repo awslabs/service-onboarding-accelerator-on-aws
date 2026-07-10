@@ -3,7 +3,7 @@
 Cross-artifact consistency validator.
 
 Runs after a generation phase completes to verify consistency across all
-generated control artifacts in .service-approval/<slug>/05-generate/.
+generated control artifacts in .service-approval/<slug>/05-recommended-guidance/.
 
 Usage:
     python3 validate_cross.py <controls_dir>
@@ -34,14 +34,14 @@ def _load_json(path: str) -> dict | None:
 def _find_state_dir(controls_dir: str) -> dict[str, str] | None:
     """Find sibling phase directories relative to controls dir.
 
-    In the new layout, controls_dir is .service-approval/<slug>/05-generate/
+    In the new layout, controls_dir is .service-approval/<slug>/05-recommended-guidance/
     and we need to find 04-map/ and 03-validate/ siblings.
 
     Returns:
         Dict with keys "map" and "validate" pointing to phase directories,
         or None if not found.
     """
-    # controls_dir is typically .service-approval/<slug>/05-generate/
+    # controls_dir is typically .service-approval/<slug>/05-recommended-guidance/
     # Parent is the service root
     service_root = os.path.dirname(controls_dir.rstrip("/"))
     map_dir = os.path.join(service_root, "04-map")
@@ -260,7 +260,7 @@ def _is_finalized_run(controls_dir: str) -> bool:
     remediated. A check added after a run finalized must not retroactively fail
     it (it would brick every subsequent Stop hook for that frozen state). Honored
     the same way P1 in validate_pipeline_integrity is. `controls_dir` is
-    `<service_root>/05-generate`, so pipeline.log is one level up.
+    `<service_root>/05-recommended-guidance`, so pipeline.log is one level up.
     """
     service_root = os.path.dirname(controls_dir.rstrip("/"))
     log_path = os.path.join(service_root, "pipeline.log")

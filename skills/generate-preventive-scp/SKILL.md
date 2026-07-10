@@ -12,12 +12,12 @@ Author SCP artifacts for control objectives the recommender approved. This skill
 condition keys — it does not invent policy from scratch.
 
 **Input:**
-- `.service-approval/<slug>/05-generate/preventive-plan.json` — read rows where `decision == "GENERATE_SCP"`
+- `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` — read rows where `decision == "GENERATE_SCP"`
 - `.service-approval/<slug>/04-map/mapping-results.json` — the controls
 - `.service-approval/<slug>/03-validate/validated.json` — actions + condition keys
 - `data/reference-repos/index.yaml` + vendored bodies under `data/reference-repos/<repo>/examples/`
 
-**Output:** `.service-approval/<slug>/05-generate/preventive/scp-policy.json`
+**Output:** `.service-approval/<slug>/05-recommended-guidance/preventive/scp-policy.json`
 (a SINGLE consolidated file — see "One consolidated file" below)
 
 ---
@@ -27,7 +27,7 @@ condition keys — it does not invent policy from scratch.
 ```bash
 python3 - <<'PY'
 import json
-plan = json.load(open(".service-approval/<slug>/05-generate/preventive-plan.json"))
+plan = json.load(open(".service-approval/<slug>/05-recommended-guidance/preventive-plan.json"))
 scp_rows = [d for d in plan["decisions"] if d["decision"] == "GENERATE_SCP"]
 assert all(r.get("anchor", {}).get("example_id") for r in scp_rows), \
     "GENERATE_SCP row with no anchor — recommender bug; do not author un-anchored."
@@ -76,6 +76,10 @@ any other reason — one statement per file is wrong.
    see "Shared authoring rules" below).
 4. **Stamp the reference anchor** into `_metadata.reference` (REQUIRED — the
    reference-anchor gate hard-fails an un-anchored preventive artifact).
+5. **Stamp `_metadata.applicability`** — copy the plan row's `applicability`
+   object **verbatim** (do not re-derive it). Anchored SCPs always carry
+   `anchor.url`, so the plan row carries `applicability`; the reference-anchor
+   validator hard-fails a URL-cited artifact that omits it.
 
 ## Required artifact metadata
 
@@ -94,6 +98,10 @@ any other reason — one statement per file is wrong.
       "example_id": "service-control-policy-examples-deny-...",
       "repo": "service-control-policy-examples",
       "url": "https://github.com/aws-samples/.../blob/<sha>/<path>"
+    },
+    "applicability": {
+      "applies_to": "<copy VERBATIM from the plan row's applicability.applies_to — the resource subset/pattern this policy targets>",
+      "usage_notes": "<copy VERBATIM from the plan row's applicability.usage_notes — how to use it, including where NOT to apply it>"
     },
     "_anchors": {
       "CTRL-ORG-PRV-001": "service-control-policy-examples-deny-...",

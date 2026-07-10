@@ -12,7 +12,7 @@
 #
 # Flags:
 #   --slug=<slug>      Service slug whose IaC artifacts to deploy. If absent,
-#                      auto-discovers from .service-approval/*/05-generate/iac/
+#                      auto-discovers from .service-approval/*/05-recommended-guidance/iac/
 #                      (errors if 0 or >1 services found).
 #   --keep             Skip teardown. Leave deployed resources alive (Phase 7
 #                      Evidence needs the stack alive to probe it). Phase 7
@@ -68,7 +68,7 @@ fi
 # --------------------------------------------------------------------------
 # Resolve service slug + IaC dirs
 # --------------------------------------------------------------------------
-# Per-slug layout: .service-approval/<slug>/05-generate/iac/{terraform,cloudformation}/
+# Per-slug layout: .service-approval/<slug>/05-recommended-guidance/iac/{terraform,cloudformation}/
 # Auto-discover if --slug not provided.
 if [ -z "$SLUG" ]; then
   CANDIDATES=()
@@ -77,14 +77,14 @@ if [ -z "$SLUG" ]; then
       name=$(basename "$d")
       [ "$name" = "_staging" ] && continue
       [ "$name" = "plans" ] && continue
-      if [ -d "$d/05-generate/iac" ]; then
+      if [ -d "$d/05-recommended-guidance/iac" ]; then
         CANDIDATES+=("$name")
       fi
     done < <(find ".service-approval" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
   fi
   if [ ${#CANDIDATES[@]} -eq 0 ]; then
     echo "CRITICAL: No service slug found. Either run /generate first or pass --slug=<slug>."
-    echo "Looked under: .service-approval/*/05-generate/iac/"
+    echo "Looked under: .service-approval/*/05-recommended-guidance/iac/"
     exit 1
   elif [ ${#CANDIDATES[@]} -gt 1 ]; then
     echo "CRITICAL: Multiple services found in .service-approval/: ${CANDIDATES[*]}"
@@ -94,7 +94,7 @@ if [ -z "$SLUG" ]; then
   SLUG="${CANDIDATES[0]}"
 fi
 
-CONTROLS_DIR=".service-approval/$SLUG/05-generate/iac"
+CONTROLS_DIR=".service-approval/$SLUG/05-recommended-guidance/iac"
 TF_DIR="$CONTROLS_DIR/terraform"
 CFN_DIR="$CONTROLS_DIR/cloudformation"
 

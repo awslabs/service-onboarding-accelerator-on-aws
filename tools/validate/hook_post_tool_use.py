@@ -123,8 +123,8 @@ def main():
     norm = file_path.replace("\\", "/")
 
     # Dispatch based on path pattern
-    # New layout: .service-approval/<slug>/05-generate/ → controls validator
-    #             .service-approval/<slug>/0[1-8]-*/ → state validator
+    # New layout: .service-approval/<slug>/05-recommended-guidance/ → controls validator
+    #             .service-approval/<slug>/0[1-6]-*/ → state validator
     # Legacy (fallback): /controls/ or /state/ for migration only — emit
     # a one-time warning marker so users know to migrate; after a 24h
     # grace period, hard-fail to force the user to migrate.
@@ -150,13 +150,13 @@ def main():
             )
             sys.exit(2)
 
-        # Check if it's in a 05-generate/ directory (controls)
-        if "/05-generate/" in norm or "/controls/" in norm:
+        # Check if it's in a 05-recommended-guidance/ directory (controls)
+        if "/05-recommended-guidance/" in norm or "/controls/" in norm:
             from validate_controls import validate_file
             errors = validate_file(file_path)
-        # Check if it's in a numbered phase directory (state) — range(9) covers
-        # 00-intake through 08-evidence.
-        elif any(f"/{p:02d}-" in norm for p in range(9)) or "/state/" in norm:
+        # Check if it's in a numbered phase directory (state) — range(7) covers
+        # 00-intake through 06-summarize.
+        elif any(f"/{p:02d}-" in norm for p in range(7)) or "/state/" in norm:
             from validate_state import validate_state_file
             errors = validate_state_file(file_path)
         else:
