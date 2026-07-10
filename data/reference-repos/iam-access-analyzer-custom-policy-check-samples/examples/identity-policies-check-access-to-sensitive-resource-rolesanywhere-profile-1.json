@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rolesanywhere:DeleteProfile",
+        "rolesanywhere:DisableProfile",
+        "rolesanywhere:UpdateProfile"
+      ],
+      "Resource": "arn:aws:rolesanywhere:*:*:profile/MyNotSensitiveProfileId"
+    }
+  ]
+}

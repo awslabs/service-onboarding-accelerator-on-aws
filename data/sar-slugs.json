@@ -13,6 +13,7 @@
   "Amazon Aurora DSQL": "amazonauroradsql",
   "Amazon Bedrock": "amazonbedrock",
   "Amazon Bedrock Agentcore": "amazonbedrockagentcore",
+  "Amazon Bedrock AgentCore": "amazonbedrockagentcore",
   "Amazon Bedrock Powered by AWS Mantle": "amazonbedrockpoweredbyawsmantle",
   "Amazon Braket": "amazonbraket",
   "Amazon Chime": "amazonchime",

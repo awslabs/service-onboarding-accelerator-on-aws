@@ -17,16 +17,16 @@ Step-by-step guide to install and run the Service Approval Plugin with GitHub Co
 ## Step 1: Clone the repo
 
 ```bash
-git clone https://gitlab.aws.dev/lightninglane/service-onboarding.git
+git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 ```
 
 ## Step 2: Open the repo in VS Code
 
 ```bash
-code service-onboarding
+code service-onboarding-accelerator-on-aws
 ```
 
-Or: **File** → **Open Folder** → select `service-onboarding/`.
+Or: **File** → **Open Folder** → select `service-onboarding-accelerator-on-aws/`.
 
 Copilot auto-discovers the plugin — no install step required. It reads:
 - `.github/copilot-instructions.md` (repo-wide rules)
@@ -102,7 +102,7 @@ The plugin runs 9 phases:
 5. **Map** — maps capabilities to control framework objectives
 6. **Generate** — produces all security control artifacts and IaC templates
 7. **Test** — deploys and validates (if `--env` provided)
-8. **Summarize** — produces APPROVAL-REPORT.md with verdict
+8. **Summarize** — produces SUMMARY-REPORT.md
 9. **Evidence** — runs CLI probes for attestation (if Test passed)
 
 Progress appears in the Copilot Chat panel. The agent may ask clarifying
@@ -121,12 +121,11 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   04-map/             ← mapping-results.json, controls-catalog.md
   05-generate/        ← all generated artifacts (85+ files)
   06-test/            ← test-results.json, deployed-resources.json (if --env)
-  07-summarize/       ← APPROVAL-REPORT.md (final verdict)
+  07-summarize/       ← SUMMARY-REPORT.md (Summary Report)
   08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
 ```
 
-The key deliverable is `07-summarize/APPROVAL-REPORT.md` — contains the approval
-verdict, coverage matrix, and artifact inventory. Open it directly in VS Code to review.
+The key deliverable is `07-summarize/SUMMARY-REPORT.md` — contains the coverage matrix, mitigation traceability, and artifact inventory. Open it directly in VS Code to review.
 
 ---
 
@@ -170,7 +169,7 @@ Copilot may need MCP tool approval. Check the Copilot output panel
 ## Updating
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 git pull
 ```
 

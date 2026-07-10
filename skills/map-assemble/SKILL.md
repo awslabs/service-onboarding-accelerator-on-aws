@@ -64,6 +64,41 @@ If the skill halts early (precondition failure, validation error), emit
 
 ---
 
+## Phase 0: Semantic control de-duplication (deterministic, runs first)
+
+**Canonical implementation:** `scripts/map-assemble.py` → `dedup_controls()` +
+`remap_framework_mapping()`. The script runs this BEFORE the reverse index and
+threat map are built, so the entire downstream pipeline (and the reported count)
+sees the deduped set.
+
+The control set can carry near-identical controls that differ only by ID — the
+per-resource mitigation variants (e.g. CapacityProvider / EventSourceMapping / Layer
+/ CodeSigningConfig twins of a Function control) come out structurally identical and
+inflate the count and the coverage numbers. Two controls are collapsed into one when
+they share this **canonical identity**:
+
+```
+(normalized name, scope, category, mechanism,
+ sorted(resource_types), sorted(actions), posture)
+```
+
+Collapse policy (deliberate):
+- **Survivor** = the lexicographically smallest control id in the group; its id is
+  kept (ids are NOT renumbered contiguously — the `\d{3}` pattern does not require a
+  gapless sequence, and renumbering would widen the rewrite blast radius).
+- **Traceability survives**: `mitigation_ids`, `parameters_controlled`,
+  `condition_keys`, `assessment_gap_ids`, `attack_techniques`, `framework_keywords`,
+  and `resource_types` are unioned (sorted) onto the survivor.
+- **Every reference is remapped to the survivor id**: `framework_mapping[].controls[]`
+  control_ids and `quality_gate_results.orphaned_controls`. When two now-merged ids
+  both appear under one objective, they collapse to one entry keeping the stronger
+  `coverage_level`.
+
+Because dedup runs here (before Phase 1), the threat map, reverse index, coverage
+gaps, and both rendered `.md` files are all built on the deduped set automatically.
+
+---
+
 ## Phase 1: Build Reverse Index (controls -> framework objectives)
 
 For each control, collect all framework objectives it maps to:
@@ -146,7 +181,7 @@ skills; read them from the emitted `residual_gaps` array.
 Consumers of `threat_mitigation_map[]` entries:
 - `skills/test/SKILL.md` — mitigation coverage calculation reads
   `entry.control_ids` (NOT `entry.controls`).
-- `skills/summarize/SKILL.md` — APPROVAL-REPORT coverage matrix reads
+- `skills/summarize/SKILL.md` — Summary Report coverage matrix reads
   `entry.coverage`, `entry.layers`, and `entry.residual_gaps`.
 - Framework mapping UI — reads `entry.framework_objectives`.
 
@@ -213,18 +248,30 @@ attack_coverage = {
 
 ## Phase 3: Identify Coverage Gaps
 
-Detect and classify ALL gap types:
+Detect and classify ALL gap types. The binding schema
+(`schemas/mapping-results.schema.json`) requires `coverage_gaps` to be an
+**object-of-arrays** keyed by gap type (`mitigation_gap`, `single_layer`,
+`framework_gap`, `control_orphan`, `posture_gap`,
+`partial_parameter_coverage`, `attack_technique_gap`). Build that shape
+directly — the pseudocode below does so.
 
 ```python
-coverage_gaps = []
+coverage_gaps = {
+    "posture_gap": [],
+    "mitigation_gap": [],
+    "single_layer": [],
+    "partial_parameter_coverage": [],
+    "framework_gap": [],
+    "control_orphan": [],
+    "attack_technique_gap": [],
+}
 
 # 0. posture_gap: forward any (mitigation, posture) gaps produced by Rule C1's
 # feasibility filter in map-generate-controls. These are structural gaps — a mitigation
 # was intended to produce a preventative-request or reactive-corrective control but the
 # parameter's gateable_by / mutability precluded it.
 for g in cg.get('coverage_gaps', []):
-    coverage_gaps.append({
-        "type": "posture_gap",
+    coverage_gaps["posture_gap"].append({
         "id": g.get('mitigation_id'),
         "description": (
             f"Posture {g.get('posture')!r} not feasible for mitigation "
@@ -241,8 +288,7 @@ for g in cg.get('coverage_gaps', []):
 # 1. mitigation_gap: mitigations with NONE coverage
 for t in threat_mitigation_map:
     if t['coverage'] == 'NONE':
-        coverage_gaps.append({
-            "type": "mitigation_gap",
+        coverage_gaps["mitigation_gap"].append({
             "id": t['mitigation_id'],
             "description": f"No controls address mitigation {t['mitigation_id']}",
             "recommendation": f"Generate controls for: {t['mitigation_goal'][:100]}"
@@ -259,15 +305,13 @@ for t in threat_mitigation_map:
     preventive_cats = ctrl_cats & {'PRV', 'PRO'}
     detective_cats = ctrl_cats & {'DET', 'COR'}
     if preventive_cats and not detective_cats:
-        coverage_gaps.append({
-            "type": "single_layer",
+        coverage_gaps["single_layer"].append({
             "id": t['mitigation_id'],
             "description": f"Mitigation {t['mitigation_id']} has only preventive controls, no detective",
             "recommendation": "Add detective control (Config rule or CloudWatch alarm)"
         })
     elif detective_cats and not preventive_cats:
-        coverage_gaps.append({
-            "type": "single_layer",
+        coverage_gaps["single_layer"].append({
             "id": t['mitigation_id'],
             "description": f"Mitigation {t['mitigation_id']} has only detective controls, no preventive",
             "recommendation": "Add preventive control (SCP, IAM policy, or resource policy)"
@@ -278,8 +322,7 @@ for t in threat_mitigation_map:
     if t['residual_gaps']:
         for gap in t['residual_gaps']:
             if 'Parameters not controlled' in gap:
-                coverage_gaps.append({
-                    "type": "partial_parameter_coverage",
+                coverage_gaps["partial_parameter_coverage"].append({
                     "id": t['mitigation_id'],
                     "description": gap,
                     "recommendation": "Add controls for uncovered parameters"
@@ -288,8 +331,7 @@ for t in threat_mitigation_map:
 # 4. framework_gap: MAPPED objectives with only Supportive Only coverage
 for f in fw_mapped['framework_mapping']:
     if f.get('status') == 'MAPPED' and f.get('coverage') == 'Supportive Only':
-        coverage_gaps.append({
-            "type": "framework_gap",
+        coverage_gaps["framework_gap"].append({
             "id": f['objective_id'],
             "description": f"Objective {f['objective_id']} has only Supportive controls (no Full or Partial Coverage)",
             "recommendation": "Implement stronger controls directly addressing this objective"
@@ -298,8 +340,7 @@ for f in fw_mapped['framework_mapping']:
 # 5. control_orphan: controls not mapped to any objective
 orphaned = fw_mapped.get('quality_gate_results', {}).get('orphaned_controls', [])
 for oid in orphaned:
-    coverage_gaps.append({
-        "type": "control_orphan",
+    coverage_gaps["control_orphan"].append({
         "id": oid,
         "description": f"Control {oid} does not map to any framework objective",
         "recommendation": "Review if this control addresses any framework requirement"
@@ -310,8 +351,7 @@ for oid in orphaned:
 # MITRE ATT&CK is mandatory); no guard needed.
 for t in attack_coverage.get('uncovered_techniques', []):
     if t['applicability'] == 'HIGH':
-        coverage_gaps.append({
-            "type": "attack_technique_gap",
+        coverage_gaps["attack_technique_gap"].append({
             "id": t['technique_id'],
             "description": f"HIGH applicability technique {t['technique_id']} ({t['technique_name']}) has no covering controls",
             "recommendation": "Generate controls targeting this attack technique"
@@ -341,14 +381,20 @@ mapping_results = {
     "threat_mitigation_map": threat_mitigation_map,
     "framework_mapping": fw_mapped['framework_mapping'],
     "framework_coverage_summary": fw_mapped['framework_coverage_summary'],
-    "coverage_gaps": coverage_gaps,
-    "attack_coverage": attack_coverage,  # always present — MITRE ATT&CK is mandatory
+    "coverage_gaps": coverage_gaps,  # object-of-arrays form per the schema
     "control_summary": {
         "total_controls": len(controls),
         "by_scope": dict(scope_counts),
         "by_category": dict(cat_counts),
-        "by_mechanism": dict(mech_counts)
-    }
+        "by_mechanism": dict(mech_counts),
+    },
+    # The binding schema (schemas/mapping-results.schema.json) is
+    # additionalProperties:false at top level and does NOT permit a
+    # top-level `attack_coverage` key. The ATT&CK summary lives under
+    # `_metadata.attack_coverage`.
+    "_metadata": {
+        "attack_coverage": attack_coverage,
+    },
 }
 
 with open('.service-approval/<slug>/04-map/mapping-results.json', 'w') as f:
@@ -358,6 +404,27 @@ with open('.service-approval/<slug>/04-map/mapping-results.json', 'w') as f:
 ---
 
 ## Phase 5: Write controls-catalog.md
+
+**Authoring rule — keep the customer-facing catalog broad and accurate.** This
+`.md` is read by the customer; the exhaustive, exact data lives in
+`mapping-results.json` (machine-readable, consumed by generate). The catalog
+must state controls at the **objective level** and omit specifics that are open
+to being wrong:
+
+- **Do NOT enumerate exact parameter paths** (`$.CapacityProviderName`,
+  `$.VpcConfig.SubnetIds`, …) in the markdown. Describe the *kind* of setting
+  the control governs ("the function's networking configuration", "the
+  encryption-key setting") instead. The precise paths stay in the JSON.
+- **Do NOT enumerate long verbatim action lists.** Name the action *family* or
+  the one or two representative actions ("restricts function-permission grants",
+  not a 9-item `lambda:` list). The full list stays in the JSON.
+- **State only what is verified.** Omit any claim you are not 100% sure of
+  rather than hedging it in prose. A broad true statement beats a precise
+  uncertain one — the same rule the control descriptions follow in
+  `map-generate-controls`. The `lint_control_prose.py` banned-phrase and
+  length budgets apply to the strings rendered here.
+- Prefer "constrains / supports / enforces at request time" over absolute
+  verbs ("ensures", "prevents all", "guarantees").
 
 Write `.service-approval/<slug>/04-map/controls-catalog.md`:
 
@@ -396,14 +463,18 @@ Write `.service-approval/<slug>/04-map/controls-catalog.md`:
 
 - **Resource:** {resource-type}
 - **Scope:** Organisation
-- **Description:** {what this control does}
+- **Description:** {objective-level statement of what this control does — no exact parameter paths, no long verbatim action lists}
 - **Enforcement Point:** {mechanism}
-- **Implementation:** {how to implement}
-- **Parameters Controlled:** {API parameters}
+- **Implementation:** {how to implement, at the mechanism level}
+- **Governs:** {the kind of setting/configuration this control constrains, in words — NOT raw `$.` parameter paths}
 - **Mitigations:** {M-xxx IDs}
 - **AWS Doc Reference:** {URL}
 
 [repeat for each control, organized by Scope > Category]
+
+> The exact parameter paths and full action lists for each control are recorded
+> in `mapping-results.json` (the machine-readable source generate consumes); the
+> catalog stays objective-level so it does not over-state specifics.
 
 ### Preventive
 ### Detective
@@ -471,6 +542,23 @@ Use the framework name, domain names, and objective IDs from `map-framework-pars
 Use the service name from `map-controls-generated.json`. Never hardcode a specific framework
 or service name in the template logic.
 
+**Authoring rule — state only what is verified (applies to every prose cell below).**
+This crosswalk is read by compliance reviewers; the exhaustive, exact data lives in
+`mapping-results.json`. Keep every free-text cell broad and objective-level:
+
+- **Never re-word a claim upward at render time.** The `.md` MUST NOT make a claim
+  stronger than the source JSON. If `map-controls-generated.json` says a control
+  "requires" or "supports" something, the rendered cell must not say it "ensures",
+  "prevents", or "blocks" it. The prose lint scans this file and fails the map gate
+  on any banned/stronger word that is absent from the control's source JSON rationale.
+- **Do NOT enumerate verbatim action lists or assert condition keys** in prose cells.
+  Name the action *family* and the *intent*; the exact `actions[]`/`condition_keys[]`
+  stay in the JSON that generate consumes.
+- Prefer "supports / constrains / enforces at request time" over absolute verbs
+  ("ensures", "prevents all", "guarantees", bare "prevents"/"blocks", "cannot").
+  Omit any claim you are not 100% sure of rather than hedging it — a broad true
+  statement beats a precise uncertain one.
+
 ### Naming Requirements (CRITICAL)
 
 1. **Objective names are REQUIRED.** Every framework objective MUST include its full title
@@ -483,14 +571,15 @@ or service name in the template logic.
    A table cell with only "CTRL-005" is incomplete — always write
    `CTRL-005 — Enforce IAM authorizer for Gateways`.
 
-3. **Control descriptions are REQUIRED in MITRE mapping tables.** In the MITRE ATT&CK
-   Threat-to-Controls Mapping section, every control row MUST include BOTH the control's
-   `description` field AND the `security_rationale` from `map-controls-generated.json`.
-   The "How It Mitigates" column should contain the control's `description` (what it does
-   functionally, e.g., "SCP denies CreateMemory without KmsKeyArn, preventing unencrypted
-   memory creation") followed by the `security_rationale` (why this mechanism was chosen).
-   If space is tight, use the description as the primary content and append a condensed
-   rationale in parentheses.
+3. **A broad mitigation statement is REQUIRED in MITRE mapping tables.** In the MITRE
+   ATT&CK Threat-to-Controls Mapping section, every control row carries a **broad,
+   one-line** mitigation statement — the *kind* of setting the control governs and the
+   objective it supports (e.g., "Constrains memory creation to require a customer-managed
+   key at request time, via SCP"). Do **not** dump the full `security_rationale` verbatim
+   or enumerate exact actions/condition keys, and do **not** strengthen the claim beyond
+   what the source JSON says (no "ensures"/"prevents"/"blocks" if the JSON does not). The
+   exact data lives in `mapping-results.json`. One broad accurate line beats a precise
+   uncertain paragraph.
 
 4. **MITRE technique names are REQUIRED.** Every MITRE technique reference MUST include
    both the technique ID and its full name. Format: `{Technique-ID}: {Technique Name}`.
@@ -572,13 +661,20 @@ Each entry MUST explain WHY it is not applicable.
 
 ---
 
-## Unmapped Service Controls
+## Controls Not Sourced from Canopy (Suggestions for Review)
 
-Controls that were generated but do not map to any framework objective.
+Controls that are NOT backed by a Canopy mitigation (`trace_source != "canopy"` — the
+assessment-gap / compensating controls). The main per-objective mapping cites only
+Canopy-sourced controls; these are surfaced separately as suggestions a reviewer should
+confirm against a specific AWS-documentation source. The `Source` column is a deep-link to
+the exact AWS doc page (threaded onto the control as `doc_reference` in
+map-generate-controls) so the suggestion is cross-checkable. Canopy-sourced controls —
+including a detective/responsive twin that shares a mitigation with an already-mapped
+control — belong in the main mapping (defense-in-depth), never here.
 
-| Control ID | Control Name | Category | Reason |
-|---|---|---|---|
-| {CTRL-ID} | {Full control name} | {category} | {reason why no framework objective applies} |
+| Control ID | Name | Source |
+|---|---|---|
+| {CTRL-ID} | {Full control name} | {specific AWS-doc reference, e.g. `[title](https://docs.aws.amazon.com/...#anchor)`} |
 
 ---
 
@@ -665,8 +761,10 @@ Techniques with HIGH or MEDIUM applicability that have NO mitigating controls.
 6. For the Not Applicable Objectives section, collect all objectives where status is NOT
    "MAPPED" and list them with their full titles and reasons.
 
-7. For the Unmapped Service Controls section, use `quality_gate_results.orphaned_controls`
-   from `map-framework-mapped.json`.
+7. For the "Controls Not Sourced from Canopy (Suggestions for Review)" section, list only
+   controls with `trace_source != "canopy"` (assessment-gap / compensating controls) and
+   render each control's `doc_reference` in the Source column. Canopy-sourced controls are
+   never listed here — they belong in the main mapping.
 
 8. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to
    `framework_gap` type entries.
@@ -682,10 +780,15 @@ Techniques with HIGH or MEDIUM applicability that have NO mitigating controls.
       `attack_coverage.technique_to_controls[technique_id]`
     - For each control ID, look up the full control details (name, description, category,
       scope, mechanism, security_rationale) from `map-controls-generated.json`
-    - Write the "Description" column using the control's `description` field verbatim
-      (e.g., "SCP denies CreateMemory without KmsKeyArn")
-    - Write the "Security Rationale" column using the control's `security_rationale` field
-      (explains why this mechanism was chosen and how it addresses the technique)
+    - Write the "Description" column as a **broad one-line** restatement of the control's
+      `description` at objective level — name the mechanism and the kind of setting it
+      governs (e.g., "Constrains memory creation to require encryption at request time,
+      via SCP"). Do not enumerate verbatim actions/condition keys, and do not strengthen
+      the claim beyond the source JSON.
+    - Write the "Security Rationale" column as a **broad one-line** statement of why this
+      mechanism family was chosen — do not dump the full `security_rationale` paragraph,
+      and keep the verbs objective-level ("supports"/"constrains"/"enforces at request
+      time"), never "ensures"/"prevents"/"blocks" unless the source JSON does
     - For uncovered techniques, use `attack_coverage.uncovered_techniques[]`
     - For the coverage summary table, use `attack_coverage.tactic_coverage`
     - Query the `mitre-attack` MCP for technique details (name, description, tactic) when

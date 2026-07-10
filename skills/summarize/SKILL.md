@@ -1,12 +1,12 @@
 ---
 name: summarize-v3
-description: Produce final APPROVAL-REPORT.md with framework coverage matrix, mitigation traceability, control inventory, test evidence, and verdict
+description: Produce final SUMMARY-REPORT.md with framework coverage matrix and control inventory
 disable-model-invocation: false
 ---
 
 # Service Approval — Summarizer v3
 
-Read all state files and generate the final approval report at `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md`.
+Read all state files and generate the final Summary Report at `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md`.
 
 ## Prerequisites
 
@@ -15,25 +15,22 @@ Read all state files and generate the final approval report at `.service-approva
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 01-assess || exit 2
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
   python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
-  test -d .service-approval/<slug>/05-generate || { echo "ERROR: run generator first"; exit 2; }
+  test -d .service-approval/<slug>/05-recommended-guidance || { echo "ERROR: run generator first"; exit 2; }
   ```
-  Phase 6 (Test) is OPTIONAL — proceed even if 06-test/ is absent (mark test
-  as NOT RUN in the report). The summarize skill must NOT pre-gate Phase 6
-  because intake's testing.mode=skip is a legitimate path that skips Phase 5.
 
-## Step 1: Determine verdict
+## Step 1: Collect run facts (no verdict)
 
-Read `validated.json` for `unverified_count`. Read `test-results.json` if it exists.
+This report does NOT issue an approve/deny judgment. Instead, collect the factual
+inputs the report states plainly:
 
-| Condition | Verdict |
-|-----------|---------|
-| `test_results.passed = true` AND `unverified_count = 0` | APPROVED |
-| `test_results.passed = true` AND `unverified_count > 0` | APPROVED WITH EXCEPTIONS |
-| `test_results.skipped = true` AND `unverified_count = 0` | APPROVED (test not run) |
-| `test_results.passed = false` | REQUIRES REMEDIATION |
-| `test-results.json` absent | APPROVED (test not run) |
+Read `validated.json` for `unverified_count`. Record, as neutral facts:
+- the count of unverified items (`unverified_count`).
 
-Note: `passed: null` (dry-run) is treated the same as `skipped: true`.
+These facts populate the run-specific "Preventive Coverage" accounting (Step 6) and
+the "UNVERIFIED Items" section. The generic verification steps are
+NOT repeated in the report — they live once in the project README (see the
+"Verification approach" one-line pointer in Step 6). Do NOT derive or print any
+verdict label (no "APPROVED", "REQUIRES REMEDIATION", etc.).
 
 ## Step 2: Build framework coverage matrix
 
@@ -44,23 +41,17 @@ Read `mapping-results.json` `framework_mapping[]`. Build a table:
 Where "Satisfied By" = comma-separated control IDs that map to this framework objective.
 Use the framework name dynamically from `mapping-results.json.framework.name`.
 
-## Step 3: Build mitigation traceability matrix
+## Step 3: (reserved)
 
-Read `mapping-results.json` `threat_mitigation_map[]`. Build a table:
-
-| Mitigation ID | Statement | Resource Type | Controls | Framework Objectives | Coverage |
-
-Where "Statement" = `statement` field.
-Where "Controls" = `control_ids[]` from the mitigation entry (joined, comma-separated).
-Where "Framework Objectives" = `framework_objectives[]` from the mitigation entry. If this field
-is absent, derive it: for each control id in the mitigation's `control_ids[]`, look up that control
-in the top-level `controls[]` and collect its `framework_objectives[]`. Deduplicate and sort.
-
-This shows end-to-end traceability from customer mitigations through controls to framework objectives.
+This report does NOT render a standalone mitigation-traceability table. Every
+control cites the Canopy mitigation it derives from directly in the control
+catalog, so a separate mitigation→control rollup is redundant for the customer.
+The `threat_mitigation_map[]` data remains in `mapping-results.json` for internal
+gates and downstream consumers; do not build a customer-facing table from it.
 
 ## Step 4: Build control inventory
 
-For each file in `.service-approval/<slug>/05-generate/`, read its `_metadata` or header comments
+For each file in `.service-approval/<slug>/05-recommended-guidance/`, read its `_metadata` or header comments
 (lines starting with `# SCOPE:`, `# LAYER:`, `# CONTROLS:`, `# FRAMEWORK:`).
 
 Build a table per layer:
@@ -68,33 +59,130 @@ Build a table per layer:
 
 ## Step 5: Build artifact manifest
 
+List the generated artifacts, but **exclude vendored and build directories** —
+`node_modules/`, `.terraform/`, `cdk.out/`, `__pycache__/`, `.git/`, and
+lockfiles. An IaC format that vendors its dependencies (e.g. cdktf) can otherwise
+dump tens of thousands of `node_modules` paths into the manifest and balloon the
+customer-facing report from hundreds of lines to thousands.
+
 ```bash
-find .service-approval/<slug>/05-generate -type f | sort
+find .service-approval/<slug>/05-recommended-guidance \
+  \( -type d \( -name node_modules -o -name .terraform -o -name cdk.out \
+       -o -name __pycache__ -o -name .git \) -prune \) -o \
+  \( -type f \
+     ! -name 'package-lock.json' ! -name 'yarn.lock' ! -name '*.tfstate' \
+     ! -name '*.tfstate.backup' ! -name '*.pyc' \
+     -print \) | sort
 ```
 
-## Step 6: Write APPROVAL-REPORT.md
+For the IaC subtree (`05-recommended-guidance/iac/`), **summarize each format rather than
+listing every file** — report the format and its top-level entry (e.g.
+`iac/cdktf/ — CDK for Terraform project (N files)`), not the full vendored tree.
+The manifest names what was produced; the templates themselves live on disk for
+the customer to read.
+
+## Step 6: Write SUMMARY-REPORT.md
 
 **CRITICAL — Terminology rules for the report:**
-The APPROVAL-REPORT.md is a customer-facing document. NEVER use internal/pipeline terms:
+The SUMMARY-REPORT.md is a customer-facing document. NEVER use internal/pipeline terms:
 - NO: "service approval pipeline", "pipeline generated" → YES: "47 security controls were generated"
-- NO: "--skip-test flag", "--clean flag" → YES: "Testing was deferred for this assessment"
+- NO: "--clean flag" → YES: describe the outcome, not the flag
 - NO: "deployment pipeline" → YES: "deployment process"
 - NO: MCP tool names, skill names, agent names
 - NO: internal file names ("validated.json", "mapping-results.json", "research.json") → YES: "all capabilities were verified"
 - NO: "unverified_count = 0" → YES: "all items verified"
 - Apply all terminology rules from CLAUDE.md (see Terminology Rules section)
 
-Write `.service-approval/<slug>/07-summarize/APPROVAL-REPORT.md` with these sections.
-Section headings are H2 (`##`) — the report's top-level title `# Service Approval
+Write `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` with these sections.
+Section headings are H2 (`##`) — the report's top-level title `# Service Summary
 Report — {Service}` is H1, so all section headers under it are H2. Downstream
-consumers (`skills/evidence/SKILL.md` awk extraction, `validate_pipeline_integrity.py`
-P6 verdict-consistency check) anchor on H2; writing H3 here silently breaks both.
+consumers anchor on H2; writing H3 here silently breaks them.
 
-## Verdict
-[Verdict string with date, service name, resource count]
+## Verification approach (one-line pointer — do NOT expand)
+Place a single short line FIRST, immediately under the report title:
+
+> The verification steps performed on every run (capability verification, validator
+> gates, reference anchoring) are described in the
+> project README under "How the tool builds confidence."
+
+Do **not** render the generic "Actions Taken to Increase Confidence" bullet list in
+the report — those steps are identical on every run and are documented once in the
+README. The report carries only **run-specific** data: the Preventive Coverage
+accounting below (which is data, not boilerplate). Do not add a per-item confidence
+score or band anywhere (validator P11 enforces this).
+
+## Preventive Coverage
+Place this section immediately after the one-line "Verification approach" pointer. It is a
+**deterministic, file-backed** accounting — read it from
+`.service-approval/<slug>/05-recommended-guidance/preventive-coverage.json` (built by
+`build_preventive_coverage.py`); do NOT hand-write or estimate the numbers. If the
+file is absent (no preventive controls in this run), state that plainly and omit the
+table.
+
+Render the totals and a per-control breakdown so every count is traceable:
+
+```markdown
+Of {objectives} preventive objectives: **{authored}** have a policy generated from a
+public AWS reference example, **{referred}** point to a reference example the customer
+applies, and **{routed_to_detective}** are covered by detective controls (not
+preventable at request time).
+
+| Control | Coverage | Mechanism | Reference / Citation | Why |
+|---|---|---|---|---|
+| {control_id} | {Authored / Referred / Routed to detective} | {mechanism} | {anchor example_id + url, or citation type + id/url} | {reason} |
+```
+
+The counts come straight from `totals`; each row comes from `controls[]` (its
+`category`, `mechanism`, `anchor`/`citation`, and `reason`). A reader can verify
+every number by following the control id and citation back to the generated
+artifacts. This section is descriptive, not a judgment.
+
+### Applying the preventive policies
+
+For every authored and referred control that carries an `applicability` block
+**or** an `application_guidance` block in `preventive-coverage.json`, render a
+concrete **"how to apply / adapt this"** subsection so the reader is not left
+with a bare citation URL. Read the fields verbatim from `controls[].applicability`
+and `controls[].application_guidance` — do NOT invent text. Omit a control here
+only when it has neither block (e.g. a routed-to-detective row, which produces no
+preventive policy to apply).
+
+When the control carries an `applicability` block, render its two lines FIRST —
+immediately after the cited policy URL, before "Where it goes" — so the reader
+learns what the cited policy targets and where NOT to apply it before the
+placement mechanics. Render them only when `applicability` is present.
+
+```markdown
+#### {control_id} — how to apply
+
+- **Applies to:** {applicability.applies_to}
+- **How to use:** {applicability.usage_notes}
+- **Where it goes:** {application_guidance.placement}
+- **Edit these placeholders:** {application_guidance.placeholders joined by ", "}
+- **Test it:** {application_guidance.test}
+- **Roll back:** {application_guidance.rollback}
+```
+
+The **Applies to** / **How to use** lines clarify the cited policy: which subset
+of the service's resources it targets (the pattern that selects them) and, in
+particular, where it must NOT be applied — so a customer does not over-scope a
+policy and block a team that legitimately performs the gated actions on its own
+resources. They appear right after the citation URL and only when `applicability`
+is present (a canopy-only citation with no URL carries none).
+
+For a **referred** control, the placement/placeholders describe how to copy the
+cited reference example and what to change for this service/account; for an
+**authored** control they point at the generated artifact file and the exact
+placeholders inside it.
+
+## Summary of Findings
+A neutral, factual recap of what this assessment produced and what remains open —
+date, service name, and resource/control counts. State coverage and any open items
+plainly. Do NOT include an approve/deny verdict or readiness rating; this report
+records findings, it does not adjudicate.
 
 ## Executive Summary
-[Coverage numbers: N controls generated, N framework objectives covered, N mitigations addressed, test result]
+[Coverage numbers: N controls generated, N framework objectives covered, N mitigations addressed]
 
 ## Security Posture Assessment
 **Include this section only if `assessment-summary.md` exists.**
@@ -117,10 +205,6 @@ Use the framework name dynamically from `mapping-results.json.framework.name`:
 > Note: as of 2026-05-16, interactive runs are narrowed to CCMv4 by intake.
 > The non-CCMv4 branches above are reachable only when an advanced operator
 > bypasses intake with `--framework=<type>`.
-
-## Mitigation Traceability
-[Full table from Step 3 — all customer mitigations with control and framework mappings]
-Include coverage summary: N/N mitigations fully covered, N partially covered, N uncovered.
 
 ## Threat Model Coverage
 **Always included** — MITRE ATT&CK analysis is mandatory for every service onboarding.
@@ -171,56 +255,33 @@ STRIDE coverage summary showing which STRIDE categories have controls addressing
 ## Control Inventory
 [Per-layer table from Step 4, organized by Controls Matrix cell]
 
-## Test Evidence
-[Config rule finding count, Config compliance status, mitigation coverage %, framework coverage % — or "Test not run" if skipped]
-
 ## UNVERIFIED Items
 [List with reasons, or "None — all items verified" if unverified_count = 0]
 
 ## Artifact Manifest
 [Full file list from Step 5]
 
-## Evidence & Attestation
-**NEW:** If `.service-approval/<slug>/08-evidence/` exists, append this section:
-
-Runtime validation complete. Phase 7 Evidence runner executed CLI probes against deployed resources to verify each control is enforced. See:
-- `08-evidence/attestation-report.md` — control x CLI x verdict matrix
-- `08-evidence/attestation-results.json` — machine-readable verdicts
-- `08-evidence/summary.md` — top-level triage digest
-
-Evidence coverage: {pass_count} / {total_controls} controls verified PASS, {not_cli_validatable_count} NOT_CLI_VALIDATABLE.
-
-Otherwise, omit this section (Evidence phase was not run).
-
 ## Next Steps
 Deployment order:
 1. **Org level**: Apply SCPs, RCPs, tag policies via AWS Organizations
 2. **Account level**: Deploy Config conformance pack, Config rules, Access Analyzer
 3. **Service level**: Deploy CloudFormation Hooks, Config org rules
-4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `05-generate/iac/`
+4. **Resource level**: Deploy detective controls (EventBridge, CloudWatch alarms, Lambda remediator), then create the compliant resource using the IaC template in `05-recommended-guidance/iac/`
 
-## Manual Deploy Commands
+## How to Deploy These Recommendations
 
-**Render this section only when `intake-manifest.json.testing.mode == "manual-cli"`.**
+**Always render this section.**
 
-The user opted out of automated Phase 5 testing and asked for per-format deploy
-commands. Inspect `.service-approval/<slug>/05-generate/iac/` and emit only the commands that
+The pipeline produces recommended controls + IaC that you deploy yourself. Inspect
+`.service-approval/<slug>/05-recommended-guidance/iac/` and emit only the commands that
 match formats actually present. Always use placeholders (`<STACK_NAME>`,
 `<AWS_PROFILE>`, `<AWS_REGION>`) — never substitute a real profile name.
 
 ```bash
 python3 - <<'PY'
-import json
 from pathlib import Path
 
-manifest = Path(f".service-approval/{slug}/00-intake/intake-manifest.json")
-if not manifest.exists():
-    raise SystemExit(0)
-mode = json.loads(manifest.read_text()).get("testing", {}).get("mode")
-if mode != "manual-cli":
-    raise SystemExit(0)
-
-iac = Path(f".service-approval/{slug}/05-generate/iac")
+iac = Path(f".service-approval/{slug}/05-recommended-guidance/iac")
 has_cfn       = any(iac.glob("*.cfn.yaml")) or any(iac.glob("*.yaml"))
 has_terraform = (iac / "modules").exists()
 has_cdk       = any(iac.rglob("*.ts")) and not (iac / "cdktf").exists()
@@ -231,7 +292,7 @@ if has_cfn:
     blocks.append(f"""**CloudFormation:**
 ```bash
 aws cloudformation deploy \\
-  --template-file .service-approval/{slug}/05-generate/iac/compliant-resource.cfn.yaml \\
+  --template-file .service-approval/{slug}/05-recommended-guidance/iac/compliant-resource.cfn.yaml \\
   --stack-name <STACK_NAME> \\
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \\
   --profile <AWS_PROFILE>
@@ -239,7 +300,7 @@ aws cloudformation deploy \\
 if has_terraform:
     blocks.append(f"""**Terraform:**
 ```bash
-cd .service-approval/{slug}/05-generate/iac
+cd .service-approval/{slug}/05-recommended-guidance/iac
 terraform init
 terraform plan -out tfplan
 terraform apply tfplan
@@ -247,7 +308,7 @@ terraform apply tfplan
 if has_cdk:
     blocks.append(f"""**CDK TypeScript:**
 ```bash
-cd .service-approval/{slug}/05-generate/iac
+cd .service-approval/{slug}/05-recommended-guidance/iac
 npm install
 npx cdk bootstrap --profile <AWS_PROFILE>
 npx cdk deploy --profile <AWS_PROFILE>
@@ -255,15 +316,15 @@ npx cdk deploy --profile <AWS_PROFILE>
 if has_cdktf:
     blocks.append(f"""**CDK for Terraform:**
 ```bash
-cd .service-approval/{slug}/05-generate/iac/cdktf
+cd .service-approval/{slug}/05-recommended-guidance/iac/cdktf
 npm install
 npx cdktf deploy
 ```""")
-if (Path(f".service-approval/{slug}/05-generate/responsive/lambda-remediator/template.yaml")).exists():
+if (Path(f".service-approval/{slug}/05-recommended-guidance/responsive/lambda-remediator/template.yaml")).exists():
     blocks.append(f"""**Detective controls stack (deploy after compliant resource):**
 ```bash
 aws cloudformation deploy \\
-  --template-file .service-approval/{slug}/05-generate/responsive/lambda-remediator/template.yaml \\
+  --template-file .service-approval/{slug}/05-recommended-guidance/responsive/lambda-remediator/template.yaml \\
   --stack-name <STACK_NAME>-detective \\
   --capabilities CAPABILITY_IAM \\
   --profile <AWS_PROFILE>
@@ -273,61 +334,39 @@ print("\n\n".join(blocks) if blocks else "No deployable IaC artifacts found.")
 PY
 ```
 
-Append the rendered blocks to `APPROVAL-REPORT.md` under this heading. Skip the
-entire section when `testing.mode` is anything other than `manual-cli`.
+Append the rendered blocks to `SUMMARY-REPORT.md` under this heading.
 
 ## Pipeline-Complete Sentinel
 
-After APPROVAL-REPORT.md is written, emit a terminal-state sentinel to
+After SUMMARY-REPORT.md is written, emit a terminal-state sentinel to
 `pipeline.log`. This signals to the Stop hook (`validate_pipeline_integrity.py`
 P1 check) that the run is finalized — the file is frozen, and remediation-only
 checks like the MCP-call-count gate cannot be retroactively satisfied.
 Without this sentinel, the Stop hook re-fires forever on completed runs that
 happen to have a P1 violation in their pipeline.log.
 
-Emit AFTER the report file is closed and AFTER the print summary, only when
-Phase 7 Evidence is NOT in scope (Evidence's Step 11 owns the sentinel when
-it runs). Detect Phase 7-in-scope by `intake-manifest.json.testing.mode ==
-"full-deploy"`.
+Emit AFTER the report file is closed and AFTER the print summary. Summarize is
+the terminal phase, so it always owns the sentinel.
 
 ```bash
-# Map verdict to sentinel form. Drop any parenthesized qualifier first so
-# "APPROVED (test not run)" canonicalizes to "APPROVED" (the qualifier is
-# audit-trail metadata, not a distinct verdict — see "Sentinel canonicalization"
-# note below). Then uppercase and fold spaces/hyphens to underscores.
-VERDICT_TAG=$(echo "<verdict>" \
-    | sed -E 's/ *\(.*\)$//' \
-    | tr '[:lower:]' '[:upper:]' | tr ' -' '__')
-# e.g., "APPROVED with exceptions" -> "APPROVED_WITH_EXCEPTIONS"
-# e.g., "APPROVED (test not run)"  -> "APPROVED"
-
+# The terminal-state sentinel is verdict-free: it records only that the run
+# finalized, freezing the file against retroactive remediation. The fixed
+# token FINALIZED closes out the P1 check.
 python3 -m tools.validate.log \
     --slug <slug> \
-    --phase 07-summarize \
+    --phase 06-summarize \
     --source pipeline:complete \
-    --verdict "${VERDICT_TAG}" \
-    --message "summarize finalized; verdict=${VERDICT_TAG}"
+    --verdict FINALIZED \
+    --message "summarize finalized"
 ```
 
-**Sentinel canonicalization:** the validator's closed allowlist is
-`APPROVED | APPROVED_WITH_EXCEPTIONS | REQUIRES_REMEDIATION`. Parenthesized
-qualifiers in the verdict table (e.g., `APPROVED (test not run)`) are
-*informational metadata*, not distinct verdicts — they describe which
-subset of validation ran, not whether the run was approved. The sentinel
-canonicalizes them away so the gate stays binary; consumers needing the
-original qualifier read `APPROVAL-REPORT.md` directly, not the sentinel
-token. Adding new parenthesized variants does NOT require validator
-allowlist changes; adding a new bare verdict (e.g., a hypothetical
-`PENDING`) does.
-
-The validator anchors on the literal token `[pipeline:complete:<VERDICT>]`,
-where `<VERDICT>` is uppercase letters with underscores. Mid-flight runs
-without the sentinel still get the strict P1 check.
+The validator anchors on the literal token `[pipeline:complete:FINALIZED]`.
+Mid-flight runs without the sentinel still get the strict P1 check. The
+sentinel carries no approve/deny meaning — this report does not adjudicate.
 
 Print:
 ```
-Report written: .service-approval/<slug>/07-summarize/APPROVAL-REPORT.md
-Verdict: <APPROVED|APPROVED WITH EXCEPTIONS|REQUIRES REMEDIATION>
+Report written: .service-approval/<slug>/06-summarize/SUMMARY-REPORT.md
 Framework: {name} — {mapped} / {total} objectives covered
 Mitigations: {covered} / {total} addressed
 Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)

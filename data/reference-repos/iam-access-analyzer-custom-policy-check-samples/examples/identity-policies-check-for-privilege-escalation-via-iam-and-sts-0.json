@@ -1,0 +1,45 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "*",
+      "Resource": "*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "NotResource": "arn:aws:iam::*:role/PassableRoles/*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "NotResource": "arn:aws:iam::*:role/AssumableRoles/*"
+    },
+    {
+      "Effect": "Deny",
+      "Action": [
+        "iam:CreateUser",
+        "iam:CreateAccessKey",
+        "iam:CreateLoginProfile",
+        "iam:AttachUserPolicy",
+        "iam:PutUserPolicy",
+        "iam:UpdateLoginProfile",
+        "iam:AttachGroupPolicy",
+        "iam:PutGroupPolicy",
+        "iam:AddUserToGroup",
+        "iam:CreateRole",
+        "iam:AttachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:UpdateAssumeRolePolicy"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

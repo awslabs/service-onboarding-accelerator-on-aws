@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "description": "Derives a service's category label(s) from its capability flags (data/service-capability-rules.json). A service may hold MULTIPLE categories (multi-label) — a service can be both serverless_compute and own durable storage. Categories are a coarse axis the guidance KB (data/domain-mapping-guidance/<framework>.json) can override objectives on via by_service_category. Category derivation is best-effort and additive: a service with no matching signal simply gets no category, and the KB objective-level defaults apply unchanged. Consumed by scripts/compute-applicability-matrix.py.",
+  "categories": [
+    "serverless_compute",
+    "managed_compute",
+    "container",
+    "storage",
+    "database",
+    "networking",
+    "data_analytics",
+    "security_identity"
+  ],
+  "category_note": "serverless_compute: event-driven compute with no customer OS to patch (Lambda). managed_compute: compute the customer runs but AWS operates the control plane. container: container/orchestration surfaces. storage: owns durable object/file/block storage. database: owns a managed datastore with backup/PITR. networking: primary surface is a network path/endpoint. data_analytics: query/stream/ETL over data. security_identity: an identity, key, or security-tooling service. Multi-label allowed; conflicts are not resolved here — the KB decides precedence when it authors an override.",
+  "category_rules": [
+    {
+      "category": "serverless_compute",
+      "description": "Event-driven compute the customer does not patch (no customer OS). Positive signal is an execution role + emits logs WITHOUT a customer-managed-patching signal.",
+      "match_when": {
+        "all_present": ["execution_role"],
+        "none_present": ["customer_managed_patching"]
+      }
+    },
+    {
+      "category": "managed_compute",
+      "description": "Compute where the customer manages OS/software patching.",
+      "match_when": {
+        "all_present": ["customer_managed_patching"]
+      }
+    },
+    {
+      "category": "storage",
+      "description": "Service owns durable storage the customer manages.",
+      "match_when": {
+        "any_present": ["owns_durable_storage"]
+      }
+    },
+    {
+      "category": "database",
+      "description": "Service owns a managed datastore with backup / point-in-time recovery.",
+      "match_when": {
+        "any_present": ["managed_backup", "cross_region_replication"],
+        "also_any_present": ["owns_durable_storage"]
+      }
+    },
+    {
+      "category": "networking",
+      "description": "Service's primary surface is a network path/endpoint the customer isolates.",
+      "match_when": {
+        "all_present": ["has_network_surface"],
+        "none_present": ["execution_role", "owns_durable_storage"]
+      }
+    }
+  ]
+}

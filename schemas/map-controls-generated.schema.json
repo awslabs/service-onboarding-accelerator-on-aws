@@ -148,10 +148,80 @@
           "items": {"type": "string"},
           "description": "Optional — iter-13 addition linking the control back to GAP-NN entries from assessment-summary.md."
         },
+        "doc_reference": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url"],
+          "properties": {
+            "url": {
+              "type": "string",
+              "pattern": "^https://docs\\.aws\\.amazon\\.com/.*",
+              "description": "Deep-link to the specific AWS documentation page (ideally with a #section anchor) that backs a control not sourced from a Canopy mitigation. MCP-verified (awsknowledge / aws-documentation) and logged to mcp-calls.log; never a training-data guess."
+            },
+            "title": {"type": "string", "minLength": 1}
+          },
+          "description": "Optional — specific AWS-documentation reference for a non-Canopy (trace_source != 'canopy') control, so the framework-mapping Source column can cite a cross-checkable page. Present on assessment-gap / compensating controls; absent on Canopy-sourced controls (they cite the mitigation instead)."
+        },
         "attack_techniques": {
           "type": "array",
           "items": {"type": "string"},
           "description": "Optional — MITRE ATT&CK technique IDs (e.g. T1078) the control addresses. iter-13 addition when a threat model is provided."
+        },
+        "mitigation_alias": {
+          "type": "string",
+          "description": "Optional — the primary Canopy mitigation alias (e.g. Mitigation.LAMBDA.Function.1) the control derives from. Threaded deterministically from the Canopy source so the final mapping can cite it."
+        },
+        "mitigation_aliases": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Optional — all Canopy mitigation aliases this control derives from."
+        },
+        "mitigation_uuid": {
+          "type": "string",
+          "description": "Optional — the primary Canopy mitigation UUID the control derives from."
+        },
+        "mitigation_uuids": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Optional — all Canopy mitigation UUIDs this control derives from."
+        },
+        "mitigation_statement": {
+          "type": "string",
+          "description": "Optional — verbatim Canopy statement of the primary source mitigation, threaded by scripts/canopy_trace.py so a downstream citation can quote it and be provenance-checked against the export. Present only on controls with trace_source == 'canopy'."
+        },
+        "mitre_techniques": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Optional — MITRE ATT&CK technique IDs resolved deterministically from the Canopy source (mitigation -> THREAT mapping -> threat -> FRAMEWORK mapping). Empty for controls derived from synthetic assessment gaps."
+        },
+        "trace_source": {
+          "type": "string",
+          "enum": ["canopy", "assessment_gap"],
+          "description": "Provenance of a control's traceability: 'canopy' when it resolves to a real Canopy mitigation (alias/UUID/MITRE present), 'assessment_gap' for synthetic gap-derived controls (empty traceability)."
+        },
+        "mitigation_intent": {
+          "type": "string",
+          "description": "Canonical intent classification derived from the source mitigation statement. Matched against data/mitigation-intent-patterns.json patterns. Used by map-framework-mapping to constrain which objectives a control may map to."
+        },
+        "security_domain": {
+          "type": "string",
+          "enum": [
+            "data_protection_at_rest",
+            "data_protection_in_transit",
+            "network_isolation",
+            "availability_resilience",
+            "observability",
+            "authentication",
+            "identity_trust",
+            "access_control",
+            "governance",
+            "operational_safety",
+            "disaster_recovery",
+            "supply_chain_integrity",
+            "reliability",
+            "compute_isolation"
+          ],
+          "description": "Security domain classification from data/mitigation-intent-patterns.json. Groups controls by what security concern they address."
         },
         "_metadata": {
           "type": "object",

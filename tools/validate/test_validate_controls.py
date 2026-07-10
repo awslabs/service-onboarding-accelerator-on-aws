@@ -39,6 +39,7 @@ from validate_controls import (
     check_sar_condition_keys_14a,
     check_api_driven_enum_literals_14b,
     check_posture_mechanism_consistency_15,
+    check_iam_action_sourcing_17,
 )
 
 
@@ -993,3 +994,126 @@ def test_check_1_falls_back_to_service_when_it_is_machine_prefix() -> None:
     }
     validated = {"service": "ecs"}  # no service_prefix, but `service` is machine form
     assert check_service_prefix("/tmp/eventbridge-rules.json", data, validated) == []
+
+
+# ------------------------------------------------------------------
+# CHECK-17 — IAM action names must be sourced, not synthesized
+# ------------------------------------------------------------------
+
+# validated.json fixture carrying a permission-only action alongside the
+# api_surface operations, so CHECK-17 sees both sourcing paths.
+SAMPLE_VALIDATED_17 = {
+    "service": "ecs",
+    "capabilities": {
+        "iam": {
+            "permission_only_actions": ["PutAccountSettingDefault"],
+        }
+    },
+    "api_surface": {
+        "operations": [
+            {"operation": "CreateCluster", "parameters": []},
+            {"operation": "CreateService", "parameters": []},
+            {"operation": "RegisterTaskDefinition", "parameters": []},
+        ]
+    },
+}
+
+
+def _scp_with_actions(actions) -> dict:
+    return {
+        "_metadata": {"posture": "preventative-request"},
+        "Version": "2012-10-17",
+        "Statement": [
+            {"Sid": "S1", "Effect": "Deny", "Action": actions, "Resource": "*"}
+        ],
+    }
+
+
+def test_17_real_action_passes() -> None:
+    scp = _scp_with_actions(["ecs:CreateService", "ecs:RegisterTaskDefinition"])
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        assert check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17) == []
+    finally:
+        os.unlink(path)
+
+
+def test_17_permission_only_action_passes() -> None:
+    scp = _scp_with_actions(["ecs:PutAccountSettingDefault"])
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        assert check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17) == []
+    finally:
+        os.unlink(path)
+
+
+def test_17_invented_action_fails() -> None:
+    """An action invented by analogy (not in api_surface) must be flagged."""
+    scp = _scp_with_actions(["ecs:SearchClusters"])
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        errors = check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17)
+        assert len(errors) == 1
+        assert "CHECK-17" in errors[0]
+        assert "ecs:SearchClusters" in errors[0]
+    finally:
+        os.unlink(path)
+
+
+def test_17_cross_service_action_skipped() -> None:
+    """Legitimate cross-service guardrail actions are not in this service's
+    surface and must NOT be flagged."""
+    scp = _scp_with_actions(
+        ["sts:AssumeRole", "organizations:LeaveOrganization", "kms:ScheduleKeyDeletion"]
+    )
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        assert check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17) == []
+    finally:
+        os.unlink(path)
+
+
+def test_17_wildcard_actions_skipped() -> None:
+    scp = _scp_with_actions(["ecs:*", "ecs:Create*", "*"])
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        assert check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17) == []
+    finally:
+        os.unlink(path)
+
+
+def test_17_display_name_service_skips() -> None:
+    """A human display name in `service` is not a usable prefix — skip."""
+    scp = _scp_with_actions(["ecs:SearchClusters"])
+    validated = dict(SAMPLE_VALIDATED_17, service="Amazon ECS")
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        assert check_iam_action_sourcing_17(path, scp, validated) == []
+    finally:
+        os.unlink(path)
+
+
+def test_17_only_runs_on_sar_driven_files() -> None:
+    """A proactive/IaC file is not SAR-driven — CHECK-17 must not run on it."""
+    scp = _scp_with_actions(["ecs:SearchClusters"])
+    path = _tmp_file("_cfn-guard-rules.guard", json.dumps(scp))
+    try:
+        assert check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17) == []
+    finally:
+        os.unlink(path)
+
+
+def test_17_notaction_also_checked() -> None:
+    scp = {
+        "_metadata": {"posture": "preventative-request"},
+        "Version": "2012-10-17",
+        "Statement": [
+            {"Sid": "S1", "Effect": "Deny", "NotAction": ["ecs:BogusOp"], "Resource": "*"}
+        ],
+    }
+    path = _tmp_file("_scp-policy.json", json.dumps(scp))
+    try:
+        errors = check_iam_action_sourcing_17(path, scp, SAMPLE_VALIDATED_17)
+        assert len(errors) == 1 and "ecs:BogusOp" in errors[0]
+    finally:
+        os.unlink(path)

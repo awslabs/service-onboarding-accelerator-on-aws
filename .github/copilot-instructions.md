@@ -28,7 +28,7 @@ should use `aws-documentation` and `awsiac` instead. If the skill instructs you 
 `aws-cdk-mcp-server`, fall back to those two.
 
 ## Output
-- Final report: `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md`
+- Final report: `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
 - All controls: `.service-approval/<service-slug>/05-generate/`
 - State files: `.service-approval/<service-slug>/` (per-phase subdirectories)
 - Evidence: `.service-approval/<service-slug>/08-evidence/` (if Phase 7 runs)

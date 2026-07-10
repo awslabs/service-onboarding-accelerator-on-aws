@@ -2,8 +2,8 @@
 """
 Pipeline integrity validator.
 
-Detects agents that skip the 9-phase pipeline (Intake → Assess → Research →
-Validate → Map → Generate → Test → Summarize → Evidence) and emit hardcoded
+Detects agents that skip the pipeline (Intake → Assess → Research →
+Validate → Map → Recommended Guidance → Summarize) and emit hardcoded
 artifacts instead of running real MCP-driven research/validation/generation.
 
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
@@ -11,17 +11,34 @@ Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 Failure signals:
     P1 — pipeline.log / mcp-calls.log missing or too few MCP calls
          (exempted when pipeline.log carries the
-         `[pipeline:complete:<VERDICT>]` terminal sentinel — finalized
+         `[pipeline:complete:FINALIZED]` terminal sentinel — finalized
          runs are immutable, retroactive remediation impossible)
     P2 — validated.json has templated or empty verification notes
     P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
          keys, broad Allow on Resource:* without Condition, SCP without Deny)
     P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
-    P6 — verdict mismatch (APPROVED emitted despite integrity failures)
     P7 — phase-output completeness: every phase dir on disk must contain
          its declared outputs (mapping-results.json, controls-catalog.md,
          framework-mapping.md, etc.) at min-size thresholds
+    P8 — reference-anchor enforcement: every preventive policy artifact under
+         05-recommended-guidance/preventive/ must carry a _metadata.reference resolving to
+         a real entry in data/reference-repos/index.yaml (gap/skip stubs and
+         documentation files exempt)
+    P9 — ARN resource-delimiter validation: every Resource/NotResource ARN in a
+         preventive policy artifact must use the delimiter the service's SAR ARN
+         format mandates for that resource type (catches a function written
+         `function/*` instead of `function:*` — a silent no-op deny)
+    P10 — permission-boundary minimality: a boundary's Allow statement must not
+         enumerate management actions (Create*/Update*/Put*/Delete*/Tag*/…). A
+         boundary is the MAXIMUM a principal may do, not the role's grant policy;
+         the control intent belongs in the Deny + condition keys
+    P11 — no LLM confidence scoring: no emitted artifact under 04-map/ or
+         05-recommended-guidance/, nor the Summary Report, may carry a per-item confidence
+         score/key/band (a `"confidence":` JSON key, a `run_confidence` key, or a
+         HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The guard targets
+         scored/keyed confidence, not the English word, so prose that merely uses
+         the word "confidence" is not flagged.
 """
 from __future__ import annotations
 
@@ -84,14 +101,32 @@ _MCP_CALL_TOKEN_RE = re.compile(r"\[mcp:[^\]]+:call\]")
 # Terminal-state sentinel emitted by summarize/evidence at end of pipeline.
 # Anchor at the source-tag column (3rd bracketed token of a pipeline.log
 # line) so a message body containing the literal text can't satisfy the
-# gate. Line shape: `<iso8601> [<phase>] [<source>:<verdict>]  <message>`.
-# Verdict allowlist is closed: APPROVED | APPROVED_WITH_EXCEPTIONS |
-# REQUIRES_REMEDIATION. Anything else does NOT close out the run.
+# gate. Line shape: `<iso8601> [<phase>] [<source>:<status>]  <message>`.
+# The sentinel is verdict-free: the fixed token FINALIZED marks a finalized
+# run. Anything else does NOT close out the run.
 _PIPELINE_COMPLETE_RE = re.compile(
-    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:"
-    r"(APPROVED|APPROVED_WITH_EXCEPTIONS|REQUIRES_REMEDIATION)\]",
+    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:FINALIZED\]",
     re.MULTILINE,
 )
+
+
+def is_finalized(service_root: Path) -> bool:
+    """True if the run carries the `[pipeline:complete:FINALIZED]` sentinel.
+
+    A finalized run is frozen and immutable — its artifacts cannot be remediated.
+    Checks ADDED after a run finalized would otherwise retroactively fail a run
+    that had no chance to satisfy them (and would brick every subsequent Stop
+    hook for that frozen state). Newly-added artifact checks honor this the same
+    way P1 (`check_mcp_log`) does; mid-flight runs (no sentinel — the ones where
+    a defect can actually be fixed) still get the full strict check.
+    """
+    pipeline_log = service_root / "pipeline.log"
+    if not pipeline_log.exists():
+        return False
+    try:
+        return bool(_PIPELINE_COMPLETE_RE.search(pipeline_log.read_text()))
+    except OSError:
+        return False
 
 
 def check_mcp_log(service_root: Path) -> list[str]:
@@ -109,7 +144,7 @@ def check_mcp_log(service_root: Path) -> list[str]:
     containing "MCP CALL" mid-line doesn't inflate the count either.
 
     Terminal-state exemption: if pipeline.log carries a
-    `[pipeline:complete:<verdict>]` sentinel, the run is finalized and the
+    `[pipeline:complete:FINALIZED]` sentinel, the run is finalized and the
     file is frozen. P1 cannot be remediated retroactively, so the check
     returns no error for sentinel-bearing files. Mid-flight runs (no
     sentinel) still get the strict count.
@@ -270,7 +305,7 @@ _CROSS_SERVICE_WILDCARD_ONLY = frozenset({
 def _load_wildcard_only_actions(controls_dir: Path) -> set[str]:
     """Load the set of `<prefix>:<action>` strings AWS SAR marks wildcard-only.
 
-    `controls_dir` is `<slug>/05-generate`. Two per-service state files are
+    `controls_dir` is `<slug>/05-recommended-guidance`. Two per-service state files are
     consulted in addition to the cross-service floor:
       1. `<slug>/01-assess/sar-facts.json` — `wildcard_only_actions[]` enumerates
          actions Phase 0 explicitly classified as wildcard-only (typically
@@ -440,6 +475,376 @@ def check_iam_policies(controls_dir: Path) -> list[str]:
     return errors
 
 
+# --- P9: ARN resource-delimiter validation --------------------------------
+# A resource ARN has 6 colon-delimited fields:
+#   arn:partition:service:region:account:resource
+# The 6th field is `resource` — usually `<resource-type><delim><resource-id>`
+# where the delimiter is `:` or `/` depending on the resource type (and is
+# fixed per type by AWS). A policy that uses the WRONG delimiter (e.g. a Lambda
+# function as `function/*` instead of `function:*`) matches nothing — the Deny
+# is a silent no-op. The correct delimiter for each resource type is taken from
+# the service's own SAR ARN patterns (sar-facts.json.resource_types[].arn_pattern),
+# so this check is service-agnostic, not hardcoded to any one service.
+
+
+def _resource_type_delimiters(sar_facts: dict) -> dict[str, str]:
+    """Map each SAR resource-type token → the delimiter that follows it.
+
+    Parsed from `resource_types[].arn_pattern`. For
+    `arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}` the
+    6th field is `function:${FunctionName}`, so the type token is `function`
+    and the delimiter is `:`. A pattern whose 6th field is just `${Resource}`
+    (no literal type token) contributes nothing. When a type token appears with
+    conflicting delimiters across patterns (it does not in practice), the colon
+    form wins — a slash variant of a colon type is the defect we want to catch.
+    """
+    delims: dict[str, str] = {}
+    for rt in sar_facts.get("resource_types", []) or []:
+        pattern = rt.get("arn_pattern")
+        if not isinstance(pattern, str):
+            continue
+        fields = pattern.split(":", 5)
+        if len(fields) < 6:
+            continue
+        resource_field = fields[5]
+        # Find the first delimiter (`:` or `/`) and the literal token before it.
+        m = re.match(r"^([A-Za-z0-9\-]+)([:/])", resource_field)
+        if not m:
+            continue
+        token, delim = m.group(1), m.group(2)
+        # A token that starts with a template var (e.g. `${FunctionName}`) has no
+        # literal type prefix — skip (handled by the `[A-Za-z0-9\-]+` anchor,
+        # which won't match a leading `$`).
+        if token in delims and delims[token] != delim:
+            # Prefer ':' on conflict (the colon form is the canonical type).
+            if delim == ":":
+                delims[token] = delim
+        else:
+            delims.setdefault(token, delim)
+    return delims
+
+
+def _arn_delimiter_errors(
+    arn: str, service_prefix: str, delims: dict[str, str]
+) -> str | None:
+    """Return an error string if `arn` is malformed for this service, else None.
+
+    Only ARNs for `service_prefix` are checked (cross-service ARNs use other
+    services' formats we did not load). `*` and non-ARN strings pass. The
+    resource field's leading literal type token is matched against `delims`; a
+    token present in the SAR map but used with the wrong delimiter is the defect.
+    """
+    # ARN scheme detection is case-insensitive only for locating the fields; AWS
+    # itself lower-cases arn/partition/service, and IAM resource matching IS
+    # case-sensitive, so a wrong-case scheme/service is a real defect we surface.
+    if not isinstance(arn, str) or not arn.lower().startswith("arn:"):
+        return None  # `*` or a non-ARN value — nothing to validate here
+    fields = arn.split(":", 5)
+    if len(fields) < 6:
+        return f"malformed ARN (needs 6 colon-delimited fields): {arn!r}"
+    service = fields[2]
+    if service.lower() != service_prefix.lower():
+        return None  # different service — its format was not loaded
+    resource_field = fields[5]
+    # Build a case-folded view of the known resource types (IAM matching is
+    # case-sensitive, so a wrong-case token is itself a no-op — flag it).
+    delims_lower = {t.lower(): (t, d) for t, d in delims.items()}
+
+    m = re.match(r"^([A-Za-z0-9\-]+)([:/])", resource_field)
+    if not m:
+        # No delimiter after the leading token. If the segment before any wildcard
+        # is a known resource type used WITHOUT its delimiter (e.g. `function*`
+        # instead of `function:*`), that is a malformed ARN.
+        stem = re.match(r"^([A-Za-z0-9\-]+)", resource_field)
+        if stem and stem.group(1).lower() in delims_lower and resource_field[len(stem.group(1)):len(stem.group(1)) + 1] in ("", "*"):
+            canon, exp = delims_lower[stem.group(1).lower()]
+            return (
+                f"resource type {stem.group(1)!r} appears without its delimiter "
+                f"(expected {canon}{exp}…, got {arn!r}); the ARN matches nothing "
+                f"and the Deny is a silent no-op"
+            )
+        return None  # bare id / wildcard resource (e.g. `*`, `${id}`) — no token
+    token, used_delim = m.group(1), m.group(2)
+    if token.lower() not in delims_lower:
+        return None  # unknown token — can't authoritatively judge; stay quiet
+    canon_token, expected = delims_lower[token.lower()]
+    if token != canon_token:
+        return (
+            f"resource type {token!r} has the wrong case (AWS uses "
+            f"{canon_token!r}); IAM resource matching is case-sensitive, so the "
+            f"ARN {arn!r} matches nothing and the Deny is a silent no-op"
+        )
+    if used_delim != expected:
+        return (
+            f"resource type {token!r} uses delimiter {used_delim!r} but the "
+            f"service ARN format requires {expected!r} "
+            f"(expected {token}{expected}…, got {arn!r}); the Deny matches "
+            f"nothing and is a silent no-op"
+        )
+    return None
+
+
+def check_arn_shapes(service_root: Path) -> list[str]:
+    """P9: every Resource ARN in a preventive policy artifact must use the
+    delimiter the service's SAR ARN format mandates for that resource type.
+
+    Catches the silent-no-op class where a function ARN is written `function/*`
+    (slash) instead of `function:*` (colon). The authoritative per-type
+    delimiters come from sar-facts.json, so the check works for any service.
+    """
+    errors: list[str] = []
+    controls_dir = service_root / "05-recommended-guidance"
+    if not controls_dir.exists():
+        return errors
+    if is_finalized(service_root):
+        return errors  # frozen run — artifacts can't be remediated retroactively
+
+    sar_facts = _load_json(service_root / "01-assess" / "sar-facts.json") or {}
+    service_prefix = sar_facts.get("service_prefix") or ""
+    delims = _resource_type_delimiters(sar_facts)
+    if not (service_prefix and delims):
+        return errors  # no authoritative format to validate against
+
+    preventive_dir = controls_dir / "preventive"
+    for policy_file, data in _iter_json_files(preventive_dir):
+        if "Statement" not in data:
+            continue
+        statements = data["Statement"]
+        if not isinstance(statements, list):
+            statements = [statements]
+        rel = policy_file.relative_to(controls_dir)
+        for i, stmt in enumerate(statements):
+            if not isinstance(stmt, dict):
+                continue
+            for field in ("Resource", "NotResource"):
+                resources = stmt.get(field)
+                if resources is None:
+                    continue
+                if isinstance(resources, str):
+                    resources = [resources]
+                for arn in resources:
+                    err = _arn_delimiter_errors(arn, service_prefix, delims)
+                    if err:
+                        errors.append(f"P9 {rel} Statement[{i}] {field}: {err}")
+    return errors
+
+
+# --- P10: permission-boundary minimality -----------------------------------
+# A permission boundary defines the MAXIMUM a principal may do; it is not the
+# role's grant policy. Its Allow exists only to keep the boundary from being a
+# deny-all — it should be a minimal floor (reads + the actions the enforcing
+# Denys gate), NOT an enumerated allowlist of management actions. Enumerating
+# Create*/Update*/Put*/Delete*/Tag*/… in the Allow re-creates the role policy
+# inside the boundary (an observed defect) and means the control intent is not
+# actually carried by the boundary's Deny + condition keys.
+
+# Read-only action verbs. The boundary-minimality check is FAIL-CLOSED: an Allow
+# action is management UNLESS its verb is one of these read-only verbs. An
+# allowlist of write verbs would fail open — any escalation action whose verb the
+# author didn't anticipate (RunInstances, AssumeRole, ScheduleKeyDeletion,
+# RestoreObject, …) would slip through. Inverting to a read allowlist means an
+# unknown verb is treated as management, which is the safe default for a boundary.
+_BOUNDARY_READ_VERBS = (
+    "Get", "List", "Describe", "Search", "Query", "Lookup", "View", "Read",
+    "Scan", "Head", "Check", "Test", "Validate", "Estimate",
+    "Detect", "Discover", "Count", "Filter", "Select",
+)
+
+# `Batch` is intentionally NOT a read verb: it is a family prefix that spans
+# state-mutating actions (dynamodb:BatchWriteItem, dynamodb:BatchExecuteStatement,
+# BatchDeleteItem, …). Treating `Batch*` as read-only would fail the gate open on
+# those writes. The genuinely read-only batch actions are enumerated here and
+# matched exactly (stem) before the verb-stem test, so they still pass.
+_BOUNDARY_READ_BATCH_ACTIONS = frozenset({
+    "BatchGetItem", "BatchGetSecretValue", "BatchGetImage", "BatchGetTraces",
+    "BatchGetBuilds", "BatchGetProjects", "BatchGetReportGroups", "BatchGetReports",
+    "BatchGetCollection", "BatchGetNamedQuery", "BatchGetQueryExecution",
+    "BatchGetPartition", "BatchGetCustomDataIdentifiers", "BatchDescribeMergeConflicts",
+    "BatchCheckLayerAvailability", "BatchGetDeployment", "BatchGetApplicationRevisions",
+    "BatchGetDeploymentTargets", "BatchGetOnPremisesInstances", "BatchGetDeploymentGroups",
+    "BatchGetDeploymentInstances", "BatchGetFrameworkMetrics",
+})
+
+
+def _is_management_action(action: str) -> bool:
+    """True if a boundary-Allow action mutates state (fail-closed).
+
+    An action is management UNLESS its verb is a known read-only verb. So
+    `lambda:CreateFunction`, `ec2:RunInstances`, `sts:AssumeRole`,
+    `kms:ScheduleKeyDeletion` → True (management); `lambda:GetFunction`,
+    `lambda:ListX`, `s3:DescribeJob` → False (read). A wildcard glob counts as
+    management unless its stem is a read verb: `lambda:Create*` → True,
+    `lambda:Get*` → False, and a bare `*` / `prefix:*` → True (it spans writes).
+    `Invoke*` is intentionally treated as management on a boundary — invoke is a
+    privileged data-plane action a boundary should constrain, not floor.
+    """
+    name = action.split(":", 1)[1] if ":" in action else action
+    if not name:
+        return False
+    if name == "*":
+        return True  # spans every action, including writes
+    # Strip a trailing wildcard to test the verb stem (Create* → Create).
+    stem = name[:-1] if name.endswith("*") else name
+    # Genuinely read-only batch actions (BatchGetItem, …) are read; every other
+    # `Batch*` action is a write family and must be treated as management.
+    if stem in _BOUNDARY_READ_BATCH_ACTIONS:
+        return False
+    # A glob whose stem is a read verb (Get*, List*) is read-only; otherwise a
+    # glob is management (Create*, or an ambiguous stem like Cr* → management).
+    return not any(stem.startswith(v) for v in _BOUNDARY_READ_VERBS)
+
+
+def check_boundary_minimality(service_root: Path) -> list[str]:
+    """P10: a permission-boundary Allow must not enumerate management actions.
+
+    Only `permission-boundary*.json` artifacts are checked. Each Allow statement
+    is scanned; if it enumerates one or more management actions
+    (Create*/Update*/Put*/Delete*/Tag*/…), the boundary is re-creating the role's
+    grant policy instead of carrying the control intent in its Deny + condition
+    keys — flag it. Deny statements and read/list/invoke Allows are fine.
+    """
+    errors: list[str] = []
+    preventive_dir = service_root / "05-recommended-guidance" / "preventive"
+    if not preventive_dir.exists():
+        return errors
+    if is_finalized(service_root):
+        return errors  # frozen run — artifacts can't be remediated retroactively
+
+    for policy_file, data in _iter_json_files(preventive_dir):
+        # Identify a boundary by filename OR by its metadata, so a renamed file
+        # (pb.json, boundary.json) cannot dodge the check.
+        meta = data.get("_metadata") or {}
+        meta_blob = " ".join(
+            str(meta.get(k, "")) for k in ("mechanism", "posture", "layer")
+        ).lower()
+        is_boundary = (
+            "permission-boundary" in policy_file.name.lower()
+            or "boundary" in policy_file.name.lower()
+            or "permission boundary" in meta_blob
+            or "permission-boundary" in meta_blob
+        )
+        if not is_boundary:
+            continue
+        if "Statement" not in data:
+            continue
+        statements = data["Statement"]
+        if not isinstance(statements, list):
+            statements = [statements]
+        rel = policy_file.relative_to(service_root / "05-recommended-guidance")
+        for i, stmt in enumerate(statements):
+            if not isinstance(stmt, dict) or stmt.get("Effect") != "Allow":
+                continue
+            actions = stmt.get("Action", [])
+            if isinstance(actions, str):
+                actions = [actions]
+            mgmt = sorted({a for a in actions if _is_management_action(a)})
+            if mgmt:
+                errors.append(
+                    f"P10 {rel} Statement[{i}] (Sid {stmt.get('Sid', '?')!r}): "
+                    f"permission-boundary Allow enumerates management action(s) "
+                    f"{mgmt} — a boundary is the MAXIMUM a principal may do, not "
+                    f"the role's grant policy. Keep the Allow to a minimal floor "
+                    f"(reads + the actions the enforcing Denys gate); carry the "
+                    f"control intent in the Deny + condition keys."
+                )
+    return errors
+
+
+# --- P11: no LLM confidence scoring in emitted artifacts -------------------
+# LLM confidence scoring was permanently removed from the pipeline. It must not
+# reappear in any artifact a run emits. Two signals are caught:
+#   1. A JSON `"confidence":` / `"run_confidence":` key on any object under
+#      04-map/ or 05-recommended-guidance/ (the machine-readable form the deprecated feature
+#      used). coverage_level — a deterministic catalog cross-check — is allowed.
+#   2. A confidence BAND label (HIGH/MEDIUM/LOW/SPECULATIVE) attached to the word
+#      "confidence" on the same line of a markdown artifact (mapping .md files,
+#      the Summary Report). The regex requires a band token alongside the word, so
+#      ordinary prose that uses "confidence" without a band label is not flagged.
+
+# JSON-key form: a quoted `confidence`/`run_confidence` property used as a key.
+_CONFIDENCE_KEY_RE = re.compile(r'"(confidence|run_confidence)"\s*:')
+# Band tokens the deprecated feature attached to each scored item.
+_CONFIDENCE_BAND_RE = re.compile(r"\b(HIGH|MEDIUM|LOW|SPECULATIVE)\b")
+_CONFIDENCE_WORD_RE = re.compile(r"confidence", re.IGNORECASE)
+
+
+def _confidence_scoring_errors_in_text(text: str, rel: str, is_markdown: bool) -> list[str]:
+    """Return P11 errors for confidence scoring found in `text`.
+
+    JSON files are scanned for the `"confidence":`/`"run_confidence":` key form.
+    Markdown files are scanned line-by-line for a confidence BAND token on a line
+    that also contains the word "confidence" (so a scored band attached to a
+    control is caught, while prose like "high availability" or the exempt
+    "Actions Taken to Increase Confidence" heading is not).
+    """
+    errors: list[str] = []
+    for m in _CONFIDENCE_KEY_RE.finditer(text):
+        errors.append(
+            f"P11 {rel}: emits a {m.group(1)!r} key — LLM confidence scoring was "
+            f"permanently removed and must not appear in pipeline artifacts."
+        )
+    if is_markdown:
+        for ln in text.splitlines():
+            if (
+                _CONFIDENCE_WORD_RE.search(ln)
+                and _CONFIDENCE_BAND_RE.search(ln)
+            ):
+                errors.append(
+                    f"P11 {rel}: line carries a confidence band label "
+                    f"({_CONFIDENCE_BAND_RE.search(ln).group(1)}) attached to "
+                    f"'confidence' — per-item confidence scoring is not permitted: "
+                    f"{ln.strip()[:120]!r}"
+                )
+    return errors
+
+
+def check_no_confidence_scoring(service_root: Path) -> list[str]:
+    """P11: no emitted artifact may carry a per-item confidence score/key/band.
+
+    Scans every JSON under 04-map/ and 05-recommended-guidance/ for confidence keys, and the
+    rendered markdown (mapping .md files + the Summary Report) for band labels.
+    Finalized runs are exempt (frozen artifacts cannot be remediated).
+    """
+    from validate_deployable import SKIP_DIRS
+
+    if is_finalized(service_root):
+        return []
+
+    errors: list[str] = []
+    scan_dirs = [service_root / "04-map", service_root / "05-recommended-guidance"]
+    for base in scan_dirs:
+        if not base.exists():
+            continue
+        for p in base.rglob("*"):
+            if not p.is_file():
+                continue
+            if any(part in SKIP_DIRS for part in p.parts):
+                continue
+            suffix = p.suffix.lower()
+            if suffix not in (".json", ".md"):
+                continue
+            try:
+                text = p.read_text()
+            except (OSError, UnicodeDecodeError):
+                continue
+            rel = p.relative_to(service_root)
+            errors.extend(
+                _confidence_scoring_errors_in_text(text, str(rel), suffix == ".md")
+            )
+
+    report = service_root / "06-summarize" / "SUMMARY-REPORT.md"
+    if report.exists():
+        try:
+            text = report.read_text()
+        except (OSError, UnicodeDecodeError):
+            text = ""
+        if text:
+            rel = report.relative_to(service_root)
+            errors.extend(_confidence_scoring_errors_in_text(text, str(rel), True))
+
+    return errors
+
+
 def check_iac_placeholders(iac_dir: Path) -> list[str]:
     # Reuse the canonical exclude list from validate_deployable so adding a new
     # vendored-dep dir doesn't require touching two places.
@@ -481,8 +886,7 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
     a non-empty `framework_mapping` key. P7's size threshold is
     content-blind (>=1024 bytes); a 1024-byte JSON without the
     framework_mapping key would clear P7 and silently clear P5 too.
-    Same fail-closed pattern as check_validated_notes (P2) and
-    check_verdict_consistency (P6).
+    Same fail-closed pattern as check_validated_notes (P2).
     """
     errors: list[str] = []
     mapping_path = map_dir / "mapping-results.json"
@@ -516,9 +920,16 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
 
     pct = (mapped / total * 100) if total else 0
     if pct < MIN_FRAMEWORK_COVERAGE_PCT:
+        # The canonical objective-level justification field in the mapping
+        # schema is `reason` (schemas/mapping-results.schema.json). Some older
+        # outputs used `rationale`; accept either so the check reads whichever
+        # the row carries.
+        def _justification(f):
+            return f.get("reason") or f.get("rationale") or ""
+
         missing_rationale = sum(
             1 for f in na
-            if not f.get("rationale") or len(f.get("rationale", "")) < 30
+            if len(_justification(f)) < 30
         )
         if missing_rationale:
             errors.append(
@@ -539,8 +950,7 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
 # missing outputs mean the run was incomplete and downstream consumers
 # will silently break.
 #
-# Phase dir absence is OK (the phase didn't run — Intake's testing.mode
-# == "skip" legitimately skips Phase 5 + Phase 7, for instance).
+# Phase dir absence is OK (the phase didn't run).
 #
 # Min sizes are calibrated for the typical Lambda/S3-scale service:
 #   * JSON state files: 1024 bytes (~30 keys, schema-required)
@@ -581,23 +991,13 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("controls-catalog.md", 3072),
         ("framework-mapping.md", 5120),
     ],
-    "05-generate": [
-        # 05-generate/ contains category subdirs, not single files.
+    "05-recommended-guidance": [
+        # 05-recommended-guidance/ contains category subdirs, not single files.
         # Existence of at least one of {preventive, proactive, detective,
         # responsive, iac} signals the phase ran. Empty dir = incomplete.
     ],
-    "06-test": [
-        ("test-results.json", 256),
-        # deployed-resources.json only required for full-deploy (where
-        # Phase 7 will run); checked separately below.
-    ],
-    "07-summarize": [
-        ("APPROVAL-REPORT.md", 2048),
-    ],
-    "08-evidence": [
-        ("cli-commands.json", 256),
-        ("attestation-results.json", 256),
-        ("attestation-report.md", 1024),
+    "06-summarize": [
+        ("SUMMARY-REPORT.md", 2048),
     ],
 }
 
@@ -607,13 +1007,7 @@ def check_phase_outputs(service_root: Path) -> list[str]:
 
     Walks each phase dir under service_root and asserts that every required
     output exists and meets its minimum size threshold. A phase dir not
-    present is considered "phase did not run" and skipped silently — the
-    user may have set testing.mode=skip, --dry-run, etc.
-
-    The full-deploy → Phase 7 contract gets an extra check: if 06-test/
-    exists with deployed-resources.json AND 08-evidence/ exists, the linkage
-    is sound; if 06-test/test-results.json says full-deploy succeeded but
-    deployed-resources.json is missing, Phase 7 cannot run.
+    present is considered "phase did not run" and skipped silently.
     """
     errors: list[str] = []
 
@@ -641,11 +1035,11 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                     f"truncated write. Re-run the {phase_name.split('-', 1)[1]} skill."
                 )
 
-    # 05-generate/: at least one category subdir must contain real files.
+    # 05-recommended-guidance/: at least one category subdir must contain real files.
     # `any(cat_dir.rglob("*"))` would return True for an empty subdir tree
     # (any directory entry counts), letting an empty `preventive/empty/`
     # satisfy the gate. Require at least one actual file.
-    generate_dir = service_root / "05-generate"
+    generate_dir = service_root / "05-recommended-guidance"
     if generate_dir.exists():
         categories = ["preventive", "proactive", "detective", "responsive", "iac"]
         any_populated = False
@@ -656,66 +1050,33 @@ def check_phase_outputs(service_root: Path) -> list[str]:
                 break
         if not any_populated:
             errors.append(
-                f"P7 {service_root.name}/05-generate/: phase ran but produced "
-                f"NO files in any of {categories}. Re-run generate."
-            )
-
-    # full-deploy → Phase 7 contract: if 08-evidence/ exists, then
-    # 06-test/deployed-resources.json must also exist (Phase 7 reads it).
-    evidence_dir = service_root / "08-evidence"
-    if evidence_dir.exists() and not (evidence_dir / "phase-skipped.json").exists():
-        deployed_resources = service_root / "06-test" / "deployed-resources.json"
-        if not deployed_resources.exists():
-            errors.append(
-                f"P7 {service_root.name}/06-test/deployed-resources.json: MISSING "
-                f"but 08-evidence/ exists. Phase 7 needs deployed-resources.json "
-                f"to know which stack/ARNs to probe; without it, every CLI verdict "
-                f"will be ERROR. Re-run Phase 5 with full-deploy mode."
+                f"P7 {service_root.name}/05-recommended-guidance/: phase ran but produced "
+                f"NO files in any of {categories}. Re-run recommended-guidance."
             )
 
     return errors
 
 
-def check_verdict_consistency(summarize_dir: Path, integrity_errors_count: int) -> list[str]:
-    """Check verdict consistency from 07-summarize/ phase dir.
+def check_reference_anchors(service_root: Path) -> list[str]:
+    """P8: every preventive policy artifact must carry a resolvable anchor.
 
-    Fails closed when APPROVAL-REPORT.md exists but the `## Verdict` H2
-    header is missing (e.g., template drift to H3, or report truncated).
-    Same pattern as `check_validated_notes` for P2 — silently returning
-    `[]` would let an APPROVED-with-integrity-failures run sneak past
-    when a future template change breaks the contract.
+    Delegates to validate_reference_anchor.check_service. Imported lazily so a
+    missing module degrades gracefully (returns []) rather than breaking the
+    whole Stop hook — the dedicated PostToolUse path still surfaces anchor
+    failures per-file in that case.
     """
-    errors: list[str] = []
-    report = summarize_dir / "APPROVAL-REPORT.md"
-    if not report.exists():
-        return errors
-    content = report.read_text()
-    # Anchor on H2 only — `(?<!#)##(?!#)` enforces exactly two `#`s. Without
-    # the lookarounds, `##\s*Verdict` matches `### Verdict` as a substring,
-    # silently accepting H3 (the very drift the introducer note in
-    # skills/summarize/SKILL.md flags as broken).
-    match = re.search(r"(?<!#)##(?!#)\s*Verdict\s*\n+([^\n]+)", content)
-    if not match:
-        errors.append(
-            f"P6 FAIL: {report} exists but no `## Verdict` H2 header found. "
-            "skills/summarize/SKILL.md template requires the section at H2; "
-            "verdict cannot be verified — fail-closed against silent template drift."
-        )
-        return errors
-    verdict = match.group(1).strip().upper()
-    if integrity_errors_count > 0 and "APPROVED" in verdict and "EXCEPTION" not in verdict:
-        errors.append(
-            f"P6 APPROVAL-REPORT.md verdict '{verdict}' but {integrity_errors_count} "
-            f"integrity failures were detected. Change verdict to "
-            f"REQUIRES REMEDIATION."
-        )
-    return errors
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validate_reference_anchor import check_service  # type: ignore
+    except ImportError:
+        return []
+    return check_service(service_root)
 
 
 # Validator contract: every check_*() must fail-closed when the artifact it
 # reads exists but is missing/malformed. Pass-7 audit (2026-05-19) confirmed:
-#   - P1, P2, P5, P6, P7 fail-closed with explicit `P{N}`-prefixed errors.
-#     P2/P5/P6 use the `P{N} FAIL: ...` shape on missing-artifact branches
+#   - P1, P2, P5, P7 fail-closed with explicit `P{N}`-prefixed errors.
+#     P2/P5 use the `P{N} FAIL: ...` shape on missing-artifact branches
 #     (the canonical pattern). P1 and P7 ALSO have missing-artifact branches
 #     (P1 line ~146 emits `P1 neither pipeline.log nor mcp-calls.log exists`;
 #     P7 emits `P7 ... MISSING` when a required output is absent) but use
@@ -779,23 +1140,29 @@ def validate_pipeline(root: Path) -> list[str]:
         if validate_dir.exists():
             errors.extend(check_validated_notes(validate_dir))
 
-        # Check controls in 05-generate/
-        controls_dir = service_root / "05-generate"
+        # Check controls in 05-recommended-guidance/
+        controls_dir = service_root / "05-recommended-guidance"
         if controls_dir.exists():
             errors.extend(check_iam_policies(controls_dir))
             iac_dir = controls_dir / "iac"
             if iac_dir.exists():
                 errors.extend(check_iac_placeholders(iac_dir))
+            # P8: every preventive policy artifact must anchor to a reference.
+            errors.extend(check_reference_anchors(service_root))
+            # P9: every Resource ARN must use the SAR-mandated delimiter for its
+            # resource type (catches function/* vs function:* silent no-ops).
+            errors.extend(check_arn_shapes(service_root))
+            # P10: a permission-boundary Allow must not enumerate management
+            # actions (the boundary is a maximum, not the role's grant policy).
+            errors.extend(check_boundary_minimality(service_root))
 
         # Check framework coverage in 04-map/
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
 
-        # Check verdict consistency in 07-summarize/
-        summarize_dir = service_root / "07-summarize"
-        if summarize_dir.exists():
-            errors.extend(check_verdict_consistency(summarize_dir, len(errors)))
+        # P11: no emitted artifact may carry per-item confidence scoring.
+        errors.extend(check_no_confidence_scoring(service_root))
 
     return errors
 

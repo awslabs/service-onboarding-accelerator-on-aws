@@ -53,7 +53,7 @@ Intake always runs. Its prompt behavior depends on what it finds:
 
 ## Output
 
-- `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md` — final verdict + CCMv4 coverage matrix
+- `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 coverage matrix
 - `.service-approval/<service-slug>/05-generate/` — all 78–111 generated artifacts
 - `.service-approval/<service-slug>/` — pipeline state files (per-phase subdirectories)
 - `.service-approval/<service-slug>/08-evidence/` — CLI attestation results (if Phase 7 runs)
@@ -62,6 +62,6 @@ Intake always runs. Its prompt behavior depends on what it finds:
 
 After the pipeline completes, summarize:
 - Final verdict (APPROVED / APPROVED with exceptions / REQUIRES REMEDIATION)
-- Path to `.service-approval/APPROVAL-REPORT.md`
+- Path to `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
 - Artifact count per category (preventive, proactive, detective, responsive, IaC)
 - Any phases that failed or were skipped, and why

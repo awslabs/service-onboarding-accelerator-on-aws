@@ -10,20 +10,30 @@ argument-hint: '[--service=<name>] [--include-unverified]'
 Read `.service-approval/<slug>/04-map/mapping-results.json` (produced by Mapper) for controls and
 framework mappings. Read `.service-approval/<slug>/03-validate/validated.json` (produced by Validator v3)
 for API surface and capabilities. Generate artifacts organized by the Controls Matrix
-(Category x Scope). Write to `.service-approval/<slug>/05-generate/`.
+(Category x Scope). Write to `.service-approval/<slug>/05-recommended-guidance/`.
 
 ## Sub-Skill Architecture
 
-This skill is split into 3 focused sub-skills that write to separate directories:
+This skill is split into 3 focused control families that write to separate
+directories. The **preventive family is itself a sequenced sub-pipeline** (a
+recommender gate → reference-anchored authors → a root-cause critic), so that
+the *decision* of how to enforce an objective happens before any policy is
+authored, and every authored policy is proven anchored and enforcing:
 
-| Sub-Skill | Focus | Output Directory |
-|-----------|-------|-----------------|
-| `generate-preventive` | SCPs, resource policies, KMS key policies, permission boundaries, tag policies, OPA, CFN Guard | `<slug>/05-generate/preventive/`, `<slug>/05-generate/proactive/` |
-| `generate-detective` | Config rules, Lambda handlers, EventBridge, CloudWatch, SSM runbooks, Step Functions | `<slug>/05-generate/detective/`, `<slug>/05-generate/responsive/` |
-| `generate-iac` | Terraform modules, CDK TypeScript, CloudFormation YAML, CDK for Terraform | `<slug>/05-generate/iac/` |
+| Family | Sub-skills | Output Directory |
+|--------|-----------|-----------------|
+| Preventive (gated) | `generate-preventive-recommend` → (`generate-preventive-scp` / `generate-preventive-rcp` / `generate-preventive-iam`) → `generate-preventive-rootcause` | `<slug>/05-recommended-guidance/preventive/`, `<slug>/05-recommended-guidance/proactive/` |
+| Detective | `generate-detective` | `<slug>/05-recommended-guidance/detective/`, `<slug>/05-recommended-guidance/responsive/` |
+| IaC | `generate-iac` | `<slug>/05-recommended-guidance/iac/` |
 
-**When invoked directly** (via `/generate`), this skill runs all 3 sub-skills sequentially.
-**When invoked by the orchestrator**, the orchestrator dispatches sub-skills in parallel.
+`skills/generate-preventive/SKILL.md` is retained as the **shared authoring-rules
+reference** the preventive authors follow (SCP/RCP/IAM rules, Rule C2, the
+proactive sections). It is no longer dispatched as a single monolithic generator.
+
+**When invoked directly** (via `/generate`), this skill runs the families
+sequentially (and the preventive sub-pipeline in its fixed order).
+**When invoked by the orchestrator**, the orchestrator dispatches the three
+families in parallel; the preventive family runs its sub-skills in order.
 
 ## Agent model rule
 
@@ -40,23 +50,23 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
 python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
 
-mkdir -p .service-approval/<slug>/05-generate/{proactive,preventive,detective,responsive,iac}
-mkdir -p .service-approval/<slug>/05-generate/proactive/opa-policies
-mkdir -p .service-approval/<slug>/05-generate/responsive/lambda-remediator
-mkdir -p .service-approval/<slug>/05-generate/detective/config-rule-lambdas
+mkdir -p .service-approval/<slug>/05-recommended-guidance/{proactive,preventive,detective,responsive,iac}
+mkdir -p .service-approval/<slug>/05-recommended-guidance/proactive/opa-policies
+mkdir -p .service-approval/<slug>/05-recommended-guidance/responsive/lambda-remediator
+mkdir -p .service-approval/<slug>/05-recommended-guidance/detective/config-rule-lambdas
 ```
 
 The check_phase_complete CLI verifies every required artifact (mapping-results.json,
 controls-catalog.md, framework-mapping.md, validated.json, etc.) exists and is
 non-stub. Without this gate, generate would silently skip controls when its
-inputs are missing, producing an empty 05-generate/ tree.
+inputs are missing, producing an empty 05-recommended-guidance/ tree.
 
 Create Terraform module directories:
 ```bash
 for asset in $(python3 -c "import json; d=json.load(open('.service-approval/<slug>/03-validate/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
-  mkdir -p ".service-approval/<slug>/05-generate/iac/modules/${asset}"
+  mkdir -p ".service-approval/<slug>/05-recommended-guidance/iac/modules/${asset}"
 done
-mkdir -p .service-approval/<slug>/05-generate/iac/modules/_shared
+mkdir -p .service-approval/<slug>/05-recommended-guidance/iac/modules/_shared
 ```
 
 ---
@@ -65,20 +75,31 @@ mkdir -p .service-approval/<slug>/05-generate/iac/modules/_shared
 
 When this skill is invoked directly (not by orchestrator):
 
-### Step 1: Run generate-preventive
-Follow ALL instructions in `skills/generate-preventive/SKILL.md`.
+### Step 1: Run the preventive sub-pipeline (in order)
+Run the preventive sub-skills sequentially — each step gates the next:
+1. `skills/generate-preventive-recommend/SKILL.md` — decide mechanism + anchor
+   per objective; writes `<slug>/05-recommended-guidance/preventive-plan.json` (the gate).
+2. For each `GENERATE_*` row in the plan, the matching author:
+   `skills/generate-preventive-scp/SKILL.md`, `…-rcp/SKILL.md`, `…-iam/SKILL.md`.
+   These also write the proactive artifacts per
+   `skills/generate-preventive/SKILL.md` (tag policy, OPA, CFN Guard, Checkov).
+3. `skills/generate-preventive-rootcause/SKILL.md` — prove every preventive
+   artifact is anchored and enforcing; route non-preventable objectives to detective.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
+Wait for `<slug>/05-recommended-guidance/preventive/` and `<slug>/05-recommended-guidance/proactive/` to be populated.
 
 ### Step 2: Run generate-detective
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
+Runs AFTER Step 1's root-cause critic so it can consume
+`<slug>/05-recommended-guidance/detective-routing.json` (objectives the critic found
+not-preventable and routed to detective) in its top-up pass.
+Wait for `<slug>/05-recommended-guidance/detective/` and `<slug>/05-recommended-guidance/responsive/` to be populated.
 
 ### Step 3: Run generate-iac
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/iac/` to be populated with all 4 formats.
+Wait for `<slug>/05-recommended-guidance/iac/` to be populated with all 4 formats.
 
 ### Step 4: Final Validation
 Run the comprehensive validation below.
@@ -102,7 +123,7 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 
-root = Path(f".service-approval/{slug}/05-generate")
+root = Path(f".service-approval/{slug}/05-recommended-guidance")
 categories = ["preventive", "proactive", "detective", "responsive", "iac"]
 counts = {c: sum(1 for _ in (root / c).rglob("*") if _.is_file()) if (root / c).exists() else 0
           for c in categories}
@@ -150,5 +171,5 @@ Control generation complete (v3):
     Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
     Res×Responsive:   stepfunctions-workflow (resource-level)
   IaC:          CDK, CFN, CDKTF + Terraform ({N} modules)
-  Output: .service-approval/<slug>/05-generate/
+  Output: .service-approval/<slug>/05-recommended-guidance/
 ```

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/preventive-coverage.schema.json",
+  "title": "preventive-coverage.json",
+  "description": "Deterministic preventive-coverage rollup. Built by tools/validate/build_preventive_coverage.py from preventive-plan.json (the recommender's decisions) and rootcause-report.json (the critic's routing) at .service-approval/<slug>/05-recommended-guidance/preventive-coverage.json. Counts, per preventive objective, how many controls were authored (GENERATE_*), referred to a reference example the customer adopts (REFER_TO_REFERENCE), or routed to detective because they are not preventable at request time (ROUTE_DETECTIVE). Every count row resolves to the originating control ids and their citations so a reader can verify each number. Surfaced near the top of the Summary Report.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_metadata", "totals", "controls"],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["service"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "generated": {"type": "string"},
+        "sources": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "The state files this rollup was derived from (provenance for the numbers)."
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objectives", "authored", "referred", "routed_to_detective"],
+      "properties": {
+        "objectives": {"type": "integer", "minimum": 0},
+        "authored": {"type": "integer", "minimum": 0},
+        "referred": {"type": "integer", "minimum": 0},
+        "routed_to_detective": {"type": "integer", "minimum": 0}
+      }
+    },
+    "controls": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/coverage_row"}
+    }
+  },
+  "$defs": {
+    "coverage_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_id", "category", "mechanism", "reason", "citation"],
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["authored", "referred", "routed_to_detective"],
+          "description": "Bucket this control falls in: authored = a policy was generated (GENERATE_*); referred = an anchor exists but the customer adopts the reference (REFER_TO_REFERENCE); routed_to_detective = not preventable at request time (ROUTE_DETECTIVE)."
+        },
+        "mechanism": {"type": "string", "minLength": 1},
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The per-control rationale carried from the plan/critic — why this control landed in its bucket."
+        },
+        "anchor": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["example_id"],
+              "properties": {
+                "example_id": {"type": "string", "minLength": 1},
+                "repo": {"type": "string"},
+                "url": {"type": "string"}
+              }
+            }
+          ],
+          "description": "The resolved reference example, for authored and referred controls; null when routed to detective."
+        },
+        "citation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {"type": "string", "enum": ["canopy", "reference", "catalog", "service-doc"]},
+            "id": {"type": "string", "minLength": 1},
+            "url": {"type": "string", "minLength": 1}
+          }
+        },
+        "application_guidance": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Carried verbatim from the plan decision: concrete 'how to apply/adapt this policy' instructions for authored and referred controls. Rendered in the Summary Report preventive section.",
+          "properties": {
+            "placement": {"type": "string", "minLength": 1},
+            "placeholders": {"type": "array", "items": {"type": "string"}},
+            "test": {"type": "string"},
+            "rollback": {"type": "string"}
+          }
+        },
+        "applicability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applies_to", "usage_notes"],
+          "description": "Carried verbatim from the plan decision when present: what resource subset the cited policy targets and how to use it — including where NOT to apply it. Rendered in the Summary Report immediately after the cited policy URL.",
+          "properties": {
+            "applies_to": {"type": "string", "minLength": 1},
+            "usage_notes": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,14 +1,15 @@
 # Service Approval — Agents Guide
 
-This repo generates AWS security controls for any AWS service via a 9-phase pipeline
-(Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence). It runs
+This repo generates AWS security controls for any AWS service via a pipeline
+(Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize). It
+recommends controls + IaC that the customer deploys themselves. It runs
 on any [Agent Skills](https://agentskills.io)-compatible client: Claude Code, GitHub
 Copilot, and Kiro.
 
 ## Install
 
 ```bash
-git clone <repo> && cd service-onboarding && ./install.sh
+git clone <repo> && cd service-onboarding-accelerator-on-aws && ./install.sh
 ```
 
 Windows: `./install.ps1` (requires Developer Mode for symlink installs).
@@ -40,15 +41,15 @@ Agents should:
 ## Pipeline summary
 
 ```
-Precursor Intake    → _staging/<ts>/00-intake/intake-manifest.json (service, inputs, testing intent)
+Precursor Intake    → _staging/<ts>/00-intake/intake-manifest.json (service, inputs)
 Phase 0 Assess      → <slug>/01-assess/{sar-facts,checkpoint-results,iac-support}.json
 Phase 1 Research    → <slug>/02-research/research.json (4 parallel sub-skills merged)
 Phase 2 Validate    → <slug>/03-validate/validated.json
 Phase 3 Map         → <slug>/04-map/{mapping-results.json, framework-mapping.md}
-Phase 4 Generate    → <slug>/05-generate/{proactive,preventive,detective,responsive,iac}/
-Phase 5 Test        → <slug>/06-test/{test-results.json, deployed-resources.json} (mode set upfront in Intake: full-deploy | dry-run | skip | manual-cli)
-Phase 6 Summarize   → <slug>/07-summarize/APPROVAL-REPORT.md
-Phase 7 Evidence    → <slug>/08-evidence/{attestation-report.md, cli-outputs/} (requires AWS credentials)
+Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/{proactive,preventive,detective,responsive,iac}/
+                      (preventive is a gated sub-pipeline: recommend → reference-anchored
+                       authors → root-cause critic; see README "reference-anchored")
+Phase 5 Summarize   → <slug>/06-summarize/SUMMARY-REPORT.md
 ```
 
 Intake runs first (unnumbered) and writes to a staging directory because the
@@ -73,6 +74,10 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
    in the same Condition must target the same key.
 7. Verdict matches integrity. If any pipeline integrity check fails, the verdict is
    `REQUIRES REMEDIATION`, not `APPROVED`.
+8. Every preventive policy artifact must carry a `_metadata.reference` resolving to a
+   real entry in `data/reference-repos/index.yaml`. Un-anchored preventive policy fails
+   the integrity check (P8). If no reference covers an objective, do not author one —
+   point to the reference or route the objective to detective.
 
 The Stop hook runs `tools/validate/validate_pipeline_integrity.py` and blocks violations.
 See [`rules/service-approval-safety.md`](rules/service-approval-safety.md) for the full list.

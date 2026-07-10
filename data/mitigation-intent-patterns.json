@@ -1,0 +1,244 @@
+{
+  "schema_version": "1.0",
+  "description": "Controlled vocabulary for classifying Canopy mitigation statements into canonical security intents. Each pattern matches the mitigation statement text (case-insensitive substring or regex) and assigns a structured intent_id and security_domain. Consumed by map-generate-controls to tag controls, and by map-framework-mapping to constrain objective eligibility.",
+  "patterns": [
+    {
+      "intent_id": "cmk_encryption",
+      "match_statements": [
+        "encrypted with an AWS KMS Customer Managed Key",
+        "AWS KMS Customer Managed Key (CMK)",
+        "customer-managed KMS key"
+      ],
+      "security_domain": "data_protection_at_rest",
+      "description": "Resource data must be encrypted at rest with a customer-managed KMS key."
+    },
+    {
+      "intent_id": "encryption_at_rest_enabled",
+      "match_statements": [
+        "have encryption at rest enabled",
+        "encryption at rest"
+      ],
+      "security_domain": "data_protection_at_rest",
+      "description": "Resource must have encryption at rest enabled (any key type)."
+    },
+    {
+      "intent_id": "vpc_placement",
+      "match_statements": [
+        "should be in an Amazon VPC",
+        "be in an Amazon VPC"
+      ],
+      "security_domain": "network_isolation",
+      "description": "Resource must be placed within a customer VPC for network governance."
+    },
+    {
+      "intent_id": "multi_az_resilience",
+      "match_statements": [
+        "more than one availability zone",
+        "multi-AZ",
+        "Multi-AZ"
+      ],
+      "security_domain": "availability_resilience",
+      "description": "Resource must span multiple AZs for availability."
+    },
+    {
+      "intent_id": "private_subnet",
+      "match_statements": [
+        "placed in only private subnets",
+        "private subnets"
+      ],
+      "security_domain": "network_isolation",
+      "description": "Resource must not be in a public subnet."
+    },
+    {
+      "intent_id": "cloudwatch_logging",
+      "match_statements": [
+        "send application logs to CloudWatch",
+        "send.*logs to CloudWatch Logs",
+        "CloudWatch Logs exports",
+        "log delivery.*CloudWatch",
+        "configured to send.*logs to CloudWatch",
+        "publish logs to Amazon CloudWatch"
+      ],
+      "security_domain": "observability",
+      "description": "Resource must send application/system logs to CloudWatch Logs."
+    },
+    {
+      "intent_id": "iam_authentication",
+      "match_statements": [
+        "IAM database authentication",
+        "SigV4 authentication integrated with AWS IAM",
+        "use AWS IAM for.*auth",
+        "use AWS IAM for inbound authorization"
+      ],
+      "security_domain": "authentication",
+      "description": "Resource must use IAM-based authentication instead of passwords or unauthenticated access."
+    },
+    {
+      "intent_id": "execution_role_trust_scoping",
+      "match_statements": [
+        "role should only be assumable by",
+        "IAM.*role should only be assumable by.*principal"
+      ],
+      "security_domain": "identity_trust",
+      "description": "Execution/service role trust policy must be scoped to the service principal with source conditions."
+    },
+    {
+      "intent_id": "execution_role_access_scoping",
+      "match_statements": [
+        "role should be accessed only by trusted identities",
+        "IAM.*role should be accessed only by trusted"
+      ],
+      "security_domain": "identity_trust",
+      "description": "Execution/service role must be assumable only by authorized principals or services acting on their behalf."
+    },
+    {
+      "intent_id": "resource_policy_least_privilege",
+      "match_statements": [
+        "resource.*policy should limit permissions to a subset",
+        "resource policy should limit permissions",
+        "resource policy.*trusted.*principals",
+        "policy should limit permissions to a subset",
+        "policy should be accessed only by trusted"
+      ],
+      "security_domain": "access_control",
+      "description": "Resource-based policy must restrict access to an approved subset of IAM principals."
+    },
+    {
+      "intent_id": "resource_policy_service_principal_trust",
+      "match_statements": [
+        "resource policy should only be accessed by.*service principal",
+        "resource.*policy should only be accessed by.*principal when.*acting on behalf"
+      ],
+      "security_domain": "access_control",
+      "description": "Resource policy must scope service-principal access with source ARN/account/org conditions to prevent confused deputy."
+    },
+    {
+      "intent_id": "no_unauthenticated_access",
+      "match_statements": [
+        "should not allow unauthenticated access",
+        "should not.*public access",
+        "should not allow unauthenticated or public access"
+      ],
+      "security_domain": "access_control",
+      "description": "Resource must not permit unauthenticated or public access."
+    },
+    {
+      "intent_id": "ownership_tagging",
+      "match_statements": [
+        "tagged with information that describes the owner and purpose"
+      ],
+      "security_domain": "governance",
+      "description": "Resource must carry ownership and purpose tags for governance classification."
+    },
+    {
+      "intent_id": "pii_tag_hygiene",
+      "match_statements": [
+        "should not be tagged with personally identifiable information",
+        "not be tagged with.*PII"
+      ],
+      "security_domain": "governance",
+      "description": "Tags must not contain PII or sensitive data."
+    },
+    {
+      "intent_id": "encryption_in_transit",
+      "match_statements": [
+        "require encryption in transit",
+        "require encryption of data in transit",
+        "TLS source access configurations",
+        "require.*secure.*transport",
+        "encryption in transit",
+        "encrypted in transit",
+        "connections to be encrypted"
+      ],
+      "security_domain": "data_protection_in_transit",
+      "description": "Data in transit must be encrypted using TLS."
+    },
+    {
+      "intent_id": "deletion_protection",
+      "match_statements": [
+        "deletion protection enabled",
+        "have deletion protection"
+      ],
+      "security_domain": "operational_safety",
+      "description": "Resource must have deletion protection to prevent accidental removal."
+    },
+    {
+      "intent_id": "cross_region_replication",
+      "match_statements": [
+        "replicated to at least one other AWS region",
+        "cross-region replication"
+      ],
+      "security_domain": "disaster_recovery",
+      "description": "Resource data must be replicated cross-region for disaster recovery."
+    },
+    {
+      "intent_id": "oidc_trust_configuration",
+      "match_statements": [
+        "OIDC.*configured with only trusted",
+        "OIDC to authenticate principals should be configured with only trusted",
+        "JWT authorizer.*trusted",
+        "authorizer.*OIDC.*trusted identity providers"
+      ],
+      "security_domain": "authentication",
+      "description": "OIDC/JWT authorizer must be configured to trust only approved identity providers, audiences, and clients."
+    },
+    {
+      "intent_id": "enhanced_monitoring",
+      "match_statements": [
+        "Enhanced Monitoring",
+        "Performance Insights",
+        "Database Insights",
+        "Lambda Insights",
+        "enhanced monitoring"
+      ],
+      "security_domain": "observability",
+      "description": "Resource must have enhanced monitoring or performance insights enabled."
+    },
+    {
+      "intent_id": "code_signing",
+      "match_statements": [
+        "code-signing",
+        "code signing"
+      ],
+      "security_domain": "supply_chain_integrity",
+      "description": "Deployed code/artifacts must be signed by an approved signing profile."
+    },
+    {
+      "intent_id": "event_source_mapping_metrics",
+      "match_statements": [
+        "event source mapping metrics enabled",
+        "metrics enabled"
+      ],
+      "security_domain": "observability",
+      "description": "Event source mapping metrics must be enabled for operational visibility."
+    },
+    {
+      "intent_id": "dead_letter_queue",
+      "match_statements": [
+        "dead-letter",
+        "on-failure destination",
+        "failed-event capture"
+      ],
+      "security_domain": "reliability",
+      "description": "Failed events must be captured via dead-letter queue or on-failure destination."
+    },
+    {
+      "intent_id": "nitro_instance_type",
+      "match_statements": [
+        "EC2 instance type built on the AWS Nitro System",
+        "Nitro System"
+      ],
+      "security_domain": "compute_isolation",
+      "description": "Workload must run on AWS Nitro-based instance types for hardware-level isolation."
+    },
+    {
+      "intent_id": "layer_version_policy_scoping",
+      "match_statements": [
+        "layer.*version policy should limit permissions",
+        "layer's version policy should not allow unauthenticated"
+      ],
+      "security_domain": "access_control",
+      "description": "Lambda layer version policy must restrict sharing to approved accounts/organizations."
+    }
+  ]
+}

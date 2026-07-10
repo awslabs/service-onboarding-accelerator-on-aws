@@ -1,4 +1,4 @@
-"""Tests for canonical slug derivation (R1 from evidence-attestation.md §7).
+"""Tests for canonical slug derivation.
 
 Validates:
 - Umbrella services get 'aws' prefix (lambda → awslambda)
@@ -14,7 +14,7 @@ from tools.slug import SlugValidationError, derive_canonical_slug
 
 
 class TestSlugDerivation:
-    """Test canonical slug derivation rules from §2 of evidence-attestation.md."""
+    """Test canonical slug derivation rules."""
 
     def test_umbrella_service_gets_aws_prefix(self):
         """Umbrella services (lambda) get 'aws' prefix."""
@@ -99,7 +99,7 @@ class TestSlugDerivation:
 
 
 class TestSlugExamples:
-    """Test exact examples from §2 of evidence-attestation.md."""
+    """Test exact examples from the slug derivation spec."""
 
     def test_lambda(self):
         assert derive_canonical_slug("AWS Lambda", "lambda", "lambda") == "awslambda"

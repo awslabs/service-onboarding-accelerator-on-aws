@@ -11,7 +11,7 @@ Generate compliant infrastructure-as-code templates in all 4 required formats fr
 Controls Matrix. Each template implements ALL controls as properties/variables on the
 compliant resource.
 
-**Output:** `.service-approval/<slug>/05-generate/iac/`
+**Output:** `.service-approval/<slug>/05-recommended-guidance/iac/`
 
 This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
@@ -26,9 +26,9 @@ test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: 
 
 Create directory structure:
 ```bash
-mkdir -p .service-approval/<slug>/05-generate/iac/modules/_shared
+mkdir -p .service-approval/<slug>/05-recommended-guidance/iac/modules/_shared
 for asset in $(python3 -c "import json; d=json.load(open('.service-approval/<slug>/03-validate/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
-  mkdir -p ".service-approval/<slug>/05-generate/iac/modules/${asset}"
+  mkdir -p ".service-approval/<slug>/05-recommended-guidance/iac/modules/${asset}"
 done
 ```
 
@@ -403,6 +403,13 @@ These rules MUST be enforced in every template format — not just one:
      }
    }
    ```
+
+   `DataClassification` here is a **customer-supplied governance tag** — its value
+   comes from the `var.data_classification` input the customer populates, with no
+   default. The tool never infers or fills a data-classification value; data
+   sensitivity is the customer's determination. Keep the tag *key* in the canonical
+   set (tag-policy / Config `required-tags` controls reference it), but leave the
+   *value* for the customer to provide.
 
    **CDK TypeScript**: apply `Tags.of(resource).add("Owner", ownerParam)` once per
    canonical key — NEVER add a lowercase pair. Same for CloudFormation (Tags list with
@@ -928,8 +935,8 @@ After writing CDK and CDKTF package.json files, run `npm install` in each direct
 generate `package-lock.json`. The stop hook uses `npm ci` which requires a lock file.
 
 ```bash
-cd .service-approval/<slug>/05-generate/iac/cdk && npm install --silent && cd -
-cd .service-approval/<slug>/05-generate/iac/cdktf && npm install --silent && cd -
+cd .service-approval/<slug>/05-recommended-guidance/iac/cdk && npm install --silent && cd -
+cd .service-approval/<slug>/05-recommended-guidance/iac/cdktf && npm install --silent && cd -
 ```
 
 ### 2. Generate smoke-test parameter files
@@ -1069,5 +1076,5 @@ Generate (IaC) complete:
   CDK for Terraform:  iac/cdktf/compliant-resource.cdktf.ts (+ package.json, tsconfig.json)
   Parameter coverage: {N}/{N} parameters across all templates
   Known gaps:         {N} documented
-  Output: .service-approval/<slug>/05-generate/iac/
+  Output: .service-approval/<slug>/05-recommended-guidance/iac/
 ```

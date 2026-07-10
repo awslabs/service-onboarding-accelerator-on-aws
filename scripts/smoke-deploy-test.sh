@@ -8,14 +8,28 @@
 #
 # Usage: scripts/smoke-deploy-test.sh [--terraform] [--cloudformation] [--all]
 #                                     [--slug=<service-slug>] [--keep]
+#                                     [--region=<aws-region>]
 #
 # Flags:
 #   --slug=<slug>      Service slug whose IaC artifacts to deploy. If absent,
-#                      auto-discovers from .service-approval/*/05-generate/iac/
+#                      auto-discovers from .service-approval/*/05-recommended-guidance/iac/
 #                      (errors if 0 or >1 services found).
 #   --keep             Skip teardown. Leave deployed resources alive (Phase 7
 #                      Evidence needs the stack alive to probe it). Phase 7
 #                      tears down at the end of evidence collection.
+#   --region=<region>  Pin the AWS region for every aws CLI call. When set,
+#                      this OVERRIDES any ambient AWS_REGION /
+#                      AWS_DEFAULT_REGION the harness may have exported, so a
+#                      stale env var cannot redirect the deploy at the wrong
+#                      account/region. Resolution order:
+#                        1. --region=<r>                        (explicit flag)
+#                        2. .service-approval/<slug>/00-intake/intake.json
+#                           (.testing.region)
+#                        3. AWS_REGION / AWS_DEFAULT_REGION     (ambient)
+#                        4. us-east-1                            (final default)
+#                      The resolved region is exported as AWS_REGION /
+#                      AWS_DEFAULT_REGION for child processes (e.g., Terraform)
+#                      and threaded explicitly into every aws CLI invocation.
 #   --terraform        Deploy Terraform only.
 #   --cloudformation   Deploy CloudFormation only.
 #   --all              Deploy both (default).
@@ -30,6 +44,7 @@ DEPLOY_TF=false
 DEPLOY_CFN=false
 SLUG=""
 KEEP=false
+REGION=""
 RESULTS=()
 FAILED=0
 
@@ -40,6 +55,7 @@ for arg in "$@"; do
     --all) DEPLOY_TF=true; DEPLOY_CFN=true ;;
     --slug=*) SLUG="${arg#--slug=}" ;;
     --keep) KEEP=true ;;
+    --region=*) REGION="${arg#--region=}" ;;
     *) echo "Unknown arg: $arg"; exit 1 ;;
   esac
 done
@@ -52,7 +68,7 @@ fi
 # --------------------------------------------------------------------------
 # Resolve service slug + IaC dirs
 # --------------------------------------------------------------------------
-# Per-slug layout: .service-approval/<slug>/05-generate/iac/{terraform,cloudformation}/
+# Per-slug layout: .service-approval/<slug>/05-recommended-guidance/iac/{terraform,cloudformation}/
 # Auto-discover if --slug not provided.
 if [ -z "$SLUG" ]; then
   CANDIDATES=()
@@ -61,14 +77,14 @@ if [ -z "$SLUG" ]; then
       name=$(basename "$d")
       [ "$name" = "_staging" ] && continue
       [ "$name" = "plans" ] && continue
-      if [ -d "$d/05-generate/iac" ]; then
+      if [ -d "$d/05-recommended-guidance/iac" ]; then
         CANDIDATES+=("$name")
       fi
     done < <(find ".service-approval" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
   fi
   if [ ${#CANDIDATES[@]} -eq 0 ]; then
     echo "CRITICAL: No service slug found. Either run /generate first or pass --slug=<slug>."
-    echo "Looked under: .service-approval/*/05-generate/iac/"
+    echo "Looked under: .service-approval/*/05-recommended-guidance/iac/"
     exit 1
   elif [ ${#CANDIDATES[@]} -gt 1 ]; then
     echo "CRITICAL: Multiple services found in .service-approval/: ${CANDIDATES[*]}"
@@ -78,7 +94,7 @@ if [ -z "$SLUG" ]; then
   SLUG="${CANDIDATES[0]}"
 fi
 
-CONTROLS_DIR=".service-approval/$SLUG/05-generate/iac"
+CONTROLS_DIR=".service-approval/$SLUG/05-recommended-guidance/iac"
 TF_DIR="$CONTROLS_DIR/terraform"
 CFN_DIR="$CONTROLS_DIR/cloudformation"
 
@@ -87,8 +103,54 @@ if [ ! -d "$CONTROLS_DIR" ]; then
   exit 1
 fi
 
+# --------------------------------------------------------------------------
+# Resolve target region (precedence: --region > intake > env > default)
+# --------------------------------------------------------------------------
+# Without explicit pinning, an ambient AWS_REGION exported by the harness can
+# silently redirect the deploy to the wrong region. Resolve once here and
+# thread the result into every aws CLI invocation; also re-export
+# AWS_REGION/AWS_DEFAULT_REGION so child processes (Terraform, sub-shells)
+# see the pinned value rather than the original ambient one.
+INTAKE_FILE=".service-approval/$SLUG/00-intake/intake.json"
+REGION_SOURCE="default"
+if [ -n "$REGION" ]; then
+  REGION_SOURCE="--region flag"
+elif [ -f "$INTAKE_FILE" ]; then
+  REGION_FROM_INTAKE=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$INTAKE_FILE'))
+    print(d.get('testing', {}).get('region', '') or '')
+except Exception:
+    pass
+" 2>/dev/null)
+  if [ -n "$REGION_FROM_INTAKE" ]; then
+    REGION="$REGION_FROM_INTAKE"
+    REGION_SOURCE="$INTAKE_FILE (.testing.region)"
+  fi
+fi
+if [ -z "$REGION" ] && [ -n "${AWS_REGION:-}" ]; then
+  REGION="$AWS_REGION"
+  REGION_SOURCE="ambient AWS_REGION"
+fi
+if [ -z "$REGION" ] && [ -n "${AWS_DEFAULT_REGION:-}" ]; then
+  REGION="$AWS_DEFAULT_REGION"
+  REGION_SOURCE="ambient AWS_DEFAULT_REGION"
+fi
+if [ -z "$REGION" ]; then
+  REGION="us-east-1"
+  REGION_SOURCE="hardcoded default"
+fi
+
+# Pin the resolved region for child processes — a stale ambient export
+# left over from another step cannot override it after this point.
+export AWS_REGION="$REGION"
+export AWS_DEFAULT_REGION="$REGION"
+REGION_ARGS=(--region "$REGION")
+
 echo "  Slug:     $SLUG"
 echo "  IaC dir:  $CONTROLS_DIR"
+echo "  Region:   $REGION  (source: $REGION_SOURCE)"
 $KEEP && echo "  Mode:     deploy (KEEP — Phase 7 will tear down)" || echo "  Mode:     deploy + teardown"
 echo ""
 
@@ -96,7 +158,7 @@ echo ""
 # Pre-flight
 # --------------------------------------------------------------------------
 echo "=== Pre-flight ==="
-IDENTITY=$(aws sts get-caller-identity --output json 2>&1) || { echo "CRITICAL: aws sts get-caller-identity failed"; exit 1; }
+IDENTITY=$(aws "${REGION_ARGS[@]}" sts get-caller-identity --output json 2>&1) || { echo "CRITICAL: aws sts get-caller-identity failed"; exit 1; }
 ACCOUNT=$(echo "$IDENTITY" | python3 -c "import sys,json; print(json.load(sys.stdin)['Account'])")
 ARN=$(echo "$IDENTITY" | python3 -c "import sys,json; print(json.load(sys.stdin)['Arn'])")
 echo "  Account: $ACCOUNT"
@@ -247,7 +309,7 @@ with open('$PARAM_ARGS_FILE', 'w') as f:
 
     # Deploy
     echo "  Deploying..."
-    CFN_DEPLOY_OUT=$(aws cloudformation deploy \
+    CFN_DEPLOY_OUT=$(aws "${REGION_ARGS[@]}" cloudformation deploy \
       --template-file "$CFN_TEMPLATE" \
       --stack-name "$STACK_NAME" \
       --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND \
@@ -262,7 +324,7 @@ with open('$PARAM_ARGS_FILE', 'w') as f:
 
       # Show failure events
       echo "  Failure events:"
-      aws cloudformation describe-stack-events \
+      aws "${REGION_ARGS[@]}" cloudformation describe-stack-events \
         --stack-name "$STACK_NAME" \
         --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[LogicalResourceId,ResourceStatusReason]" \
         --output table --no-cli-pager 2>/dev/null | head -20
@@ -271,14 +333,14 @@ with open('$PARAM_ARGS_FILE', 'w') as f:
       FAILED=$((FAILED+1))
 
       echo "  Deleting failed stack..."
-      aws cloudformation delete-stack --stack-name "$STACK_NAME" --no-cli-pager 2>/dev/null
-      aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --no-cli-pager 2>/dev/null || true
+      aws "${REGION_ARGS[@]}" cloudformation delete-stack --stack-name "$STACK_NAME" --no-cli-pager 2>/dev/null
+      aws "${REGION_ARGS[@]}" cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --no-cli-pager 2>/dev/null || true
     else
       echo "  PASS: Stack created"
 
       # Verify: list outputs
       echo "  Stack outputs:"
-      aws cloudformation describe-stacks \
+      aws "${REGION_ARGS[@]}" cloudformation describe-stacks \
         --stack-name "$STACK_NAME" \
         --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" \
         --output table --no-cli-pager 2>/dev/null | head -15
@@ -291,9 +353,9 @@ with open('$PARAM_ARGS_FILE', 'w') as f:
       else
         # Destroy
         echo "  Tearing down..."
-        aws cloudformation delete-stack --stack-name "$STACK_NAME" --no-cli-pager
+        aws "${REGION_ARGS[@]}" cloudformation delete-stack --stack-name "$STACK_NAME" --no-cli-pager
         echo "  Waiting for delete..."
-        aws cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --no-cli-pager 2>&1
+        aws "${REGION_ARGS[@]}" cloudformation wait stack-delete-complete --stack-name "$STACK_NAME" --no-cli-pager 2>&1
         CFN_DELETE_EXIT=$?
 
         if [ $CFN_DELETE_EXIT -ne 0 ]; then

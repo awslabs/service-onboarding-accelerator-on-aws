@@ -3,7 +3,7 @@
 Cross-artifact consistency validator.
 
 Runs after a generation phase completes to verify consistency across all
-generated control artifacts in .service-approval/<slug>/05-generate/.
+generated control artifacts in .service-approval/<slug>/05-recommended-guidance/.
 
 Usage:
     python3 validate_cross.py <controls_dir>
@@ -34,14 +34,14 @@ def _load_json(path: str) -> dict | None:
 def _find_state_dir(controls_dir: str) -> dict[str, str] | None:
     """Find sibling phase directories relative to controls dir.
 
-    In the new layout, controls_dir is .service-approval/<slug>/05-generate/
+    In the new layout, controls_dir is .service-approval/<slug>/05-recommended-guidance/
     and we need to find 04-map/ and 03-validate/ siblings.
 
     Returns:
         Dict with keys "map" and "validate" pointing to phase directories,
         or None if not found.
     """
-    # controls_dir is typically .service-approval/<slug>/05-generate/
+    # controls_dir is typically .service-approval/<slug>/05-recommended-guidance/
     # Parent is the service root
     service_root = os.path.dirname(controls_dir.rstrip("/"))
     map_dir = os.path.join(service_root, "04-map")
@@ -196,13 +196,134 @@ def check_control_coverage(controls_dir: str, mapping: dict) -> list[str]:
         if c.get("mechanism", "").lower() in ("iac template", "iac")
     }
 
-    orphaned = expected_ids - found_ids - iac_ctrl_ids
+    # Controls the preventive recommender deliberately deferred are NOT orphans:
+    # a REFER_TO_REFERENCE decision (no reference example anchors the objective)
+    # or a ROUTE_DETECTIVE decision (not preventable at request time) is a
+    # documented, intentional non-authoring outcome — the risk-averse path. The
+    # decision is recorded in preventive-plan.json, so a deferred control counts
+    # as covered as long as it carries an explicit plan decision. (A preventive
+    # control that is simply MISSING from the plan is still flagged.)
+    deferred_ctrl_ids = _deferred_preventive_controls(controls_dir)
+
+    orphaned = expected_ids - found_ids - iac_ctrl_ids - deferred_ctrl_ids
     if orphaned:
         errors.append(
             f"CHECK-X2 control_coverage: {len(orphaned)} control(s) in mapping-results "
             f"not referenced by any artifact: {sorted(orphaned)}"
         )
 
+    return errors
+
+
+def _deferred_preventive_controls(controls_dir: str) -> set[str]:
+    """Control IDs the recommender deferred via REFER_TO_REFERENCE / ROUTE_DETECTIVE.
+
+    Read from preventive-plan.json (the recommender gate). These are intentional
+    non-authoring decisions — the objective could not be anchored to a reference
+    or is not preventable at request time — so the control legitimately has no
+    preventive artifact. Returns the empty set when no plan exists (e.g. a run
+    that predates the gated preventive sub-pipeline), preserving prior behavior.
+    """
+    plan_path = os.path.join(controls_dir, "preventive-plan.json")
+    plan = _load_json(plan_path)
+    if not plan:
+        return set()
+    deferred = set()
+    for d in plan.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        if d.get("decision") in ("REFER_TO_REFERENCE", "ROUTE_DETECTIVE"):
+            cid = d.get("control_id")
+            if cid:
+                deferred.add(cid)
+    return deferred
+
+
+# ================================================================
+# Check X4: Permission-boundary org prerequisite
+# ================================================================
+
+# Mapping mechanism strings that resolve to an IAM permission boundary.
+_BOUNDARY_MECHANISMS = {"iam permission boundary", "permission boundary"}
+
+# Matches the finalized-run sentinel at the source-tag column of a pipeline.log
+# line (mirrors validate_pipeline_integrity._PIPELINE_COMPLETE_RE).
+_FINALIZED_RE = re.compile(
+    r"^\S+\s+\[\S+\]\s+\[pipeline:complete:FINALIZED\]", re.MULTILINE
+)
+
+
+def _is_finalized_run(controls_dir: str) -> bool:
+    """True if the run carries the `[pipeline:complete:FINALIZED]` sentinel.
+
+    A finalized run is frozen and immutable — its plan/artifacts cannot be
+    remediated. A check added after a run finalized must not retroactively fail
+    it (it would brick every subsequent Stop hook for that frozen state). Honored
+    the same way P1 in validate_pipeline_integrity is. `controls_dir` is
+    `<service_root>/05-recommended-guidance`, so pipeline.log is one level up.
+    """
+    service_root = os.path.dirname(controls_dir.rstrip("/"))
+    log_path = os.path.join(service_root, "pipeline.log")
+    if not os.path.isfile(log_path):
+        return False
+    try:
+        with open(log_path) as fh:
+            return bool(_FINALIZED_RE.search(fh.read()))
+    except OSError:
+        return False
+
+
+def _org_attaches_permission_boundaries(controls_dir: str) -> bool:
+    """Whether the org recorded that it attaches permission boundaries.
+
+    Read from intake-manifest.json at `org_context.permission_boundaries_attached`
+    (default False when the block or field is absent). A permission boundary only
+    takes effect if the org actually attaches one to its delegated-admin / role
+    principals; absent that prerequisite, authoring a boundary is shelfware. So
+    the recommender authors a boundary ONLY when this is explicitly true —
+    otherwise it refers the customer to the reference example.
+    """
+    service_root = os.path.dirname(controls_dir.rstrip("/"))
+    manifest = _load_json(os.path.join(service_root, "00-intake", "intake-manifest.json"))
+    if not isinstance(manifest, dict):
+        return False
+    org = manifest.get("org_context")
+    if not isinstance(org, dict):
+        return False
+    return org.get("permission_boundaries_attached") is True
+
+
+def check_boundary_org_prerequisite(controls_dir: str) -> list[str]:
+    """X4: a GENERATE_IAM boundary decision requires the org opt-in.
+
+    A permission boundary is refer-by-default: the recommender must NOT author a
+    boundary unless the run records that the org attaches boundaries to its
+    principals (intake org_context.permission_boundaries_attached == true).
+    Without the opt-in, the decision must be REFER_TO_REFERENCE, pointing at the
+    reference boundary example. This keeps the boundary authoring surface out of
+    the common case entirely.
+    """
+    errors: list[str] = []
+    plan = _load_json(os.path.join(controls_dir, "preventive-plan.json"))
+    if not plan:
+        return errors
+    if _is_finalized_run(controls_dir):
+        return errors  # frozen run — the plan can't be remediated retroactively
+    if _org_attaches_permission_boundaries(controls_dir):
+        return errors  # opt-in recorded — authoring a boundary is permitted
+    for d in plan.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        mechanism = (d.get("mechanism") or "").strip().lower()
+        if d.get("decision") == "GENERATE_IAM" and mechanism in _BOUNDARY_MECHANISMS:
+            errors.append(
+                f"X4 {d.get('control_id', '?')}: decision GENERATE_IAM for a "
+                f"permission boundary, but the run did not record "
+                f"org_context.permission_boundaries_attached=true in "
+                f"intake-manifest.json. Permission boundaries are refer-by-default "
+                f"— set the decision to REFER_TO_REFERENCE (point to the reference "
+                f"boundary example) unless the org explicitly attaches boundaries."
+            )
     return errors
 
 
@@ -547,9 +668,24 @@ def check_confused_deputy(controls_dir: str) -> list[str]:
     if not data:
         return []
 
-    for key, policy in data.items():
-        if key == "_metadata":
-            continue
+    # The artifact is one of two shapes:
+    #   1. FLAT  — a single IAM document: {Version, Statement[], _metadata}
+    #   2. NESTED — a map of named policies: {name: {Version, Statement[]}}
+    # The flat shape is what the preventive authors actually emit. Normalize to a
+    # list of (name, policy-doc) pairs so both shapes are checked; previously the
+    # flat shape slipped through entirely (its top-level values are str/list, not
+    # dicts), making the whole check a silent no-op for the real artifacts.
+    if "Statement" in data:
+        meta = data.get("_metadata") or {}
+        name = "resource-policy"
+        controls = meta.get("controls") if isinstance(meta, dict) else None
+        if controls:
+            name = f"resource-policy ({', '.join(controls)})"
+        candidates = [(name, data)]
+    else:
+        candidates = [(k, v) for k, v in data.items() if k != "_metadata"]
+
+    for key, policy in candidates:
         if not isinstance(policy, dict):
             continue
 
@@ -668,6 +804,7 @@ def validate_all(controls_dir: str) -> list[str]:
     errors.extend(check_lambda_handler_completeness(controls_dir))
     errors.extend(check_confused_deputy(controls_dir))
     errors.extend(check_proactive_completeness(controls_dir))
+    errors.extend(check_boundary_org_prerequisite(controls_dir))
 
     # Require mapping-results
     if mapping:

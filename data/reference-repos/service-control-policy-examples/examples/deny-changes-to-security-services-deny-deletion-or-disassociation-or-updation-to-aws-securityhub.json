@@ -1,0 +1,37 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Action": [
+        "securityhub:DeleteInvitations",
+        "securityhub:BatchDisableStandards",
+        "securityhub:DeleteActionTarget",
+        "securityhub:DeleteInsight",
+        "securityhub:TagResource",
+        "securityhub:UntagResource",
+        "securityhub:UpdateStandardsControl",
+        "securityhub:UpdateSecurityHubConfiguration",
+        "securityhub:UpdateFindingAggregator",
+        "securityhub:UpdateOrganizationConfiguration",
+        "securityhub:DisableSecurityHub",
+        "securityhub:DisassociateFromMasterAccount",
+        "securityhub:DeleteMembers",
+        "securityhub:DisassociateMembers",
+        "securityhub:DisableSecurityHubV2",
+        "securityhub:DeleteConfigurationPolicy",
+        "securityhub:BatchDeleteAutomationRules",
+        "securityhub:DeleteAutomationRuleV2",
+        "securityhub:DisassociateFromAdministratorAccount",
+        "securityhub:DeleteConnectorV2",
+        "securityhub:DisableImportFindingsForProduct"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalARN": "arn:aws:iam::${Account}:role/[PRIVILEGED_ROLE]"
+        }
+      }
+    }
+  ]
+}

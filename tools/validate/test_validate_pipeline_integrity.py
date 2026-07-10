@@ -10,14 +10,38 @@ from validate_pipeline_integrity import (
     CONDITION_OPERATOR_PAIRS,
     MIN_FRAMEWORK_COVERAGE_PCT,
     MIN_MCP_CALLS,
+    _arn_delimiter_errors,
+    _is_management_action,
+    _resource_type_delimiters,
+    check_arn_shapes,
+    check_boundary_minimality,
     check_framework_coverage,
     check_iac_placeholders,
     check_iam_policies,
     check_mcp_log,
+    check_phase_outputs,
     check_validated_notes,
-    check_verdict_consistency,
+    is_finalized,
     validate_pipeline,
 )
+
+
+# Authoritative Lambda SAR ARN patterns (subset) — the data the delimiter map is
+# derived from. `function` uses a colon; `layer` uses a colon; the slash variant
+# is the defect.
+_LAMBDA_SAR_FACTS = {
+    "service_prefix": "lambda",
+    "resource_types": [
+        {"name": "function",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}"},
+        {"name": "code signing config",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:code-signing-config:${CodeSigningConfigId}"},
+        {"name": "layer",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:layer:${LayerName}"},
+        {"name": "eventSourceMapping",
+         "arn_pattern": "arn:${Partition}:lambda:${Region}:${Account}:event-source-mapping:${UUID}"},
+    ],
+}
 
 
 # ---------- P1: mcp-calls.log ----------
@@ -318,6 +342,308 @@ def test_iac_parameterized_passes(tmp_path: Path) -> None:
     assert check_iac_placeholders(tmp_path) == []
 
 
+# ---------- P7: phase-output completeness ----------
+
+
+def test_phase_outputs_missing_required_artifact_fails(tmp_path: Path) -> None:
+    """A phase dir that ran but lacks its required artifacts is a P7 error."""
+    (tmp_path / "06-summarize").mkdir()
+    errors = check_phase_outputs(tmp_path)
+    assert any("P7" in e and "SUMMARY-REPORT.md" in e for e in errors)
+
+
+# ---------- P9: ARN resource-delimiter validation ----------
+
+
+def test_resource_type_delimiters_parsed_from_sar_patterns() -> None:
+    """The delimiter map is derived from SAR arn_pattern fields — `function`
+    and `layer` use a colon, multi-word types keep their hyphenated token."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    assert delims["function"] == ":"
+    assert delims["layer"] == ":"
+    assert delims["code-signing-config"] == ":"
+    assert delims["event-source-mapping"] == ":"
+
+
+def test_arn_delimiter_wrong_delimiter_flagged() -> None:
+    """A function ARN with a slash where SAR mandates a colon is the no-op
+    defect — flagged."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:*:*:function/*", "lambda", delims)
+    assert err is not None
+    assert "function" in err and "silent no-op" in err
+
+
+def test_arn_delimiter_correct_and_wildcard_pass() -> None:
+    """The colon form, a fully-qualified colon ARN, and a bare `*` all pass."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    assert _arn_delimiter_errors("arn:aws:lambda:*:*:function:*", "lambda", delims) is None
+    assert _arn_delimiter_errors(
+        "arn:aws:lambda:*:123456789012:function:*", "lambda", delims
+    ) is None
+    assert _arn_delimiter_errors("*", "lambda", delims) is None
+
+
+def test_arn_delimiter_other_service_and_unknown_token_pass() -> None:
+    """Cross-service ARNs (format not loaded) and unknown type tokens are not
+    judged — the check stays quiet rather than false-positive."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    # Different service — its ARN format was not loaded.
+    assert _arn_delimiter_errors("arn:aws:s3:::my-bucket/*", "lambda", delims) is None
+    # Unknown resource-type token for this service.
+    assert _arn_delimiter_errors(
+        "arn:aws:lambda:*:*:newthing/abc", "lambda", delims
+    ) is None
+
+
+def test_arn_delimiter_malformed_too_few_fields_flagged() -> None:
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:function", "lambda", delims)
+    assert err is not None and "6 colon-delimited" in err
+
+
+def test_arn_delimiter_wrong_case_resource_type_flagged() -> None:
+    """IAM resource matching is case-sensitive — a capitalized resource type
+    (Function/ instead of function:) matches nothing and is flagged."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:*:*:Function/*", "lambda", delims)
+    assert err is not None and "case" in err.lower()
+
+
+def test_arn_delimiter_uppercase_scheme_still_checked() -> None:
+    """A wrong-case ARN scheme/service (ARN:AWS:LAMBDA:…) is still parsed and its
+    malformed resource delimiter flagged (not silently skipped)."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("ARN:AWS:LAMBDA:*:*:FUNCTION/*", "lambda", delims)
+    assert err is not None
+
+
+def test_arn_delimiter_missing_delimiter_flagged() -> None:
+    """A known resource type with NO delimiter (function* instead of function:*)
+    is a malformed ARN."""
+    delims = _resource_type_delimiters(_LAMBDA_SAR_FACTS)
+    err = _arn_delimiter_errors("arn:aws:lambda:*:*:function*", "lambda", delims)
+    assert err is not None and "without its delimiter" in err
+
+
+def _write_preventive_artifact(root: Path, name: str, statements: list) -> None:
+    prev = root / "05-recommended-guidance" / "preventive"
+    prev.mkdir(parents=True, exist_ok=True)
+    (prev / name).write_text(json.dumps({"Version": "2012-10-17", "Statement": statements}))
+
+
+def _write_sar_facts(root: Path) -> None:
+    assess = root / "01-assess"
+    assess.mkdir(parents=True, exist_ok=True)
+    (assess / "sar-facts.json").write_text(json.dumps(_LAMBDA_SAR_FACTS))
+
+
+def test_check_arn_shapes_flags_slash_function(tmp_path: Path) -> None:
+    """End-to-end: a preventive artifact with `function/*` fails P9; the colon
+    sibling in the same file passes."""
+    _write_sar_facts(tmp_path)
+    _write_preventive_artifact(
+        tmp_path,
+        "scp-policy.json",
+        [
+            {"Sid": "Bad", "Effect": "Deny", "Action": "lambda:CreateFunction",
+             "Resource": "arn:aws:lambda:*:*:function/*"},
+            {"Sid": "Good", "Effect": "Deny", "Action": "lambda:CreateFunction",
+             "Resource": "arn:aws:lambda:*:*:function:*"},
+        ],
+    )
+    errors = check_arn_shapes(tmp_path)
+    assert len(errors) == 1
+    assert "P9" in errors[0] and "scp-policy.json" in errors[0] and "Statement[0]" in errors[0]
+
+
+def test_check_arn_shapes_clean_artifact_passes(tmp_path: Path) -> None:
+    """An artifact whose ARNs all use the correct delimiter yields no P9 error."""
+    _write_sar_facts(tmp_path)
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "Ok", "Effect": "Deny", "Action": "lambda:CreateFunction",
+             "Resource": ["arn:aws:lambda:*:*:function:*", "*"]},
+        ],
+    )
+    assert check_arn_shapes(tmp_path) == []
+
+
+_FINALIZED_LINE = (
+    "2026-06-18T01:19:00Z [06-summarize] [pipeline:complete:FINALIZED]  done\n"
+)
+
+
+def test_arn_shapes_exempts_finalized_run(tmp_path: Path) -> None:
+    """A finalized run is frozen — newly-added P9 must not retroactively fail it
+    (it would brick every subsequent Stop hook for an immutable run)."""
+    _write_sar_facts(tmp_path)
+    _write_preventive_artifact(
+        tmp_path, "scp-policy.json",
+        [{"Sid": "Bad", "Effect": "Deny", "Action": "lambda:CreateFunction",
+          "Resource": "arn:aws:lambda:*:*:function/*"}],
+    )
+    # mid-flight (no sentinel) → flagged
+    assert len(check_arn_shapes(tmp_path)) == 1
+    # finalized (sentinel present) → exempt
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_arn_shapes(tmp_path) == []
+
+
+def test_boundary_minimality_exempts_finalized_run(tmp_path: Path) -> None:
+    _write_preventive_artifact(
+        tmp_path, "permission-boundary.json",
+        [{"Sid": "AllowMgmt", "Effect": "Allow",
+          "Action": ["lambda:CreateFunction"], "Resource": "*"}],
+    )
+    assert len(check_boundary_minimality(tmp_path)) == 1  # mid-flight
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_boundary_minimality(tmp_path) == []  # finalized
+
+
+def test_is_finalized_detection(tmp_path: Path) -> None:
+    assert is_finalized(tmp_path) is False  # no pipeline.log
+    (tmp_path / "pipeline.log").write_text("2026-01-01T00:00:00Z [04-map] [skill:x:end]  hi\n")
+    assert is_finalized(tmp_path) is False  # no sentinel
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert is_finalized(tmp_path) is True
+    # the sentinel must sit at the source-tag column, not in a message body
+    (tmp_path / "pipeline.log").write_text(
+        "2026-01-01T00:00:00Z [04-map] [skill:x:end]  mentions [pipeline:complete:FINALIZED]\n"
+    )
+    assert is_finalized(tmp_path) is False
+
+
+def test_check_arn_shapes_no_sar_facts_is_silent(tmp_path: Path) -> None:
+    """Without sar-facts.json there is no authoritative format — the check must
+    not fire (it cannot judge correctness)."""
+    _write_preventive_artifact(
+        tmp_path,
+        "scp-policy.json",
+        [{"Sid": "X", "Effect": "Deny", "Action": "lambda:CreateFunction",
+          "Resource": "arn:aws:lambda:*:*:function/*"}],
+    )
+    assert check_arn_shapes(tmp_path) == []
+
+
+# ---------- P10: permission-boundary minimality ----------
+
+
+def test_is_management_action_classification() -> None:
+    # Explicit write verbs are management.
+    assert _is_management_action("lambda:CreateFunction")
+    assert _is_management_action("lambda:UpdateFunctionConfiguration")
+    assert _is_management_action("lambda:PutFunctionCodeSigningConfig")
+    assert _is_management_action("lambda:DeleteFunction")
+    assert _is_management_action("lambda:TagResource")
+    # FAIL-CLOSED: escalation actions whose verb is not a known read verb are
+    # management even though their verb is not an obvious Create/Update/Put.
+    assert _is_management_action("ec2:RunInstances")
+    assert _is_management_action("sts:AssumeRole")
+    assert _is_management_action("kms:ScheduleKeyDeletion")
+    assert _is_management_action("s3:RestoreObject")
+    assert _is_management_action("dynamodb:ExportTableToPointInTime")
+    # invoke is a privileged data-plane action a boundary should constrain.
+    assert _is_management_action("lambda:InvokeFunction")
+    # read verbs are not management.
+    assert not _is_management_action("lambda:GetFunction")
+    assert not _is_management_action("lambda:ListFunctions")
+    assert not _is_management_action("s3:DescribeJob")
+    # wildcard globs: a write/ambiguous stem is management; a read stem is not.
+    assert _is_management_action("lambda:Create*")
+    assert _is_management_action("lambda:*")
+    assert _is_management_action("*")
+    assert not _is_management_action("lambda:Get*")
+    assert not _is_management_action("lambda:List*")
+
+
+def test_boundary_allow_with_management_actions_flagged(tmp_path: Path) -> None:
+    """A permission-boundary Allow enumerating CreateFunction/UpdateX fails P10."""
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "AllowScopedMgmt", "Effect": "Allow",
+             "Action": ["lambda:CreateFunction", "lambda:UpdateFunctionConfiguration",
+                        "lambda:InvokeFunction"],
+             "Resource": "arn:aws:lambda:*:*:function:*"},
+            {"Sid": "DenyUrl", "Effect": "Deny",
+             "Action": "lambda:CreateFunctionUrlConfig", "Resource": "*",
+             "Condition": {"StringNotEquals": {"lambda:FunctionUrlAuthType": "AWS_IAM"}}},
+        ],
+    )
+    errors = check_boundary_minimality(tmp_path)
+    assert len(errors) == 1
+    assert "P10" in errors[0] and "AllowScopedMgmt" in errors[0]
+    assert "lambda:CreateFunction" in errors[0]
+
+
+def test_boundary_minimal_allow_passes(tmp_path: Path) -> None:
+    """A boundary whose Allow is a minimal READ floor — control intent in the
+    Deny — passes P10. (Reads only; invoke/management belong in the Deny + keys.)"""
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "AllowReadFloor", "Effect": "Allow",
+             "Action": ["lambda:GetFunction", "lambda:ListFunctions",
+                        "lambda:GetAccountSettings"],
+             "Resource": "*"},
+            {"Sid": "DenyPassRole", "Effect": "Deny", "Action": "iam:PassRole",
+             "Resource": "*",
+             "Condition": {"StringNotEqualsIfExists": {"iam:PassedToService": "lambda.amazonaws.com"}}},
+        ],
+    )
+    assert check_boundary_minimality(tmp_path) == []
+
+
+def test_boundary_escalation_action_flagged(tmp_path: Path) -> None:
+    """FAIL-CLOSED regression: a boundary Allow listing escalation actions whose
+    verbs are not in any write-verb list (RunInstances, AssumeRole, …) must still
+    be flagged — the check treats unknown verbs as management."""
+    _write_preventive_artifact(
+        tmp_path,
+        "permission-boundary.json",
+        [
+            {"Sid": "AllowEscalation", "Effect": "Allow",
+             "Action": ["ec2:RunInstances", "sts:AssumeRole",
+                        "kms:ScheduleKeyDeletion"],
+             "Resource": "*"},
+        ],
+    )
+    errors = check_boundary_minimality(tmp_path)
+    assert len(errors) == 1 and "AllowEscalation" in errors[0]
+
+
+def test_boundary_detected_by_metadata_not_just_filename(tmp_path: Path) -> None:
+    """A boundary artifact under a non-obvious filename is still checked when its
+    _metadata marks it a permission boundary."""
+    prev = tmp_path / "05-recommended-guidance" / "preventive"
+    prev.mkdir(parents=True)
+    (prev / "pb.json").write_text(json.dumps({
+        "_metadata": {"mechanism": "IAM Permission Boundary", "layer": "preventive"},
+        "Version": "2012-10-17",
+        "Statement": [{"Sid": "AllowMgmt", "Effect": "Allow",
+                       "Action": ["lambda:CreateFunction"], "Resource": "*"}],
+    }))
+    errors = check_boundary_minimality(tmp_path)
+    assert len(errors) == 1 and "AllowMgmt" in errors[0]
+
+
+def test_boundary_minimality_only_checks_boundary_files(tmp_path: Path) -> None:
+    """An SCP that enumerates management actions in an Allow is NOT a P10 concern
+    (P10 is specific to permission-boundary artifacts)."""
+    _write_preventive_artifact(
+        tmp_path,
+        "scp-policy.json",
+        [{"Sid": "AllowMgmt", "Effect": "Allow",
+          "Action": ["lambda:CreateFunction"], "Resource": "*"}],
+    )
+    assert check_boundary_minimality(tmp_path) == []
+
+
 # ---------- P5: framework coverage ----------
 
 
@@ -396,55 +722,6 @@ def test_framework_coverage_falls_back_to_mapped_file(tmp_path: Path) -> None:
     assert check_framework_coverage(tmp_path) == []
 
 
-# ---------- P6: verdict consistency ----------
-
-
-def test_verdict_missing_report_is_noop(tmp_path: Path) -> None:
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=5) == []
-
-
-def test_verdict_approved_with_errors_fails(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n## Verdict\nAPPROVED\n")
-    errors = check_verdict_consistency(tmp_path, integrity_errors_count=3)
-    assert any("P6" in e and "APPROVED" in e for e in errors)
-
-
-def test_verdict_approved_with_exception_passes(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text(
-        "# Report\n\n## Verdict\nAPPROVED WITH EXCEPTION\n"
-    )
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=3) == []
-
-
-def test_verdict_requires_remediation_passes(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text(
-        "# Report\n\n## Verdict\nREQUIRES REMEDIATION\n"
-    )
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=3) == []
-
-
-def test_verdict_no_errors_approved_passes(tmp_path: Path) -> None:
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n## Verdict\nAPPROVED\n")
-    assert check_verdict_consistency(tmp_path, integrity_errors_count=0) == []
-
-
-def test_verdict_h3_header_fails_closed(tmp_path: Path) -> None:
-    """A report with `### Verdict` H3 (instead of `## Verdict` H2) must
-    fail-closed. Pre-fix this returned [] silently — letting any verdict
-    through, even APPROVED with integrity failures."""
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\n### Verdict\nAPPROVED\n")
-    errors = check_verdict_consistency(tmp_path, integrity_errors_count=3)
-    assert errors and "P6 FAIL" in errors[0] and "no `## Verdict` H2 header" in errors[0]
-
-
-def test_verdict_no_header_at_all_fails_closed(tmp_path: Path) -> None:
-    """A report without any verdict header (e.g., truncated mid-write)
-    must fail-closed for the same reason."""
-    (tmp_path / "APPROVAL-REPORT.md").write_text("# Report\n\nNo verdict here.\n")
-    errors = check_verdict_consistency(tmp_path, integrity_errors_count=0)
-    assert errors and "P6 FAIL" in errors[0]
-
-
 # ---------- validate_pipeline integration ----------
 
 
@@ -461,15 +738,15 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
 
     # Create phase directories
     (service / "03-validate").mkdir()
-    (service / "05-generate").mkdir()
-    (service / "05-generate" / "preventive").mkdir()
+    (service / "05-recommended-guidance").mkdir()
+    (service / "05-recommended-guidance" / "preventive").mkdir()
 
     # Trigger P1 (missing mcp-calls.log at service root)
     # No mcp-calls.log created → will fail P1
 
     # Trigger P3 (SCP without at least one Deny)
     _write_policy(
-        service / "05-generate",
+        service / "05-recommended-guidance",
         "scp-baseline.json",
         {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]},
     )
@@ -484,12 +761,12 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
 
 def test_pipeline_complete_sentinel_in_message_does_not_close_p1(tmp_path: Path) -> None:
     """A pipeline.log line whose MESSAGE contains the literal sentinel text must
-    NOT close out P1 — only a real `[pipeline:complete:<VERDICT>]` source-tag
+    NOT close out P1 — only a real `[pipeline:complete:FINALIZED]` source-tag
     counts. This protects against the validator getting tricked by skill prose
     that happens to quote the sentinel."""
     leaked = (
-        "2026-05-14T18:32:01Z [07-summarize] [skill:summarize:end]  "
-        "wrote `[pipeline:complete:APPROVED]` reference to docs only\n"
+        "2026-05-14T18:32:01Z [06-summarize] [skill:summarize:end]  "
+        "wrote `[pipeline:complete:FINALIZED]` reference to docs only\n"
     )
     (tmp_path / "pipeline.log").write_text(leaked)
     errors = check_mcp_log(tmp_path)
@@ -501,34 +778,25 @@ def test_pipeline_complete_sentinel_at_source_tag_closes_p1(tmp_path: Path) -> N
     """The real sentinel format closes out P1 retroactively — finalized runs
     are exempt because the file is frozen at that point."""
     line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:APPROVED]  "
-        "summarize finalized; verdict=APPROVED\n"
+        "2026-05-14T18:32:01Z [06-summarize] [pipeline:complete:FINALIZED]  "
+        "summarize finalized\n"
     )
     (tmp_path / "pipeline.log").write_text(line)
     assert check_mcp_log(tmp_path) == []
 
 
-def test_pipeline_complete_sentinel_with_underscored_verdict(tmp_path: Path) -> None:
-    """All three closed-set verdicts close out P1."""
-    for verdict in ("APPROVED", "APPROVED_WITH_EXCEPTIONS", "REQUIRES_REMEDIATION"):
+def test_pipeline_complete_sentinel_unknown_token_is_ignored(tmp_path: Path) -> None:
+    """A sentinel with any token other than the fixed FINALIZED (e.g., a
+    leftover verdict word or a typo) should NOT close P1 — only FINALIZED
+    finalizes the run."""
+    for token in ("APPROVED", "UNCLEAR", "DONE"):
         line = (
-            f"2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:{verdict}]  "
-            f"finalized; verdict={verdict}\n"
+            f"2026-05-14T18:32:01Z [06-summarize] [pipeline:complete:{token}]  "
+            f"weird state\n"
         )
         (tmp_path / "pipeline.log").write_text(line)
-        assert check_mcp_log(tmp_path) == [], f"verdict {verdict} should close P1"
-
-
-def test_pipeline_complete_sentinel_with_unknown_verdict_is_ignored(tmp_path: Path) -> None:
-    """A sentinel with an out-of-set verdict (e.g., a typo or future verdict)
-    should NOT close P1 — fail closed against unknown values."""
-    line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:UNCLEAR]  "
-        "weird state\n"
-    )
-    (tmp_path / "pipeline.log").write_text(line)
-    errors = check_mcp_log(tmp_path)
-    assert errors and "P1" in errors[0]
+        errors = check_mcp_log(tmp_path)
+        assert errors and "P1" in errors[0], f"token {token} must not close P1"
 
 
 # ---------- P3 wildcard-only literal-only matching ----------
@@ -570,7 +838,7 @@ def test_wildcard_only_loader_skips_bare_actions_when_prefix_empty(tmp_path: Pat
         "wildcard_only_actions": ["BareAction"],
         "actions": [{"name": "AnotherBare", "resource_types": []}],
     }))
-    controls_dir = tmp_path / "05-generate"
+    controls_dir = tmp_path / "05-recommended-guidance"
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     # Cross-service entries are still present, but no malformed ":Action" entries.
@@ -586,7 +854,94 @@ def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
         "service_prefix": "datasync",
         "wildcard_only_actions": ["DescribeAgent"],
     }))
-    controls_dir = tmp_path / "05-generate"
+    controls_dir = tmp_path / "05-recommended-guidance"
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     assert "datasync:DescribeAgent" in out
+
+
+# ---------- P11: no LLM confidence scoring ----------
+
+
+def test_confidence_key_in_map_json_fails(tmp_path: Path) -> None:
+    """A `confidence` key on a control under 04-map/ fails P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir()
+    (map_dir / "mapping-results.json").write_text(json.dumps({
+        "framework_mapping": [
+            {"objective_id": "X", "controls": [
+                {"control_id": "C-1", "confidence": {"band": "HIGH", "score": 0.9}}
+            ]}
+        ]
+    }))
+    errors = check_no_confidence_scoring(tmp_path)
+    assert any("P11" in e and "confidence" in e for e in errors), errors
+
+
+def test_run_confidence_key_in_generate_json_fails(tmp_path: Path) -> None:
+    """A `run_confidence` key under 05-recommended-guidance/ fails P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    gen_dir = tmp_path / "05-recommended-guidance" / "preventive"
+    gen_dir.mkdir(parents=True)
+    (gen_dir / "summary.json").write_text(json.dumps({"run_confidence": 0.7}))
+    errors = check_no_confidence_scoring(tmp_path)
+    assert any("P11" in e and "run_confidence" in e for e in errors), errors
+
+
+def test_confidence_band_in_report_md_fails(tmp_path: Path) -> None:
+    """A confidence band attached to 'confidence' in the report fails P11."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    sm_dir = tmp_path / "06-summarize"
+    sm_dir.mkdir()
+    (sm_dir / "SUMMARY-REPORT.md").write_text(
+        "# Report\n\n| Control | Confidence |\n|--|--|\n"
+        "| C-1 | HIGH confidence |\n"
+    )
+    errors = check_no_confidence_scoring(tmp_path)
+    assert any("P11" in e and "band" in e for e in errors), errors
+
+
+def test_confidence_word_without_band_passes(tmp_path: Path) -> None:
+    """P11 targets a confidence BAND token, not the English word. The Summary
+    Report's one-line 'Verification approach' pointer (and any prose that uses
+    the word 'confidence' without a HIGH/MEDIUM/LOW band) must NOT trip P11. The
+    generic 'Actions Taken to Increase Confidence' boilerplate no longer appears
+    in reports — it lives once in the README — but even if the word 'confidence'
+    shows up in prose, the band-token requirement keeps the check from firing."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    sm_dir = tmp_path / "06-summarize"
+    sm_dir.mkdir()
+    (sm_dir / "SUMMARY-REPORT.md").write_text(
+        "# Report\n\n> The verification steps that build confidence are described "
+        "in the project README.\n\n"
+        "- Every capability was MCP-verified.\n"
+        "- Reference anchors resolved for each preventive policy.\n"
+    )
+    assert check_no_confidence_scoring(tmp_path) == []
+
+
+def test_coverage_level_does_not_trip_p11(tmp_path: Path) -> None:
+    """coverage_level is the allowed deterministic ranked field — not confidence."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir()
+    (map_dir / "mapping-results.json").write_text(json.dumps({
+        "framework_mapping": [
+            {"objective_id": "X", "controls": [
+                {"control_id": "C-1", "coverage_level": "Full Coverage"}
+            ]}
+        ]
+    }))
+    assert check_no_confidence_scoring(tmp_path) == []
+
+
+def test_p11_exempts_finalized_run(tmp_path: Path) -> None:
+    """A finalized run is frozen — P11 must not retroactively fail it."""
+    from validate_pipeline_integrity import check_no_confidence_scoring
+    map_dir = tmp_path / "04-map"
+    map_dir.mkdir()
+    (map_dir / "mapping-results.json").write_text(json.dumps({"confidence": 0.5}))
+    assert len(check_no_confidence_scoring(tmp_path)) == 1  # mid-flight
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_no_confidence_scoring(tmp_path) == []  # finalized

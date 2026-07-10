@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteTransitGateway",
+        "ec2:ModifyTransitGateway",
+        "ec2:CreateTransitGatewayPeeringAttachment"
+      ],
+      "Resource": "arn:aws:ec2:*:*:transit-gateway/tgw-not-sensitive"
+    }
+  ]
+}

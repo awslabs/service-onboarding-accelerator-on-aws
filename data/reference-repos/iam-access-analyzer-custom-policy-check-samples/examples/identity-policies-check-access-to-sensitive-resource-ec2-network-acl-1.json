@@ -1,0 +1,14 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DeleteNetworkAcl",
+        "ec2:DeleteNetworkAclEntry",
+        "ec2:ReplaceNetworkAclEntry"
+      ],
+      "Resource": "arn:aws:ec2:*:*:network-acl/not-sensitive"
+    }
+  ]
+}

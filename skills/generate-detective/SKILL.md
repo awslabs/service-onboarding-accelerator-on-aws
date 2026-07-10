@@ -11,7 +11,7 @@ Generate all detective and responsive security control artifacts from the Contro
 This covers Organisation×Detective, Organisation×Responsive, Account×Detective,
 Account×Responsive, Resource×Detective, and Resource×Responsive cells.
 
-**Output:** `.service-approval/<slug>/05-generate/detective/` and `.service-approval/<slug>/05-generate/responsive/`
+**Output:** `.service-approval/<slug>/05-recommended-guidance/detective/` and `.service-approval/<slug>/05-recommended-guidance/responsive/`
 
 This is one of 3 focused generate sub-skills. Each writes to separate directories.
 
@@ -22,8 +22,8 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 ```bash
 test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
 test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
-mkdir -p .service-approval/<slug>/05-generate/detective/config-rule-lambdas
-mkdir -p .service-approval/<slug>/05-generate/responsive/lambda-remediator
+mkdir -p .service-approval/<slug>/05-recommended-guidance/detective/config-rule-lambdas
+mkdir -p .service-approval/<slug>/05-recommended-guidance/responsive/lambda-remediator
 ```
 
 Load detective and responsive controls:
@@ -39,6 +39,30 @@ print(f'Responsive controls: {len(cor)}')
 ```
 
 Unless `--include-unverified` is set, skip controls where `verified: false`.
+
+### Routed-from-preventive objectives (top-up pass)
+
+The preventive root-cause critic routes objectives it found NOT-preventable (no
+condition key gates the action) to detective. If
+`.service-approval/<slug>/05-recommended-guidance/detective-routing.json` exists, you MUST
+also generate detective coverage for every entry in its `routed[]` array — these
+objectives have no preventive control and would otherwise go uncovered.
+
+```bash
+test -f .service-approval/<slug>/05-recommended-guidance/detective-routing.json && python3 -c "
+import json
+r = json.load(open('.service-approval/<slug>/05-recommended-guidance/detective-routing.json'))
+for e in r['routed']:
+    print(e['control_id'], '←', e['reason'])
+" || echo "(no routed objectives)"
+```
+
+For each routed entry, generate the appropriate detective artifact (Config rule,
+EventBridge rule, etc.) for the control's resource/action, then **write the
+artifact filename(s) back into that entry's `covered_by` field** so the routing
+loop is closed. `validate_detective_routing.py` confirms every routed entry ends
+up with a real `covered_by` artifact. This top-up runs AFTER the root-cause
+critic; the orchestrator sequences a detective pass once the critic finishes.
 
 ## Artifact Header Template
 
@@ -488,7 +512,7 @@ SSM Automation document for manual/scheduled remediation.
   The file MUST start with `schemaVersion: "0.3"` and have top-level keys `description`,
   `assumeRole`, `parameters`, `mainSteps`. Do NOT start with `AWSTemplateFormatVersion`
   or include a top-level `Resources:` block. CFN wrapping of an SSM document belongs
-  ONLY in `<slug>/05-generate/iac/cloudformation/compliant-resource.cfn.yaml` (IaC), never in
+  ONLY in `<slug>/05-recommended-guidance/iac/cloudformation/compliant-resource.cfn.yaml` (IaC), never in
   this remediation file. The Tier 2 deploy script passes this file's contents directly
   to `ssm:CreateDocument` — a CFN wrapper causes `mainSteps` to be absent at top level
   and the API rejects the document.
@@ -652,5 +676,5 @@ Generate (detective/responsive) complete:
   Res×Responsive:   resource-level remediation steps
   Compensating:     compensating-controls-documentation ({N} gap documentations)
   Lambda handlers:  {N} custom rule handlers generated
-  Output: .service-approval/<slug>/05-generate/detective/, .service-approval/<slug>/05-generate/responsive/
+  Output: .service-approval/<slug>/05-recommended-guidance/detective/, .service-approval/<slug>/05-recommended-guidance/responsive/
 ```

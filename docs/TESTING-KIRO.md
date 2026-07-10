@@ -11,7 +11,7 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
 
 ## Prerequisites
 
-1. Kiro IDE or Kiro CLI 2.0 installed. Kiro IDE: https://kiro.dev. CLI: `curl -fsSL https://cli.kiro.dev/install | bash` (or via Amazon Toolbox).
+1. Kiro IDE or Kiro CLI 2.0 installed. Kiro IDE: https://kiro.dev. CLI: `curl -fsSL https://cli.kiro.dev/install | bash`.
 2. **`uv` on PATH** (required for `uvx`-backed MCP servers: `aws-documentation`, `awsiac`, `iam`):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -27,7 +27,7 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
    sudo ln -s ~/.local/bin/uv  /usr/local/bin/uv
 
    # Teach macOS GUI apps about ~/.local/bin permanently
-   launchctl setenv PATH "$HOME/.local/bin:$HOME/.toolbox/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+   launchctl setenv PATH "$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
    ```
 
    Then fully quit Kiro (Cmd+Q) and reopen.
@@ -79,7 +79,7 @@ If you see any of these, remove them (they predate the canonical awslabs/mcp end
 From a local clone of this repo:
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 ./install.sh
 ```
 
@@ -167,7 +167,7 @@ The agent should run all 9 phases. Watch for:
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
 - Phase 4 (Generate) spawns 3 parallel
-- Phase 6 (Summarize) writes `.service-approval/<service-slug>/07-summarize/APPROVAL-REPORT.md`
+- Phase 6 (Summarize) writes `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
 - Phase 7 (Evidence) runs if Phase 5 Test completed (requires --env flag)
 
 End state should be verdict `APPROVED` or `REQUIRES REMEDIATION` in the report, not silence.
@@ -175,7 +175,7 @@ End state should be verdict `APPROVED` or `REQUIRES REMEDIATION` in the report, 
 ## Update the Power
 
 ```bash
-cd /path/to/service-onboarding
+cd /path/to/service-onboarding-accelerator-on-aws
 git pull
 ./install.sh --sync        # re-copy .kiro/ files
 ```

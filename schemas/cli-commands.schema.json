@@ -37,11 +37,11 @@
     "stack_id": {
       "type": "string",
       "pattern": "^arn:aws:cloudformation:",
-      "description": "CloudFormation stack ARN from Phase 5 deploy (06-test/deployed-resources.json)"
+      "description": "CloudFormation stack ARN of a deployed resource set (from deployed-resources.json)"
     },
     "deployed_resources_ref": {
       "type": "string",
-      "description": "Relative path to deployed-resources.json (typically '../06-test/deployed-resources.json')"
+      "description": "Relative path to deployed-resources.json"
     },
     "commands": {
       "type": "array",
@@ -90,7 +90,7 @@
             "F5-cw-alarm",
             "F6-iac-time"
           ],
-          "description": "CLI synthesis family (see §4 of evidence-attestation.md)"
+          "description": "CLI synthesis family"
         },
         "synthesis_source": {
           "type": "string",

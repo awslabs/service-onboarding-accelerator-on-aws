@@ -18,6 +18,28 @@ into the final `research.json`.
 
 ---
 
+## Source priority (read before pulling any external fact or citation)
+
+When a capability claim needs an external fact or citation, consult sources in
+this fixed order and cite the **highest-priority** source that supports the claim:
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present. It
+   is the authoritative source of *what* matters for this service (intent) and
+   the top citation.
+2. **AWS Control Catalog API** — the control→objective authority for controls the
+   catalog covers.
+3. **Service-specific AWS documentation** — the target service's own pages only.
+   Never general AWS blog posts, third-party write-ups, or other services' docs.
+
+The reference-repo index supplies the *vetted policy body* for a preventive
+control, adapted under the Canopy (or catalog/doc) intent — it is the
+implementation library, not a fact/citation source for capability discovery.
+`sar-facts.json` / `checkpoint-results.json` remain the authoritative *assessment*
+inputs; this ordering governs **external** fact and citation sourcing. Log every
+MCP doc lookup to `mcp-calls.log`.
+
+---
+
 ## Prerequisites
 
 ```bash

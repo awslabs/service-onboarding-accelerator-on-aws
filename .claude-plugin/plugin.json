@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).",
   "author": {
-    "name": "GFS PACE",
-    "email": "fsi-pace@amazon.com"
+    "name": "Service Onboarding on AWS Team"
   },
-  "repository": "https://gitlab.aws.dev/lightninglane/service-onboarding",
+  "repository": "https://github.com/awslabs/service-onboarding-accelerator-on-aws",
   "keywords": [
     "aws",
     "security",

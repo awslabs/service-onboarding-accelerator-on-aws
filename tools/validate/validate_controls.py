@@ -112,7 +112,7 @@ def _find_state_dir(file_path: str) -> dict[str, str] | None:
     """Walk up from file_path to find service root, return phase paths.
 
     In the new per-service-per-phase layout, controls live at
-    .service-approval/<slug>/05-generate/ and need to reference files in
+    .service-approval/<slug>/05-recommended-guidance/ and need to reference files in
     sibling phases like 04-map/, 03-validate/, 01-assess/.
 
     Delegates to tools.paths.find_service_root_for_file (regex-anchored to
@@ -826,10 +826,13 @@ _SAR_DRIVEN_BASENAME_PATTERNS = (
 )
 
 # Filename patterns CHECK-15 accepts under posture `preventative-request`.
-# Superset of _SAR_DRIVEN_BASENAME_PATTERNS because tag-policy lives in
-# preventive/ under the same posture but is not SAR-driven.
+# Superset of _SAR_DRIVEN_BASENAME_PATTERNS because tag-policy and the
+# refer-only trust-policy pointer live in preventive/ under the same posture
+# but are not SAR-driven (trust policies ship no enforcing Statement[] body —
+# they are REFER pointers to the per-service confused-deputy pattern).
 _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
     "tag-policy",
+    "trust-policy",
 )
 
 # Filename patterns CHECK-15 accepts under posture `reactive-detective`
@@ -949,6 +952,120 @@ def check_sar_condition_keys_14a(
                         f"validated.json.capabilities.iam.condition_keys[]."
                     )
 
+    return errors
+
+
+# ================================================================
+# Check 17: IAM action names must be sourced, never synthesized
+# ================================================================
+#
+# Every IAM `Action` string in a SAR-driven preventive artifact (SCP, RCP, IAM
+# policy, permission boundary, resource policy, VPCE policy, KMS key policy)
+# whose prefix matches the TARGET service MUST be a real action — present in
+# validated.json.api_surface.operations[].operation or
+# capabilities.iam.permission_only_actions[]. This catches actions invented by
+# analogy (e.g. `<prefix>:SearchRecords` when the real action is
+# `<prefix>:RetrieveRecords`): they pass JSON-syntax checks but fail at deploy
+# time when IAM Access Analyzer validates against the live action registry.
+#
+# Scoping rule (mirrors CHECK-1's service-scoping): only actions whose prefix
+# equals the target service prefix are validated. Cross-service guardrail
+# actions (sts:AssumeRole, organizations:LeaveOrganization, kms:* in an SCP)
+# are legitimately not in this service's api_surface — flagging them would be a
+# false positive. Wildcard actions (`*`, `<prefix>:*`, `<prefix>:Create*`) are
+# structural, not invented names, so they are skipped too.
+
+
+def _collect_statement_actions(data: dict) -> list[tuple[str, str]]:
+    """Return [(action, sid)] for every Action/NotAction across all Statements."""
+    out: list[tuple[str, str]] = []
+    statements = data.get("Statement", [])
+    if isinstance(statements, dict):
+        statements = [statements]
+    if not isinstance(statements, list):
+        return out
+    for stmt in statements:
+        if not isinstance(stmt, dict):
+            continue
+        sid = stmt.get("Sid", "unknown")
+        for field in ("Action", "NotAction"):
+            val = stmt.get(field)
+            if isinstance(val, str):
+                val = [val]
+            if isinstance(val, list):
+                for a in val:
+                    if isinstance(a, str):
+                        out.append((a, sid))
+    return out
+
+
+def _valid_action_set(validated: dict, prefix: str) -> set[str]:
+    """Build the set of real `<prefix>:Operation` strings for the target service.
+
+    Sourced from api_surface.operations[].operation and
+    capabilities.iam.permission_only_actions[] — never templated from operation
+    names. Returns fully-qualified `prefix:Action` strings (case-sensitive).
+    """
+    valid: set[str] = set()
+    for op in validated.get("api_surface", {}).get("operations", []):
+        name = op.get("operation", "")
+        if name:
+            valid.add(f"{prefix}:{name}")
+    poa = validated.get("capabilities", {}).get("iam", {}).get(
+        "permission_only_actions", []
+    )
+    for a in poa:
+        if not isinstance(a, str):
+            continue
+        # permission_only_actions are stored bare (e.g. "InvokeFunctionUrl") but
+        # tolerate an already-prefixed form just in case.
+        valid.add(a if a.startswith(f"{prefix}:") else f"{prefix}:{a}")
+    return valid
+
+
+def check_iam_action_sourcing_17(
+    file_path: str, data: dict, validated: dict
+) -> list[str]:
+    """CHECK-17 — target-service IAM actions must be sourced, not synthesized.
+
+    Scope: SAR-driven preventive artifacts (same set as CHECK-14a).
+    Pass:  action prefix ≠ target service prefix (cross-service); wildcard
+           action; or `<prefix>:Op` present in the valid action set.
+    Fail:  `<prefix>:Op` not in api_surface.operations ∪ permission_only_actions.
+    """
+    errors: list[str] = []
+    if not _is_sar_driven_artifact(file_path):
+        return errors
+    if not isinstance(data, dict):
+        return errors
+    prefix = (validated.get("service_prefix") or validated.get("service") or "").strip()
+    # A human display name ("Amazon ECS") is not a usable prefix — skip rather
+    # than emit nonsense, same guard as CHECK-1.
+    if not prefix or " " in prefix or any(c.isupper() for c in prefix):
+        return errors
+
+    valid = _valid_action_set(validated, prefix)
+    # If the surface is empty there is nothing authoritative to check against.
+    if not valid:
+        return errors
+
+    for action, sid in _collect_statement_actions(data):
+        if action == "*" or "*" in action:
+            continue  # structural wildcard, not an invented action name
+        if ":" not in action:
+            continue
+        act_prefix = action.split(":", 1)[0]
+        if act_prefix != prefix:
+            continue  # cross-service action — not in this service's surface
+        if action not in valid:
+            errors.append(
+                f"CHECK-17 iam_action_sourcing: {os.path.basename(file_path)} "
+                f"Statement '{sid}' uses action '{action}' which is not in "
+                f"validated.json.api_surface.operations[].operation nor "
+                f"capabilities.iam.permission_only_actions[]. IAM action names "
+                f"must be sourced from the service authorization reference, never "
+                f"synthesized by analogy from an operation name."
+            )
     return errors
 
 
@@ -1200,12 +1317,41 @@ def check_js_literals_in_python_16(file_path: str) -> list[str]:
 # Main dispatcher
 # ================================================================
 
-def _categorize_file(file_path: str) -> str:
-    """Determine artifact category from file path."""
+def _check_reference_anchor_preventive(file_path: str) -> list[str]:
+    """P8 per-file: a preventive policy artifact must carry a resolvable anchor.
+
+    Only fires for files genuinely under a preventive/ directory (real
+    05-recommended-guidance/preventive/ or legacy controls/preventive/), so tmp test files
+    that merely share a SAR basename are not gated. Imported lazily so a missing
+    module degrades to no-op rather than breaking the hook.
+    """
     norm = file_path.replace("\\", "/")
-    if "/controls/preventive/" in norm:
+    if "/05-recommended-guidance/preventive/" not in norm and "/controls/preventive/" not in norm:
+        return []
+    try:
+        from validate_reference_anchor import check_artifact  # type: ignore
+    except ImportError:
+        return []
+    return check_artifact(file_path)
+
+
+def _categorize_file(file_path: str) -> str:
+    """Determine artifact category from file path.
+
+    Recognizes both the current state layout (`05-recommended-guidance/<category>/`,
+    written since the <slug>/<NN>-<phase>/ reorg) and the legacy
+    `controls/<category>/` layout (kept for migration-window compatibility).
+    Matching is on the `<category>/` segment so both `05-recommended-guidance/preventive/`
+    and `controls/preventive/` resolve identically.
+    """
+    norm = file_path.replace("\\", "/")
+
+    def _in(category: str) -> bool:
+        return f"/05-recommended-guidance/{category}/" in norm or f"/controls/{category}/" in norm
+
+    if _in("preventive"):
         return "preventive"
-    if "/controls/detective/" in norm:
+    if _in("detective"):
         if "/config-rule-lambdas/" in norm:
             return "lambda_handler"
         if "eventbridge" in os.path.basename(norm).lower():
@@ -1213,17 +1359,65 @@ def _categorize_file(file_path: str) -> str:
         if "config-rules" in os.path.basename(norm).lower():
             return "config_rules"
         return "detective"
-    if "/controls/responsive/" in norm:
+    if _in("responsive"):
         if "stepfunctions" in os.path.basename(norm).lower():
             return "stepfunctions"
         if "ssm-runbook" in os.path.basename(norm).lower():
             return "ssm_runbook"
         return "responsive"
-    if "/controls/proactive/" in norm:
+    if _in("proactive"):
         return "proactive"
-    if "/controls/iac/" in norm:
+    if _in("iac"):
         return "iac"
     return "unknown"
+
+
+def check_preventive_plan(data: dict) -> list[str]:
+    """Validate preventive-plan.json — the recommender's decision plan.
+
+    Two layers:
+      1. Schema (preventive-plan.schema.json) — shape, decision enum, the
+         GENERATE_*-requires-anchor and ROUTE_DETECTIVE-requires-route rules.
+      2. Anchor resolution — every GENERATE_* decision's anchor.example_id must
+         resolve to a real entry in data/reference-repos/index.yaml (the same
+         gate the per-artifact P8 check enforces, applied to the plan up front).
+    """
+    errors: list[str] = []
+    # Schema layer. Lazy import mirrors validate_state's `from _schemas import …`.
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from _schemas import schema_errors  # type: ignore
+
+        errors.extend(schema_errors(data, "preventive-plan"))
+    except ImportError:
+        pass
+    if errors:
+        return errors  # don't anchor-check a structurally-invalid plan
+
+    # Anchor-resolution layer.
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from reference_index import example_ids  # type: ignore
+
+        known = example_ids()
+    except (ImportError, FileNotFoundError):
+        known = None
+    if known is not None:
+        for d in data.get("decisions", []):
+            if not isinstance(d, dict):
+                continue
+            if d.get("decision", "").startswith("GENERATE_"):
+                anchor = d.get("anchor") or {}
+                ex_id = anchor.get("example_id")
+                if ex_id and ex_id not in known:
+                    errors.append(
+                        f"preventive-plan: control {d.get('control_id')} decision "
+                        f"{d.get('decision')} anchors to example_id '{ex_id}' which "
+                        f"does not resolve in data/reference-repos/index.yaml. "
+                        f"Pick a real anchor or change the decision to "
+                        f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+                    )
+    return errors
 
 
 def validate_file(file_path: str) -> list[str]:
@@ -1252,6 +1446,13 @@ def validate_file(file_path: str) -> list[str]:
         data = _load_json(file_path)
         if data is None:
             return errors  # Already reported by syntax check
+
+    # preventive-plan.json — the recommender's decision plan (gate artifact).
+    # Lives at 05-recommended-guidance/ root (category "unknown"), so dispatch on basename
+    # before the category logic. Schema-validated; it is not a policy artifact.
+    if basename == "preventive-plan.json" and data is not None:
+        errors.extend(check_preventive_plan(data))
+        return errors
 
     # Load state files
     validated, mapping = load_state_files(file_path)
@@ -1310,6 +1511,14 @@ def validate_file(file_path: str) -> list[str]:
         # than CHECK-3; catches API parameter paths used as condition keys).
         if validated:
             errors.extend(check_sar_condition_keys_14a(file_path, data, validated))
+        # Check 17: SAR-driven — target-service IAM action names must be sourced
+        # from api_surface ∪ permission_only_actions, never synthesized by analogy.
+        if validated:
+            errors.extend(check_iam_action_sourcing_17(file_path, data, validated))
+        # P8: reference-anchor enforcement — every preventive policy artifact
+        # must trace to a reference example in data/reference-repos/index.yaml.
+        # Fires at write time here and again at Stop via validate_pipeline_integrity.
+        errors.extend(_check_reference_anchor_preventive(file_path))
         # Check 6: Null-key denial
         errors.extend(check_null_key_denial(file_path, data))
 

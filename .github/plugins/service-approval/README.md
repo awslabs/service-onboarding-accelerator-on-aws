@@ -64,16 +64,25 @@ Create `.vscode/mcp.json` if missing:
 {
   "servers": {
     "aws-documentation": {
-      "type": "http",
-      "url": "https://mcp.awsdocs.amazon.com"
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_DOCUMENTATION_PARTITION": "aws"
+      }
     },
     "awsknowledge": {
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
     },
     "awsiac": {
-      "type": "http",
-      "url": "https://iac-mcp.global.api.aws"
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["awslabs.aws-iac-mcp-server@latest"],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR"
+      }
     },
     "terraform": {
       "command": "docker",
@@ -106,7 +115,7 @@ Create `.vscode/mcp.json` if missing:
 
 ## Output
 
-- `.service-approval/APPROVAL-REPORT.md` — final verdict + CCMv4 matrix
+- `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
 - `.service-approval/<slug>/05-generate/` — all 78–111 generated artifacts
 - `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 

@@ -2,7 +2,7 @@
 
 After the evidence-attestation layout migration, no skill, validator, hook,
 or script should reference the old `.service-approval/state/` or
-`.service-approval/controls/` paths (except in docs/plans/ and git history).
+`.service-approval/controls/` paths (except in git history).
 
 This test greps the repo and fails if it finds hardcoded legacy paths in
 production code. It runs both a literal substring search AND a regex pass
@@ -28,16 +28,13 @@ def _repo_root() -> Path:
 
 # Production-code paths must NEVER reference the legacy layout. Allowlist is
 # narrow on purpose:
-# - docs/plans/ — historical design docs explaining the migration (read-only)
 # - tests + helpers that document the legacy path itself (paths.legacy_state_dir)
 # - this test file (it contains the literal pattern by definition)
 #
 # skills/, powers/, scripts/, rules/ have been removed from the allowlist —
 # any remaining legacy ref in those areas is a runtime bug because they
 # execute on the user's machine.
-_ALLOWED_PREFIXES = (
-    "docs/plans/",   # plan documents reference old layout (historical)
-)
+_ALLOWED_PREFIXES = ()
 
 _ALLOWED_FILENAMES = (
     "test_no_legacy_path_refs.py",  # this test (matches the literal in its allow rules)
@@ -202,7 +199,7 @@ def test_no_legacy_state_refs():
 def test_no_legacy_controls_refs():
     """Verify no hardcoded `.service-approval/controls/` refs in production code.
 
-    After migration, controls live at `<slug>/05-generate/`.
+    After migration, controls live at `<slug>/05-recommended-guidance/`.
     """
     root = _repo_root()
 
@@ -211,7 +208,7 @@ def test_no_legacy_controls_refs():
     # Same pattern as state: legacy `controls/` is a top-level segment.
     # The new layout puts `controls` only inside file names
     # (`controls-catalog.md`, `map-controls-generated.json`) or after a
-    # longer prefix (`05-generate/...`), never as `<slug>/controls`.
+    # longer prefix (`05-recommended-guidance/...`), never as `<slug>/controls`.
     matches_fstring = _run_git_grep(
         _R16_CONTROLS_PASS3,
         root,
@@ -236,7 +233,7 @@ def test_no_legacy_controls_refs():
     if violations:
         msg = (
             "R16 VIOLATION: Found hardcoded `.service-approval/controls/` references in production code.\n"
-            "After the evidence-attestation migration, use `tools.paths.phase_dir(slug, 'generate')` instead.\n\n"
+            "After the evidence-attestation migration, use `tools.paths.phase_dir(slug, 'recommended-guidance')` instead.\n\n"
             "Violations:\n" + "\n".join(f"  {v}" for v in violations)
         )
         raise AssertionError(msg)

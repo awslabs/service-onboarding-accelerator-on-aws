@@ -22,7 +22,7 @@ All registered in `mcp.json`. Auto-loaded when the Power activates:
 | `awsknowledge` | HTTP | SAR (Service Authorization Reference) queries, condition keys |
 | `awsiac` | HTTP | IaC lookups: CFN resource types, CDK constructs, Terraform provider schema |
 | `terraform` | stdio (Docker) | Terraform provider details, module scaffolding |
-| `kb-search` | stdio | Amazon Bedrock Knowledge Base — optional, for customer-specific mitigations |
+| `kb-search` | stdio | Amazon Bedrock Knowledge Base — optional, for organization-specific mitigations |
 
 No MCP server is optional. P1 enforces a minimum count (≥10) of MCP calls per pipeline run; the strict expectation that every capability claim, API parameter, and condition key is MCP-verified lives in `service-approval-enforcement.md`.
 
@@ -74,7 +74,7 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── deployed-resources.json  ← stack ID + ARNs (consumed by Phase 7)
     │   └── deploy-logs/*.log
     ├── 07-summarize/
-    │   ├── APPROVAL-REPORT.md
+    │   ├── SUMMARY-REPORT.md
     │   └── ARTIFACT-FLOW-MATRIX.md
     └── 08-evidence/
         ├── attestation-report.md

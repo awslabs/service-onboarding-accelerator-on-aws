@@ -6,7 +6,29 @@
       "service": "lambda",
       "verb": "get-function-configuration",
       "name_flag": "--function-name",
-      "description": "Get Lambda function configuration (KMS key, environment, etc.)"
+      "description": "Get Lambda function configuration (KMS key, environment, etc.)",
+      "returns": [
+        "FunctionArn",
+        "Runtime",
+        "Role",
+        "Handler",
+        "Timeout",
+        "MemorySize",
+        "DeadLetterConfig",
+        "Environment",
+        "KMSKeyArn",
+        "TracingConfig",
+        "EphemeralStorage",
+        "SnapStart",
+        "LoggingConfig",
+        "Architectures",
+        "PackageType"
+      ],
+      "conditional": [
+        "VpcConfig",
+        "Layers"
+      ],
+      "returns_note": "`returns`: top-level fields always present in a compliant function's base configuration — F1 may probe these with an existence predicate. `conditional`: fields populated only when the customer opts in (VPC attachment, layer add-ons). Their controls are conditional guards ('when VpcConfig exists { SubnetIds !empty }') that are vacuously satisfied when the property is absent, so a flat existence probe would mis-FAIL a compliant resource that simply did not opt in — these route to NOT_CLI_VALIDATABLE with IaC-time evidence. Properties absent from both lists are governed at a different API (e.g., AuthType/Principal on AddPermission) and are likewise not runtime-observable here."
     },
     "AWS::Lambda::CodeSigningConfig": {
       "service": "lambda",

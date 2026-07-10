@@ -26,6 +26,24 @@ framework mappings, and traceability. This skill bridges the gap between capabil
 - `.service-approval/<slug>/04-map/controls-catalog.md` — controls inventory by Category x Scope matrix
 - `.service-approval/<slug>/04-map/framework-mapping.md` — framework objective crosswalk
 
+## Source priority (which source backs each mapping)
+
+When a mapping row needs an external fact or citation, consult sources in this
+fixed order and record the **highest-priority** source that supported the row:
+
+1. **Canopy** — the customer-provided mitigation/threat export, when present
+   (authoritative intent + top citation).
+2. **AWS Control Catalog API** — the control→objective authority.
+3. **Service-specific AWS documentation** — the target service's own pages only;
+   never general/blog/third-party content.
+
+The reference-repo index supplies the vetted *policy body* for a preventive
+control under that intent (consumed downstream by generate); it is the
+implementation library, not a mapping fact/citation source. `validated.json` is
+the authoritative *assessment* input — never assert an action or condition key
+absent from it. Every mapping row carries a `citation` whose `type` reflects the
+highest-priority source above that backs it.
+
 ## Sub-Skill Architecture
 
 This skill is split into 4 focused sub-skills that write to separate intermediate state files:
@@ -34,7 +52,7 @@ This skill is split into 4 focused sub-skills that write to separate intermediat
 |-----------|-------|--------|------------|
 | `map-parse-framework` | Parse framework file into normalized objectives | `map-framework-parsed.json` | None |
 | `map-generate-controls` | Generate controls from mitigations x capabilities | `map-controls-generated.json` | `validated.json` |
-| `map-framework-mapping` | Map controls to framework objectives with quality gates | `map-framework-mapped.json` | `map-framework-parsed.json`, `map-controls-generated.json` |
+| `map-framework-mapping` | Map controls to framework objectives with quality gates. **CCMv4:** per-domain fan-out (one focused pass per domain using `data/domain-mapping-guidance/ccmv4.json`) merged by `scripts/merge-domain-mappings.py`. **Other frameworks:** single pass. | `map-framework-mapped.json` | `map-framework-parsed.json`, `map-controls-generated.json` |
 | `map-assemble` | Deterministic assembly + traceability + markdown reports | `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md` | All 3 above + `validated.json` |
 
 **Execution order:**
@@ -86,12 +104,33 @@ Pass: `--service`, `--include-unverified` if set.
 Wait for `.service-approval/<slug>/04-map/map-controls-generated.json`.
 
 ### Step 3: Run map-framework-mapping
-Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`.
+Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`. For CCMv4,
+this maps per domain and merges with `scripts/merge-domain-mappings.py`; for other
+frameworks it is a single pass (see that skill's "Execution model" section).
 Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 
 ### Step 4: Run map-assemble
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
 Wait for `mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`.
+
+### Step 4b: Cross-check mappings against the AWS Control Catalog (advisory)
+
+After `mapping-results.json` is assembled, cross-check each mapped framework
+objective against the authoritative AWS Control Catalog. This is **advisory
+(warn, never block)** — it surfaces objectives whose mapping has no catalog
+support so a reviewer can sanity-check the least-deterministic part of the run:
+
+```bash
+python3 tools/validate/validate_control_mappings.py --slug <slug>
+```
+
+The check bridges CCMv4 → NIST 800-53 (via `data/attack-nist-ccm-crosswalk.json`)
+→ the Control Catalog. It requires a catalog snapshot at
+`data/control-catalog-snapshot.json`; when absent it SKIPS honestly (it does not
+fabricate catalog data). Refresh the snapshot with AWS credentials:
+`python3 tools/validate/validate_control_mappings.py --refresh`. Record any
+objectives the validator flags as catalog-unsupported as a `REVIEW` note for
+manual sanity-check; do not fail the phase.
 
 ---
 
@@ -116,9 +155,48 @@ Agent 2: map-generate-controls (background)
 **IMPORTANT:** Dispatch both in a single message with 2 Agent tool calls.
 Do NOT set `model` parameter — let subagents inherit the caller's model.
 
-### Step 3: Framework mapping (foreground, after 1+2 complete)
+### Step 2b: Compute Applicability Matrix (after Step 2 completes)
 
-When both complete, dispatch framework-mapping as foreground subagent:
+After `map-generate-controls` completes (which means the Canopy input has been
+fully parsed), compute the service applicability matrix:
+
+```bash
+python3 scripts/compute-applicability-matrix.py <canopy-json-path> \
+  --output .service-approval/<slug>/04-map/applicability-matrix.json
+```
+
+This script:
+1. Scans the Canopy threat model's mitigation **statements only** (never entity
+   description prose, which must never assert a customer capability)
+2. Derives three-valued capability flags (present / absent / unknown) and the
+   service's category label(s)
+3. Evaluates objective-applicability-rules — marking an objective N/A only for a
+   positive structural reason (organizational objective or category fact); an
+   unknown capability defers to the KB default rather than forcing N/A
+4. Writes `applicability-matrix.json` (every N/A cites its rule + evidence),
+   consumed by map-framework-mapping
+
+The Canopy JSON path is the same file provided as input to the pipeline (in the
+`input/` folder). If no Canopy JSON is available, skip this step — the mapping
+skill will assume all objectives are applicable (backward-compatible behavior).
+
+### Step 3: Framework mapping (after 1+2+2b complete)
+
+This is the most reasoning-heavy step. The dispatch shape depends on the framework
+(see "Execution model" in `skills/map-framework-mapping/SKILL.md`):
+
+**CCMv4 — per-domain fan-out + merge:** dispatch one mapping subagent per CCMv4
+domain (17), each loaded with only its domain's objectives + that domain's guidance
+from `data/domain-mapping-guidance/ccmv4.json` + the shared
+`map-controls-generated.json`; each writes `04-map/_domains/<DOMAIN>.json`. Launch
+in waves respecting the concurrency cap. When all partials exist, run the
+deterministic merge:
+
+```bash
+python3 scripts/merge-domain-mappings.py --slug <slug>
+```
+
+**Other frameworks — single foreground pass:**
 
 ```
 Agent 3: map-framework-mapping (foreground)
@@ -127,8 +205,8 @@ Agent 3: map-framework-mapping (foreground)
   Output: map-framework-mapped.json
 ```
 
-This is the most reasoning-heavy step. It MUST run in foreground to ensure quality gates pass.
-If quality gates fail, the agent must fix them before writing output.
+Either path MUST complete (quality gates satisfied) before Step 4.
+If quality gates fail, fix them before writing output.
 
 ### Step 4: Assembly (foreground, after 3 completes)
 
@@ -146,14 +224,16 @@ Agent 4: map-assemble (foreground)
 ```
 Step 1: Parse Framework     (background) ─┐
 Step 2: Generate Controls   (background) ─┤
-                                          ├─ Step 3: Framework Mapping (foreground)
-                                          │
+                                          ├─ Step 3: Framework Mapping
+                                          │     CCMv4: 1 subagent per domain (waves) → merge
+                                          │     other: 1 foreground pass
                                           └─ Step 4: Assemble (foreground)
 ```
 
-Total agents: up to 4 (vs 1 in monolithic mode).
-Steps 1+2 are fast (~5 min each). Step 3 is the bottleneck (~20-30 min).
-Step 4 is mostly deterministic (~5 min).
+Steps 1+2 are fast (~5 min each). Step 3 is the bottleneck. Step 4 is mostly
+deterministic (~5 min). For CCMv4 the per-domain subagents run in waves and the
+merge (`scripts/merge-domain-mappings.py`) is deterministic; for other frameworks
+Step 3 is a single foreground pass.
 
 ---
 

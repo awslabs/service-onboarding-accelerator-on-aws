@@ -94,13 +94,13 @@ IDE_HOOKS_TEMPLATES = {
     "post-tool-use.kiro.hook": """---
 title: Validate state files after write
 trigger: File Save
-filePattern: ".service-approval/**/*.json|.service-approval/**/05-generate/**/*"
+filePattern: ".service-approval/**/*.json|.service-approval/**/05-recommended-guidance/**/*"
 ---
 
 # Post-write validation
 
 Run `python3 tools/validate/hook_post_tool_use.py` after any write to
-`.service-approval/<slug>/<phase>/` or `.service-approval/<slug>/05-generate/`. The validator
+`.service-approval/<slug>/<phase>/` or `.service-approval/<slug>/05-recommended-guidance/`. The validator
 checks schema shape, JSON validity, and cross-file references.
 
 Exit code 2 blocks the write.
@@ -113,11 +113,11 @@ trigger: Agent Stop
 # Pipeline integrity check
 
 Run `python3 tools/validate/hook_stop.py` when the agent signals completion.
-This script wraps `validate_pipeline_integrity.py` and enforces 7 numbered
-failure signals (P1-P7):
+This script wraps `validate_pipeline_integrity.py` and enforces these
+numbered failure signals:
 
 P1 — pipeline.log / mcp-calls.log missing or too few MCP calls (>=10)
-     (exempted by `[pipeline:complete:<VERDICT>]` terminal sentinel)
+     (exempted by `[pipeline:complete:FINALIZED]` terminal sentinel)
 P2 — validated.json has templated or empty verification notes
      (>=50% uniqueness required)
 P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
@@ -125,7 +125,6 @@ P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
 P4 — IaC templates contain placeholder account IDs (123456789012,
      000000000000) or placeholder ARNs
 P5 — framework coverage below 15% with no per-objective rationale
-P6 — verdict mismatch (APPROVED emitted despite integrity failures)
 P7 — phase-output completeness: every phase dir on disk must contain
      its declared outputs (mapping-results.json, controls-catalog.md,
      framework-mapping.md, etc.) at min-size thresholds
@@ -133,7 +132,7 @@ P7 — phase-output completeness: every phase dir on disk must contain
 Cultural rules (no one-shot generator scripts, etc.) live in
 `steering/service-approval-enforcement.md`, not in this hook's list.
 
-Exit code 2 forces the verdict to REQUIRES REMEDIATION and blocks the Stop.
+Exit code 2 blocks the Stop until the integrity failures are remediated.
 """,
     "block-direct-state-writes.kiro.hook": """---
 title: Enforce skill-based pipeline execution

@@ -51,7 +51,7 @@ If no framework file found and `--framework` is set, use built-in domain referen
 
 ## Step 1: Parse Framework File
 
-### For `.xlsx` files (e.g., CCMv4_LightningLane.xlsx):
+### For `.xlsx` files (e.g., CCMv4-sample.xlsx):
 
 ```bash
 python3 -c "
@@ -206,6 +206,37 @@ Write `.service-approval/<slug>/04-map/map-framework-parsed.json`:
 - Every objective MUST have: `id`, `domain`, `title`, `specification`, `keywords`
 - `total_objectives` MUST equal `len(framework_objectives)`
 - Objectives MUST be sorted by `id` (alphabetical)
+
+---
+
+## Step 5: Anchor a non-CCMv4 framework to CCMv4 (custom-control support)
+
+The per-domain mapping guidance (allow/deny classes, coverage ceilings,
+applicability) lives in `data/domain-mapping-guidance/ccmv4.json` and is keyed by
+CCMv4 objective ids. A custom / non-CCMv4 framework has no such file, so without
+help its objectives get no guidance. Instead of falling back to an unconstrained
+pass, **anchor each custom objective to its nearest CCMv4 objective(s) by
+description** so the CCMv4 guidance can be reused.
+
+Run this only when the active framework is NOT CCMv4 (the script no-ops for
+CCMv4 and skips cleanly if the parsed file is absent):
+
+```bash
+python3 scripts/anchor-custom-framework.py --slug <slug>
+```
+
+It writes `.service-approval/<slug>/04-map/custom_to_ccmv4_anchor.json` mapping
+each custom objective id to `{ccmv4_ids[], anchor_score, status}` via a
+deterministic TF-IDF cosine over each objective's title+specification against
+every CCMv4 objective's title+intent — no LLM, so it is reproducible. An
+objective whose best match scores at or above the threshold (default 0.7) is
+`anchored`; below it is `uncertain`.
+
+The per-domain mapper (map-framework-mapping) reads this file: for an `anchored`
+custom objective it reasons with the anchored CCMv4 objective's guidance and
+records the anchor in the citation (`anchored_to: CCMv4 <id>`); for an
+`uncertain` anchor it maps the objective `UNCERTAIN` and flags it for review
+rather than force-fitting weak guidance.
 
 ---
 

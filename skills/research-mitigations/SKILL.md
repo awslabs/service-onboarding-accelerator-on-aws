@@ -38,19 +38,66 @@ will be empty). If no --service is provided, ask the user.
 For each file in the input folder:
 
 ### JSON files (Mitigation Report)
-Look for `entities` key containing mitigation arrays. For each entity:
-- Extract resource type
-- Extract mitigations with: id, statement, mitigation_goal, request_parameters
-- Preserve the FULL statement and goal text — do NOT summarize or truncate
+
+Two JSON shapes are supported. **Detect the shape before iterating** — picking
+the wrong branch silently drops every mitigation.
+
+**Shape A — entity-nested:** the file's `entities[]` entries each carry their
+own `mitigations[]` sub-array. For each entity, read `resource_type` and walk
+its mitigations.
+
+**Shape B — top-level (Canopy export):** the file has a top-level
+`mitigations[]` array AND `entities[]` entries with NO `mitigations` sub-key.
+Each top-level mitigation carries `alias`, `statement`,
+`configurationRequestParameters[]` (each `{service, operation, paths[].path}`),
+and `mappings[]` (entries `{type, id}` where `type` is one of `ENTITY`,
+`THREAT`, `MITIGATION_GOAL`, `IMPLEMENTATION`). Recover `resource_type` for a
+mitigation by following its `mappings[type=="ENTITY"].id` to the matching
+`entities[].id` and using the entity's `entityType` (or
+`AWS::<Service>::<entityType>` when an explicit CFN type is not present).
 
 ```python
 import json
 data = json.load(open("<file>"))
-for entity in data.get("entities", []):
-    resource_type = entity.get("resource_type", "")
-    for mit in entity.get("mitigations", []):
-        # Extract: id, statement, mitigation_goal, request_parameters[], resource_type
+
+# Shape detector: top-level mitigations[] AND entities[] lack a mitigations sub-key
+top_level_mits = data.get("mitigations") or []
+entities = data.get("entities") or []
+shape_b = bool(top_level_mits) and not any("mitigations" in e for e in entities)
+
+if shape_b:
+    # Build entity-id -> entity lookup for resource_type recovery
+    entity_by_id = {e.get("id"): e for e in entities}
+    for mit in top_level_mits:
+        # Recover resource_type via the ENTITY mapping
+        entity_id = next(
+            (m["id"] for m in mit.get("mappings", []) if m.get("type") == "ENTITY"),
+            None,
+        )
+        ent = entity_by_id.get(entity_id, {}) if entity_id else {}
+        resource_type = ent.get("resource_type") or ent.get("entityType") or ""
+        # Carry alias, statement, configurationRequestParameters[]:
+        #   request_parameters can be flattened from
+        #   mit["configurationRequestParameters"][i]["paths"][j]["path"]
+        # Preserve alias and full statement; do NOT summarize or truncate.
+else:
+    # Shape A — walk entity-nested mitigations
+    for entity in entities:
+        resource_type = entity.get("resource_type", "")
+        for mit in entity.get("mitigations", []):
+            # Extract: id, statement, mitigation_goal, request_parameters[], resource_type
+            pass
 ```
+
+**Visible warning on silent-zero:** after parsing, if the input folder
+contained one or more `.json` files but `existing_mitigations[]` is empty,
+emit a `WARN` line to `pipeline.log` (e.g.
+`skill:research-mitigations:warn input JSON yielded zero mitigations`). A
+zero-count outcome from a non-empty input set is almost always a shape
+mismatch, not a real empty mitigation list.
+
+A reference parser implementing this detector lives at
+`tools/validate/canopy_parse.py` — covered by `test_canopy_parse.py`.
 
 ### Markdown files (Mitigation Report)
 
@@ -138,14 +185,23 @@ Compile all extracted mitigations into a structured array:
   "existing_mitigations": [
     {
       "id": "M-Resource.0",
+      "alias": "<dotted alias when provided by source, e.g. Mitigation.LAMBDA.X.1>",
       "statement": "<full statement text — NOT truncated>",
       "mitigation_goal": "<full goal text — NOT truncated>",
       "request_parameters": ["$.encryptionKeyArn", "$.executionRoleArn"],
+      "configuration_request_parameters": [
+        {"service": "lambda", "operation": "CreateX", "paths": [{"path": "$.foo"}]}
+      ],
       "resource_type": "AWS::<Service>::<Resource>"
     }
   ]
 }
 ```
+
+`alias` and `configuration_request_parameters` are populated only when the
+source provides them (e.g. the Canopy top-level shape). The flat
+`request_parameters[]` list MUST always be populated — for the Canopy shape,
+flatten every `configurationRequestParameters[].paths[].path` into it.
 
 **Quality rules:**
 - Every mitigation MUST have a non-empty `statement` field
@@ -170,7 +226,6 @@ an asset entry:
     {
       "name": "<ResourceName>",
       "cfn_type": "AWS::<Service>::<Resource>",
-      "data_classification": "<from mitigation context — what data does this resource handle?>",
       "trust_boundaries": [],
       "entry_points": [],
       "source": "mitigations"
@@ -179,8 +234,9 @@ an asset entry:
 }
 ```
 
-Derive `data_classification` from the mitigation statements — what do they describe the
-resource as storing/processing? If unclear, set to `"<needs enrichment from capabilities>"`.
+Do **not** emit a `data_classification` field. The sensitivity of the data a resource
+handles is the customer's determination, not something the tool infers from mitigation
+statements or capabilities.
 
 The `trust_boundaries` and `entry_points` will be enriched by the capabilities and
 api-surface sub-skills respectively.
@@ -235,7 +291,6 @@ Write `.service-approval/<slug>/02-research/research-mitigations.json`:
     {
       "name": "<ResourceName>",
       "cfn_type": "AWS::<Service>::<Resource>",
-      "data_classification": "...",
       "trust_boundaries": [],
       "entry_points": [],
       "source": "mitigations"
@@ -269,7 +324,7 @@ or the `mitre-attack` MCP:
 }
 ```
 
-The threat overlay feeds into controls-catalog.md and the APPROVAL-REPORT.md threat coverage section.
+The threat overlay feeds into controls-catalog.md and the SUMMARY-REPORT.md threat coverage section.
 
 ## Print Summary
 

@@ -5,15 +5,24 @@ disable-model-invocation: false
 argument-hint: '[--service=<name>] [--include-unverified]'
 ---
 
-# Service Approval — Generator: Preventive & Proactive Controls
+# Service Approval — Preventive & Proactive: shared authoring rules
 
-Generate all preventive and proactive security control artifacts from the Controls Matrix.
-This covers Organisation×Proactive, Organisation×Preventive, Account×Proactive,
-Account×Preventive, Resource×Proactive, and Resource×Preventive cells.
+> **Role:** this file is the **shared authoring-rules reference** for the
+> preventive sub-pipeline. The preventive authors — `generate-preventive-scp`,
+> `generate-preventive-rcp`, `generate-preventive-iam` — follow the rules here
+> (SCP/RCP/IAM authoring, Rule C2, and the proactive sections below). It is
+> **not** dispatched as a standalone generator: the *decision* of which
+> mechanism enforces an objective is made first by `generate-preventive-recommend`
+> (the gate), and every authored preventive policy must carry a reference anchor
+> and be proven enforcing by `generate-preventive-rootcause`. The proactive
+> artifacts (tag policy, OPA, CFN Guard, Checkov, CFN Hooks) are emitted by the
+> authors per the proactive sections below.
 
-**Output:** `.service-approval/<slug>/05-generate/preventive/` and `.service-approval/<slug>/05-generate/proactive/`
+These rules cover Organisation×Proactive, Organisation×Preventive,
+Account×Proactive, Account×Preventive, Resource×Proactive, and
+Resource×Preventive cells.
 
-This is one of 3 focused generate sub-skills. Each writes to separate directories.
+**Output:** `.service-approval/<slug>/05-recommended-guidance/preventive/` and `.service-approval/<slug>/05-recommended-guidance/proactive/`
 
 ---
 
@@ -22,7 +31,7 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 ```bash
 test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
 test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
-mkdir -p .service-approval/<slug>/05-generate/{preventive,proactive/opa-policies}
+mkdir -p .service-approval/<slug>/05-recommended-guidance/{preventive,proactive/opa-policies}
 ```
 
 Load controls from `mapping-results.json` and API surface from `validated.json`:
@@ -81,32 +90,48 @@ after `# FRAMEWORK: ` (and into `_metadata.framework` for JSON files), done.
 ## Rule C2 — SAR-driven mechanism contents (REQUIRED)
 
 All mechanisms in this skill that operate at **AWS IAM request-time evaluation** are
-SAR-driven. That includes: SCPs, RCPs, IAM identity-based policies, IAM trust policies,
-permission boundaries, resource-based policies, VPCE policies, KMS key policies.
+SAR-driven. That includes: SCPs, RCPs, IAM identity-based policies, permission
+boundaries, resource-based policies, VPCE policies, KMS key policies. (Trust policies
+also evaluate at request time but are **refer-only** — never authored here; see the
+IAM Policies section.)
 
 For every such artifact:
 
-1. **Every Condition-block key MUST come from `validated.json.capabilities.iam.condition_keys[]`**,
-   the AWS global key set (e.g., `aws:PrincipalARN`, `aws:SourceAccount`, `aws:RequestTag/*`),
-   or — for KMS key policy files only — the KMS service-owned key set
-   (`kms:ViaService`, `kms:EncryptionContext:*`, `kms:GrantOperations`, etc.).
+1. **Condition-block keys may include service-specific keys grounded in a
+   documentation citation.** The SAR/Bookkeeper condition-key list in
+   `validated.json.capabilities.iam.condition_keys[]` (plus the AWS global keys
+   such as `aws:PrincipalARN`, `aws:SourceAccount`, `aws:RequestTag/*`, and —
+   for KMS key policy files only — KMS service-owned keys like `kms:ViaService`,
+   `kms:EncryptionContext:*`, `kms:GrantOperations`) is a **lower bound, not a
+   closed set**. If the SAR snapshot does not list a service-specific key but
+   the service authorization documentation does, that key is valid; record the
+   doc URL in `mcp-calls.log` and the artifact's `_metadata`. Absence from the
+   SAR snapshot is not proof the key does not exist.
 2. **API parameter paths are NEVER valid condition keys.** A literal like
    `"$.networkConfiguration.awsvpcConfiguration.assignPublicIp"` in a Condition block
    is silently ignored by AWS IAM — the intended guardrail does not fire. Instead, find
-   the SAR condition key that gates the parameter (look up the parameter in
+   the SAR condition key (or doc-cited service-specific key) that gates the parameter
+   (look up the parameter in
    `validated.json.api_surface.operations[].parameters[]` and read its `sar_condition_key`
    field, populated by Phase B enrichment).
-3. **Every Action in the statement MUST come from `validated.json.api_surface.operations[].operation`**
-   OR `capabilities.iam.permission_only_actions[]` (this was already required; restated
-   here for completeness — SAR-driven mechanisms are grounded in both the action list
-   AND the condition-key list).
+3. **IAM Action strings are NOT API operation names.** They come from the IAM
+   action list published in the AWS Service Authorization Reference (SAR),
+   resolved via the operation→action mapping in `data/botocore-iam-alias.json`
+   (boto3/botocore operation names sometimes diverge from SAR IAM action
+   names — e.g. boto3 `StopQueryExecution` ↔ SAR `athena:CancelQueryExecution`),
+   plus `capabilities.iam.permission_only_actions[]` (IAM-evaluated actions
+   without an API endpoint, e.g. `lambda:InvokeFunctionUrl`). The
+   `validated.json.api_surface.operations[].operation` field carries the
+   operation name and is the input to that resolution; an unaliased operation
+   name is NOT, on its own, a valid IAM Action source. Do NOT template Action
+   strings from operation names.
 
-4. **Action-name verification (HARD RULE).** Every IAM `Action` string in every policy
-   artifact (SCP, resource policy, IAM policy, permission boundary, KMS key policy,
-   VPCE policy) MUST appear verbatim (case-sensitive) in one of:
-   - `sar-facts.json` action list or `permission_only_actions[]`
-   - `research-api-surface.json.api_surface.operations[].operation`
-   - `validated.json.api_surface.operations[].operation` (post-verification authoritative)
+4. **Action-name verification (HARD RULE).** Every IAM `Action` string in every
+   policy artifact (SCP, resource policy, IAM policy, permission boundary, KMS
+   key policy, VPCE policy) MUST be a real action in the AWS Service
+   Authorization Reference for the target service: present in the SAR action
+   list (resolving operation→action drift via `data/botocore-iam-alias.json`)
+   or in `capabilities.iam.permission_only_actions[]`.
 
    Do NOT generate action names by analogy or extrapolation. If a mitigation statement
    references an action in English prose (e.g., "prevent memory searches"), look up the
@@ -125,30 +150,31 @@ For every such artifact:
    registry. Fabricated actions pass JSON-syntax checks but fail deploy-time policy
    validation.
 
+   Validator CHECK-17 enforces this rule at hook time: every `Action`/`NotAction`
+   string whose prefix matches the target service is checked against the
+   service's valid action set (sourced from
+   `validated.json.api_surface.operations[].operation` and
+   `capabilities.iam.permission_only_actions[]`, reconciled with the alias map).
+   An action with the service prefix that is absent from that set fails the
+   hook. Cross-service actions (a different prefix) and wildcards are not
+   checked — only target-service action names are gated, because those are the
+   ones the LLM is tempted to synthesize by analogy.
+
 Validator CHECK-14a enforces rule 1 at hook time. A condition-block key that is not a
-SAR/global/KMS key fails the hook with a remediation message. The #1 failure mode this
-prevents is an agent treating an API parameter as if it were a condition key — a class
-of silent-ignore bug that was endemic before Phase B enrichment.
+SAR/global/KMS/doc-cited key fails the hook with a remediation message. The #1
+failure mode this prevents is an agent treating an API parameter as if it were a
+condition key — a class of silent-ignore bug that was endemic before Phase B
+enrichment.
 
-### Zero-service-condition-keys branch
+### Service-specific condition keys absent from the SAR
 
-Some services (examples: DataSync, Athena, Step Functions in some configurations)
-publish NO service-specific condition keys — only the global tag keys
-(`aws:RequestTag/${TagKey}`, `aws:ResourceTag/${TagKey}`, `aws:TagKeys`,
-`aws:PrincipalTag/${TagKey}`) apply. You can tell deterministically by inspecting
-`validated.json.capabilities.iam.condition_keys[]`: if every entry's `key` starts
-with `aws:`, the service has zero service-specific keys.
-
-In that branch, SCPs and permission boundaries can ONLY gate tag-based controls
-(creation-time tagging, tag-mandated resource categories) — they CANNOT gate
-service-specific properties like encryption mode, network mode, result location,
-workgroup enforcement flags, etc. Do NOT fabricate a service-specific condition
-key to make an SCP statement work. CHECK-14a rejects invented keys, and even if
-it didn't, AWS IAM would silently ignore the condition and the guardrail would
-be a no-op.
-
-Instead, route non-tag gating to mechanisms that can see the property values
-directly:
+Absence of a service-specific key in the SAR snapshot or in
+`data/botocore-iam-alias.json`-derived bookkeeper data does NOT prove it does
+not exist — verify against the service's authorization documentation before
+concluding a control is not preventable. If the doc lists a gating key the
+SAR snapshot lacks, the key is valid (rule 1); if the doc confirms NO
+service-specific key gates the target action, route the control to a mechanism
+that can see the property value directly:
 
 - **Preventative-proactive** → CloudFormation Guard rules (`proactive/cfn-guard-rules.guard`)
   and Checkov custom policies (`proactive/custom-policies/`). These evaluate
@@ -253,46 +279,54 @@ If false, write `_metadata.scp_gap` note and skip.
   in EVERY Deny statement. Only exception: `DenyProhibitedTagKeys` (PII patterns).
 - **AND-logic awareness**: Conditions in one block use AND. If exceptions should be
   independent (OR), use SEPARATE statements.
-- **Service-principal vs confused-deputy keys MUST live in separate statements**:
-  `aws:PrincipalServiceName` is set ONLY when an AWS service is the calling principal;
-  `aws:SourceAccount` / `aws:SourceArn` are cross-service confused-deputy keys set on
-  the target call FROM the service. They never co-occur in the same authorization
-  context, so AND-ing them in one Condition block makes the Deny unreachable. Split
-  into two statements: one keyed on `aws:PrincipalServiceName` for service-as-caller
-  paths, one keyed on `aws:SourceAccount`/`aws:SourceArn` for confused-deputy paths.
+- **Confused-deputy Deny statements MUST only fire when the
+  confused-deputy keys are PRESENT and mismatched**: `aws:SourceAccount` and
+  `aws:SourceArn` are cross-service-call keys — IAM only sets them when an
+  AWS service is calling the target on behalf of a customer resource. For
+  every other request (in-account direct calls, identity-based calls without
+  service mediation) the keys are simply absent from the authorization
+  context. A bare `StringNotEquals` on a key that is absent evaluates to
+  TRUE (the key value is null and `null != "<expected>"`), which makes the
+  Deny fire on every non-confused-deputy request — most catastrophically,
+  it blocks ALL in-account `sts:AssumeRole`. Never split a Deny into a
+  clause that fires when an expected context key is ABSENT. Use
+  `StringNotEqualsIfExists` (or `Null`+`StringNotEquals` combined with AND
+  semantics) so absent keys never trigger the deny, and write the
+  confused-deputy guard as a SINGLE correctly-scoped statement:
 
   ```json
-  // WRONG — conditions AND together; deny never fires because the two keys
-  // are never present in the same authorization context.
+  // RIGHT — guard with *IfExists so absent keys never trigger the
+  // Deny; the statement only fires when the cross-service-call keys
+  // are PRESENT and the source account doesn't match the principal
+  // account. Pair with a presence check on aws:SourceArn the same way.
   {
+    "Sid": "DenyCrossAccountConfusedDeputy",
     "Effect": "Deny",
     "Action": "sts:AssumeRole",
     "Condition": {
-      "StringEquals":    {"aws:PrincipalServiceName": "<service>.amazonaws.com"},
-      "StringNotEquals": {"aws:SourceAccount": "${aws:PrincipalAccount}"}
-    }
-  }
-
-  // RIGHT — two statements, each keyed on exactly one mechanism. The first
-  // covers the service-as-caller path; the second covers the confused-deputy
-  // path. Either path alone fires the Deny.
-  {
-    "Sid": "DenyServicePrincipalUnscoped",
-    "Effect": "Deny",
-    "Action": "sts:AssumeRole",
-    "Condition": {
-      "StringEquals": {"aws:PrincipalServiceName": "<service>.amazonaws.com"}
-    }
-  },
-  {
-    "Sid": "DenyConfusedDeputyAcrossAccount",
-    "Effect": "Deny",
-    "Action": "sts:AssumeRole",
-    "Condition": {
-      "StringNotEquals": {"aws:SourceAccount": "${aws:PrincipalAccount}"}
+      "StringNotEqualsIfExists": {
+        "aws:SourceAccount": "${aws:PrincipalAccount}"
+      },
+      "Null": {"aws:SourceAccount": "false"}
     }
   }
   ```
+
+  The earlier two-statement pattern (a separate "deny when service principal
+  is set" statement plus a "deny when source account differs from principal
+  account" statement) is unsafe and must not be used: the second statement
+  uses a bare `StringNotEquals` on `aws:SourceAccount`, which evaluates true
+  whenever the key is absent (every in-account direct call), so the Deny
+  fires on legitimate traffic — most catastrophically, on every in-account
+  `sts:AssumeRole`.
+
+  The `Null: false` clause asserts the key is present; the
+  `StringNotEqualsIfExists` does the value comparison. AND-ing the two
+  yields "key present AND value mismatches" — the only state where the
+  Deny should fire. If the control also covers `aws:SourceArn`, add a
+  parallel pair (`Null: aws:SourceArn = false` plus
+  `ArnNotEqualsIfExists`) — keep this as ONE statement; do not split a
+  Deny into a presence-of-key vs absence-of-key pair.
 
 **No non-standard fields in Statements**: IAM policy Statements only accept standard
 keys (`Sid`, `Effect`, `Principal`, `NotPrincipal`, `Action`, `NotAction`, `Resource`,
@@ -548,7 +582,7 @@ Both must be fixed together — trace to the source of the discrepancy.
   definitions. Create `proactive/custom-policies/` and write a `.py` or `.yaml` policy file for
   each custom check. A Checkov config referencing non-existent custom policies will fail at runtime.
   ```bash
-  mkdir -p .service-approval/<slug>/05-generate/proactive/custom-policies
+  mkdir -p .service-approval/<slug>/05-recommended-guidance/proactive/custom-policies
   ```
   Each custom policy file must define the check ID, resource type, and evaluation logic.
 
@@ -667,36 +701,49 @@ control IDs present in mapping-results.
   Resource types column is empty are global-only and cannot be scoped.
 
 **IAM action validation (CRITICAL):** Before generating any IAM policy artifact (SCP,
-permission boundary, IAM policies, resource policies, VPCE policies), verify that every
-`Action` value exists in `validated.json` `api_surface.operations[].operation` OR is listed
-as a permission-only action in `capabilities.iam.permission_only_actions[]`. Permission-only
-actions (e.g., `InvokeGateway`) are valid IAM-evaluated actions without API endpoints — they
-CAN be used in policies. Common error: inventing action patterns (e.g., `<prefix>:Describe*`)
-when the service only supports `Get*` and `List*` for read operations. Check the service's
-IAM actions via `awsknowledge` MCP or
-the IAM Actions Reference. If the service prefix does not support a particular action verb,
-do not generate it. This applies to ALL policy files: `scp-policy.json`, `iam-policies.json`,
-`permission-boundary.json`, `resource-policy.json`, `vpce-policy.json`.
+permission boundary, IAM policies, resource policies, VPCE policies), verify that
+every `Action` value is a real action in the AWS Service Authorization
+Reference for the target service — sourced from the SAR IAM action list
+(resolving operation→action drift via `data/botocore-iam-alias.json`) or from
+`capabilities.iam.permission_only_actions[]`. IAM Action strings are NOT API
+operation names. Permission-only actions (e.g., `lambda:InvokeFunctionUrl`)
+are valid IAM-evaluated actions without API endpoints — they CAN be used in
+policies. Common error: inventing action patterns (e.g., `<prefix>:Describe*`)
+when the service only supports `Get*` and `List*` for read operations. Check
+the service's IAM actions via `awsknowledge` MCP or the IAM Actions
+Reference. If the service prefix does not support a particular action verb,
+do not generate it. This applies to ALL policy files: `scp-policy.json`,
+`iam-policies.json`, `permission-boundary.json`, `resource-policy.json`,
+`vpce-policy.json`.
 
-### IAM Policies and Trust Policies (`preventive/iam-policies.json`)
+### IAM Policies (`preventive/iam-policies.json`)
 
 **Generate ONLY if `mapping-results.json` contains at least one control with
-`mechanism ∈ {"IAM Policy", "IAM Trust Policy"}`.** If no such control exists,
-SKIP this file entirely — do NOT emit a placeholder and do NOT invent a control
-ID (e.g., `CTRL-ACC-PRV-EXEC-ROLE`). The `controls` field of `_metadata` must
-reference ONLY IDs present in mapping-results.
+`mechanism == "IAM Policy"`.** If no such control exists, SKIP this file
+entirely — do NOT emit a placeholder and do NOT invent a control ID (e.g.,
+`CTRL-ACC-PRV-EXEC-ROLE`). The `controls` field of `_metadata` must reference
+ONLY IDs present in mapping-results.
 
-- Generate standalone IAM policy and trust policy documents for ACC-PRV controls with `mechanism`
-  of "IAM Policy" or "IAM Trust Policy"
+- Generate standalone IAM identity-policy documents for ACC-PRV controls with `mechanism`
+  of "IAM Policy"
 - Each control gets a named policy document in the JSON file
-- Trust policies: include `Condition` block for confused deputy protection
 - IAM policies: scope to specific resource ARN patterns, not `*`
-- **Do NOT skip IAM Policy / Trust Policy controls that ARE in mapping-results**
-  — they are distinct from the permission boundary and implement specific scoped
-  access patterns (execution role policies, trust relationships). A mapped
+- **Do NOT skip IAM Policy controls that ARE in mapping-results** — they
+  implement specific scoped access patterns (execution-role policies). A mapped
   IAM-Policy-mechanism control with no standalone artifact is a generation gap.
   (This directive catches mapper omissions of mapped controls; it does NOT
   sanction inventing control IDs when mapping is empty — see the gate above.)
+
+**Trust policies are refer-only — never authored here.** A role's trust policy
+(`AssumeRolePolicyDocument`) is not generated by this pipeline: there is no
+vetted trust-policy example library to anchor to, and the cross-service
+confused-deputy prevention it implements (`aws:SourceArn` / `aws:SourceAccount`
+on the `sts:AssumeRole` principal) is documented per-service. The recommender
+marks `IAM Trust Policy` controls `REFER_TO_REFERENCE` with a `service-doc`
+citation; if one reaches authoring, emit a REFER pointer (`not_anchored: true`,
+the service-doc reason, no `Statement[]` body, no repo anchor), never a policy.
+The reference-anchor validator hard-fails a trust policy that carries a repo
+anchor or ships an enforcing body.
 
 ---
 
@@ -852,7 +899,7 @@ both expected (mapping-results has a matching control) and not EMITTED.
 | `preventive/ai-optout-policy.json` | `ai_optout_applicable: true` | Bedrock/Comprehend/etc. |
 | `preventive/backup-policy.json` | `backup_policy_applicable: true` | service has AWS Backup integration |
 | `preventive/permission-boundary.json` | control has `mechanism == "IAM Permission Boundary"` | any service with Acc×Preventive |
-| `preventive/iam-policies.json` | control has `mechanism == "IAM Policy"` (trust policy, etc.) | SLR/trust-policy controls |
+| `preventive/iam-policies.json` | control has `mechanism == "IAM Policy"` | execution-role / scoped identity-policy controls (trust policies are refer-only, never authored) |
 | `preventive/resource-policy.json` | control has `mechanism == "Resource Policy"` on primary service | services with RBP |
 | `preventive/vpce-policy.json` | control has `mechanism == "VPCE Policy"` | services with VPC endpoints + endpoint-policy support |
 | `preventive/kms-key-policy.json` | control has `mechanism == "KMS Key Policy"` | services with CMK consumption |
@@ -889,5 +936,5 @@ Generate (preventive/proactive) complete:
   Acc×Preventive:   permission-boundary
   Res×Proactive:    cfn-guard resource rules
   Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
-  Output: .service-approval/<slug>/05-generate/preventive/, .service-approval/<slug>/05-generate/proactive/
+  Output: .service-approval/<slug>/05-recommended-guidance/preventive/, .service-approval/<slug>/05-recommended-guidance/proactive/
 ```

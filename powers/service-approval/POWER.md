@@ -26,7 +26,7 @@ keywords:
 - detective-controls
 - proactive-controls
 - responsive-controls
-author: GFS PACE
+author: Service Onboarding on AWS Team
 version: 1.0.0
 ---
 
@@ -37,8 +37,8 @@ version: 1.0.0
 This Power drives a 9-phase pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to CCMv4 (other frameworks are deferred), and produces a full set of deployable artifacts.
 
 **Key capabilities:**
-- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 21 sub-skills
-- **Parallel execution** — 4 research sub-skills, 3 generate sub-skills run concurrently via Kiro's `/spawn` command
+- **9-phase pipeline** — Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence, with 26 sub-skills
+- **Parallel execution** — 4 research sub-skills and 3 generate families run concurrently via Kiro's `/spawn` command; the preventive family runs a gated sub-pipeline (recommend → reference-anchored authors → root-cause critic)
 - **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge`, `aws-documentation`, and `awsiac` MCPs. Hardcoded values from training data are banned.
 - **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks, CDK/CDKTF/Terraform/CloudFormation templates
 - **Integrity-enforced** — the Stop hook runs `validate_pipeline_integrity.py` and blocks shortcut runs
@@ -103,7 +103,7 @@ Phase 2 Validate     → <slug>/03-validate/validated.json
 Phase 3 Map          → <slug>/04-map/mapping-results.json + framework-mapping.md
 Phase 4 Generate     → <slug>/05-generate/{preventive, proactive, detective, responsive, iac}/
 Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (needs --env)
-Phase 6 Summarize    → <slug>/07-summarize/APPROVAL-REPORT.md
+Phase 6 Summarize    → <slug>/07-summarize/SUMMARY-REPORT.md
 Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
 ```
 
@@ -145,7 +145,7 @@ Cultural rules (skill-based execution, no one-shot generator scripts) live in
 
 ## Output
 
-- `.service-approval/APPROVAL-REPORT.md` — final report + CCMv4 coverage matrix
+- `.service-approval/SUMMARY-REPORT.md` — final report + CCMv4 coverage matrix
 - `.service-approval/<slug>/05-generate/` — all generated artifacts (per-service; see `steering/pipeline.md` for per-category ranges)
 - `.service-approval/<slug>/` — pipeline state files per phase (01-assess/, 02-research/, 03-validate/, 04-map/, 05-generate/, 06-test/)
 - `.service-approval/ARTIFACT-FLOW-MATRIX.md` — per-artifact input/output dependency graph

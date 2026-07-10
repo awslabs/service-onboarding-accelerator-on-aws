@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/preventive-plan.schema.json",
+  "title": "preventive-plan.json",
+  "description": "Authoritative shape for the preventive recommender's decision plan. Produced by skills/generate-preventive-recommend at .service-approval/<slug>/05-recommended-guidance/preventive-plan.json. Consumed by the preventive authoring sub-skills (generate-preventive-scp/-rcp/-iam) and the root-cause critic. The plan is the gate: each GENERATE_* decision MUST carry a non-null anchor; ROUTE_DETECTIVE / REFER_TO_REFERENCE decisions carry no anchor. additionalProperties:false at top level and inside decisions[] to catch drift; permissive inside _metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_metadata", "decisions"],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["service"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "generated": {"type": "string"},
+        "reference_index_version": {"type": "integer"}
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/decision"}
+    }
+  },
+  "$defs": {
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["control_id", "source_control_id", "mechanism", "preventable", "decision", "citation"],
+      "properties": {
+        "control_id": {
+          "type": "string",
+          "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
+        },
+        "source_control_id": {
+          "$comment": "The originating control id from mapping-results.json that this decision implements. Cross-checked at validate time against mapping-results.json so an orphan decision (no matching control upstream) hard-fails.",
+          "type": "string",
+          "pattern": "^CTRL-(ORG|ACC|RES)-(PRO|PRV|DET|COR)-\\d{3}$"
+        },
+        "mechanism": {"type": "string", "minLength": 1},
+        "preventable": {"type": "boolean"},
+        "enforcing_condition_keys": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "plan_actions": {
+          "$comment": "The reviewed action set: the IAM actions the recommender deliberately intends this control's authored policy to gate. The root-cause critic rejects any authored Deny action absent from this set — an action the enforcing key happens to apply to but that was never reviewed is silent scope-creep. When omitted, the critic falls back to the mapping control's actions[].",
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "GENERATE_SCP",
+            "GENERATE_RCP",
+            "GENERATE_IAM",
+            "REFER_TO_REFERENCE",
+            "ROUTE_DETECTIVE"
+          ]
+        },
+        "citation": {
+          "$comment": "Typed citation for the intent source — what motivates the control. type==canopy: cite the Canopy mitigation alias in id. type==reference: cite the reference-repo example in id and url. type==catalog: cite the AWS Control Catalog ARN in id. type==service-doc: cite the AWS doc URL in url.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": {
+            "type": {"type": "string", "enum": ["canopy", "reference", "catalog", "service-doc"]},
+            "id": {"type": "string", "minLength": 1},
+            "url": {"type": "string", "minLength": 1}
+          },
+          "anyOf": [
+            {"required": ["id"]},
+            {"required": ["url"]}
+          ],
+          "allOf": [
+            {
+              "$comment": "type==canopy MUST cite the mitigation alias in id.",
+              "if": {"properties": {"type": {"const": "canopy"}}},
+              "then": {"required": ["id"]}
+            }
+          ]
+        },
+        "anchor": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["example_id"],
+              "properties": {
+                "example_id": {"type": "string", "minLength": 1},
+                "repo": {"type": "string"},
+                "url": {"type": "string"}
+              }
+            }
+          ]
+        },
+        "route_to": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "string", "enum": ["detective", "proactive"]}
+          ]
+        },
+        "rationale": {"type": "string"},
+        "application_guidance": {
+          "$comment": "Concrete 'what to do with this policy' instructions for the customer, for authored (GENERATE_*) AND referred (REFER_TO_REFERENCE) decisions. placement = where the policy goes; placeholders[] = the specific tokens the customer must edit (account ids, ORG ids, role/function ARNs, OUs), drawn from the control's real parameter/condition names; test = how to verify it works before relying on it; rollback = how to undo it. For a referred control, this summarizes how to copy the reference example and what to change — not just the URL.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "placement": {"type": "string", "minLength": 1},
+            "placeholders": {
+              "type": "array",
+              "items": {"type": "string"}
+            },
+            "test": {"type": "string"},
+            "rollback": {"type": "string"}
+          }
+        },
+        "applicability": {
+          "$comment": "What resource subset the cited policy targets and how to use it — including where NOT to apply it. Expected when the decision surfaces a citation URL (anchor.url or citation.url); omit for a canopy-only citation with no URL. applies_to = the specific resource subset/type the policy targets and the pattern that selects it, drawn from the control's real parameters/condition keys and the reference example's placeholders. usage_notes = how the customer is meant to use it, including the caution about where NOT to apply it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applies_to", "usage_notes"],
+          "properties": {
+            "applies_to": {"type": "string", "minLength": 1},
+            "usage_notes": {"type": "string", "minLength": 1}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "Every GENERATE_* decision MUST carry a non-null anchor with an example_id — the repo-anchor gate.",
+          "if": {
+            "properties": {
+              "decision": {"enum": ["GENERATE_SCP", "GENERATE_RCP", "GENERATE_IAM"]}
+            }
+          },
+          "then": {
+            "properties": {
+              "anchor": {
+                "type": "object",
+                "required": ["example_id"]
+              },
+              "preventable": {"const": true}
+            },
+            "required": ["anchor"]
+          }
+        },
+        {
+          "$comment": "ROUTE_DETECTIVE means not preventable and routed; no anchor.",
+          "if": {
+            "properties": {"decision": {"const": "ROUTE_DETECTIVE"}}
+          },
+          "then": {
+            "properties": {
+              "route_to": {"type": "string", "enum": ["detective", "proactive"]}
+            },
+            "required": ["route_to"]
+          }
+        },
+        {
+          "$comment": "When a preventive decision surfaces a citation URL to the customer, applicability MUST be present (with non-empty applies_to + usage_notes) so the report can explain what the cited policy targets and where not to apply it. Excludes ROUTE_DETECTIVE — a routed objective surfaces no preventive policy to clarify even when its citation carries a service-doc URL. The anchor.url case is enforced deterministically in validate_reference_anchor.py (cross-two-url conditionals are awkward in pure JSON Schema).",
+          "if": {
+            "properties": {
+              "citation": {"required": ["url"]},
+              "decision": {"not": {"const": "ROUTE_DETECTIVE"}}
+            },
+            "required": ["citation"]
+          },
+          "then": {
+            "required": ["applicability"]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -22,7 +22,7 @@ it step by step. That file is the authoritative source for the pipeline — do n
 - **Phase 3 — Map:** parse framework, generate controls, map to objectives, assemble
 - **Phase 4 — Generate:** preventive, proactive, detective, responsive, IaC (4 formats)
 - **Phase 5 — Test:** mode set upfront in Intake (full-deploy / dry-run / skip / manual-cli)
-- **Phase 6 — Summarize:** APPROVAL-REPORT.md
+- **Phase 6 — Summarize:** SUMMARY-REPORT.md
 - **Phase 7 — Evidence:** CLI probes to attest control enforcement (requires Phase 5)
 
 Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layout).
@@ -67,6 +67,6 @@ use `aws-documentation` and `awsiac`.
 
 ## Output
 
-- `.service-approval/APPROVAL-REPORT.md` — final report
+- `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` — final report
 - `.service-approval/<slug>/05-generate/` — all generated artifacts
 - `.service-approval/<slug>/` — intermediate JSON state files per phase

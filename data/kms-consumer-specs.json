@@ -15,13 +15,15 @@
     "KmsMasterKeyId",
     "KmsKeyArn",
     "KMSKeyId",
-    "FargateEphemeralStorageKmsKeyId"
+    "FargateEphemeralStorageKmsKeyId",
+    "EncryptionKeyArn"
   ],
   "tf_key_pointing_args": [
     "kms_key_id",
     "kms_master_key_id",
     "kms_key_arn",
-    "fargateEphemeralStorageKmsKeyId"
+    "fargateEphemeralStorageKmsKeyId",
+    "encryption_key_arn"
   ],
   "consumers": {
     "AWS::Logs::LogGroup": {
@@ -62,6 +64,23 @@
       ],
       "conditions_hint": "StringEquals aws:SourceAccount"
     },
+    "AWS::Lambda::EventSourceMapping": {
+      "terraform": "aws_lambda_event_source_mapping",
+      "principal": "lambda.amazonaws.com",
+      "required_actions": [
+        "kms:Decrypt"
+      ],
+      "conditions_hint": "StringEquals aws:SourceAccount; Lambda encrypts/decrypts the event source mapping FilterCriteria object with the customer-managed key (kms:Decrypt required to view plaintext via GetEventSourceMapping)"
+    },
+    "AWS::Lambda::CapacityProvider": {
+      "terraform": "awscc_lambda_capacity_provider",
+      "principal": "lambda.amazonaws.com",
+      "required_actions": [
+        "kms:GenerateDataKey",
+        "kms:Decrypt"
+      ],
+      "conditions_hint": "StringEquals aws:SourceAccount; the Lambda service principal encrypts the capacity provider's resources with the customer-managed key referenced by KmsKeyArn (same key-policy grant pattern Lambda requires for customer-managed-key encryption: kms:GenerateDataKey + kms:Decrypt for lambda.amazonaws.com). Ref: https://docs.aws.amazon.com/lambda/latest/dg/encrypt-zip-package.html"
+    },
     "AWS::ECS::Cluster": {
       "terraform": "aws_ecs_cluster",
       "principal": "ecs.amazonaws.com",
@@ -87,6 +106,66 @@
         "kms:Decrypt"
       ],
       "conditions_hint": "StringEquals aws:SourceAccount"
+    },
+    "AWS::EFS::FileSystem": {
+      "terraform": "aws_efs_file_system",
+      "principal": "elasticfilesystem.amazonaws.com",
+      "required_actions": [
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKey*",
+        "kms:CreateGrant",
+        "kms:DescribeKey"
+      ],
+      "conditions_hint": "StringEquals aws:SourceAccount; EFS encrypts data at rest with the customer-managed key and uses grants (kms:CreateGrant) for the encrypted file system. Source: https://docs.aws.amazon.com/efs/latest/ug/encryption-at-rest.html"
+    },
+    "AWS::BedrockAgentCore::Memory": {
+      "terraform": "awscc_bedrockagentcore_memory",
+      "principal": "bedrock-agentcore.amazonaws.com",
+      "required_actions": [
+        "kms:CreateGrant",
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:ReEncrypt*"
+      ],
+      "conditions_hint": "StringEquals kms:ViaService bedrock-agentcore.{region}.amazonaws.com. Memory encrypts data at rest with the customer-managed key. Source: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/storage-encryption.html"
+    },
+    "AWS::BedrockAgentCore::Gateway": {
+      "terraform": "awscc_bedrockagentcore_gateway",
+      "principal": "bedrock-agentcore.amazonaws.com",
+      "required_actions": [
+        "kms:CreateGrant",
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:GenerateDataKey"
+      ],
+      "conditions_hint": "StringEquals kms:ViaService bedrock-agentcore.{region}.amazonaws.com; StringLike kms:EncryptionContext:aws:bedrock-agentcore-gateway:arn. Gateway service role encrypts metadata with the customer-managed key. Source: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway-encryption.html"
+    },
+    "AWS::BedrockAgentCore::Evaluator": {
+      "terraform": "awscc_bedrockagentcore_evaluator",
+      "principal": "bedrock-agentcore.amazonaws.com",
+      "required_actions": [
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:GenerateDataKey"
+      ],
+      "conditions_hint": "StringEquals aws:SourceAccount; ArnLike aws:SourceArn evaluator ARN. AgentCore service principal encrypts recommendation/evaluation data with the customer-managed key. Source: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/recommendations-encryption.html"
+    },
+    "AWS::BedrockAgentCore::PolicyEngine": {
+      "terraform": "awscc_bedrockagentcore_policy_engine",
+      "principal": "bedrock-agentcore.amazonaws.com",
+      "required_actions": [
+        "kms:CreateGrant",
+        "kms:Decrypt",
+        "kms:DescribeKey",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:ReEncrypt*"
+      ],
+      "conditions_hint": "StringEquals kms:ViaService bedrock-agentcore.{region}.amazonaws.com; StringLike kms:EncryptionContext:aws:bedrock-agentcore-policy:policy-engine-arn. Policy engine encrypts the engine and child resources with the customer-managed key. Source: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/policy-encryption.html"
     }
   }
 }

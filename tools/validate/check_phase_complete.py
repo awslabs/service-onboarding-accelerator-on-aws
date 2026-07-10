@@ -22,7 +22,7 @@ Examples:
     python3 -m tools.validate.check_phase_complete --slug awslambda --phase 04-map
 
     # Before /summarize, verify Generate, Test (if ran), Map all complete:
-    python3 -m tools.validate.check_phase_complete --slug awslambda --phase 05-generate
+    python3 -m tools.validate.check_phase_complete --slug awslambda --phase 05-recommended-guidance
 """
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def check_phase(slug: str, phase: str) -> list[str]:
 
     required = PHASE_REQUIRED_OUTPUTS[phase]
     if not required:
-        # Phase has no JSON/MD outputs to check (e.g., 05-generate uses
+        # Phase has no JSON/MD outputs to check (e.g., 05-recommended-guidance uses
         # subdirs; that gate lives in validate_pipeline_integrity directly).
         return errors
 

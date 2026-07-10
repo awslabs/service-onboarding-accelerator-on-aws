@@ -9,7 +9,7 @@ Provides canonical path resolution for the .service-approval/ hierarchy:
 
 Phase names map to numbers:
   intake → 00, assess → 01, research → 02, validate → 03,
-  map → 04, generate → 05, test → 06, summarize → 07, evidence → 08
+  map → 04, recommended-guidance → 05, summarize → 06
 
 All paths are relative to repo_root(). Skills, validators, and scripts
 MUST use these helpers instead of hardcoding paths.
@@ -34,10 +34,8 @@ _PHASE_MAP = {
     "research": "02",
     "validate": "03",
     "map": "04",
-    "generate": "05",
-    "test": "06",
-    "summarize": "07",
-    "evidence": "08",
+    "recommended-guidance": "05",
+    "summarize": "06",
 }
 
 # Canonical slug pattern (mirrors slug.derive_canonical_slug).
@@ -54,8 +52,8 @@ def repo_root() -> Path:
 
     Walks up from this file's location until it finds a directory containing
     `manifest.yaml` (the project-specific marker that uniquely identifies a
-    service-onboarding clone — anchoring on `.git` or `.service-approval/`
-    risked landing on a developer's home directory if either existed there).
+    project clone — anchoring on `.git` or `.service-approval/` risked landing
+    on a developer's home directory if either existed there).
 
     Returns:
         Path to repository root.
@@ -175,7 +173,7 @@ _TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z$")
 # Anchoring with this prevents `01-something-else` or `09-extra-phase`
 # from being mistaken for a phase dir.
 _PHASE_DIR_RE = re.compile(
-    r"^(0[0-8])-(intake|assess|research|validate|map|generate|test|summarize|evidence)$"
+    r"^(0[0-6])-(intake|assess|research|validate|map|recommended-guidance|summarize)$"
 )
 
 

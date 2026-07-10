@@ -1,0 +1,142 @@
+{
+  "schema_version": "2.0",
+  "description": "Screens framework objectives for applicability to a target service BEFORE mapping, using capability flags (service-capability-rules.json) and derived category labels (service-category-rules.json). Three rule kinds, each risk-averse: an objective is only marked N/A when there is a POSITIVE structural reason (an organizational/shared-responsibility objective, or a category fact that the service's category structurally lacks the capability). An UNKNOWN capability NEVER forces N/A \u2014 it defers to the objective's KB default (data/domain-mapping-guidance/<framework>.json). Objective IDs reference CCMv4. Consumed by scripts/compute-applicability-matrix.py.",
+  "semantics": {
+    "intrinsic_na_rules": "Objectives that no per-service platform/infrastructure control can satisfy for ANY service (physical datacenter, endpoint/HR, organizational governance). Always N/A. Independent of capabilities.",
+    "category_na_rules": "Objectives that are N/A for services IN a given category, because that category structurally lacks the capability the objective needs (e.g. serverless_compute has no customer-managed OS to patch and no customer-managed backup API). Fires only when the service carries one of na_for_categories. A category fact, not a per-export absence.",
+    "capability_unlock_rules": "Objectives the KB defaults to N/A that become applicable ONLY when a required capability is definitively PRESENT (e.g. a backup-capable service unlocks BCR-08). Present -> applicable (optionally capped by max_coverage). Absent/unknown -> no override (KB default stands). These never force N/A."
+  },
+  "intrinsic_na_rules": [
+    {
+      "category": "physical_datacenter",
+      "objective_ids": [
+        "DCS-01",
+        "DCS-02",
+        "DCS-03",
+        "DCS-04",
+        "DCS-05",
+        "DCS-06",
+        "DCS-07",
+        "DCS-08",
+        "DCS-09",
+        "DCS-10",
+        "DCS-11",
+        "DCS-12",
+        "DCS-13",
+        "DCS-14",
+        "DCS-15"
+      ],
+      "reason": "Physical and environmental datacenter security is managed by AWS under the shared-responsibility model; no customer-deployable service control satisfies these."
+    },
+    {
+      "category": "endpoint_device_management",
+      "objective_ids": [
+        "UEM-01",
+        "UEM-02",
+        "UEM-03",
+        "UEM-04",
+        "UEM-05",
+        "UEM-06",
+        "UEM-07",
+        "UEM-08",
+        "UEM-09",
+        "UEM-10",
+        "UEM-11",
+        "UEM-12",
+        "UEM-13",
+        "UEM-14"
+      ],
+      "reason": "Endpoint/device management is an organizational IT domain; no AWS service control satisfies it."
+    },
+    {
+      "category": "human_resources_security",
+      "objective_ids": [
+        "HRS-01",
+        "HRS-02",
+        "HRS-03",
+        "HRS-04",
+        "HRS-05",
+        "HRS-06",
+        "HRS-07",
+        "HRS-08",
+        "HRS-09",
+        "HRS-10",
+        "HRS-11",
+        "HRS-12",
+        "HRS-13"
+      ],
+      "reason": "Personnel/HR security controls are organizational processes; no technical service control satisfies them."
+    },
+    {
+      "category": "audit_assurance_governance",
+      "objective_ids": [
+        "A&A-01",
+        "A&A-02",
+        "A&A-03",
+        "A&A-04",
+        "A&A-05",
+        "A&A-06"
+      ],
+      "reason": "Audit and assurance objectives describe organizational governance programs; no platform/infrastructure configuration control implements them."
+    }
+  ],
+  "category_na_rules": [
+    {
+      "objective_ids": [
+        "TVM-01",
+        "TVM-02",
+        "TVM-03",
+        "TVM-04",
+        "TVM-06",
+        "TVM-07",
+        "TVM-08",
+        "TVM-09",
+        "TVM-10"
+      ],
+      "na_for_categories": [
+        "serverless_compute"
+      ],
+      "reason": "Serverless compute has no customer-managed operating system or runtime to patch or scan \u2014 AWS patches the execution environment. OS/software patching and vulnerability-metric objectives are N/A.",
+      "capability_note": "Fires on the category, NOT on any per-export mention of a runtime; a descriptive 'custom runtime' string in an entity information field must never assert customer patching."
+    },
+    {
+      "objective_ids": [
+        "BCR-08",
+        "BCR-09",
+        "BCR-10",
+        "BCR-11"
+      ],
+      "na_for_categories": [
+        "serverless_compute"
+      ],
+      "reason": "Serverless compute exposes no customer-configurable backup, snapshot, or DR-exercise API; backup-verification and DR-exercise objectives are N/A. Multi-AZ placement is resilience, not backup."
+    },
+    {
+      "objective_ids": [
+        "LOG-02",
+        "LOG-09"
+      ],
+      "na_for_categories": [
+        "serverless_compute"
+      ],
+      "reason": "Serverless compute owns no audit-log store to protect; the log store (CloudWatch Logs group, CloudTrail trail, S3 log bucket) is a separate service's resource. Log-store protection is N/A here.",
+      "capability_note": "A store-owning service in another category keeps LOG-02/LOG-09 mappable; this fires only on the serverless_compute category."
+    }
+  ],
+  "capability_unlock_rules": [
+    {
+      "objective_ids": [
+        "BCR-08",
+        "BCR-09",
+        "BCR-10",
+        "BCR-11"
+      ],
+      "requires_any_capability": [
+        "managed_backup",
+        "cross_region_replication"
+      ],
+      "reason_when_present": "Service exposes a customer-configurable backup/snapshot/replication API, so backup-verification and DR-exercise objectives are in scope.",
+      "max_coverage": "Partial Coverage"
+    }
+  ]
+}
