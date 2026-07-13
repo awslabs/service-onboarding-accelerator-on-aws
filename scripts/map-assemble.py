@@ -28,6 +28,38 @@ COVERAGE_FULL = {"Fully Covered", "FULL"}
 COVERAGE_PARTIAL = {"Partially Covered", "PARTIAL"}
 COVERAGE_SUPPORTIVE = {"Supportive Only", "SUPPORTS"}
 
+
+def _coverage_legend_lines() -> list[str]:
+    """Return markdown lines defining each coverage level.
+
+    Rendered in both controls-catalog.md and framework-mapping.md so a reader
+    knows what Full Coverage / Partial Coverage / Supportive / Not Applicable
+    mean. Definitions are kept in sync with the authoring skill
+    (skills/map-framework-mapping/SKILL.md, "Assign coverage level").
+    """
+    return [
+        "## Coverage Levels\n",
+        "",
+        "Each objective mapping is assigned a coverage level describing how "
+        "directly a control addresses the objective:",
+        "",
+        "| Level | Meaning |",
+        "|-------|---------|",
+        "| **Full Coverage** | The control's mechanism directly implements what "
+        "the objective requires (e.g., a KMS key policy enforcing key generation). |",
+        "| **Partial Coverage** | The control contributes to the objective but "
+        "does not fully implement it (e.g., a Config rule that detects "
+        "unencrypted resources but does not enforce encryption). |",
+        "| **Supportive** | The control is tangentially related through a shared "
+        "domain only (e.g., a tag policy that supports an identity inventory "
+        "objective without managing identity itself). |",
+        "| **N/A (Not Applicable)** | No control maps to the objective for this "
+        "service — typically because it is managed by AWS under shared "
+        "responsibility, is an organizational/process control, or the service "
+        "exposes no API to enforce it. A reason is given for each. |",
+        "",
+    ]
+
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -958,6 +990,10 @@ def write_controls_catalog(
     )
     lines.append("")
 
+    # Coverage-level legend so a reader knows what Full/Partial/Supportive/N/A
+    # mean where controls are mapped to framework objectives.
+    lines.extend(_coverage_legend_lines())
+
     # Control matrix summary table
     lines.append("## Control Matrix Summary\n")
     lines.append("")
@@ -1108,6 +1144,11 @@ def write_framework_mapping(
     lines.append(f"| Uncertain (review needed) | {uncertain_count} |")
     lines.append("")
 
+    # Coverage-level legend so a reader knows what each level in the detailed
+    # mappings means. Definitions are kept in sync with the authoring skill
+    # (skills/map-framework-mapping/SKILL.md, "Assign coverage level").
+    lines.extend(_coverage_legend_lines())
+
     # Domain coverage summary table
     lines.append("## Domain Coverage Summary\n")
     lines.append("")
@@ -1171,10 +1212,10 @@ def write_framework_mapping(
                 ]
                 if canopy_rows:
                     lines.append(
-                        "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Citation | MITRE |"
+                        "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Source | MITRE |"
                     )
                     lines.append(
-                        "|------------|-------|----------|-------|----------------|-----------|----------|-------|"
+                        "|------------|-------|----------|-------|----------------|-----------|--------|-------|"
                     )
                     for cm in canopy_rows:
                         cid = cm["control_id"]
