@@ -2,7 +2,7 @@
 name: phase-generate
 description: Rules for Phase 4 (Generate) sub-skills
 inclusion: fileMatch
-fileMatchPattern: "**/.service-approval/*/05-generate/**"
+fileMatchPattern: "**/.service-approval/*/05-recommended-guidance/**"
 ---
 
 # Phase 4 — Generate
@@ -13,19 +13,19 @@ Applies to the three generate families: preventive (a gated sub-pipeline),
 ## Parallel execution
 
 Use `/spawn` to run the three families concurrently. Each writes to a disjoint
-subtree of `.service-approval/<slug>/05-generate/`. The **preventive family runs
+subtree of `.service-approval/<slug>/05-recommended-guidance/`. The **preventive family runs
 its sub-skills in order** — the recommender gate, then the reference-anchored
 authors, then the root-cause critic — and must not be parallelized internally:
 
 ```
 preventive (in order):
-  /spawn sa-generate-preventive-recommend  → 05-generate/preventive-plan.json (gate)
-  /spawn sa-generate-preventive-scp         → 05-generate/preventive/ (GENERATE_SCP rows)
-  /spawn sa-generate-preventive-rcp         → 05-generate/preventive/ (GENERATE_RCP rows)
-  /spawn sa-generate-preventive-iam         → 05-generate/preventive/ (GENERATE_IAM rows)
+  /spawn sa-generate-preventive-recommend  → 05-recommended-guidance/preventive-plan.json (gate)
+  /spawn sa-generate-preventive-scp         → 05-recommended-guidance/preventive/ (GENERATE_SCP rows)
+  /spawn sa-generate-preventive-rcp         → 05-recommended-guidance/preventive/ (GENERATE_RCP rows)
+  /spawn sa-generate-preventive-iam         → 05-recommended-guidance/preventive/ (GENERATE_IAM rows)
   /spawn sa-generate-preventive-rootcause   → prove anchored + enforcing
-/spawn sa-generate-detective     → 05-generate/detective/, 05-generate/responsive/
-/spawn sa-generate-iac           → 05-generate/iac/{cdk,cloudformation,cdktf,terraform}/
+/spawn sa-generate-detective     → 05-recommended-guidance/detective/, 05-recommended-guidance/responsive/
+/spawn sa-generate-iac           → 05-recommended-guidance/iac/{cdk,cloudformation,cdktf,terraform}/
 ```
 
 `skills/generate-preventive/SKILL.md` is the shared authoring-rules reference the
@@ -47,7 +47,7 @@ preventive authors follow; it is not a standalone generator.
 
 7. **Every generate sub-skill must read `mapping-results.json`, not `map-controls-generated.json`.** `mapping-results` is the assembled, framework-mapped truth.
 
-8. **Every preventive policy artifact must carry a reference anchor.** Each file under `05-generate/preventive/` must have `_metadata.reference.example_id` resolving to a real entry in `data/reference-repos/index.yaml`. Un-anchored policy → integrity rule P8 blocks. Gap/skip stubs and documentation files are exempt. If no reference covers an objective, do not author — point to the reference or route to detective.
+8. **Every preventive policy artifact must carry a reference anchor.** Each file under `05-recommended-guidance/preventive/` must have `_metadata.reference.example_id` resolving to a real entry in `data/reference-repos/index.yaml`. Un-anchored policy → integrity rule P8 blocks. Gap/skip stubs and documentation files are exempt. If no reference covers an objective, do not author — point to the reference or route to detective.
 
 9. **Preventive controls must be enforceable (preventability).** A preventive control is only authored when a condition key gates its target action at request time (`validate_preventability.py` verdict FEASIBLE). A control with no gating key is NOT preventable — route it to detective rather than author a non-firing SCP. The root-cause critic (`sa-generate-preventive-rootcause`) proves this for the whole `preventive/` directory.
 
@@ -83,7 +83,7 @@ Exact counts vary by service surface area. Observed ranges:
 
 ## PostToolUse hook behavior
 
-`ide/hooks/post-tool-use.kiro.hook` fires on `fs_write` to anything under `.service-approval/<slug>/05-generate/`. It runs:
+`ide/hooks/post-tool-use.kiro.hook` fires on `fs_write` to anything under `.service-approval/<slug>/05-recommended-guidance/`. It runs:
 - JSON/YAML parse validation
 - Terraform `validate` + `fmt` on `.tf` files
 - cfn-lint on `.yaml`/`.json` CFN templates

@@ -318,9 +318,11 @@ def main() -> int:
     parser.add_argument("--mapping", help="explicit mapping-results.json path")
     parser.add_argument("--fw-mapped", dest="fw_mapped",
                         help="explicit map-framework-mapped.json path")
+    parser.add_argument("--advisory", action="store_true",
+                        help="report violations without failing (exit 0); "
+                             "by default any factual violation blocks (exit 2)")
     parser.add_argument("--strict", action="store_true",
-                        help="exit non-zero (block) on any factual violation; "
-                             "without it, violations are advisory (exit 0)")
+                        help="deprecated no-op; blocking is the default")
     args = parser.parse_args()
 
     if args.slug:
@@ -341,11 +343,11 @@ def main() -> int:
         parser.error("provide --slug OR --canopy")
 
     if errors:
-        label = "FAILED" if args.strict else "advisory"
+        label = "advisory" if args.advisory else "FAILED"
         print(f"CANOPY-FACTUAL {label} ({len(errors)} violations):", file=sys.stderr)
         for e in errors:
             print(f"  {e}", file=sys.stderr)
-        return 2 if args.strict else 0
+        return 0 if args.advisory else 2
     print("canopy-factual: no violations")
     return 0
 
