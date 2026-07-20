@@ -32,7 +32,7 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
 
    Then fully quit Kiro (Cmd+Q) and reopen.
 3. **Docker Desktop running** (for the `terraform` MCP server — stdio via Docker container).
-4. **AWS profile `delegated-admin`** configured in `~/.aws/credentials` (needed for `kb-search` and `iam` MCPs, plus Phase 5 Test).
+4. **AWS profile `delegated-admin`** configured in `~/.aws/credentials` (needed for `kb-search` and `iam` MCPs, plus optional Tier 2 policy validation).
 5. Python 3.9+ with `mcp>=1.0.0` and `boto3>=1.35.0`:
    ```bash
    pip3 install -r tools/kb-search-mcp/requirements.txt
@@ -162,15 +162,14 @@ Create an `./input/` folder with a minimal AWS service input (at least `sar-slug
 run service approval for s3 --dry-run
 ```
 
-The agent should run all 9 phases. Watch for:
+The agent should run the Intake precursor plus all 6 numbered phases. Watch for:
 - Intake writes `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` before Phase 0
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
-- Phase 4 (Generate) spawns 3 parallel
-- Phase 6 (Summarize) writes `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
-- Phase 7 (Evidence) runs if Phase 5 Test completed (requires --env flag)
+- Phase 4 (Recommended Guidance) spawns 3 parallel
+- Phase 5 (Summarize) writes `.service-approval/<service-slug>/06-summarize/SUMMARY-REPORT.md`
 
-End state should be verdict `APPROVED` or `REQUIRES REMEDIATION` in the report, not silence.
+End state should be a completed `SUMMARY-REPORT.md` (the report issues no approve/deny verdict), not silence.
 
 ## Update the Power
 

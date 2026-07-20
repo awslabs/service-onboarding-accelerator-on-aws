@@ -32,7 +32,7 @@ service-approval:
     - kiro-cli
         --no-interactive
         --trust-tools="aws-documentation,awsknowledge,awsiac,terraform,kb-search"
-        "run service approval for ${AWS_SERVICE} using ./input --env=delegated-admin"
+        "run service approval for ${AWS_SERVICE} using ./input"
   artifacts:
     paths:
       - .service-approval/
@@ -44,7 +44,7 @@ service-approval:
 | Variable | Source | Purpose |
 |----------|--------|---------|
 | `KIRO_API_KEY` | Kiro dashboard → API Keys | Authenticates `kiro-cli` non-interactively |
-| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | CI secret | Phase 5 Tier 2 validation only |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | CI secret | Tier 2 policy validation only (optional) |
 | `AWS_SERVICE` | CI variable | Service name (e.g., `s3`, `lambda`) |
 
 ## Trust flags
@@ -86,16 +86,15 @@ Set a Kiro workspace token budget in the dashboard if running on a schedule.
 ## Artifacts for review
 
 Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
-- `<slug>/07-summarize/SUMMARY-REPORT.md` — customer-facing verdict
+- `<slug>/06-summarize/SUMMARY-REPORT.md` — customer-facing Summary Report
 - `<slug>/05-recommended-guidance/` — all generated artifacts (preventive/proactive/detective/responsive/iac)
 - `<slug>/mcp-calls.log` — audit trail of every MCP call
 - `<slug>/03-validate/validated.json` — proof of MCP verification for every item
-- `<slug>/attestation.md` + `<slug>/08-evidence/` — Phase 7 runtime evidence (when Phase 5 ran)
 
 ## Troubleshooting CI runs
 
 ### `kiro-cli: Pipeline integrity failed`
-Read `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` for the Summary Report and root cause. The
+Read `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` for the Summary Report and root cause. The
 integrity script prints which of P1–P7 failed.
 
 ### `Too few MCP calls in mcp-calls.log`

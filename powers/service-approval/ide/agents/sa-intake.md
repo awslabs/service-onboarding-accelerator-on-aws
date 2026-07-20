@@ -1,6 +1,6 @@
 ---
 name: sa-intake
-description: 'Precursor intake phase: collect service name, input type, framework, and testing preferences; produce intake-manifest.json for downstream phases'
+description: 'Precursor intake phase: collect service name, input type, and framework; produce intake-manifest.json for downstream phases'
 tools:
 - read
 - write
@@ -56,14 +56,11 @@ enforce turn-taking yourself by following the hard rules below.
    |-----------------------------|-----------------------------|
    | `--service=<name>`          | Step 1 (service)            |
    | `--framework=<type>`        | Step 2 (framework)          |
-   | `--env=<profile>`           | Step 3a (AWS profile)       |
-   | `--skip-test` or `--dry-run`| Step 3 (testing mode)       |
    | `--from-intake=<file>`      | All steps (file is the answer) |
 
    **No flag = ASK.** Do NOT reason "the user didn't pass `--framework`,
-   so I'll use the documented default `ccmv4`." Do NOT reason "the user
-   didn't pass `--env` or `--skip-test`, so I'll use the default
-   `skip`." If a flag is absent, the question MUST be asked.
+   so I'll use the documented default `ccmv4`." If a flag is absent, the
+   question MUST be asked.
 
    Documented defaults (in `POWER.md`, `defaults.yaml`, the
    orchestrator's flag table) apply ONLY when the user's chat reply
@@ -150,74 +147,7 @@ When `framework_type == null`, Phase 3 (Map) skips compliance-framework
 mapping entirely and produces only the threat-model mapping. The
 pipeline still completes — no halt, no error.
 
-## Step 3 — Testing preference (required)
-
-Ask, verbatim:
-
-```
-How do you want to validate the generated controls?
-
-  [A] Full deploy + validate  (mode: full-deploy)
-      Deploys the compliant resource template, waits for Config rule
-      evaluations, checks CloudWatch alarms, then tears down. Requires
-      an AWS CLI profile.
-
-  [B] Dry-run validation only (mode: dry-run)
-      Static checks only — terraform validate, cfn-lint, CDK tsc, CFN
-      Guard syntax, py_compile. No deployment.
-
-  [C] Skip testing            (mode: skip)
-      Stop after generation. Artifacts remain on disk for manual review.
-
-  [D] Manual CLI commands     (mode: manual-cli)
-      Skip Phase 5; Summarize appends per-format deploy commands
-      (terraform apply, cdk deploy, aws cloudformation deploy) to the
-      Summary Report so you can run them yourself later.
-
-Reply with A, B, C, or D. Default if blank: C.
-```
-
-End the turn with `>>> WAITING FOR YOUR REPLY`.
-
-Recording rules:
-
-| Reply | `testing.mode`  |
-|-------|-----------------|
-| A     | `"full-deploy"` |
-| B     | `"dry-run"`     |
-| C     | `"skip"`        |
-| D     | `"manual-cli"`  |
-
-### Step 3a — AWS profile (only if mode is `full-deploy` or `dry-run`)
-
-If `testing.mode == "full-deploy"`, ask, verbatim:
-
-```
-Which AWS CLI profile should I use for deployment?
-(Configured profiles live in ~/.aws/credentials and ~/.aws/config.)
-
-Reply with the profile name. Default region: us-east-1.
-```
-
-End the turn with `>>> WAITING FOR YOUR REPLY`. Record as
-`testing.aws_profile`. If the reply is empty or "none", downgrade
-`testing.mode` to `"skip"` and warn:
-"No profile provided — downgrading to mode: skip."
-
-If `testing.mode == "dry-run"`, ask, verbatim:
-
-```
-(Optional) AWS CLI profile for Tier-2 dry-run checks (cfn validate-template,
-IAM Access Analyzer)? Reply with the profile name, or "none" to skip
-Tier 2 and run static checks only.
-```
-
-End the turn with `>>> WAITING FOR YOUR REPLY`. Record as
-`testing.aws_profile` (or `null` if "none"). Do not downgrade mode here.
-
-For `mode in (skip, manual-cli)`: skip Step 3a. `aws_profile = null`.
-
-## Step 4 — Confirmation (final gate before manifest write)
+## Step 3 — Confirmation (final gate before manifest write)
 
 Render this summary verbatim, substituting collected values:
 
@@ -228,9 +158,6 @@ Render this summary verbatim, substituting collected values:
 │  Service:          {service_name}                           │
 │  Framework:        {framework_type or "MITRE-only"}         │
 │  Threat model:     MITRE ATT&CK (always-on)                 │
-│  Testing mode:     {testing.mode}                           │
-│  AWS profile:      {testing.aws_profile or "n/a"}           │
-│  Region:           {testing.region}                         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -254,8 +181,8 @@ Write outputs to:
 The intake manifest is consumed by every downstream phase — Phase 0 (Assess)
 reads `service` and `inputs.input_folder`; Phase 1 (Research) reads
 `output.include_attack_surface`; Phase 3 (Map) reads `inputs.framework_type`
-and `inputs.framework_file`; Phase 5 (Test) reads `testing.*`; Phase 6
-(Summarize) reads the full manifest for report metadata.
+and `inputs.framework_file`; Phase 5 (Summarize) reads the full manifest for
+report metadata.
 
 IaC format selection is NOT part of intake — it is discovered in Phase 0
 (Assess) Step 2b and recorded in `<slug>/01-assess/iac-support.json`.

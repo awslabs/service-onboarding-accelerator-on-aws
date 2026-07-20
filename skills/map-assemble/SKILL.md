@@ -179,8 +179,6 @@ skills; read them from the emitted `residual_gaps` array.
 ### Consumers
 
 Consumers of `threat_mitigation_map[]` entries:
-- `skills/test/SKILL.md` — mitigation coverage calculation reads
-  `entry.control_ids` (NOT `entry.controls`).
 - `skills/summarize/SKILL.md` — Summary Report coverage matrix reads
   `entry.coverage`, `entry.layers`, and `entry.residual_gaps`.
 - Framework mapping UI — reads `entry.framework_objectives`.

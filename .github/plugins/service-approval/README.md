@@ -1,6 +1,6 @@
 # Service Approval — Copilot Plugin
 
-Bundled GitHub Copilot plugin that generates AWS security controls for any AWS service via a 9-phase pipeline.
+Bundled GitHub Copilot plugin that generates AWS security controls for any AWS service via an Intake + 6-phase pipeline.
 
 ## What's in the bundle
 
@@ -8,7 +8,7 @@ Bundled GitHub Copilot plugin that generates AWS security controls for any AWS s
 |------|---------|
 | `../../agents/service-approval.agent.md` | Chat-mode agent (Copilot Chat in Agent mode) |
 | `../../prompts/service-approval.prompt.md` | `/service-approval` slash command |
-| `../../skills/*/SKILL.md` | 20 skills the agent loads progressively |
+| `../../skills/*/SKILL.md` | the skills the agent loads progressively |
 | `../../hooks/pipeline-integrity/` | sessionEnd hook — runs integrity checks |
 | `../../copilot-instructions.md` | Repo-wide rules (always-applied) |
 
@@ -27,14 +27,14 @@ For clean activation:
 ## Usage
 
 ```
-@service-approval ./input --service=s3 --env=my-profile
+@service-approval ./input --service=s3 --framework=ccmv4
 @service-approval --service=kms --dry-run
 ```
 
 Or via slash command:
 
 ```
-/service-approval --service=bedrock-agentcore-control --skip-test
+/service-approval --service=bedrock-agentcore-control
 ```
 
 ## Hard rules
@@ -115,7 +115,7 @@ Create `.vscode/mcp.json` if missing:
 
 ## Output
 
-- `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
+- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
 - `.service-approval/<slug>/05-recommended-guidance/` — all 78–111 generated artifacts
 - `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 

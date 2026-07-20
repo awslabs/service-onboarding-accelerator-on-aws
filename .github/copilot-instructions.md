@@ -1,19 +1,20 @@
 # Service Approval — GitHub Copilot Instructions
 
 ## How to invoke
-Type: `@service-approval [./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--dry-run]`
+Type: `@service-approval [./input-folder] [--service=<name>] [--framework=<ccmv4|nist|cis|iso>] [--dry-run]`
 
 Examples:
-- `@service-approval ./Hackathon --service=bedrock-agentcore-control --skip-test`
-- `@service-approval --service=s3 --env=my-dev-profile`
+- `@service-approval ./Hackathon --service=bedrock-agentcore-control`
+- `@service-approval --service=s3 --framework=ccmv4`
 
 Flags can also be expressed in natural language:
-- "run service approval for bedrock agentcore skipping the test phase"
-- "generate controls for s3 using the dev aws profile"
+- "run service approval for bedrock agentcore"
+- "generate controls for s3 against CCMv4"
 
 ## What it does
 Read the skill at `skills/service-approval/SKILL.md` and follow it step by step.
-Run 9 phases: Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence.
+Run the pipeline: Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize.
+It recommends controls + compliant IaC; you deploy them yourself.
 All state is written to `.service-approval/<service-slug>/` (per-service layout) in the current working directory.
 
 ## MCP servers
@@ -28,10 +29,9 @@ should use `aws-documentation` and `awsiac` instead. If the skill instructs you 
 `aws-cdk-mcp-server`, fall back to those two.
 
 ## Output
-- Final report: `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
+- Final report: `.service-approval/<service-slug>/06-summarize/SUMMARY-REPORT.md`
 - All controls: `.service-approval/<service-slug>/05-recommended-guidance/`
 - State files: `.service-approval/<service-slug>/` (per-phase subdirectories)
-- Evidence: `.service-approval/<service-slug>/08-evidence/` (if Phase 7 runs)
 
 ## Agent mode required
 This skill writes files and runs multi-step workflows. Use Copilot Chat in **Agent mode**,
@@ -39,7 +39,7 @@ not Ask mode.
 
 ## Hard rules — no shortcuts
 1. Never write a one-shot generator script that hardcodes state or controls. Run the
-   9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) as described
+   pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) as described
    in `skills/service-approval/SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP
    (`awsknowledge`, `aws-documentation`, `awsiac`). Hardcoded values from training data
