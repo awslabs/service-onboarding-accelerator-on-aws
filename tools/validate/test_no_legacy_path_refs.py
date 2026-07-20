@@ -156,19 +156,12 @@ _R17_PATTERNS = (
     _R17_SKIP_TEST_FLAG,
 )
 
-# The evidence tooling itself (tools/evidence/, its schemas, and the
-# decommissioned no-op validator) still names the retired phase dirs by
-# definition. It is slated for removal; until then it is allowlisted here so
-# R17 gates the *shipped skill/command/doc/power* surface — the surface that
-# actually regresses — rather than the evidence subsystem's own internals.
-# Remove these entries when tools/evidence/ and the evidence schemas are deleted.
+# The evidence/test subsystem that used to name these phase dirs has been
+# deleted (tools/evidence/, validate_evidence.py, the evidence schemas). Only
+# this test file legitimately names the retired-phase patterns now — everything
+# else is a real regression.
 _R17_ALLOWED_SUBSTRINGS = (
     "test_no_legacy_path_refs.py",   # this test names the patterns by definition
-    "tools/evidence/",               # decommissioned evidence tooling (pending removal)
-    "validate_evidence.py",          # decommissioned no-op validator
-    "schemas/deployed-resources.schema.json",
-    "schemas/cli-commands.schema.json",
-    "schemas/attestation-results.schema.json",
 )
 
 
