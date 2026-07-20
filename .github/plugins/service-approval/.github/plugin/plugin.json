@@ -1,6 +1,6 @@
 {
   "name": "service-approval",
-  "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence) mapped to CCMv4 (other frameworks deferred).",
+  "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) mapped to CCMv4 (other frameworks deferred).",
   "version": "1.0.0",
   "author": {
     "name": "Service Onboarding on AWS Team"
@@ -41,9 +41,7 @@
     "../../skills/generate-preventive",
     "../../skills/generate-detective",
     "../../skills/generate-iac",
-    "../../skills/test",
-    "../../skills/summarize",
-    "../../skills/evidence"
+    "../../skills/summarize"
   ],
   "hooks": [
     "../../hooks/pipeline-integrity"

@@ -33,11 +33,8 @@ CLAUDE.md
 .worktrees
 
 # Smoke test — local-only validation scripts and skills (not part of plugin distribution).
-# Exception: smoke-deploy-test.sh is the canonical Phase 5 deploy driver invoked
-# by skills/test/SKILL.md, so it IS shipped (negate-pattern below).
 scripts/smoke-*.py
 scripts/smoke-*.sh
-!scripts/smoke-deploy-test.sh
 scripts/smoke-scan-inputs.sh
 service-approval-plugin/skills/smoke-test/
 service-approval-plugin/kiro/agents/smoke-*.md

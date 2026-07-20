@@ -109,7 +109,9 @@ def _run_git_grep(pattern: str, root: Path, regex: bool = False) -> list[str]:
         args.append("-E")
     else:
         args.append("-F")
-    args.append(pattern)
+    # Pass the pattern via `-e` so patterns beginning with `-` (e.g. the
+    # `--skip-test` flag guard) are not parsed by git as options.
+    args.extend(["-e", pattern])
     result = subprocess.run(args, capture_output=True, text=True, cwd=str(root))
     if result.returncode != 0:
         return []
@@ -127,6 +129,47 @@ _R16_STATE_PASS3 = r"\.service-approval/[^\"'/ ]+/state([-/]|[\"' ])"
 _R16_CONTROLS_PASS1 = r"\.service-approval/controls[/\"']"
 _R16_CONTROLS_PASS2 = r"\.service-approval[\"'][^\"']*[\"']controls[\"']"
 _R16_CONTROLS_PASS3 = r"\.service-approval/[^\"'/ ]+/controls([-/]|[\"' ])"
+
+
+# ---------------------------------------------------------------------------
+# R17 — retired-phase guards.
+#
+# The pipeline no longer has a standalone "Generate" phase (renamed to
+# Recommended Guidance, dir 05-recommended-guidance), nor a live Test phase
+# (06-test / skills/test) or Evidence phase (08-evidence / skills/evidence).
+# Production code must not reference any of them again. Each pattern is a
+# POSIX-extended regex fed to `git grep -E`.
+# ---------------------------------------------------------------------------
+_R17_GENERATE_PHASE_DIR = r"05-generate([/\"' ]|$)"       # old Generate phase dir
+_R17_TEST_PHASE_DIR = r"0[0-9]-test([/\"' ]|$)"           # NN-test phase dir (e.g. 06-test)
+_R17_EVIDENCE_PHASE_DIR = r"0[0-9]-evidence([/\"' ]|$)"   # NN-evidence phase dir (e.g. 08-evidence)
+_R17_TEST_SKILL = r"skills/test([/\"' ]|$)"               # retired skills/test/ path
+_R17_EVIDENCE_SKILL = r"skills/evidence([/\"' ]|$)"       # retired skills/evidence/ path
+_R17_SKIP_TEST_FLAG = r"--skip-test([^a-z-]|$)"           # retired Test-phase flag (POSIX ERE; no \b)
+
+_R17_PATTERNS = (
+    _R17_GENERATE_PHASE_DIR,
+    _R17_TEST_PHASE_DIR,
+    _R17_EVIDENCE_PHASE_DIR,
+    _R17_TEST_SKILL,
+    _R17_EVIDENCE_SKILL,
+    _R17_SKIP_TEST_FLAG,
+)
+
+# The evidence tooling itself (tools/evidence/, its schemas, and the
+# decommissioned no-op validator) still names the retired phase dirs by
+# definition. It is slated for removal; until then it is allowlisted here so
+# R17 gates the *shipped skill/command/doc/power* surface — the surface that
+# actually regresses — rather than the evidence subsystem's own internals.
+# Remove these entries when tools/evidence/ and the evidence schemas are deleted.
+_R17_ALLOWED_SUBSTRINGS = (
+    "test_no_legacy_path_refs.py",   # this test names the patterns by definition
+    "tools/evidence/",               # decommissioned evidence tooling (pending removal)
+    "validate_evidence.py",          # decommissioned no-op validator
+    "schemas/deployed-resources.schema.json",
+    "schemas/cli-commands.schema.json",
+    "schemas/attestation-results.schema.json",
+)
 
 
 def _violations(matches: list[str], extra_filter=None) -> list[str]:
@@ -305,7 +348,8 @@ def _exercise_r16_trip(tmp_path, offending_line: str, patterns: list[str]) -> No
 
     results = [
         subprocess.run(
-            [git, "grep", "-nE", pat],
+            # `-e <pat>` so a pattern beginning with `-` isn't parsed as an option.
+            [git, "grep", "-nE", "-e", pat],
             capture_output=True, text=True, cwd=tmp_path,
         )
         for pat in patterns
@@ -365,7 +409,71 @@ def test_r16_controls_catches_dynamic_constructions(tmp_path, offending_line):
     )
 
 
+# ---------------------------------------------------------------------------
+# R17 — retired-phase reference guard
+# ---------------------------------------------------------------------------
+
+def _r17_allowed(file_path: str) -> bool:
+    """Return True if the file is allowed to name a retired phase (evidence tooling)."""
+    norm = file_path.replace("\\", "/")
+    if "/.git/" in norm:
+        return True
+    return any(sub in norm for sub in _R17_ALLOWED_SUBSTRINGS)
+
+
+def test_no_retired_phase_refs():
+    """Verify no `05-generate`, test-phase, or evidence-phase refs in production code.
+
+    After retiring the Test and Evidence phases and renaming Generate to
+    Recommended Guidance, the shipped skills, commands, docs, and power files
+    must not reference any of the removed phase directories, skill paths, or
+    the `--skip-test` flag. The evidence tooling that still names them is
+    allowlisted (see `_R17_ALLOWED_SUBSTRINGS`) pending its own removal.
+    """
+    root = _repo_root()
+
+    all_matches: list[str] = []
+    for pat in _R17_PATTERNS:
+        for m in _run_git_grep(pat, root, regex=True):
+            if m and m not in all_matches:
+                all_matches.append(m)
+
+    violations = []
+    for line in all_matches:
+        if ":" not in line:
+            continue
+        file_path = line.split(":", 1)[0]
+        if _r17_allowed(file_path):
+            continue
+        violations.append(line)
+
+    if violations:
+        msg = (
+            "R17 VIOLATION: Found references to a retired phase in production code.\n"
+            "The Test and Evidence phases were removed and Generate was renamed to\n"
+            "Recommended Guidance (05-recommended-guidance). Update the offending\n"
+            "reference; do not reintroduce 05-generate / NN-test / NN-evidence /\n"
+            "skills/test / skills/evidence / --skip-test.\n\n"
+            "Violations:\n" + "\n".join(f"  {v}" for v in violations)
+        )
+        raise AssertionError(msg)
+
+
+@pytest.mark.parametrize("offending_line,patterns", [
+    ('OUT = ".service-approval/awslambda/05-generate/preventive-plan.json"', [_R17_GENERATE_PHASE_DIR]),
+    ('OUT = ".service-approval/awslambda/06-test/test-results.json"', [_R17_TEST_PHASE_DIR]),
+    ('OUT = ".service-approval/awslambda/08-evidence/attestation-report.md"', [_R17_EVIDENCE_PHASE_DIR]),
+    ('run "skills/test/SKILL.md"', [_R17_TEST_SKILL]),
+    ('run "skills/evidence/SKILL.md"', [_R17_EVIDENCE_SKILL]),
+    ('argument_hint = "[--skip-test] [--dry-run]"', [_R17_SKIP_TEST_FLAG]),
+])
+def test_r17_catches_retired_phase_refs(tmp_path, offending_line, patterns):
+    """Every retired-phase pattern must trip on a synthetic violation."""
+    _exercise_r16_trip(tmp_path, offending_line, patterns)
+
+
 if __name__ == "__main__":
     test_no_legacy_state_refs()
     test_no_legacy_controls_refs()
-    print("R16 PASS: No legacy path references found.")
+    test_no_retired_phase_refs()
+    print("R16/R17 PASS: No legacy or retired-phase references found.")

@@ -145,7 +145,7 @@ toolTypes: ["write"]
 You are about to write to a file. If this write targets the pipeline state
 or controls directories, confirm: are you executing through the power's
 defined sub-skills (`sa-intake`, `sa-assess`, `sa-research-*`,
-`sa-validate`, `sa-map-*`, `sa-generate-*`, `sa-evidence`) as specified
+`sa-validate`, `sa-map-*`, `sa-generate-*`) as specified
 in `steering/pipeline.md`?
 
 If not, STOP and follow the skill-based execution path. Do not write

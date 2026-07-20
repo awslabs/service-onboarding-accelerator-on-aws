@@ -1,6 +1,6 @@
 # Service Approval — Kiro Power
 
-Kiro Power that generates AWS security controls for any AWS service via a 9-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to CCMv4 (other frameworks deferred).
+Kiro Power that generates AWS security controls for any AWS service via an Intake + 6-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to CCMv4 (other frameworks deferred).
 
 ## Install
 
@@ -39,9 +39,9 @@ Full parameter reference is in [`POWER.md`](POWER.md).
 ## What this Power does
 
 1. Reads customer inputs (`./input/` folder with .md, .json, .xlsx, .pdf, .docx)
-2. Runs a 9-phase pipeline (Intake, Assess, Research, Validate, Map, Generate, Test, Summarize, Evidence)
+2. Runs an Intake + 6-phase pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize)
 3. Writes state and artifacts to `.service-approval/<service-slug>/` (per-service layout) in the working directory
-4. Produces `SUMMARY-REPORT.md` with a framework-coverage matrix, plus optional CLI attestation evidence
+4. Produces `SUMMARY-REPORT.md` with a framework-coverage matrix. It recommends controls + compliant IaC that the customer deploys themselves.
 
 ## Pipeline
 
@@ -51,10 +51,8 @@ Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.jso
 Phase 1 Research     → <slug>/02-research/research.json (4 parallel sub-skills)
 Phase 2 Validate     → <slug>/03-validate/validated.json (cross-MCP verification)
 Phase 3 Map          → <slug>/04-map/mapping-results.json (+ framework-mapping.md)
-Phase 4 Generate     → <slug>/05-recommended-guidance/ (78–111 files across preventive/proactive/detective/responsive/iac)
-Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (mode set upfront in Intake)
-Phase 6 Summarize    → <slug>/07-summarize/SUMMARY-REPORT.md
-Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
+Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/ (78–111 files across preventive/proactive/detective/responsive/iac)
+Phase 5 Summarize    → <slug>/06-summarize/SUMMARY-REPORT.md
 ```
 
 Uses Kiro IDE's `/spawn` (Kiro CLI 2.0 also supports it; runtime path is being re-evaluated) for parallel execution in Phases 1, 3, and 4.
