@@ -1,6 +1,6 @@
 {
   "name": "service-approval",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Generate AWS security controls and compliant IaC for any AWS service. Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) mapped to CCMv4 (other frameworks deferred).",
   "author": {
     "name": "Service Onboarding on AWS Team"

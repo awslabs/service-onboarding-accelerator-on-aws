@@ -9,7 +9,7 @@
 # keywords), not the per-client manifests directly.
 
 name: service-approval
-version: 1.0.0
+version: 1.1.0
 description: >
   Generate AWS security controls and compliant IaC for any AWS service.
   Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended
