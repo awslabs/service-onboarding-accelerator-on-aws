@@ -45,14 +45,14 @@ permission boundary:
 | Identity policy | `iam-access-analyzer-custom-policy-check-samples`, `iam-policy-autopilot` | — |
 
 **Input:**
-- `.service-approval/<slug>/05-generate/preventive-plan.json` — rows where `decision == "GENERATE_IAM"`
+- `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` — rows where `decision == "GENERATE_IAM"`
 - `.service-approval/<slug>/04-map/mapping-results.json`, `03-validate/validated.json`
 - `data/reference-repos/index.yaml` (anchored to `iam-policy-autopilot`,
   `example-permissions-boundary`, `iam-access-analyzer-custom-policy-check-samples`,
   `data-perimeter-policy-examples`)
 
 **Output:** the per-mechanism files above under
-`.service-approval/<slug>/05-generate/preventive/`.
+`.service-approval/<slug>/05-recommended-guidance/preventive/`.
 
 ---
 
@@ -61,7 +61,7 @@ permission boundary:
 ```bash
 python3 - <<'PY'
 import json
-plan = json.load(open(".service-approval/<slug>/05-generate/preventive-plan.json"))
+plan = json.load(open(".service-approval/<slug>/05-recommended-guidance/preventive-plan.json"))
 rows = [d for d in plan["decisions"] if d["decision"] == "GENERATE_IAM"]
 assert all(r.get("anchor", {}).get("example_id") for r in rows), "un-anchored GENERATE_IAM row"
 print(f"{len(rows)} IAM-family controls to author")
@@ -127,12 +127,20 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
      case.
    - KMS key policies: `kms:ViaService` keyed to the consuming service.
 4. Stamp `_metadata.reference` (REQUIRED — the anchor gate hard-fails otherwise).
+5. Stamp `_metadata.applicability` — copy the plan row's `applicability` object
+   verbatim. Anchored IAM artifacts carry `anchor.url`, so the plan row carries
+   `applicability` and the reference-anchor validator hard-fails a URL-cited
+   artifact that omits it. (A refer-only trust-policy pointer ships no policy and
+   is exempt.)
 
 ## Required metadata
 
 Same shape as `generate-preventive-scp`, with `posture: "preventative-request"`
 and `scope`/`layer` from the control. `_metadata.reference.example_id` MUST equal
 the plan row's `anchor.example_id` and resolve in the index.
+`_metadata.applicability` MUST be copied verbatim from the plan row's
+`applicability` object (what the policy targets + how to use it, including where
+NOT to apply it).
 
 ## Action rule (hard)
 

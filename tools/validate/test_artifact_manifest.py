@@ -34,7 +34,7 @@ def test_summarize_declares_vendored_exclusions():
 
 
 def test_manifest_find_excludes_vendored_keeps_real(tmp_path: Path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     # real artifacts
     (gen / "preventive").mkdir(parents=True)
     (gen / "preventive" / "scp-policy.json").write_text("{}")

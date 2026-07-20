@@ -25,14 +25,14 @@ reference, or route the objective to a detective/proactive control instead.
 - (optional) Canopy threat-model — when one was provided for this service, its
   `mitigations[]` carry the control intent and citation; see "Sourcing order" below.
 
-**Output:** `.service-approval/<slug>/05-generate/preventive-plan.json` — the per-control
+**Output:** `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` — the per-control
 decision plan consumed by `generate-preventive-scp`, `-rcp`, and `-iam`.
 **Schema:** `schemas/preventive-plan.schema.json` — enforces the decision enum, the
 `CTRL-<SCOPE>-<CAT>-NNN` id pattern, and the rules that every `GENERATE_*` decision
 carries a non-null `anchor.example_id` and every `ROUTE_DETECTIVE` carries a `route_to`.
 Validated at write time by `validate_controls.py`.
 
-> This output lives in the `05-generate/` root, NOT in `preventive/`, so it is a
+> This output lives in the `05-recommended-guidance/` root, NOT in `preventive/`, so it is a
 > plan, not a policy artifact (the reference-anchor gate scans `preventive/*.json`).
 
 ---
@@ -43,7 +43,7 @@ Validated at write time by `validate_controls.py`.
 test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping: OK" || echo "ERROR"
 test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
 test -f data/reference-repos/index.yaml && echo "ref-index: OK" || echo "ERROR — build it: python3 tools/post-process/build_reference_index.py --repos-dir <clones>"
-mkdir -p .service-approval/<slug>/05-generate
+mkdir -p .service-approval/<slug>/05-recommended-guidance
 ```
 
 ---
@@ -226,7 +226,7 @@ Prefer an SCP/RCP path over a boundary where the control objective allows it.
 
 ## Step 3 — Emit the plan
 
-Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
+Write `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json`:
 
 ```json
 {
@@ -259,6 +259,10 @@ Write `.service-approval/<slug>/05-generate/preventive-plan.json`:
         "placeholders": ["<ORG_ID>", "<WORKLOAD_OU_ID>", "the function ARN pattern in Resource"],
         "test": "aws iam simulate-custom-policy / deploy to a sandbox account and confirm a non-compliant create is denied",
         "rollback": "Detach the SCP from the OU; no resource state changes are made by the policy"
+      },
+      "applicability": {
+        "applies_to": "Lambda functions matching the [INFRASTRUCTURE_AUTOMATION_PREFIX] ARN pattern in the Resource element — the functions your infrastructure-automation pipeline creates and manages",
+        "usage_notes": "Scope the Resource ARN pattern to only the automation-managed functions. Do NOT apply it across all functions: application teams that legitimately self-manage lambda:AddPermission / RemovePermission / UpdateFunctionCode on their own functions would be blocked. The excepted privileged automation role stays able to modify the targeted functions."
       }
     },
     {
@@ -334,6 +338,30 @@ Every emitted decision MUST carry:
   (they produce no preventive policy to apply). `build_preventive_coverage.py`
   carries this block into `preventive-coverage.json`, and `summarize` renders it
   in the Summary Report preventive section.
+- `applicability` (**when the decision surfaces a citation URL to the customer** —
+  `anchor.url` for `GENERATE_*` reference-anchored controls, or `citation.url` for
+  a `reference` / `service-doc` citation) — a two-field object that tells the
+  customer **what the cited policy targets and how to use it, including where NOT
+  to apply it**. It renders in the Summary Report **immediately after the cited
+  policy URL** and is stamped into the authored artifact's `_metadata.applicability`.
+  - `applies_to` — the **specific resource subset/type the policy targets and the
+    pattern that selects it**. Draw it from the control's real parameters /
+    condition keys and the reference example's placeholders (e.g. the ARN pattern
+    in the `Resource` element that scopes the deny), not generic prose. It is
+    service-agnostic: for one service it names which functions; for another, that
+    service's resource subset.
+  - `usage_notes` — how the customer is meant to use the policy, and it MUST state
+    the **caution about where NOT to apply it** — the case where over-applying the
+    policy would block a team that legitimately performs the gated actions on its
+    own resources. This is the sentence that keeps a customer from over-scoping.
+
+  Author `applicability` from the same real parameters you use for
+  `application_guidance.placeholders[]` and the reference example's placeholders —
+  never templated generic text. **Omit it for a canopy-only citation that carries
+  just an `id` and no URL** (there is no external link to clarify), and for
+  `ROUTE_DETECTIVE` rows (they surface no preventive policy). When a decision
+  surfaces a URL, `applicability` is required with non-empty `applies_to` +
+  `usage_notes` — the schema and the reference-anchor validator both enforce it.
 
 ## Step 4 — Hand-off summary
 
@@ -344,7 +372,7 @@ Preventive recommender complete — <service>:
   GENERATE_IAM:        N controls (anchored)
   REFER_TO_REFERENCE:  N controls (no anchor — see reference)
   ROUTE_DETECTIVE:     N controls (not preventable)
-  Plan: .service-approval/<slug>/05-generate/preventive-plan.json
+  Plan: .service-approval/<slug>/05-recommended-guidance/preventive-plan.json
 ```
 
 The authoring sub-skills read ONLY rows whose `decision` is `GENERATE_*` and

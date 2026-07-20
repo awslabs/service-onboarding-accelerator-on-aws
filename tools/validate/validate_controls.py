@@ -112,7 +112,7 @@ def _find_state_dir(file_path: str) -> dict[str, str] | None:
     """Walk up from file_path to find service root, return phase paths.
 
     In the new per-service-per-phase layout, controls live at
-    .service-approval/<slug>/05-generate/ and need to reference files in
+    .service-approval/<slug>/05-recommended-guidance/ and need to reference files in
     sibling phases like 04-map/, 03-validate/, 01-assess/.
 
     Delegates to tools.paths.find_service_root_for_file (regex-anchored to
@@ -1321,12 +1321,12 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
     """P8 per-file: a preventive policy artifact must carry a resolvable anchor.
 
     Only fires for files genuinely under a preventive/ directory (real
-    05-generate/preventive/ or legacy controls/preventive/), so tmp test files
+    05-recommended-guidance/preventive/ or legacy controls/preventive/), so tmp test files
     that merely share a SAR basename are not gated. Imported lazily so a missing
     module degrades to no-op rather than breaking the hook.
     """
     norm = file_path.replace("\\", "/")
-    if "/05-generate/preventive/" not in norm and "/controls/preventive/" not in norm:
+    if "/05-recommended-guidance/preventive/" not in norm and "/controls/preventive/" not in norm:
         return []
     try:
         from validate_reference_anchor import check_artifact  # type: ignore
@@ -1338,16 +1338,16 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
 def _categorize_file(file_path: str) -> str:
     """Determine artifact category from file path.
 
-    Recognizes both the current state layout (`05-generate/<category>/`,
+    Recognizes both the current state layout (`05-recommended-guidance/<category>/`,
     written since the <slug>/<NN>-<phase>/ reorg) and the legacy
     `controls/<category>/` layout (kept for migration-window compatibility).
-    Matching is on the `<category>/` segment so both `05-generate/preventive/`
+    Matching is on the `<category>/` segment so both `05-recommended-guidance/preventive/`
     and `controls/preventive/` resolve identically.
     """
     norm = file_path.replace("\\", "/")
 
     def _in(category: str) -> bool:
-        return f"/05-generate/{category}/" in norm or f"/controls/{category}/" in norm
+        return f"/05-recommended-guidance/{category}/" in norm or f"/controls/{category}/" in norm
 
     if _in("preventive"):
         return "preventive"
@@ -1448,7 +1448,7 @@ def validate_file(file_path: str) -> list[str]:
             return errors  # Already reported by syntax check
 
     # preventive-plan.json — the recommender's decision plan (gate artifact).
-    # Lives at 05-generate/ root (category "unknown"), so dispatch on basename
+    # Lives at 05-recommended-guidance/ root (category "unknown"), so dispatch on basename
     # before the category logic. Schema-validated; it is not a policy artifact.
     if basename == "preventive-plan.json" and data is not None:
         errors.extend(check_preventive_plan(data))

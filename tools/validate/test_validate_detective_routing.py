@@ -32,7 +32,7 @@ def test_uncovered_routed_objective_fails():
 
 
 def test_covered_but_missing_file_fails(tmp_path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     (gen / "detective").mkdir(parents=True)
     doc = _routing([
         {"control_id": "CTRL-ORG-PRV-007", "reason": "r", "covered_by": "config-rules.json"},
@@ -42,7 +42,7 @@ def test_covered_but_missing_file_fails(tmp_path):
 
 
 def test_covered_with_existing_file_passes(tmp_path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     det = gen / "detective"
     det.mkdir(parents=True)
     (det / "config-rules.json").write_text("{}")
@@ -53,7 +53,7 @@ def test_covered_with_existing_file_passes(tmp_path):
 
 
 def test_covered_by_list_all_present(tmp_path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     det = gen / "detective"
     det.mkdir(parents=True)
     (det / "config-rules.json").write_text("{}")
@@ -74,12 +74,12 @@ def test_no_coverage_check_when_generate_dir_none():
 
 def test_check_service_absent_file_is_noop(tmp_path):
     # No detective-routing.json → nothing routed → clean.
-    (tmp_path / "05-generate").mkdir(parents=True)
+    (tmp_path / "05-recommended-guidance").mkdir(parents=True)
     assert vdr.check_service(tmp_path) == []
 
 
 def test_check_service_reads_routing(tmp_path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     gen.mkdir(parents=True)
     (gen / "detective-routing.json").write_text(json.dumps(
         _routing([{"control_id": "CTRL-ORG-PRV-007", "reason": "r", "covered_by": None}])

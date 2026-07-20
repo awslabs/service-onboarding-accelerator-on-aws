@@ -661,13 +661,20 @@ Each entry MUST explain WHY it is not applicable.
 
 ---
 
-## Unmapped Service Controls
+## Controls Not Sourced from Canopy (Suggestions for Review)
 
-Controls that were generated but do not map to any framework objective.
+Controls that are NOT backed by a Canopy mitigation (`trace_source != "canopy"` — the
+assessment-gap / compensating controls). The main per-objective mapping cites only
+Canopy-sourced controls; these are surfaced separately as suggestions a reviewer should
+confirm against a specific AWS-documentation source. The `Source` column is a deep-link to
+the exact AWS doc page (threaded onto the control as `doc_reference` in
+map-generate-controls) so the suggestion is cross-checkable. Canopy-sourced controls —
+including a detective/responsive twin that shares a mitigation with an already-mapped
+control — belong in the main mapping (defense-in-depth), never here.
 
-| Control ID | Control Name | Category | Reason |
-|---|---|---|---|
-| {CTRL-ID} | {Full control name} | {category} | {reason why no framework objective applies} |
+| Control ID | Name | Source |
+|---|---|---|
+| {CTRL-ID} | {Full control name} | {specific AWS-doc reference, e.g. `[title](https://docs.aws.amazon.com/...#anchor)`} |
 
 ---
 
@@ -754,8 +761,10 @@ Techniques with HIGH or MEDIUM applicability that have NO mitigating controls.
 6. For the Not Applicable Objectives section, collect all objectives where status is NOT
    "MAPPED" and list them with their full titles and reasons.
 
-7. For the Unmapped Service Controls section, use `quality_gate_results.orphaned_controls`
-   from `map-framework-mapped.json`.
+7. For the "Controls Not Sourced from Canopy (Suggestions for Review)" section, list only
+   controls with `trace_source != "canopy"` (assessment-gap / compensating controls) and
+   render each control's `doc_reference` in the Source column. Canopy-sourced controls are
+   never listed here — they belong in the main mapping.
 
 8. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to
    `framework_gap` type entries.

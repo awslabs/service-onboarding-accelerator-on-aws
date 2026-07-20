@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas/preventive-plan.schema.json",
   "title": "preventive-plan.json",
-  "description": "Authoritative shape for the preventive recommender's decision plan. Produced by skills/generate-preventive-recommend at .service-approval/<slug>/05-generate/preventive-plan.json. Consumed by the preventive authoring sub-skills (generate-preventive-scp/-rcp/-iam) and the root-cause critic. The plan is the gate: each GENERATE_* decision MUST carry a non-null anchor; ROUTE_DETECTIVE / REFER_TO_REFERENCE decisions carry no anchor. additionalProperties:false at top level and inside decisions[] to catch drift; permissive inside _metadata.",
+  "description": "Authoritative shape for the preventive recommender's decision plan. Produced by skills/generate-preventive-recommend at .service-approval/<slug>/05-recommended-guidance/preventive-plan.json. Consumed by the preventive authoring sub-skills (generate-preventive-scp/-rcp/-iam) and the root-cause critic. The plan is the gate: each GENERATE_* decision MUST carry a non-null anchor; ROUTE_DETECTIVE / REFER_TO_REFERENCE decisions carry no anchor. additionalProperties:false at top level and inside decisions[] to catch drift; permissive inside _metadata.",
   "type": "object",
   "additionalProperties": false,
   "required": ["_metadata", "decisions"],
@@ -115,6 +115,16 @@
             "test": {"type": "string"},
             "rollback": {"type": "string"}
           }
+        },
+        "applicability": {
+          "$comment": "What resource subset the cited policy targets and how to use it — including where NOT to apply it. Expected when the decision surfaces a citation URL (anchor.url or citation.url); omit for a canopy-only citation with no URL. applies_to = the specific resource subset/type the policy targets and the pattern that selects it, drawn from the control's real parameters/condition keys and the reference example's placeholders. usage_notes = how the customer is meant to use it, including the caution about where NOT to apply it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applies_to", "usage_notes"],
+          "properties": {
+            "applies_to": {"type": "string", "minLength": 1},
+            "usage_notes": {"type": "string", "minLength": 1}
+          }
         }
       },
       "allOf": [
@@ -146,6 +156,19 @@
               "route_to": {"type": "string", "enum": ["detective", "proactive"]}
             },
             "required": ["route_to"]
+          }
+        },
+        {
+          "$comment": "When a preventive decision surfaces a citation URL to the customer, applicability MUST be present (with non-empty applies_to + usage_notes) so the report can explain what the cited policy targets and where not to apply it. Excludes ROUTE_DETECTIVE — a routed objective surfaces no preventive policy to clarify even when its citation carries a service-doc URL. The anchor.url case is enforced deterministically in validate_reference_anchor.py (cross-two-url conditionals are awkward in pure JSON Schema).",
+          "if": {
+            "properties": {
+              "citation": {"required": ["url"]},
+              "decision": {"not": {"const": "ROUTE_DETECTIVE"}}
+            },
+            "required": ["citation"]
+          },
+          "then": {
+            "required": ["applicability"]
           }
         }
       ]

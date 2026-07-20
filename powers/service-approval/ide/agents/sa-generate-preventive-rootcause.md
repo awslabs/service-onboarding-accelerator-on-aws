@@ -11,4 +11,4 @@ tools:
 
 Follow the instructions in `skills/generate-preventive-rootcause/SKILL.md`.
 
-Run LAST in the preventive sub-pipeline. Run validate_reference_anchor.py and validate_preventability.py over `.service-approval/<slug>/05-generate/preventive/`, prove every artifact is anchored and enforcing, remove non-enforcing artifacts and route their objectives to detective, and write rootcause-report.json.
+Run LAST in the preventive sub-pipeline. Run validate_reference_anchor.py and validate_preventability.py over `.service-approval/<slug>/05-recommended-guidance/preventive/`, prove every artifact is anchored and enforcing, remove non-enforcing artifacts and route their objectives to detective, and write rootcause-report.json.

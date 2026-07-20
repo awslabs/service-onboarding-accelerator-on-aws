@@ -205,7 +205,7 @@ def test_assess_artifact_skips_non_policy(tmp_path):
 
 
 def test_assess_preventive_dir_end_to_end(tmp_path):
-    prev = tmp_path / "slug" / "05-generate" / "preventive"
+    prev = tmp_path / "slug" / "05-recommended-guidance" / "preventive"
     prev.mkdir(parents=True)
     (tmp_path / "slug" / "01-assess").mkdir(parents=True)
     (tmp_path / "slug" / "01-assess" / "sar-facts.json").write_text(json.dumps({

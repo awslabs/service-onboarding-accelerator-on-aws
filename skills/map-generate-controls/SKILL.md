@@ -308,14 +308,43 @@ will fail the hook.
 
 Assign each control a primary **category** (X-axis) and a **scope level** (Y-axis):
 
-**Categories (X-axis):**
+**Categories (X-axis) — canonical definitions.** Each category is defined by
+*what it does* (purpose) and the AWS *implementation primitives* that realise it.
+This is the single authoritative definition of the four categories; the
+customer-facing `controls-catalog.md` renders the same purpose text.
+
+| Category | Code | Purpose | Implementation primitives |
+|----------|------|---------|---------------------------|
+| Proactive | PRO | Validate resource configuration *before creation* and block non-compliant resources from being created | CloudFormation Hooks (via Control Tower), CloudFormation Guard (CI/CD), OPA rules (CI/CD) |
+| Preventative | PRV | Stop non-compliant *actions* — hard guardrails that deny API calls regardless of the caller's IAM permissions | SCPs (org), RCPs (resource), Declarative Policies (service), IAM permissions boundaries (entity), VPC endpoint policies |
+| Detective | DET | Identify non-compliance *after deployment* | AWS Config rules, Security Hub controls, GuardDuty findings, CloudTrail, Amazon Inspector |
+| Corrective (Responsive) | COR | Remediate after detection | SSM Automation runbooks, Config auto-remediation (→ SSM), Lambda remediation, Security Hub automated response, EventBridge → remediation workflows |
+
+**Category ↔ posture correspondence.** This pipeline carries two vocabularies for
+the same distinction: the four control *categories* above (PRO/PRV/DET/COR, the
+schema enum on `controls[].category`) and the four *postures* on
+`controls[].posture` (§2.2.1). They map one-to-one:
+
+| Category | Posture |
+|----------|---------|
+| PRO (Proactive) | `preventative-proactive` |
+| PRV (Preventative) | `preventative-request` |
+| DET (Detective) | `reactive-detective` |
+| COR (Corrective/Responsive) | `reactive-corrective` |
+
+Use the spelling **"preventative"** in prose throughout (the posture vocabulary
+already does); the schema code stays `PRV`. "Responsive" is the short label used
+for the COR column and the scope-matrix axis; "Corrective" is its category name.
+
+The Examples-oriented restatement below keeps the previous phrasing for quick
+reference — the purpose + primitives table above is authoritative:
 
 | Category | Code | Definition | Examples |
 |----------|------|-----------|----------|
 | Proactive | PRO | Prevents non-compliant resources from being created | CFN Guard, SCP deny, Config proactive rules, OPA |
-| Preventive | PRV | Blocks unauthorized actions at runtime | IAM policies, resource policies, SCPs, VPC SGs, KMS key policies |
+| Preventative | PRV | Blocks unauthorized actions at runtime | IAM policies, resource policies, SCPs, VPC SGs, KMS key policies |
 | Detective | DET | Identifies non-compliant or suspicious state after the fact | Config rules, CloudTrail analysis, CloudWatch alarms |
-| Corrective | COR | Automatically remediates non-compliant state (Responsive controls) | SSM runbooks, Lambda remediation, EventBridge workflows |
+| Corrective (Responsive) | COR | Automatically remediates non-compliant state | SSM runbooks, Lambda remediation, EventBridge workflows |
 
 **Scope Levels (Y-axis):**
 
@@ -496,6 +525,35 @@ cannot be implemented:
 - Describe what compensating measures should be taken
 - Include in the controls array like any other control
 
+### 2.8.1 Doc reference for non-Canopy controls (`doc_reference`)
+
+Controls that are NOT sourced from a Canopy mitigation (`trace_source: "assessment_gap"` —
+the compensating / assessment-gap controls from §2.6 and §2.8) do not carry a Canopy
+citation, so the framework-mapping report cites an **AWS documentation** source for them
+instead. Attach a `doc_reference` to every such control:
+
+```json
+"doc_reference": {
+  "url": "https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_rcps.html#rcp-supported-services",
+  "title": "AWS Organizations — List of AWS services that support RCPs"
+}
+```
+
+Rules:
+- The `url` MUST be a real `https://docs.aws.amazon.com/...` page, **MCP-verified**
+  (`awsknowledge` / `aws-documentation`) and logged to `mcp-calls.log` — never a
+  training-data guess (see "Verify, never hardcode").
+- Make it **as specific as possible** so a reviewer can cross-check it: deep-link to the
+  exact page and, where the page has one, the `#section` anchor for the relevant list or
+  section (e.g. the RCP supported-services list, the declarative-policy supported-services
+  list) rather than a service landing page.
+- Pick the page that documents *why* the compensating control exists — typically the AWS
+  doc that establishes the capability gap the control compensates for (e.g. the RCP or
+  declarative-policy supported-services list when the service is absent from it).
+- Canopy-sourced controls (`trace_source: "canopy"`) do NOT get a `doc_reference` — they
+  cite their Canopy mitigation. `doc_reference` is optional in the schema and present only
+  on non-Canopy controls.
+
 ---
 
 ## Phase 3: Mitigation Coverage Completeness Check (MANDATORY)
@@ -531,6 +589,80 @@ if uncovered:
 
 ---
 
+## Phase 3b: Mitigation Intent Tagging (MANDATORY)
+
+After generating all controls and verifying mitigation coverage, tag each control with
+a canonical `mitigation_intent` and `security_domain` derived from its source mitigation
+statement. This step is **deterministic** — no LLM reasoning needed.
+
+**Input:** `data/mitigation-intent-patterns.json` — controlled vocabulary of ~20 intent
+patterns with `match_statements[]` (case-insensitive substring/regex patterns matched
+against the mitigation `statement` field).
+
+**Algorithm:**
+1. For each control, find its source mitigation(s) via `mitigation_ids[]`
+2. For each source mitigation, get the `statement` text from `validated.json.existing_mitigations[]`
+3. Match the statement against `data/mitigation-intent-patterns.json` patterns (first match wins)
+4. Set `mitigation_intent` = matched pattern's `intent_id`
+5. Set `security_domain` = matched pattern's `security_domain`
+6. If no pattern matches, set `mitigation_intent` = `"unclassified"` and
+   `security_domain` = `null` — the mapping skill will flag these for manual review
+
+**Example:**
+- Mitigation statement: "An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)"
+- Matches pattern: `"encrypted with an AWS KMS Customer Managed Key"`
+- Result: `mitigation_intent: "cmk_encryption"`, `security_domain: "data_protection_at_rest"`
+
+**Why this matters:** The `mitigation_intent` field constrains downstream framework mapping.
+A control tagged `cmk_encryption` can only map to objectives in the encryption/data-protection
+domains — it CANNOT be mapped to IAM, logging, or network objectives regardless of keyword overlap.
+
+When a control traces to multiple mitigations with different intents (e.g., a consolidated
+Config rule), use the intent of the **primary mitigation** (first in `mitigation_ids[]` array).
+
+---
+
+## Phase 3c: Canopy Traceability Threading (MANDATORY)
+
+After intent tagging, thread the source mitigation's Canopy identity and MITRE ATT&CK
+techniques onto each control. This step is **deterministic** — the MITRE techniques are
+recovered from the Canopy source, never invented or fetched from an external service.
+
+**Why.** A Canopy mitigation carries an `alias` (e.g. `Mitigation.LAMBDA.Function.1`) and a
+UUID; the MITRE ATT&CK technique IDs live on the *threat* objects the mitigation addresses.
+Threading these onto controls lets the final `framework-mapping.md` cite the exact Canopy
+mitigation and MITRE technique behind every mapped row.
+
+**Resolver:** `scripts/canopy_trace.py` walks the golden-source chain
+`mitigation.mappings[type=="THREAT"].id → threats[].id → threat.mappings[type=="FRAMEWORK",
+frameworkName=="MITRE ATT&CK"].id` to build, per mitigation, `{alias, statement,
+mitre_techniques[], threat_aliases[]}`.
+
+**Algorithm:**
+1. For each control, collect the `alias` of each source mitigation (from
+   `validated.json.existing_mitigations[]`, matched by `mitigation_ids[]`) and stamp it as
+   `mitigation_aliases[]` on the control.
+2. Run the resolver over the Canopy input and thread onto each control (additive fields):
+   ```python
+   import importlib.util, json
+   spec = importlib.util.spec_from_file_location("canopy_trace", "scripts/canopy_trace.py")
+   ct = importlib.util.module_from_spec(spec); spec.loader.exec_module(ct)
+   canopy = json.load(open("<the Canopy input json>"))   # the intake threat-model file
+   ct.thread_controls(controls, canopy)
+   ```
+   Each control gains `mitigation_alias`, `mitigation_aliases[]`, `mitigation_uuid`,
+   `mitigation_uuids[]`, `mitre_techniques[]`, and `trace_source: "canopy"`.
+3. **No-Canopy / synthetic controls.** A control derived from an assessment gap (no real
+   Canopy mitigation behind it) has no resolvable alias — the resolver marks it
+   `trace_source: "assessment_gap"` with an empty `mitre_techniques[]`. This is expected,
+   not an error.
+
+**Provenance note:** `mitre_techniques[]` here is resolved deterministically from the Canopy
+source and is authoritative for downstream citation. It is distinct from the heuristic
+`attack_techniques[]` (§2.7), which is derived by action/mechanism alignment; keep both.
+
+---
+
 ## Phase 4: Write Output
 
 Write `.service-approval/<slug>/04-map/map-controls-generated.json`:
@@ -556,7 +688,9 @@ Write `.service-approval/<slug>/04-map/map-controls-generated.json`:
       "resource_types": ["AWS::<Service>::<Resource>"],
       "assessment_gap_ids": [],
       "security_rationale": "...",
-      "framework_keywords": ["encryption", "key management"]
+      "framework_keywords": ["encryption", "key management"],
+      "mitigation_intent": "cmk_encryption",
+      "security_domain": "data_protection_at_rest"
     }
   ],
   "control_summary": {

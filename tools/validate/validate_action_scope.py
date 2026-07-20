@@ -241,8 +241,8 @@ def main() -> None:
 
     if args.slug:
         base = Path(os.getcwd()) / ".service-approval" / args.slug
-        preventive_dir = Path(args.preventive_dir or base / "05-generate" / "preventive")
-        plan_path = args.plan or base / "05-generate" / "preventive-plan.json"
+        preventive_dir = Path(args.preventive_dir or base / "05-recommended-guidance" / "preventive")
+        plan_path = args.plan or base / "05-recommended-guidance" / "preventive-plan.json"
         mapping_path = args.mapping or base / "04-map" / "mapping-results.json"
     else:
         if not (args.preventive_dir and args.plan and args.mapping):

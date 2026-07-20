@@ -48,8 +48,32 @@
         "title": {"type": "string"},
         "status": {
           "type": "string",
-          "enum": ["MAPPED", "N/A"],
-          "description": "iter-14 Class F15-revised: EXACTLY 'MAPPED' or 'N/A'. No 'UNMAPPED', 'NOT_APPLICABLE', 'n/a' variants — validator CHECK-S13 rejects them."
+          "enum": ["MAPPED", "N/A", "UNCERTAIN"],
+          "description": "'MAPPED' (a confident, cited mapping), 'N/A' (not applicable), or 'UNCERTAIN' (the mapper believes there is a relationship but cannot produce a concrete citation — surfaced for review, excluded from coverage %, never silently asserted or dropped). No 'UNMAPPED'/'NOT_APPLICABLE'/'n/a' variants."
+        },
+        "review_reason": {
+          "type": "string",
+          "description": "Required on an UNCERTAIN row: why the mapper could not produce a concrete citation (what linkage is missing)."
+        },
+        "citation": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Optional per-objective citation naming the evidence for the mapping (may also live per-control). objective_requirement + source make it concrete.",
+          "properties": {
+            "objective_requirement": {"type": "string"},
+            "source": {"type": "string"},
+            "mechanism_class": {"type": "string"}
+          }
+        },
+        "mitre_techniques": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "MITRE ATT&CK technique ids resolved from the Canopy source for the mapped controls."
+        },
+        "mitigation_refs": {
+          "type": "array",
+          "items": {"type": "object", "additionalProperties": true},
+          "description": "Canopy mitigation references (alias + uuid) the mapping cites."
         },
         "coverage": {
           "type": "string",
@@ -81,7 +105,23 @@
                 "enum": ["Full Coverage", "Partial Coverage", "Supportive", "High", "Medium", "Low"],
                 "description": "Preferred values: 'Full Coverage', 'Partial Coverage', 'Supportive'. Legacy values (High, Medium, Low) accepted for backward compatibility with archived runs."
               },
-              "rationale": {"type": "string", "minLength": 1}
+              "rationale": {"type": "string", "minLength": 1},
+              "review_reason": {"type": "string"},
+              "citation": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Evidence for this control's mapping: the specific objective sub-requirement satisfied + its source (canopy | assessment_gap | aws_doc), optionally the mitigation alias/uuid and MITRE techniques. Presence of objective_requirement + source is what makes a MAPPED row a confident (non-UNCERTAIN) mapping.",
+                "properties": {
+                  "control_id": {"type": "string"},
+                  "mechanism_class": {"type": "string"},
+                  "objective_requirement": {"type": "string"},
+                  "mitigation_alias": {"type": "string"},
+                  "mitigation_uuid": {"type": "string"},
+                  "mitre_techniques": {"type": "array", "items": {"type": "string"}},
+                  "anchored_to": {"type": "string"},
+                  "source": {"type": "string"}
+                }
+              }
             }
           }
         }

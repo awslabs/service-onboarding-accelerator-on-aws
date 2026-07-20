@@ -346,22 +346,10 @@ def test_iac_parameterized_passes(tmp_path: Path) -> None:
 
 
 def test_phase_outputs_missing_required_artifact_fails(tmp_path: Path) -> None:
-    """An evidence dir that ran but lacks its required artifacts is a P7 error."""
-    (tmp_path / "08-evidence").mkdir()
+    """A phase dir that ran but lacks its required artifacts is a P7 error."""
+    (tmp_path / "06-summarize").mkdir()
     errors = check_phase_outputs(tmp_path)
-    assert any("P7" in e and "cli-commands.json" in e for e in errors)
-
-
-def test_phase_outputs_skip_sentinel_suppresses_errors(tmp_path: Path) -> None:
-    """A phase that wrote phase-skipped.json deliberately skipped itself; its
-    required outputs are not expected (e.g. Evidence after a dry-run Test)."""
-    evidence = tmp_path / "08-evidence"
-    evidence.mkdir()
-    (evidence / "phase-skipped.json").write_text(
-        '{"phase": "evidence", "skipped": true, "skip_reason": "dry-run"}'
-    )
-    errors = check_phase_outputs(tmp_path)
-    assert not any("08-evidence" in e for e in errors)
+    assert any("P7" in e and "SUMMARY-REPORT.md" in e for e in errors)
 
 
 # ---------- P9: ARN resource-delimiter validation ----------
@@ -439,7 +427,7 @@ def test_arn_delimiter_missing_delimiter_flagged() -> None:
 
 
 def _write_preventive_artifact(root: Path, name: str, statements: list) -> None:
-    prev = root / "05-generate" / "preventive"
+    prev = root / "05-recommended-guidance" / "preventive"
     prev.mkdir(parents=True, exist_ok=True)
     (prev / name).write_text(json.dumps({"Version": "2012-10-17", "Statement": statements}))
 
@@ -484,7 +472,7 @@ def test_check_arn_shapes_clean_artifact_passes(tmp_path: Path) -> None:
 
 
 _FINALIZED_LINE = (
-    "2026-06-18T01:19:00Z [07-summarize] [pipeline:complete:FINALIZED]  done\n"
+    "2026-06-18T01:19:00Z [06-summarize] [pipeline:complete:FINALIZED]  done\n"
 )
 
 
@@ -632,7 +620,7 @@ def test_boundary_escalation_action_flagged(tmp_path: Path) -> None:
 def test_boundary_detected_by_metadata_not_just_filename(tmp_path: Path) -> None:
     """A boundary artifact under a non-obvious filename is still checked when its
     _metadata marks it a permission boundary."""
-    prev = tmp_path / "05-generate" / "preventive"
+    prev = tmp_path / "05-recommended-guidance" / "preventive"
     prev.mkdir(parents=True)
     (prev / "pb.json").write_text(json.dumps({
         "_metadata": {"mechanism": "IAM Permission Boundary", "layer": "preventive"},
@@ -750,15 +738,15 @@ def test_validate_pipeline_aggregates_errors(tmp_path: Path) -> None:
 
     # Create phase directories
     (service / "03-validate").mkdir()
-    (service / "05-generate").mkdir()
-    (service / "05-generate" / "preventive").mkdir()
+    (service / "05-recommended-guidance").mkdir()
+    (service / "05-recommended-guidance" / "preventive").mkdir()
 
     # Trigger P1 (missing mcp-calls.log at service root)
     # No mcp-calls.log created → will fail P1
 
     # Trigger P3 (SCP without at least one Deny)
     _write_policy(
-        service / "05-generate",
+        service / "05-recommended-guidance",
         "scp-baseline.json",
         {"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]},
     )
@@ -777,7 +765,7 @@ def test_pipeline_complete_sentinel_in_message_does_not_close_p1(tmp_path: Path)
     counts. This protects against the validator getting tricked by skill prose
     that happens to quote the sentinel."""
     leaked = (
-        "2026-05-14T18:32:01Z [07-summarize] [skill:summarize:end]  "
+        "2026-05-14T18:32:01Z [06-summarize] [skill:summarize:end]  "
         "wrote `[pipeline:complete:FINALIZED]` reference to docs only\n"
     )
     (tmp_path / "pipeline.log").write_text(leaked)
@@ -790,7 +778,7 @@ def test_pipeline_complete_sentinel_at_source_tag_closes_p1(tmp_path: Path) -> N
     """The real sentinel format closes out P1 retroactively — finalized runs
     are exempt because the file is frozen at that point."""
     line = (
-        "2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:FINALIZED]  "
+        "2026-05-14T18:32:01Z [06-summarize] [pipeline:complete:FINALIZED]  "
         "summarize finalized\n"
     )
     (tmp_path / "pipeline.log").write_text(line)
@@ -803,7 +791,7 @@ def test_pipeline_complete_sentinel_unknown_token_is_ignored(tmp_path: Path) -> 
     finalizes the run."""
     for token in ("APPROVED", "UNCLEAR", "DONE"):
         line = (
-            f"2026-05-14T18:32:01Z [07-summarize] [pipeline:complete:{token}]  "
+            f"2026-05-14T18:32:01Z [06-summarize] [pipeline:complete:{token}]  "
             f"weird state\n"
         )
         (tmp_path / "pipeline.log").write_text(line)
@@ -850,7 +838,7 @@ def test_wildcard_only_loader_skips_bare_actions_when_prefix_empty(tmp_path: Pat
         "wildcard_only_actions": ["BareAction"],
         "actions": [{"name": "AnotherBare", "resource_types": []}],
     }))
-    controls_dir = tmp_path / "05-generate"
+    controls_dir = tmp_path / "05-recommended-guidance"
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     # Cross-service entries are still present, but no malformed ":Action" entries.
@@ -866,7 +854,7 @@ def test_wildcard_only_loader_qualifies_with_prefix(tmp_path: Path) -> None:
         "service_prefix": "datasync",
         "wildcard_only_actions": ["DescribeAgent"],
     }))
-    controls_dir = tmp_path / "05-generate"
+    controls_dir = tmp_path / "05-recommended-guidance"
     controls_dir.mkdir()
     out = _load_wildcard_only_actions(controls_dir)
     assert "datasync:DescribeAgent" in out
@@ -892,9 +880,9 @@ def test_confidence_key_in_map_json_fails(tmp_path: Path) -> None:
 
 
 def test_run_confidence_key_in_generate_json_fails(tmp_path: Path) -> None:
-    """A `run_confidence` key under 05-generate/ fails P11."""
+    """A `run_confidence` key under 05-recommended-guidance/ fails P11."""
     from validate_pipeline_integrity import check_no_confidence_scoring
-    gen_dir = tmp_path / "05-generate" / "preventive"
+    gen_dir = tmp_path / "05-recommended-guidance" / "preventive"
     gen_dir.mkdir(parents=True)
     (gen_dir / "summary.json").write_text(json.dumps({"run_confidence": 0.7}))
     errors = check_no_confidence_scoring(tmp_path)
@@ -904,7 +892,7 @@ def test_run_confidence_key_in_generate_json_fails(tmp_path: Path) -> None:
 def test_confidence_band_in_report_md_fails(tmp_path: Path) -> None:
     """A confidence band attached to 'confidence' in the report fails P11."""
     from validate_pipeline_integrity import check_no_confidence_scoring
-    sm_dir = tmp_path / "07-summarize"
+    sm_dir = tmp_path / "06-summarize"
     sm_dir.mkdir()
     (sm_dir / "SUMMARY-REPORT.md").write_text(
         "# Report\n\n| Control | Confidence |\n|--|--|\n"
@@ -922,7 +910,7 @@ def test_confidence_word_without_band_passes(tmp_path: Path) -> None:
     in reports — it lives once in the README — but even if the word 'confidence'
     shows up in prose, the band-token requirement keeps the check from firing."""
     from validate_pipeline_integrity import check_no_confidence_scoring
-    sm_dir = tmp_path / "07-summarize"
+    sm_dir = tmp_path / "06-summarize"
     sm_dir.mkdir()
     (sm_dir / "SUMMARY-REPORT.md").write_text(
         "# Report\n\n> The verification steps that build confidence are described "

@@ -83,7 +83,7 @@ def _condition_keys(stmt: dict) -> set[str]:
 
 def _collect_policy_statements(generate_dir: Path) -> list[dict]:
     """Collect {file, sid, effect, actions[], condition_keys[]} for every policy
-    statement under 05-generate/ (preventive + proactive JSON policies)."""
+    statement under 05-recommended-guidance/ (preventive + proactive JSON policies)."""
     out: list[dict] = []
     if not generate_dir.is_dir():
         return out
@@ -169,7 +169,7 @@ def find_candidates(statements: list[dict]) -> list[dict]:
 
 def build_prefilter_report(service_root: Path) -> dict:
     """Build the candidate-only conflict report (judge fills in verdicts)."""
-    generate_dir = service_root / "05-generate"
+    generate_dir = service_root / "05-recommended-guidance"
     statements = _collect_policy_statements(generate_dir)
     candidates = find_candidates(statements)
     return {

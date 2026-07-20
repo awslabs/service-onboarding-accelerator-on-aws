@@ -8,7 +8,7 @@ artifact must trace to a known-good example in the reference index
 the gate that makes "we only generate when we can anchor to a reference"
 checkable rather than aspirational.
 
-Rule: every policy artifact under <slug>/05-generate/preventive/ MUST carry a
+Rule: every policy artifact under <slug>/05-recommended-guidance/preventive/ MUST carry a
 `_metadata.reference` whose `example_id` resolves to a real entry in the
 reference index. An artifact with no resolvable anchor is a hard failure.
 
@@ -91,6 +91,52 @@ def _is_gap_or_stub(meta: dict, data: dict) -> bool:
     statements = data.get("Statement")
     body_empty = not statements  # None or []
     return has_gap_note and body_empty
+
+
+def _surfaces_url(meta: dict) -> bool:
+    """True when the artifact surfaces a citation/reference URL to the customer.
+
+    An artifact surfaces a URL when its resolved reference anchor carries one
+    (`_metadata.reference.url`) or its citation carries one
+    (`_metadata.citation.url`). When it does, the report links the customer out
+    to that policy, so the artifact MUST carry an applicability block explaining
+    what the cited policy targets and where not to apply it.
+    """
+    reference = meta.get("reference")
+    if isinstance(reference, dict) and str(reference.get("url", "")).strip():
+        return True
+    citation = meta.get("citation")
+    if isinstance(citation, dict) and str(citation.get("url", "")).strip():
+        return True
+    return False
+
+
+def _applicability_errors(basename: str, meta: dict) -> list[str]:
+    """Enforce: a URL-surfacing artifact must carry a non-empty applicability.
+
+    Tied to the presence of a customer-facing URL (see `_surfaces_url`). A
+    canopy-only artifact with just an id and no URL is exempt — there is no
+    external link to clarify.
+    """
+    if not _surfaces_url(meta):
+        return []
+    applicability = meta.get("applicability")
+    if not isinstance(applicability, dict):
+        return [
+            f"P8 reference_anchor: {basename} surfaces a citation/reference URL "
+            f"but carries no _metadata.applicability. A cited preventive policy "
+            f"must state what resource subset it targets (applies_to) and how to "
+            f"use it, including where NOT to apply it (usage_notes)."
+        ]
+    errors: list[str] = []
+    for field in ("applies_to", "usage_notes"):
+        if not str(applicability.get(field, "")).strip():
+            errors.append(
+                f"P8 reference_anchor: {basename} has _metadata.applicability but "
+                f"its '{field}' is empty. Both applies_to and usage_notes must be "
+                f"non-empty for a URL-cited preventive policy."
+            )
+    return errors
 
 
 def _is_authored_policy(data: dict) -> bool:
@@ -267,13 +313,17 @@ def check_artifact(
             f"source_control_id '{sid}' which does not exist in "
             f"mapping-results.json — orphan artifact."
         )
+
+    # A cited (URL-surfacing) preventive policy must explain what it targets and
+    # where not to apply it — the applicability block.
+    errors.extend(_applicability_errors(basename, meta))
     return errors
 
 
 def check_service(service_root: Path) -> list[str]:
     """Validate every preventive artifact under a service root. Returns errors."""
     errors: list[str] = []
-    prev_dir = service_root / "05-generate" / "preventive"
+    prev_dir = service_root / "05-recommended-guidance" / "preventive"
     if not prev_dir.is_dir():
         return errors
     ids = _known_ids()

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/domain-mapping-guidance.schema.json",
+  "title": "domain-mapping-guidance/<framework>.json",
+  "description": "Per-domain, per-objective mapping guidance for a control framework (CCMv4 today; NIST/CIS/ISO may be added as sibling files). Gives map-framework-mapping a focused per-domain context and supplies the applicability/accuracy validators their source of truth: each objective's intent, whether it is mappable for a platform/infrastructure service, and which mechanism classes may or must never satisfy it. allow_mechanisms / deny_mechanisms reference mechanism_classes keys.",
+
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["framework", "mechanism_classes", "domains"],
+  "properties": {
+    "schema_version": {"type": "string"},
+    "framework": {"type": "string", "minLength": 1},
+    "framework_version": {"type": "string"},
+    "description": {"type": "string"},
+    "default_coverage_ceiling": {
+      "type": "string",
+      "enum": ["Full Coverage", "Partial Coverage", "Supportive"],
+      "description": "The maximum coverage a mapped control may claim when neither the mechanism class nor the objective raises it. Default is 'Partial Coverage' — Full Coverage is opt-in, matching the reality that most controls partially satisfy an objective."
+    },
+    "mechanism_class_ceilings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["Full Coverage", "Partial Coverage", "Supportive"]
+      },
+      "description": "Per-mechanism-class coverage ceiling. Keys are mechanism_classes ids. A class not listed uses default_coverage_ceiling. Only classes that can fully implement an objective's named mechanism (e.g. preventive access_control / network_isolation) are raised to Full Coverage; detective classes cap lower."
+    },
+    "mechanism_classes": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Closed vocabulary of control mechanism classes. Keys are class ids referenced by allow_mechanisms / deny_mechanisms.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description"],
+        "properties": {
+          "description": {"type": "string", "minLength": 1},
+          "match_keywords": {"type": "array", "items": {"type": "string"}},
+          "match_mechanisms": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/domain"}
+    }
+  },
+
+  "$defs": {
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domain_id", "domain_name", "objectives"],
+      "properties": {
+        "domain_id": {"type": "string", "minLength": 1},
+        "domain_name": {"type": "string", "minLength": 1},
+        "intent": {"type": "string"},
+        "objectives": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/objective"}
+        }
+      }
+    },
+    "objective": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objective_id", "intent", "mappable", "allow_mechanisms", "deny_mechanisms"],
+      "properties": {
+        "objective_id": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What THIS objective actually requires — the discriminator that prevents keyword mis-maps."
+        },
+        "mappable": {
+          "type": "string",
+          "enum": ["mappable", "default_na", "conditional"],
+          "description": "mappable: legitimately satisfiable by platform/infra config. default_na: N/A for a serverless/managed/infrastructure service unless overridden. conditional: mappable only when a genuine service capability backs it; an override is expected."
+        },
+        "allow_mechanisms": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "mechanism_classes ids that legitimately satisfy this objective."
+        },
+        "deny_mechanisms": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "mechanism_classes ids that must NEVER satisfy this objective (a control of this class mapped here is a mis-mapping)."
+        },
+        "na_reason": {
+          "type": "string",
+          "description": "Canonical reason string when default_na — written into the mapping's reason when the objective stays N/A."
+        },
+        "override_requires": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Fields a MAPPED entry must carry to override a default_na/conditional objective (typically applicability_justification + reference_url)."
+        },
+        "examples": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Optional illustrative maps / does-not-map notes."
+        },
+        "coverage_ceilings": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "enum": ["Full Coverage", "Partial Coverage", "Supportive"]
+          },
+          "description": "Per-objective, per-mechanism-class coverage ceiling override. Keys are mechanism_classes ids. Takes precedence over mechanism_class_ceilings and default_coverage_ceiling. Used to cap an objective a class can only partially satisfy (e.g. CEK-03 caps at_rest_encryption at Partial because it needs classification-driven encryption, not just CMK existence)."
+        },
+        "by_service_category": {
+          "type": "object",
+          "description": "Optional per-service-category overrides. Keys are service category labels (serverless_compute, storage, database, networking, ...). A category present here overrides the objective-level mappable/allow/deny/ceilings when the service resolves to that category. Authored ONLY where a category genuinely differs (e.g. LOG-02 log-store protection is default_na for serverless_compute but mappable for storage).",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mappable": {"type": "string", "enum": ["mappable", "default_na", "conditional"]},
+              "allow_mechanisms": {"type": "array", "items": {"type": "string"}},
+              "deny_mechanisms": {"type": "array", "items": {"type": "string"}},
+              "coverage_ceilings": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string",
+                  "enum": ["Full Coverage", "Partial Coverage", "Supportive"]
+                }
+              },
+              "na_reason": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

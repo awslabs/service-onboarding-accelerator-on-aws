@@ -1,8 +1,8 @@
 ---
 name: service-approval-v3
-description: Orchestrate all 9 service-approval agents (Intake → Assess → Research → Validate → Map → Generate → Test → Summarize → Evidence) to generate AWS security controls and compliant resource templates for any AWS service
+description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls and compliant resource templates for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-test] [--questions=<file>] [--dry-run] [--timeout=<minutes>] [--keep] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
+argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
 ---
 
 # Service Approval — Orchestrator v3
@@ -10,13 +10,11 @@ argument-hint: '[./input-folder] [--service=<name>] [--env=<profile>] [--skip-te
 Coordinate the service-approval agents to produce a complete set of AWS security controls
 and a compliant resource template for any AWS service.
 
-**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Generate (3 sub-skills) → Test → Summarize → Evidence
+**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Recommended Guidance (3 sub-skills) → Summarize
 
-Deployment intent (full-deploy / dry-run / skip / manual-cli) is captured upfront in
-the Intake phase via `testing.mode` in `intake-manifest.json`. There is no separate
-human-in-the-loop gate between Generate and Test — whatever Intake recorded is what
-Phase 5 does. Phase 7 Evidence runs after Summarize when `testing.mode == full-deploy`
-and Phase 5 succeeded.
+The pipeline produces recommended security controls + compliant IaC that the
+customer deploys themselves. It does not deploy, test, or attest against a live
+account.
 
 ## Flags
 
@@ -24,11 +22,6 @@ and Phase 5 succeeded.
 |------|-------------|---------|
 | `./input-folder` | Path to folder with input files (.md, .json, .xlsx, .pdf, .docx) | None (MCP-only mode) |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`) | Required if no folder |
-| `--env=<profile>` | AWS CLI profile for Tester | None (skips Tester) |
-| `--skip-test` | Skip Tester agent | false |
-| `--dry-run` | Lint artifacts, do not deploy | false |
-| `--timeout=<minutes>` | Config evaluation timeout | 30 |
-| `--keep` | Keep deployed resources alive after Phase 7 Evidence completes (default: Phase 7 tears down). Phase 5 always defers teardown to Phase 7 when Phase 7 is in scope. | false |
 | `--include-unverified` | Allow unverified items in generation | false |
 | `--questions=<file>` | Path to SITCO Bar Questions file (.docx or .txt) — passed to Phase 0 | None |
 | `--clean` | Delete existing .service-approval/ state before run | false |
@@ -117,7 +110,7 @@ shows the failure plus the last few causally-relevant events.
 - `hook:post-tool-use` / `hook:stop` / `hook:check-phase-complete` — validation hooks
 - `mcp:<server>` — MCP calls (verdict `call` or `response`)
 - `skill:<skill-name>` — skill lifecycle (verdict `start` / `end` / `retry` / `halt`)
-- `script:<script-name>` — subprocess invocations (smoke-deploy-test.sh, etc.)
+- `script:<script-name>` — subprocess invocations (merge-domain-mappings.py, etc.)
 
 **How skills emit events:**
 
@@ -344,15 +337,13 @@ Run each phase in order. Pass all relevant flags through.
 ### Intake (Precursor — Mandatory)
 Follow ALL instructions in `skills/intake/SKILL.md` exactly.
 Pass: `--service`, `--from-intake` if provided, `--interactive` if provided,
-and any of `--env`, `--framework`, `--framework-file`, `--skip-test`, `--dry-run`,
-`--keep`, `--timeout` the user supplied at the orchestrator level (Intake uses
-them to pre-fill its form / intake manifest).
+and any of `--framework`, `--framework-file` the user supplied at the
+orchestrator level (Intake uses them to pre-fill its form / intake manifest).
 
 When done: verify `.service-approval/_staging/<ts>/00-intake/intake-manifest.json`
 exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0
-Step 0b after slug derivation). From that manifest, resolve the effective `--service`, `--framework`,
-`--framework-file`, input folder, and Phase 5 intent (CLI flags still override;
-see Phase 5 resolution below).
+Step 0b after slug derivation). From that manifest, resolve the effective
+`--service`, `--framework`, `--framework-file`, and input folder.
 
 **Intake always runs.** The intake skill itself decides whether to prompt
 interactively or short-circuit:
@@ -433,7 +424,13 @@ Wait for `.service-approval/<slug>/04-map/map-controls-generated.json`.
 
 **Step 3c — Framework Mapping:**
 Follow ALL instructions in `skills/map-framework-mapping/SKILL.md`.
-Wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
+For **CCMv4** (a `data/domain-mapping-guidance/ccmv4.json` guidance file exists),
+map **per domain**: handle each of the 17 CCMv4 domains in its own focused pass
+loaded with only that domain's objectives + that domain's guidance + the shared
+controls, write each as a partial to `04-map/_domains/<DOMAIN>.json`, then run the
+deterministic merge `python3 scripts/merge-domain-mappings.py --slug <slug>`.
+For **non-CCMv4** frameworks (no guidance file), run the single-pass behavior.
+Either way, wait for `.service-approval/<slug>/04-map/map-framework-mapped.json`.
 
 **Step 3d — Assemble:**
 Follow ALL instructions in `skills/map-assemble/SKILL.md`.
@@ -442,113 +439,35 @@ Verify these files exist before proceeding:
 - `.service-approval/<slug>/04-map/controls-catalog.md`
 - `.service-approval/<slug>/04-map/framework-mapping.md`
 
-### Phase 4: Generate (3 sub-skills, sequential in this mode)
+### Phase 4: Recommended Guidance (3 sub-skills, sequential in this mode)
 
 **Step 4a — Preventive/Proactive (gated sub-pipeline, run in order):**
 1. `skills/generate-preventive-recommend/SKILL.md` — mechanism + anchor decision per
-   objective → `<slug>/05-generate/preventive-plan.json` (the gate).
+   objective → `<slug>/05-recommended-guidance/preventive-plan.json` (the gate).
 2. The authors for each `GENERATE_*` row: `skills/generate-preventive-scp/SKILL.md`,
    `skills/generate-preventive-rcp/SKILL.md`, `skills/generate-preventive-iam/SKILL.md`
    (these also emit proactive artifacts per `skills/generate-preventive/SKILL.md`).
 3. `skills/generate-preventive-rootcause/SKILL.md` — prove anchored + enforcing; route
    non-preventable objectives to detective.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/preventive/` and `<slug>/05-generate/proactive/` to be populated.
+Wait for `<slug>/05-recommended-guidance/preventive/` and `<slug>/05-recommended-guidance/proactive/` to be populated.
 
 **Step 4b — Detective/Responsive:**
 Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/detective/` and `<slug>/05-generate/responsive/` to be populated.
+Wait for `<slug>/05-recommended-guidance/detective/` and `<slug>/05-recommended-guidance/responsive/` to be populated.
 
 **Step 4c — IaC Templates:**
 Follow ALL instructions in `skills/generate-iac/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-generate/iac/` to have all 4 formats.
+Wait for `<slug>/05-recommended-guidance/iac/` to have all 4 formats.
 
 **Step 4d — Final Validation:**
 Run the final validation from `skills/generate/SKILL.md` → "Final Validation" section.
 
-### Phase 5: Test
-
-Resolve Phase 5 intent in this order (CLI flags > intake > default):
-
-1. If `--skip-test` was passed on the command line → skip.
-2. Else if `--dry-run` was passed → run `skills/test/SKILL.md` with `--dry-run`
-   (use `--env` if provided, else Tier 1 only).
-3. Else if `--env=<profile>` was passed → run `skills/test/SKILL.md` in full mode
-   with that profile.
-4. Else read `.service-approval/<slug>/00-intake/intake-manifest.json` → `testing.mode`
-   (or the staging path if Phase 0 hasn't yet promoted):
-   - `skip` or `manual-cli` → skip Phase 5. (Summarize handles the manual-cli
-     cheat-sheet render.)
-   - `dry-run` → run `skills/test/SKILL.md` with `--dry-run`; pass `--env` if
-     `testing.aws_profile` is set.
-   - `full-deploy` → run `skills/test/SKILL.md` in full mode with
-     `--env=<testing.aws_profile>` and `--timeout=<testing.timeout_minutes>`.
-     **Do NOT pass `--keep` to Phase 5.** Phase 5 always leaves the stack
-     alive when Phase 7 will run; the user's `testing.keep` preference is
-     consumed by Phase 7 (which tears down at the end of evidence collection
-     unless `keep == true`). If Phase 7 is being skipped (e.g. orchestrator
-     was invoked with `--no-evidence` or `--env` is missing for Phase 7),
-     pass `--no-evidence` to Phase 5 so it reverts to the legacy
-     deploy-and-teardown behavior.
-5. If `intake-manifest.json` is missing (orchestrator invoked without Intake)
-   and no CLI flags were provided → skip Phase 5 with a warning.
-
-### Phase 6: Summarize
+### Phase 5: Summarize
 Follow ALL instructions in `skills/summarize/SKILL.md` exactly.
 Report the summary of findings to the user (this report issues no verdict).
-
-### Phase 7: Evidence (Optional — requires AWS credentials)
-**NEW:** If `--env` was provided AND Phase 5 Test deployed resources successfully (not --dry-run):
-Run the Evidence skill to perform AWS CLI attestation against deployed resources.
-
-Follow ALL instructions in `skills/evidence/SKILL.md` exactly.
-Pass: `--env`, `--service=<slug>` flags.
-
-If `--skip-test` or `--dry-run` or Phase 5 was skipped: skip this phase entirely
-AND write a skip artifact so the audit trail isn't a hole:
-
-```python
-import json
-from datetime import datetime, timezone
-from tools.paths import phase_dir
-
-evidence_dir = phase_dir(slug, "evidence")
-evidence_dir.mkdir(parents=True, exist_ok=True)
-skip_reason = (
-    "Phase 5 Test was skipped or did not deploy resources. "
-    "Phase 7 requires a live deployed stack (06-test/deployed-resources.json) "
-    "to probe via AWS CLI. Re-run with --env=<profile> in full-deploy mode "
-    "to enable Phase 7."
-)
-skip_artifact = {
-    "schema_version": "1.0",
-    "phase": "evidence",
-    "skipped": True,
-    "skipped_at": datetime.now(timezone.utc).isoformat(),
-    "skip_reason": skip_reason,
-    "preconditions_failed": [
-        "phase_5_test_run",
-        "deployed_resources_present",
-    ],
-}
-(evidence_dir / "phase-skipped.json").write_text(json.dumps(skip_artifact, indent=2))
-```
-
-**Stack lifecycle:** Phase 5 left the stack alive (`teardown_status:
-"deferred_to_phase_7"` in `06-test/test-results.json`). Phase 7 reads
-`06-test/deployed-resources.json`, probes the stack via AWS CLI, then tears
-it down at the end of Step 11 — UNLESS `intake-manifest.json.testing.keep ==
-true`, in which case Phase 7 leaves the stack alive for manual debugging and
-records `teardown_status: "skipped_keep_true"`. See skills/evidence/SKILL.md
-Step 11 for the exact teardown procedure.
-
-Evidence produces:
-- `<slug>/08-evidence/attestation-report.md` — control x CLI x verdict matrix
-- `<slug>/08-evidence/attestation-results.json` — machine-readable verdicts (includes `teardown_status`)
-- `<slug>/08-evidence/summary.md` — top-level triage digest
-- `<slug>/attestation.md` — reviewer's audit guide (service tree manifest)
 
 ---
 
@@ -567,8 +486,7 @@ short-circuit (see "Discovery Rules" in `skills/intake/SKILL.md`):
 
 Dispatch Intake as a foreground subagent with the full text of
 `skills/intake/SKILL.md`, plus `--service`, `--from-intake`, `--interactive`, and
-any pre-Intake CLI flags the user passed (`--env`, `--framework`, `--framework-file`,
-`--skip-test`, `--dry-run`, `--keep`, `--timeout`).
+any pre-Intake CLI flags the user passed (`--framework`, `--framework-file`).
 Wait for `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` (Intake's pre-promotion landing zone).
 
 Plugin-repo files (`skills/intake/intake-template.yaml`,
@@ -642,9 +560,43 @@ Agent 3b: map-generate-controls (background)
 
 **IMPORTANT:** Dispatch both in a single message with 2 Agent tool calls.
 
-**Step 3c: Framework mapping (foreground, after 3a+3b complete)**
+**Step 3c: Framework mapping (after 3a+3b complete)**
 
-When both complete, dispatch as foreground subagent:
+This is the most reasoning-heavy step. The dispatch shape depends on the framework:
+
+***CCMv4 — per-domain fan-out + deterministic merge.*** A single 197-objective
+pass produces keyword-driven mis-maps; instead map each domain in its own focused
+context. Dispatch **one mapping subagent per CCMv4 domain** (17: A&A, AIS, BCR,
+CCC, CEK, DCS, DSP, GRC, HRS, IAM, IPY, IVS, LOG, SEF, STA, TVM, UEM), each loaded
+with ONLY: that domain's objectives from `map-framework-parsed.json`, that
+domain's guidance from `data/domain-mapping-guidance/ccmv4.json`, the full
+`map-controls-generated.json` (controls are shared), and the per-objective
+reasoning rules from `skills/map-framework-mapping/SKILL.md`.
+
+```
+Agent 3c.<DOMAIN> (one per domain — parallelizable):
+  Prompt: Full text of skills/map-framework-mapping/SKILL.md
+          + "Map ONLY domain <DOMAIN>. Objectives: <that domain's entries>.
+             Guidance: <that domain's ccmv4.json entry>."
+  Output: 04-map/_domains/<DOMAIN>.json   (this domain's framework_mapping[] partial)
+```
+
+Dispatch the domains in batches that respect the **concurrency cap** — Parallel
+Mode runs at most a handful of background subagents at once, so launch them in
+waves (e.g. groups of ~4) rather than 17 at once. Do NOT set `model` — subagents
+inherit the caller's model. When all 17 partials exist, run the deterministic
+merge (no subagent — it is pure assembly):
+
+```bash
+python3 scripts/merge-domain-mappings.py --slug <slug>
+```
+
+The merge concatenates partials in canonical domain order, recomputes the coverage
+summary + cross-domain quality gates (Rule 2 spray / Rule 3 / Rule 5 / 6 / 7), and
+writes `map-framework-mapped.json`. Wait for that file.
+
+***Non-CCMv4 — single foreground pass*** (no guidance file for the active
+framework, e.g. NIST 800-53 / CIS / ISO):
 
 ```
 Agent 3c: map-framework-mapping (foreground)
@@ -653,7 +605,8 @@ Agent 3c: map-framework-mapping (foreground)
   Output: map-framework-mapped.json
 ```
 
-This is the most reasoning-heavy step — MUST run in foreground to ensure quality gates pass.
+Either path MUST run in foreground (or complete fully) before Step 3d, so the
+quality gates are satisfied. The output contract is identical for both paths.
 
 **Step 3d: Assembly (foreground, after 3c completes)**
 
@@ -682,10 +635,19 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
 python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
 python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
 python3 tools/validate/validate_mapping_semantics.py --slug <slug>; ms=$?
-python3 tools/validate/validate_canopy_facts.py --slug <slug>; cf=$?
+python3 tools/validate/validate_canopy_facts.py --slug <slug> --strict; cf=$?
 python3 tools/validate/validate_domain_applicability.py --slug <slug>; da=$?
+python3 tools/validate/validate_domain_mapping_accuracy.py --slug <slug>; ma=$?
 python3 tools/validate/validate_control_dedup.py --slug <slug>; cd=$?
 ```
+
+`validate_domain_mapping_accuracy.py` reads the sibling `applicability-matrix.json`
+(written by `compute-applicability-matrix.py` in Step 2b) when present, so its
+category-applicability and coverage-ceiling checks are active. It is the single
+deterministic backstop for per-objective mapping accuracy: denied-class mis-maps,
+`default_na`-without-override, category-not-applicable, coverage over the
+mechanism-class ceiling, and confident-MAPPED-without-citation (which must be
+`UNCERTAIN` instead). An `UNCERTAIN` row is advisory — surfaced, never failed.
 
 It reports: objectives flagged with no catalog/reference support, and any control
 prose that exceeds the verified-language budget or over-claims. The prose lint
@@ -708,8 +670,9 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
     {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
     {"name": "lint_control_prose", "exit_code": 0, "blocking": true},
     {"name": "validate_mapping_semantics", "exit_code": 0, "blocking": false},
-    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": true},
     {"name": "validate_domain_applicability", "exit_code": 0, "blocking": false},
+    {"name": "validate_domain_mapping_accuracy", "exit_code": 0, "blocking": false},
     {"name": "validate_control_dedup", "exit_code": 0, "blocking": false}
   ],
   "flagged": [
@@ -721,10 +684,15 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
 `validate_mapping_semantics` runs the deterministic S1/S2/S3 checks (every
 satisfied-by control id resolves, every mapped objective id exists in the parsed
 framework, no control claims an action/condition key absent from `validated.json`).
-`validate_canopy_facts` confirms every `citation.type == "canopy"` row names a
-mitigation alias that exists in the provided Canopy export and whose governed
-operations are consistent with the control's actions. Both are advisory here
-(reported in `mapping-review.json`); they also run in the post-generate gate.
+`validate_canopy_facts` confirms every Canopy-cited row (a map/framework-mapping
+citation with `source == "canopy"`, or a preventive-plan citation with
+`type == "canopy"`) names a mitigation alias that exists in the provided Canopy
+export, whose governed operations are consistent with the control's actions, and
+whose quoted `mitigation_statement` (when present) appears verbatim in the
+export. It runs `--strict` here, so a fabricated alias, drifted operation, or
+non-verbatim statement blocks the map phase; MAPPED rows are checked and
+UNCERTAIN rows are exempt. `validate_mapping_semantics` is advisory (reported in
+`mapping-review.json`); the Canopy-facts check also runs in the post-generate gate.
 
 Then log the outcome:
 
@@ -745,6 +713,9 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_domain_applicability \
     --verdict $([ $da -eq 0 ] && echo pass || echo warn) --message "framework-domain applicability check"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
+    --source script:validate_domain_mapping_accuracy \
+    --verdict $([ $ma -eq 0 ] && echo pass || echo warn) --message "per-objective domain mapping-accuracy check"
+python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_control_dedup \
     --verdict $([ $cd -eq 0 ] && echo pass || echo warn) --message "control de-duplication count guard"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
@@ -764,10 +735,22 @@ control (CloudFormation Guard, Config rule, SCP, RCP, tag policy) mapped to an
 application-code AIS objective (AIS-02/04/05), any N/A-by-default domain objective
 (DCS/UEM/BCR/IPY, TVM-10-class) marked MAPPED without an `applicability_justification`
 + `reference_url` override, and any resource-tag control mapped to a
-data-sensitivity-classification objective (DSP-03/04). Advisory here (reported in
-`mapping-review.json`); a finding means the mapper over-claimed coverage — re-map the
-flagged objective to N/A (or add a justified override) before generation consumes the
-mapping.
+data-sensitivity-classification objective (DSP-03/04). N/A-by-default within that
+scope is read per-objective from `data/domain-mapping-guidance/ccmv4.json`, so a
+guidance-`mappable` objective (e.g. BCR-04, satisfied by multi-AZ resilience) is no
+longer blanket-flagged.
+
+`validate_domain_mapping_accuracy` (CCMv4-specific) is the per-objective accuracy
+backstop for the per-domain mapping: it reads the same guidance file and, for every
+mapped objective, flags a control whose mechanism class is in that objective's
+`deny_mechanisms` (and not in `allow_mechanisms`) — e.g. a TLS control mapped to
+IVS-07 (migration *process*), a misconfiguration-detective control mapped to LOG-12
+(access-event logging), or an access-control/layer-sharing control mapped to STA-12
+(supply-chain agreements) — plus any `default_na` objective mapped without the
+override fields. Both are advisory here (reported in `mapping-review.json`; promote
+to a hard gate once the guidance is proven on real runs); a finding means the mapper
+over-claimed — re-map the flagged objective to N/A (or add a justified override)
+before generation consumes the mapping.
 
 The control→catalog cross-check (`validate_control_mappings`) is **advisory** —
 surface its flagged items and proceed. The prose lint (`lint_control_prose
@@ -775,7 +758,7 @@ surface its flagged items and proceed. The prose lint (`lint_control_prose
 JSON or the rendered `.md`, so fix the prose and re-render before generation
 consumes the mapping.
 
-### Phase 4: Generate (3 families in parallel; preventive is a sequenced sub-pipeline)
+### Phase 4: Recommended Guidance (3 families in parallel; preventive is a sequenced sub-pipeline)
 
 Dispatch the 3 control families simultaneously as background subagents. The
 **preventive family is one agent that runs its own sub-pipeline in order** — the
@@ -792,15 +775,15 @@ Agent 4: generate-preventive (background) — runs the preventive sub-pipeline I
      (authors also emit proactive artifacts per skills/generate-preventive/SKILL.md)
   3. Full text of skills/generate-preventive-rootcause/SKILL.md   → prove anchored + enforcing
   Pass: --service + --include-unverified
-  Output: <slug>/05-generate/preventive/ + <slug>/05-generate/proactive/
+  Output: <slug>/05-recommended-guidance/preventive/ + <slug>/05-recommended-guidance/proactive/
 
 Agent 5: generate-detective (background)
   Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate/detective/ + <slug>/05-generate/responsive/
+  Output: <slug>/05-recommended-guidance/detective/ + <slug>/05-recommended-guidance/responsive/
 
 Agent 6: generate-iac (background)
   Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-generate/iac/
+  Output: <slug>/05-recommended-guidance/iac/
 ```
 
 **IMPORTANT:** Dispatch all 3 families in a single message with 3 Agent tool calls.
@@ -812,7 +795,7 @@ If any IaC templates are missing, re-dispatch the generate-iac agent.
 **Detective top-up for routed objectives.** Because detective runs in parallel
 with preventive here, it cannot see the routing the preventive critic writes at
 the end of its sub-pipeline. After all 3 agents complete, if
-`<slug>/05-generate/detective-routing.json` exists with any `routed[]` entry
+`<slug>/05-recommended-guidance/detective-routing.json` exists with any `routed[]` entry
 whose `covered_by` is null, re-dispatch `generate-detective` for a top-up pass to
 cover those objectives (its "Routed-from-preventive objectives" section). Then
 confirm the loop is closed:
@@ -828,7 +811,7 @@ preventive artifact is both in the mapping and properly enforcing. Log the gate
 lifecycle and run each validator, capturing its exit code:
 
 ```bash
-python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
     --source skill:generate-review --verdict start \
     --message "generation review gate: anchor + enforcement + scope"
 
@@ -836,9 +819,9 @@ python3 tools/validate/validate_reference_anchor.py --slug <slug>;   ra=$?
 python3 tools/validate/validate_preventability.py --slug <slug>;      pv=$?
 python3 tools/validate/validate_enforcement.py --slug <slug> --strict; en=$?
 python3 tools/validate/validate_action_scope.py --slug <slug> --strict; as=$?
-python3 tools/validate/validate_cross.py .service-approval/<slug>/05-generate; cx=$?
+python3 tools/validate/validate_cross.py .service-approval/<slug>/05-recommended-guidance; cx=$?
 python3 tools/validate/validate_detective_routing.py --slug <slug>;   dr=$?
-python3 tools/validate/validate_canopy_facts.py --slug <slug>;        cf=$?
+python3 tools/validate/validate_canopy_facts.py --slug <slug> --strict; cf=$?
 ```
 
 **Conflict / contradiction detection (deterministic pre-filter → clean-subagent judge).**
@@ -848,7 +831,7 @@ assumes, or two Denies gating the same action with incompatible condition keys):
 
 ```bash
 python3 tools/validate/detect_control_conflicts.py --slug <slug> \
-    > .service-approval/<slug>/05-generate/conflict-report.json
+    > .service-approval/<slug>/05-recommended-guidance/conflict-report.json
 ```
 
 Then dispatch a **clean review subagent** (Agent tool, no prior context) whose sole job
@@ -860,17 +843,20 @@ the confirmed pairs in the report); it can become a hard gate later.
 
 It reports: any authored preventive artifact lacking a resolvable reference anchor;
 any artifact marked not-anchored without an explicit reason; any `source_control_id`
-that does not trace back to `mapping-results.json`; any statement that is not
-evaluable (request-time key in a resource-based policy, malformed Resource ARN, key
-that does not apply to the gated action); any authored Deny action absent from the
-recommender's reviewed set; any permission-boundary that emits without the org
-prerequisite; and any objective that should be routed to detective.
+that does not trace back to `mapping-results.json`; any URL-cited preventive artifact
+(one whose `_metadata.reference` or `_metadata.citation` carries a `url`) missing a
+non-empty `_metadata.applicability` (both `applies_to` and `usage_notes`) — the block
+that tells the customer what the cited policy targets and where not to apply it; any
+statement that is not evaluable (request-time key in a resource-based policy, malformed
+Resource ARN, key that does not apply to the gated action); any authored Deny action
+absent from the recommender's reviewed set; any permission-boundary that emits without
+the org prerequisite; and any objective that should be routed to detective.
 
 The anchor, enforcement, action-scope, and cross checks are **hard gates** (they
 also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisory.
 
 **Persist the review artifact** — write
-`.service-approval/<slug>/05-generate/generation-review.json`:
+`.service-approval/<slug>/05-recommended-guidance/generation-review.json`:
 
 ```json
 {
@@ -882,7 +868,7 @@ also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisor
     {"name": "validate_action_scope", "exit_code": 0, "blocking": true},
     {"name": "validate_cross", "exit_code": 0, "blocking": true},
     {"name": "validate_detective_routing", "exit_code": 0, "blocking": false},
-    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": false},
+    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": true},
     {"name": "conflict_detection", "exit_code": 0, "blocking": false}
   ],
   "flagged": []
@@ -894,13 +880,13 @@ Then log each validator's outcome and close the gate:
 ```bash
 for v in "reference_anchor:$ra:1" "preventability:$pv:0" "enforcement:$en:1" \
          "action_scope:$as:1" "cross:$cx:1" "detective_routing:$dr:0" \
-         "canopy_facts:$cf:0"; do
+         "canopy_facts:$cf:1"; do
   name=${v%%:*}; rest=${v#*:}; code=${rest%%:*}
-  python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+  python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
       --source script:validate_$name \
       --verdict $([ $code -eq 0 ] && echo pass || echo fail) --message "generation gate check"
 done
-python3 -m tools.validate.log --slug <slug> --phase 05-generate \
+python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
     --source skill:generate-review --verdict end \
     --message "generation review gate complete" --extra artifact=generation-review.json
 ```
@@ -914,19 +900,13 @@ python3 tools/validate/build_preventive_coverage.py --slug <slug>
 ```
 
 This reads `preventive-plan.json` + `preventive/rootcause-report.json` and writes
-`.service-approval/<slug>/05-generate/preventive-coverage.json`. The numbers are
-deterministic (no prose narration); Phase 6 surfaces them near the top of the report.
+`.service-approval/<slug>/05-recommended-guidance/preventive-coverage.json`. The numbers are
+deterministic (no prose narration); Summarize surfaces them near the top of the report.
 
-Surface the findings before Phase 6 so the report's confidence-actions section can
+Surface the findings before Summarize so the report's confidence-actions section can
 state which checks ran and passed.
 
-### Phase 5: Test
-
-Apply the same resolution as Sequential Mode (CLI flags > intake.testing.mode >
-default skip). If the resolution produces a run, dispatch Tester as a foreground
-subagent with the resolved `--env` / `--dry-run` / `--keep` / `--timeout` flags.
-
-### Phase 6: Summarize
+### Phase 5: Summarize
 Dispatch Summarizer as foreground subagent.
 Wait for `SUMMARY-REPORT.md`.
 
@@ -942,21 +922,22 @@ Phase 1: Research         (4 agents in parallel, then merge)
   1d: ATT&CK Surface      (background) ─┤
                                         └─ 1e: Merge (foreground)
 Phase 2: Validate         (1 agent, foreground)
-Phase 3: Map              (2 agents in parallel, then 2 sequential)
+Phase 3: Map              (2 agents in parallel, then per-domain fan-out + merge)
   3a: Parse Framework     (background) ─┐
   3b: Generate Controls   (background) ─┤
-                                        ├─ 3c: Framework Mapping (foreground)
+                                        ├─ 3c: Framework Mapping
+                                        │     CCMv4: 1 subagent per domain (waves) → merge
+                                        │     other: 1 foreground pass
                                         └─ 3d: Assemble          (foreground)
-Phase 4: Generate         (3 agents in parallel, then validate)
-Phase 5: Test             (1 agent, foreground — gated by intake.testing.mode)
-Phase 6: Summarize        (1 agent, foreground)
+Phase 4: Recommended Guidance (3 agents in parallel, then validate)
+Phase 5: Summarize        (1 agent, foreground)
 ```
 
-Total agents: up to 14 (vs 8 in monolithic mode), but with 3 parallelization windows
-that significantly reduce wall-clock time.
+Total agents: up to 13, but with 3 parallelization windows that significantly
+reduce wall-clock time.
 
-If any agent exceeds `--timeout` minutes, proceed to Summarizer with partial results.
-Summarizer marks the timed-out agent as INCOMPLETE in the report.
+If any agent fails to complete, proceed to Summarizer with partial results.
+Summarizer marks the incomplete agent as INCOMPLETE in the report.
 
 ---
 
@@ -964,7 +945,7 @@ Summarizer marks the timed-out agent as INCOMPLETE in the report.
 
 ```
 Service Approval complete.
-Report: .service-approval/<slug>/07-summarize/SUMMARY-REPORT.md
-Controls: .service-approval/<slug>/05-generate/
+Report: .service-approval/<slug>/06-summarize/SUMMARY-REPORT.md
+Controls: .service-approval/<slug>/05-recommended-guidance/
 Summary of findings: see report (no verdict issued)
 ```

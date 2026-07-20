@@ -10,8 +10,8 @@ routed entry. This validator closes the loop:
 
   1. Schema (detective-routing.schema.json) — shape + control-id pattern.
   2. Coverage — every routed entry must have a non-empty `covered_by`, and each
-     named detective artifact must exist on disk under 05-generate/detective/ or
-     05-generate/responsive/.
+     named detective artifact must exist on disk under 05-recommended-guidance/detective/ or
+     05-recommended-guidance/responsive/.
 
 Advisory by default (warn, exit 0); --strict exits 2 on an uncovered routed
 objective so a run can hard-gate the hand-off once detective coverage is mature.
@@ -44,7 +44,7 @@ def _covered_files(entry: dict) -> list[str]:
 def check_routing(routing: dict, generate_dir: Path | None) -> list[str]:
     """Validate the routing doc. Returns error strings (empty = clean).
 
-    `generate_dir` is the 05-generate/ directory; when provided, covered_by
+    `generate_dir` is the 05-recommended-guidance/ directory; when provided, covered_by
     filenames are checked for existence under detective/ or responsive/.
     """
     errors: list[str] = []
@@ -72,7 +72,7 @@ def check_routing(routing: dict, generate_dir: Path | None) -> list[str]:
             continue
         if generate_dir is not None:
             for fname in files:
-                # Accept a bare filename or a path relative to 05-generate/.
+                # Accept a bare filename or a path relative to 05-recommended-guidance/.
                 candidates = [
                     generate_dir / fname,
                     generate_dir / "detective" / fname,
@@ -88,18 +88,18 @@ def check_routing(routing: dict, generate_dir: Path | None) -> list[str]:
 
 def check_service(service_root: Path) -> list[str]:
     """Validate a service's detective-routing.json (no-op if absent)."""
-    routing_path = service_root / "05-generate" / "detective-routing.json"
+    routing_path = service_root / "05-recommended-guidance" / "detective-routing.json"
     if not routing_path.exists():
         return []  # routing is only present when objectives were routed
     routing = _load_json(routing_path)
-    return check_routing(routing, service_root / "05-generate")
+    return check_routing(routing, service_root / "05-recommended-guidance")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("routing", nargs="?", help="path to detective-routing.json")
     parser.add_argument("--slug", help="service slug under .service-approval/")
-    parser.add_argument("--generate-dir", help="05-generate dir (for coverage existence checks)")
+    parser.add_argument("--generate-dir", help="05-recommended-guidance dir (for coverage existence checks)")
     parser.add_argument("--strict", action="store_true", help="exit 2 on uncovered routed objective")
     args = parser.parse_args()
 

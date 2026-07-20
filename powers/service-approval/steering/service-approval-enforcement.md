@@ -24,7 +24,7 @@ Before writing `SUMMARY-REPORT.md`, verify all expected outputs exist:
 - `<slug>/04-map/mapping-results.json`
 - `<slug>/04-map/controls-catalog.md`
 - `<slug>/04-map/framework-mapping.md`
-- All control artifacts under `<slug>/05-generate/` per the counts in `mapping-results.json`
+- All control artifacts under `<slug>/05-recommended-guidance/` per the counts in `mapping-results.json`
 
 ## Self-Review Gate (enforcement)
 

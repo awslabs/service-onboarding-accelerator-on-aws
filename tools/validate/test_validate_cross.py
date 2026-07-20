@@ -45,7 +45,7 @@ def _write_anchored_scp(prev_dir: Path, name, control_ids):
 
 
 def _setup(tmp_path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     prev = gen / "preventive"
     prev.mkdir(parents=True)
     return gen, prev
@@ -207,7 +207,7 @@ def test_boundary_org_prerequisite_exempts_finalized_run(tmp_path):
     ])
     assert len(check_boundary_org_prerequisite(str(gen))) == 1  # mid-flight
     (tmp_path / "pipeline.log").write_text(
-        "2026-06-18T01:19:00Z [07-summarize] [pipeline:complete:FINALIZED]  done\n"
+        "2026-06-18T01:19:00Z [06-summarize] [pipeline:complete:FINALIZED]  done\n"
     )
     assert check_boundary_org_prerequisite(str(gen)) == []  # finalized
 
@@ -229,7 +229,7 @@ def test_confused_deputy_flat_policy_missing_condition_flagged(tmp_path):
     """The authors emit a FLAT IAM document ({Version, Statement, _metadata});
     a flat resource policy with Principal:* and no confused-deputy condition must
     be flagged (previously the flat shape slipped the check entirely)."""
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     _write_flat_resource_policy(gen, {
         "Sid": "AllowInvoke", "Effect": "Allow", "Principal": "*",
         "Action": "lambda:InvokeFunction", "Resource": "*",
@@ -239,7 +239,7 @@ def test_confused_deputy_flat_policy_missing_condition_flagged(tmp_path):
 
 
 def test_confused_deputy_flat_policy_with_source_arn_passes(tmp_path):
-    gen = tmp_path / "05-generate"
+    gen = tmp_path / "05-recommended-guidance"
     _write_flat_resource_policy(gen, {
         "Sid": "AllowInvoke", "Effect": "Allow", "Principal": "*",
         "Action": "lambda:InvokeFunction", "Resource": "*",

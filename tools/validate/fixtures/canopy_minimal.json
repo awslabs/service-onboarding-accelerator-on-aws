@@ -80,6 +80,11 @@
       "threatAction": "can read EBS volume data in the capacity provider",
       "requestParameters": [
         {"service": "lambda", "operation": "ListCapacityProviders", "paths": [{"path": "$."}]}
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "22222222-2222-2222-2222-222222222222"},
+        {"type": "FRAMEWORK", "id": "T1530", "frameworkName": "MITRE ATT&CK"},
+        {"type": "FRAMEWORK", "id": "T1537", "frameworkName": "MITRE ATT&CK"}
       ]
     }
   ],

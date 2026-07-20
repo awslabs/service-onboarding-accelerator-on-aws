@@ -51,7 +51,7 @@ Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.jso
 Phase 1 Research     → <slug>/02-research/research.json (4 parallel sub-skills)
 Phase 2 Validate     → <slug>/03-validate/validated.json (cross-MCP verification)
 Phase 3 Map          → <slug>/04-map/mapping-results.json (+ framework-mapping.md)
-Phase 4 Generate     → <slug>/05-generate/ (78–111 files across preventive/proactive/detective/responsive/iac)
+Phase 4 Generate     → <slug>/05-recommended-guidance/ (78–111 files across preventive/proactive/detective/responsive/iac)
 Phase 5 Test         → <slug>/06-test/test-results.json + deployed-resources.json (mode set upfront in Intake)
 Phase 6 Summarize    → <slug>/07-summarize/SUMMARY-REPORT.md
 Phase 7 Evidence     → <slug>/08-evidence/attestation-report.md + <slug>/attestation.md (runs after Phase 5 Test)
@@ -74,7 +74,7 @@ powers/service-approval/
 │   ├── phase-research.md                 Loads for research state files
 │   ├── phase-validate.md                 Loads for validated.json
 │   ├── phase-map.md                      Loads for map-* state files
-│   ├── phase-generate.md                 Loads for 05-generate/ artifacts
+│   ├── phase-generate.md                 Loads for 05-recommended-guidance/ artifacts
 │   ├── headless.md                       CI / headless invocation recipe
 │   └── service-approval-enforcement.md   Skill-based execution guardrail
 ├── agents-src/                           Source-of-truth YAML — one sa-<slug>.yaml per agent

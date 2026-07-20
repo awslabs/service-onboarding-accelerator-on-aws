@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas/detective-routing.schema.json",
   "title": "detective-routing.json",
-  "description": "Hand-off contract from the preventive root-cause critic to the detective generator. Written by skills/generate-preventive-rootcause at .service-approval/<slug>/05-generate/detective-routing.json when a preventive objective is NOT_PREVENTABLE (no condition key gates the action) and must be covered by a detective control instead. Consumed by skills/generate-detective, which generates detective coverage for each routed entry and fills in covered_by. validate_detective_routing.py confirms every routed entry is covered.",
+  "description": "Hand-off contract from the preventive root-cause critic to the detective generator. Written by skills/generate-preventive-rootcause at .service-approval/<slug>/05-recommended-guidance/detective-routing.json when a preventive objective is NOT_PREVENTABLE (no condition key gates the action) and must be covered by a detective control instead. Consumed by skills/generate-detective, which generates detective coverage for each routed entry and fills in covered_by. validate_detective_routing.py confirms every routed entry is covered.",
   "type": "object",
   "additionalProperties": false,
   "required": ["_metadata", "routed"],

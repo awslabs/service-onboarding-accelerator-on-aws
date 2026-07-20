@@ -11,11 +11,11 @@ Author RCP artifacts for control objectives the recommender approved, adapting a
 known-good reference RCP to the target service. Does not invent policy.
 
 **Input:**
-- `.service-approval/<slug>/05-generate/preventive-plan.json` — rows where `decision == "GENERATE_RCP"`
+- `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` — rows where `decision == "GENERATE_RCP"`
 - `.service-approval/<slug>/04-map/mapping-results.json`, `03-validate/validated.json`
 - `data/reference-repos/index.yaml` (mechanism `RCP`; the data-perimeter repo's RCP examples are facts-only)
 
-**Output:** `.service-approval/<slug>/05-generate/preventive/rcp-policy*.json`
+**Output:** `.service-approval/<slug>/05-recommended-guidance/preventive/rcp-policy*.json`
 
 ---
 
@@ -24,7 +24,7 @@ known-good reference RCP to the target service. Does not invent policy.
 ```bash
 python3 - <<'PY'
 import json
-plan = json.load(open(".service-approval/<slug>/05-generate/preventive-plan.json"))
+plan = json.load(open(".service-approval/<slug>/05-recommended-guidance/preventive-plan.json"))
 v = json.load(open(".service-approval/<slug>/03-validate/validated.json"))
 rows = [d for d in plan["decisions"] if d["decision"] == "GENERATE_RCP"]
 assert v.get("rcp_expressible", False) or not rows, \
@@ -43,8 +43,9 @@ metadata.
 ## Authoring procedure
 
 Same as `generate-preventive-scp` (load anchor body → adapt actions/keys →
-apply shared authoring rules → stamp `_metadata.reference`), with the
-RCP-specific requirements:
+apply shared authoring rules → stamp `_metadata.reference` → stamp
+`_metadata.applicability` verbatim from the plan row), with the RCP-specific
+requirements:
 
 - Always `"Effect": "Deny"` and `"Principal": "*"`.
 - Include `"BoolIfExists": {"aws:PrincipalIsAWSService": "false"}` where the
@@ -58,6 +59,9 @@ RCP-specific requirements:
 Identical shape to `generate-preventive-scp` with `scope`/`layer` appropriate to
 the control and `posture: "preventative-request"`. `_metadata.reference.example_id`
 MUST equal the plan row's `anchor.example_id` and resolve in the index.
+`_metadata.applicability` MUST be copied verbatim from the plan row's
+`applicability` object (anchored RCPs carry `anchor.url`, so the plan row carries
+it and the reference-anchor validator hard-fails its omission).
 
 ## Shared authoring rules
 

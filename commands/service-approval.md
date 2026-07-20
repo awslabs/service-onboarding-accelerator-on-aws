@@ -54,7 +54,7 @@ Intake always runs. Its prompt behavior depends on what it finds:
 ## Output
 
 - `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 coverage matrix
-- `.service-approval/<service-slug>/05-generate/` — all 78–111 generated artifacts
+- `.service-approval/<service-slug>/05-recommended-guidance/` — all 78–111 generated artifacts
 - `.service-approval/<service-slug>/` — pipeline state files (per-phase subdirectories)
 - `.service-approval/<service-slug>/08-evidence/` — CLI attestation results (if Phase 7 runs)
 

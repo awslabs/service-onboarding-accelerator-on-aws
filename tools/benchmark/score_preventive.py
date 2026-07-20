@@ -248,7 +248,7 @@ def aggregate(run_scores: list[dict]) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-dir", help="a single 05-generate-style output dir")
+    parser.add_argument("--run-dir", help="a single 05-recommended-guidance-style output dir")
     parser.add_argument("--aggregate", nargs="+", help="multiple run dirs to aggregate")
     parser.add_argument("--validated", required=True, help="path to validated.json")
     parser.add_argument("--mapping", required=True, help="path to mapping-results.json")

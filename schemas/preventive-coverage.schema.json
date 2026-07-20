@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas/preventive-coverage.schema.json",
   "title": "preventive-coverage.json",
-  "description": "Deterministic preventive-coverage rollup. Built by tools/validate/build_preventive_coverage.py from preventive-plan.json (the recommender's decisions) and rootcause-report.json (the critic's routing) at .service-approval/<slug>/05-generate/preventive-coverage.json. Counts, per preventive objective, how many controls were authored (GENERATE_*), referred to a reference example the customer adopts (REFER_TO_REFERENCE), or routed to detective because they are not preventable at request time (ROUTE_DETECTIVE). Every count row resolves to the originating control ids and their citations so a reader can verify each number. Surfaced near the top of the Summary Report.",
+  "description": "Deterministic preventive-coverage rollup. Built by tools/validate/build_preventive_coverage.py from preventive-plan.json (the recommender's decisions) and rootcause-report.json (the critic's routing) at .service-approval/<slug>/05-recommended-guidance/preventive-coverage.json. Counts, per preventive objective, how many controls were authored (GENERATE_*), referred to a reference example the customer adopts (REFER_TO_REFERENCE), or routed to detective because they are not preventable at request time (ROUTE_DETECTIVE). Every count row resolves to the originating control ids and their citations so a reader can verify each number. Surfaced near the top of the Summary Report.",
   "type": "object",
   "additionalProperties": false,
   "required": ["_metadata", "totals", "controls"],
@@ -93,6 +93,16 @@
             "placeholders": {"type": "array", "items": {"type": "string"}},
             "test": {"type": "string"},
             "rollback": {"type": "string"}
+          }
+        },
+        "applicability": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["applies_to", "usage_notes"],
+          "description": "Carried verbatim from the plan decision when present: what resource subset the cited policy targets and how to use it — including where NOT to apply it. Rendered in the Summary Report immediately after the cited policy URL.",
+          "properties": {
+            "applies_to": {"type": "string", "minLength": 1},
+            "usage_notes": {"type": "string", "minLength": 1}
           }
         }
       }

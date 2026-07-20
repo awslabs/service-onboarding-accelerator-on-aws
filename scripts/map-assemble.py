@@ -28,6 +28,38 @@ COVERAGE_FULL = {"Fully Covered", "FULL"}
 COVERAGE_PARTIAL = {"Partially Covered", "PARTIAL"}
 COVERAGE_SUPPORTIVE = {"Supportive Only", "SUPPORTS"}
 
+
+def _coverage_legend_lines() -> list[str]:
+    """Return markdown lines defining each coverage level.
+
+    Rendered in both controls-catalog.md and framework-mapping.md so a reader
+    knows what Full Coverage / Partial Coverage / Supportive / Not Applicable
+    mean. Definitions are kept in sync with the authoring skill
+    (skills/map-framework-mapping/SKILL.md, "Assign coverage level").
+    """
+    return [
+        "## Coverage Levels\n",
+        "",
+        "Each objective mapping is assigned a coverage level describing how "
+        "directly a control addresses the objective:",
+        "",
+        "| Level | Meaning |",
+        "|-------|---------|",
+        "| **Full Coverage** | The control's mechanism directly implements what "
+        "the objective requires (e.g., a KMS key policy enforcing key generation). |",
+        "| **Partial Coverage** | The control contributes to the objective but "
+        "does not fully implement it (e.g., a Config rule that detects "
+        "unencrypted resources but does not enforce encryption). |",
+        "| **Supportive** | The control is tangentially related through a shared "
+        "domain only (e.g., a tag policy that supports an identity inventory "
+        "objective without managing identity itself). |",
+        "| **N/A (Not Applicable)** | No control maps to the objective for this "
+        "service — typically because it is managed by AWS under shared "
+        "responsibility, is an organizational/process control, or the service "
+        "exposes no API to enforce it. A reason is given for each. |",
+        "",
+    ]
+
 # Add repo root to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -456,11 +488,16 @@ def identify_coverage_gaps(
         if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_SUPPORTIVE
     ]
 
-    # control_orphan: controls not mapped to any objective
+    # Suggested controls: controls that are NOT sourced from a Canopy mitigation
+    # (`trace_source != "canopy"`, i.e. the assessment-gap / compensating
+    # controls). The main per-objective mapping cites only Canopy-sourced
+    # controls; these non-Canopy controls are surfaced separately as suggestions
+    # a reviewer should confirm against their cited AWS source.
+    uncited_controls = build_uncited_controls(controls, fw_mapped, ctrl_to_objs)
+    # Back-compat alias: `control_orphan` retains the {control_id, name} shape any
+    # existing consumer expects; `uncited_controls` adds the source field.
     control_orphan = [
-        {"control_id": c["id"], "name": c["name"]}
-        for c in controls
-        if not ctrl_to_objs.get(c["id"])
+        {"control_id": u["control_id"], "name": u["name"]} for u in uncited_controls
     ]
 
     # posture_gap: Rule C1 infeasibility entries forwarded from upstream
@@ -482,8 +519,68 @@ def identify_coverage_gaps(
         "single_layer": single_layer,
         "framework_gap": framework_gap,
         "control_orphan": control_orphan,
+        "uncited_controls": uncited_controls,
         "posture_gap": posture_gap,
     }
+
+
+def control_source_ref(ctrl: dict) -> str:
+    """Return a specific AWS-documentation reference for a non-Canopy control.
+
+    Prefers a `doc_reference` threaded onto the control upstream (MCP-verified in
+    map-generate-controls) — either a plain URL string or an object carrying
+    `url` (and optional `title`). Falls back to any explicit `reference_url`, so
+    a reviewer always gets a concrete page to cross-check rather than a bare
+    "AWS documentation".
+    """
+    ref = ctrl.get("doc_reference")
+    if isinstance(ref, dict):
+        url = (ref.get("url") or "").strip()
+        title = (ref.get("title") or "").strip()
+        if url and title:
+            return f"[{title}]({url})"
+        if url:
+            return url
+    elif isinstance(ref, str) and ref.strip():
+        return ref.strip()
+
+    url = (ctrl.get("reference_url") or "").strip()
+    if url:
+        return url
+    return "AWS documentation (reference pending)"
+
+
+def build_uncited_controls(
+    controls: list[dict],
+    fw_mapped: dict,
+    ctrl_to_objs: dict[str, list[str]],
+) -> list[dict]:
+    """List the controls that are NOT sourced from a Canopy mitigation.
+
+    The main per-objective mapping cites only Canopy-sourced controls
+    (`trace_source == "canopy"`). Controls with `trace_source != "canopy"` — the
+    assessment-gap / compensating controls — are surfaced separately as
+    suggestions for review, each with a specific AWS-documentation `source`
+    reference so a reviewer can cross-check it. Canopy controls, including those
+    that share a mitigation with an already-mapped twin, are never listed here:
+    they belong in the main mapping (defense-in-depth — multiple control IDs may
+    map to one objective) or, if genuinely no objective fits, are simply not
+    rendered in this section.
+    """
+    out: list[dict] = []
+    for c in controls:
+        if c.get("trace_source") == "canopy":
+            continue  # Canopy-sourced controls belong in the main mapping
+        out.append(
+            {
+                "control_id": c["id"],
+                "name": c["name"],
+                "mitigation_ids": list(c.get("mitigation_ids", [])),
+                "trace_source": c.get("trace_source", ""),
+                "source": control_source_ref(c),
+            }
+        )
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -595,7 +692,7 @@ SCOPE_LABELS = {"ORG": "Organisation", "ACC": "Account", "RES": "Resource"}
 CATEGORY_ORDER = {"PRO": 0, "PRV": 1, "DET": 2, "COR": 3}
 CATEGORY_LABELS = {
     "PRO": "Proactive",
-    "PRV": "Preventive",
+    "PRV": "Preventative",
     "DET": "Detective",
     "COR": "Responsive",
 }
@@ -678,6 +775,38 @@ _MECH_GOVERNS = {
 }
 
 
+def _citation_cell(cm: dict, ctrl: dict) -> str:
+    """Render the citation cell for a mapped-control row in framework-mapping.md.
+
+    Prefers the row-level citation (objective_requirement + source + mitigation
+    alias). Falls back to the control's threaded Canopy alias so the rendered md
+    still shows the Canopy source even for a citation-free legacy mapping.
+    """
+    cit = cm.get("citation") if isinstance(cm.get("citation"), dict) else {}
+    bits: list[str] = []
+    req = (cit.get("objective_requirement") or "").strip()
+    if req:
+        bits.append(req)
+    alias = cit.get("mitigation_alias") or ctrl.get("mitigation_alias")
+    if alias:
+        bits.append(f"`{alias}`")
+    source = (cit.get("source") or ctrl.get("trace_source") or "").strip()
+    if source:
+        bits.append(f"({source})")
+    return " ".join(bits) if bits else "—"
+
+
+def _mitre_cell(cm: dict, ctrl: dict) -> str:
+    """Render the MITRE ATT&CK cell — techniques resolved from the Canopy source."""
+    techniques: list[str] = []
+    cit = cm.get("citation") if isinstance(cm.get("citation"), dict) else {}
+    for src in (cit.get("mitre_techniques"), ctrl.get("mitre_techniques")):
+        if isinstance(src, list):
+            techniques.extend(t for t in src if isinstance(t, str))
+    seen = sorted(set(techniques))
+    return ", ".join(seen) if seen else "—"
+
+
 def _governs_phrase(ctrl: dict) -> str:
     """Plain-language description of the kind of setting a control governs.
 
@@ -727,12 +856,75 @@ def _action_family(ctrl: dict) -> str:
     return f"`{actions[0]}` and related `{prefix}:` actions"
 
 
+def _mitigation_statement_indexes(
+    mitigations: list[dict], threat_mitigation_map: list[dict]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Build (by_alias, by_id) statement lookups for the catalog citation line.
+
+    The verbatim mitigation statement is pulled from the resolved mitigation
+    list (customer `existing_mitigations` or the synthetic assessment-gap
+    mitigations), keyed by Canopy alias and by mitigation id. The
+    threat_mitigation_map (keyed by mitigation_id) is a fallback so a control
+    that only carries `mitigation_ids` still resolves a statement.
+    """
+    by_alias: dict[str, str] = {}
+    by_id: dict[str, str] = {}
+    for mit in mitigations or []:
+        if not isinstance(mit, dict):
+            continue
+        stmt = (mit.get("statement") or "").strip()
+        if mit.get("alias"):
+            by_alias.setdefault(mit["alias"], stmt)
+        if mit.get("id"):
+            by_id.setdefault(mit["id"], stmt)
+    for t in threat_mitigation_map or []:
+        mid = t.get("mitigation_id")
+        if mid and mid not in by_id:
+            by_id[mid] = (t.get("statement") or "").strip()
+    return by_alias, by_id
+
+
+def _catalog_citation_lines(
+    ctrl: dict, by_alias: dict[str, str], by_id: dict[str, str]
+) -> list[str]:
+    """Render the Canopy citation (or assessment-gap label) lines for a control.
+
+    Every control derives from a Canopy mitigation (alias + UUID + verbatim
+    statement, cited here) or from an assessment gap (labelled as a
+    recommendation with no Canopy source). Control IDs are minted by this tool
+    because Canopy does not carry control IDs.
+    """
+    out: list[str] = []
+    if ctrl.get("trace_source") == "assessment_gap" or not ctrl.get("mitigation_alias"):
+        out.append(
+            "- **Source:** assessment gap (no Canopy mitigation; recommended control)"
+        )
+        return out
+
+    alias = ctrl["mitigation_alias"]
+    uuid = ctrl.get("mitigation_uuid", "")
+    statement = by_alias.get(alias, "")
+    if not statement:
+        for mid in ctrl.get("mitigation_ids", []):
+            if by_id.get(mid):
+                statement = by_id[mid]
+                break
+    cite = f"- **Canopy mitigation:** `{alias}`"
+    if uuid:
+        cite += f" (UUID `{uuid}`)"
+    out.append(cite)
+    if statement:
+        out.append(f"- **Canopy statement:** {statement}")
+    return out
+
+
 def write_controls_catalog(
     controls: list[dict],
     threat_mitigation_map: list[dict],
     attack_coverage: dict,
     service: str,
     path: Path,
+    mitigations: list[dict] | None = None,
 ) -> None:
     # Resource list (union across all controls), mitigations addressed count.
     resources = sorted(
@@ -740,6 +932,9 @@ def write_controls_catalog(
     )
     mitigations_addressed = len(
         {t["mitigation_id"] for t in threat_mitigation_map if t.get("control_ids")}
+    )
+    by_alias, by_id = _mitigation_statement_indexes(
+        mitigations or [], threat_mitigation_map
     )
 
     lines = []
@@ -759,22 +954,50 @@ def write_controls_catalog(
         "not over-state specifics."
     )
     lines.append("")
+    lines.append(
+        "> Every control is derived from a Canopy mitigation (its alias and "
+        "statement are cited below each control); control IDs are assigned by "
+        "this tool because Canopy does not carry control IDs. Controls with no "
+        "Canopy source are labelled as recommendations (assessment-gap driven)."
+    )
+    lines.append("")
 
-    # Control categories reference table
+    # Control categories reference table. Purpose + implementation primitives are
+    # the canonical category definitions (kept in sync with the authoring skill).
     lines.append("## Control Categories\n")
     lines.append("")
-    lines.append("| Category | Purpose |")
-    lines.append("|----------|---------|")
-    lines.append("| **Preventive** | Designed to prevent an event from occurring |")
-    lines.append("| **Proactive** | Designed to prevent the creation of noncompliant resources |")
-    lines.append("| **Detective** | Designed to detect, log, and alert after an event has occurred |")
-    lines.append("| **Responsive** | Designed to drive remediation of adverse events or deviations from your security baseline |")
+    lines.append("| Category | Purpose | Implementation primitives |")
+    lines.append("|----------|---------|---------------------------|")
+    lines.append(
+        "| **Proactive** | Validate resource configuration before creation and block "
+        "non-compliant resources from being created | CloudFormation Hooks (via Control "
+        "Tower), CloudFormation Guard (CI/CD), OPA rules (CI/CD) |"
+    )
+    lines.append(
+        "| **Preventative** | Stop non-compliant actions — hard guardrails that deny API "
+        "calls regardless of the caller's IAM permissions | SCPs (org), RCPs (resource), "
+        "Declarative Policies (service), IAM permissions boundaries (entity), VPC endpoint "
+        "policies |"
+    )
+    lines.append(
+        "| **Detective** | Identify non-compliance after deployment | AWS Config rules, "
+        "Security Hub controls, GuardDuty findings, CloudTrail, Amazon Inspector |"
+    )
+    lines.append(
+        "| **Corrective (Responsive)** | Remediate after detection | SSM Automation "
+        "runbooks, Config auto-remediation (→ SSM), Lambda remediation, Security Hub "
+        "automated response, EventBridge → remediation workflows |"
+    )
     lines.append("")
+
+    # Coverage-level legend so a reader knows what Full/Partial/Supportive/N/A
+    # mean where controls are mapped to framework objectives.
+    lines.extend(_coverage_legend_lines())
 
     # Control matrix summary table
     lines.append("## Control Matrix Summary\n")
     lines.append("")
-    lines.append("|  | Proactive | Preventive | Detective | Responsive | Total |")
+    lines.append("|  | Proactive | Preventative | Detective | Responsive | Total |")
     lines.append("|---|---|---|---|---|---|")
 
     matrix: dict[str, dict[str, int]] = {}
@@ -842,6 +1065,9 @@ def write_controls_catalog(
                 lines.append(
                     f"- **Mitigations:** {', '.join(ctrl.get('mitigation_ids', []))}"
                 )
+                # Canopy provenance: alias + UUID + verbatim statement, or an
+                # explicit assessment-gap recommendation label.
+                lines.extend(_catalog_citation_lines(ctrl, by_alias, by_id))
                 if ctrl.get("framework_objectives"):
                     lines.append(
                         f"- **Framework Objectives:** {', '.join(ctrl['framework_objectives'])}"
@@ -886,23 +1112,11 @@ def write_framework_mapping(
     total_obj = summary.get("total_objectives", len(fw_mapped["framework_mapping"]))
     mapped_count = summary.get("mapped", 0)
     na_count = summary.get("not_applicable", 0)
+    uncertain_count = summary.get(
+        "uncertain",
+        sum(1 for f in fw_mapped["framework_mapping"] if f.get("status") == "UNCERTAIN"),
+    )
 
-    # Count coverage levels (canonical labels, legacy aliases accepted)
-    full_count = sum(
-        1
-        for f in fw_mapped["framework_mapping"]
-        if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_FULL
-    )
-    partial_count = sum(
-        1
-        for f in fw_mapped["framework_mapping"]
-        if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_PARTIAL
-    )
-    supportive_count = sum(
-        1
-        for f in fw_mapped["framework_mapping"]
-        if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_SUPPORTIVE
-    )
     domains_covered = sum(
         1 for d in summary.get("by_domain", {}).values() if d.get("mapped", 0) > 0
     )
@@ -915,6 +1129,8 @@ def write_framework_mapping(
     lines.append(f"**Framework Objectives Total:** {total_obj}  ")
     lines.append(f"**Objectives Mapped:** {mapped_count}  ")
     lines.append(f"**Objectives Not Applicable:** {na_count}  ")
+    if uncertain_count:
+        lines.append(f"**Objectives Uncertain (review needed):** {uncertain_count}  ")
     lines.append(f"**Domains Covered:** {domains_covered} / {total_domains}  ")
     lines.append("")
 
@@ -925,10 +1141,13 @@ def write_framework_mapping(
     lines.append(f"| Total Objectives | {total_obj} |")
     lines.append(f"| Mapped | {mapped_count} |")
     lines.append(f"| Not Applicable | {na_count} |")
-    lines.append(f"| Fully Covered | {full_count} |")
-    lines.append(f"| Partially Covered | {partial_count} |")
-    lines.append(f"| Supportive Only | {supportive_count} |")
+    lines.append(f"| Uncertain (review needed) | {uncertain_count} |")
     lines.append("")
+
+    # Coverage-level legend so a reader knows what each level in the detailed
+    # mappings means. Definitions are kept in sync with the authoring skill
+    # (skills/map-framework-mapping/SKILL.md, "Assign coverage level").
+    lines.extend(_coverage_legend_lines())
 
     # Domain coverage summary table
     lines.append("## Domain Coverage Summary\n")
@@ -943,39 +1162,62 @@ def write_framework_mapping(
         )
     lines.append("")
 
-    # Detailed mappings by domain
+    # Detailed mappings — every objective, in framework order, under its domain.
+    # The report lists ALL objectives sequentially (mapped, N/A, and uncertain)
+    # as `<ID>: <title>` so a reviewer can scan top-to-bottom and see each one
+    # with its content or its N/A reason. Domain sub-headings are retained;
+    # objectives appear in the merged framework order within each domain.
     lines.append("## Detailed Mappings by Domain\n")
     lines.append("")
 
-    # Group mappings by domain
-    domain_mappings: dict[str, list[dict]] = defaultdict(list)
+    # Group mappings by domain, preserving the framework (canonical) order in
+    # which each domain first appears and the objective order within it.
+    domain_mappings: dict[str, list[dict]] = {}
     for f in fw_mapped["framework_mapping"]:
-        domain_mappings[f["domain"]].append(f)
+        domain_mappings.setdefault(f["domain"], []).append(f)
 
-    for domain in sorted(domain_mappings):
-        mappings = domain_mappings[domain]
+    rendered_objective_ids: list[str] = []
+
+    for domain, mappings in domain_mappings.items():
         mapped_objs = [m for m in mappings if m["status"] == "MAPPED"]
-        na_objs = [m for m in mappings if m["status"] != "MAPPED"]
+        uncertain_objs = [m for m in mappings if m["status"] == "UNCERTAIN"]
+        na_objs = [m for m in mappings if m["status"] == "N/A"]
 
         lines.append(f"### {domain}\n")
         lines.append("")
-        lines.append(
-            f"*{len(mapped_objs)} mapped, {len(na_objs)} not applicable*\n"
-        )
+        summary_bits = [f"{len(mapped_objs)} mapped", f"{len(na_objs)} not applicable"]
+        if uncertain_objs:
+            summary_bits.append(f"{len(uncertain_objs)} uncertain")
+        lines.append(f"*{', '.join(summary_bits)}*\n")
         lines.append("")
 
-        if mapped_objs:
-            for obj in mapped_objs:
-                lines.append(f"**{obj['objective_id']}: {obj['title']}** -- Coverage: {obj['coverage']}\n")
+        # Sequential: render every objective in this domain in order, whatever
+        # its status. No objective is collapsed into a trailing ID list.
+        for obj in mappings:
+            rendered_objective_ids.append(obj["objective_id"])
+            oid = obj["objective_id"]
+            title = obj.get("title", "")
+            status = obj.get("status")
+
+            if status == "MAPPED":
+                lines.append(f"**{oid}: {title}** — Coverage: {obj.get('coverage', '')}\n")
                 lines.append("")
-                if obj.get("controls"):
+                # The main mapping cites only Canopy-sourced controls. Controls
+                # not backed by a Canopy mitigation (assessment-gap / compensating)
+                # are surfaced in the "Suggestions for Review" section instead, so
+                # they are filtered out of the per-objective tables here.
+                canopy_rows = [
+                    cm for cm in obj.get("controls", [])
+                    if ctrl_index.get(cm["control_id"], {}).get("trace_source") == "canopy"
+                ]
+                if canopy_rows:
                     lines.append(
-                        "| Control ID | Title | Category | Scope | Coverage Level | Rationale |"
+                        "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Source | MITRE |"
                     )
                     lines.append(
-                        "|------------|-------|----------|-------|----------------|-----------|"
+                        "|------------|-------|----------|-------|----------------|-----------|--------|-------|"
                     )
-                    for cm in obj["controls"]:
+                    for cm in canopy_rows:
                         cid = cm["control_id"]
                         ctrl = ctrl_index.get(cid, {})
                         cat = CATEGORY_LABELS.get(
@@ -984,89 +1226,76 @@ def write_framework_mapping(
                         scope = SCOPE_LABELS.get(
                             ctrl.get("scope", ""), ctrl.get("scope", "?")
                         )
-                        title = ctrl.get("name", "?")
+                        ctrl_title = ctrl.get("name", "?")
                         level = cm.get("coverage_level", "?")
                         rat = cm.get("rationale", "")
                         lines.append(
-                            f"| {cid} | {title} | {cat} | {scope} | {level} | {rat} |"
+                            f"| {cid} | {ctrl_title} | {cat} | {scope} | {level} | {rat} "
+                            f"| {_citation_cell(cm, ctrl)} | {_mitre_cell(cm, ctrl)} |"
                         )
                     lines.append("")
-
                 lines.append(f"*Reason*: {obj.get('reason', '')}\n")
                 lines.append("")
 
-        if na_objs:
-            lines.append(f"**Not Applicable Objectives**: {', '.join(o['objective_id'] for o in na_objs)}\n")
-            lines.append("")
+            elif status == "UNCERTAIN":
+                rr = obj.get("review_reason") or obj.get("reason", "")
+                cids = ", ".join(
+                    c.get("control_id", "?") for c in obj.get("controls", [])
+                ) or "—"
+                lines.append(
+                    f"**{oid}: {title}** — UNCERTAIN (review needed) — {rr}"
+                )
+                lines.append(f"*Candidate control(s)*: {cids}\n")
+                lines.append("")
 
-    # Unmapped controls section
-    orphans = coverage_gaps.get("control_orphan", [])
-    if orphans:
-        lines.append("## Unmapped Controls\n")
-        lines.append("")
-        lines.append(
-            "Controls not mapped to any framework objective:\n"
+            else:  # N/A
+                lines.append(f"**{oid}: {title}** — N/A — {obj.get('reason', '')}\n")
+                lines.append("")
+
+    # Render-time completeness assertion: every objective from the merged mapping
+    # must appear exactly once, so a dropped objective is caught here rather than
+    # discovered by a reader scanning the report.
+    all_objective_ids = [f["objective_id"] for f in fw_mapped["framework_mapping"]]
+    if sorted(rendered_objective_ids) != sorted(all_objective_ids):
+        missing = set(all_objective_ids) - set(rendered_objective_ids)
+        extra = set(rendered_objective_ids) - set(all_objective_ids)
+        raise ValueError(
+            "framework-mapping render dropped or duplicated objectives — "
+            f"rendered {len(rendered_objective_ids)} of {len(all_objective_ids)} "
+            f"(missing={sorted(missing)[:10]}, extra={sorted(extra)[:10]})"
         )
-        lines.append("")
-        lines.append("| Control ID | Name |")
-        lines.append("|------------|------|")
-        for o in orphans:
-            lines.append(f"| {o['control_id']} | {o['name']} |")
-        lines.append("")
 
-    # Coverage gaps section
-    lines.append("## Coverage Gaps\n")
-    lines.append("")
-
-    mit_gaps = coverage_gaps.get("mitigation_gap", [])
-    if mit_gaps:
-        lines.append(f"### Mitigations Without Controls ({len(mit_gaps)})\n")
-        lines.append("")
-        for mg in mit_gaps:
-            lines.append(f"- **{mg['mitigation_id']}**: {mg['statement']}")
-        lines.append("")
-
-    single = coverage_gaps.get("single_layer", [])
-    if single:
-        lines.append(f"### Single-Layer Coverage ({len(single)})\n")
-        lines.append("")
-        lines.append("| Mitigation | Present Layer | Missing Layer |")
-        lines.append("|------------|---------------|---------------|")
-        for s in single:
-            lines.append(
-                f"| {s['mitigation_id']} | {s['present_layer']} | {s['missing_layer']} |"
-            )
-        lines.append("")
-
-    fw_gaps = coverage_gaps.get("framework_gap", [])
-    if fw_gaps:
-        lines.append(
-            f"### Framework Objectives with Supportive-Only Coverage ({len(fw_gaps)})\n"
-        )
-        lines.append("")
-        for fg in fw_gaps:
-            lines.append(
-                f"- **{fg['objective_id']}** ({fg['domain']}): {fg['title']}"
-            )
-        lines.append("")
-
-    # Mitigation traceability table
-    lines.append("## Mitigation Traceability\n")
-    lines.append("")
-    lines.append(
-        "| Mitigation ID | Resource Type | Coverage | Preventive | Detective | Responsive |"
+    # Controls not sourced from a Canopy mitigation. The main mapping above cites
+    # only Canopy-sourced controls; these are the assessment-gap / compensating
+    # controls the accelerator suggests. Each carries a specific AWS-documentation
+    # Source reference so a reviewer can confirm it independently.
+    suggested = coverage_gaps.get("uncited_controls") or coverage_gaps.get(
+        "control_orphan", []
     )
-    lines.append(
-        "|---------------|---------------|----------|------------|-----------|------------|"
-    )
-    for t in threat_mitigation_map:
-        prev = len(t["layers"]["preventive"]) + len(t["layers"]["proactive"])
-        det = len(t["layers"]["detective"])
-        cor = len(t["layers"]["responsive"])
+    if suggested:
+        lines.append("## Controls Not Sourced from Canopy (Suggestions for Review)\n")
+        lines.append("")
         lines.append(
-            f"| {t['mitigation_id']} | {t['resource_type']} | {t['coverage']} | {prev} | {det} | {cor} |"
+            "These controls are not backed by a Canopy mitigation, so they are "
+            "not cited in the main mapping above. They are suggested for review — "
+            "confirm each against the cited AWS documentation source before "
+            "adopting it."
         )
-    lines.append("")
+        lines.append("")
+        lines.append("| Control ID | Name | Source |")
+        lines.append("|------------|------|--------|")
+        for o in suggested:
+            source = o.get("source") or control_source_ref(ctrl_index.get(o["control_id"], {}))
+            lines.append(f"| {o['control_id']} | {o['name']} | {source} |")
+        lines.append("")
+
+    # NOTE: the customer-facing report intentionally omits a "Coverage Gaps"
+    # section and a "Mitigation Traceability" table. The underlying data still
+    # lives in mapping-results.json (`coverage_gaps`, `threat_mitigation_map`)
+    # for downstream consumers and internal gates; it is simply not rendered
+    # here because every control now cites its Canopy mitigation directly in
+    # the catalog, and the mitigation-level rollup is not actionable for the
+    # customer reading this report.
 
     write_text(path, "\n".join(lines))
 
@@ -1338,7 +1567,10 @@ def main() -> int:
     # Phase 5: Write controls-catalog.md
     print("Phase 5: Writing controls-catalog.md...")
     catalog_path = map_dir / "controls-catalog.md"
-    write_controls_catalog(controls, threat_mitigation_map, attack_coverage, service, catalog_path)
+    write_controls_catalog(
+        controls, threat_mitigation_map, attack_coverage, service, catalog_path,
+        mitigations=mitigations,
+    )
     print()
 
     # Phase 6: Write framework-mapping.md

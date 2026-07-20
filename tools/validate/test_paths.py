@@ -73,24 +73,22 @@ class TestPhaseDir:
         expected = repo_root() / ".service-approval" / "awslambda" / "01-assess"
         assert path == expected
 
-    def test_generate_phase(self):
-        """phase_dir('awslambda', 'generate') → .service-approval/awslambda/05-generate/"""
-        path = phase_dir("awslambda", "generate")
-        expected = repo_root() / ".service-approval" / "awslambda" / "05-generate"
+    def test_recommended_guidance_phase(self):
+        """phase_dir('awslambda', 'recommended-guidance') → .service-approval/awslambda/05-recommended-guidance/"""
+        path = phase_dir("awslambda", "recommended-guidance")
+        expected = repo_root() / ".service-approval" / "awslambda" / "05-recommended-guidance"
         assert path == expected
 
     def test_all_phases_map_correctly(self):
-        """Verify all 9 phase names map to correct numbers."""
+        """Verify all phase names map to correct numbers."""
         phase_map = {
             "intake": "00",
             "assess": "01",
             "research": "02",
             "validate": "03",
             "map": "04",
-            "generate": "05",
-            "test": "06",
-            "summarize": "07",
-            "evidence": "08",
+            "recommended-guidance": "05",
+            "summarize": "06",
         }
         for phase_name, phase_num in phase_map.items():
             path = phase_dir("awslambda", phase_name)
@@ -105,6 +103,12 @@ class TestPhaseDir:
             phase_dir("awslambda", "invalid-phase")
         assert "Invalid phase name" in str(exc_info.value)
         assert "invalid-phase" in str(exc_info.value)
+
+    @pytest.mark.parametrize("removed_phase", ["generate", "test", "evidence"])
+    def test_removed_phases_raise(self, removed_phase):
+        """Dropped phases (generate/test/evidence) must no longer resolve."""
+        with pytest.raises(PathResolutionError):
+            phase_dir("awslambda", removed_phase)
 
     def test_works_with_different_slugs(self):
         """phase_dir works with any valid slug."""
@@ -230,5 +234,5 @@ class TestPathTraversalDefense:
         sa_root = (repo_root() / ".service-approval").resolve()
         # These are valid slugs, just verifying the assertion
         assert service_root("awslambda").is_relative_to(sa_root)
-        assert phase_dir("awslambda", "evidence").is_relative_to(sa_root)
+        assert phase_dir("awslambda", "recommended-guidance").is_relative_to(sa_root)
         assert staging_dir("2026-05-13T11-30-00Z").is_relative_to(sa_root)
