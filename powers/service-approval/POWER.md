@@ -27,7 +27,7 @@ keywords:
 - proactive-controls
 - responsive-controls
 author: Service Onboarding on AWS Team
-version: 1.0.0
+version: 1.1.0
 ---
 
 # AWS Service Security Controls Generator
