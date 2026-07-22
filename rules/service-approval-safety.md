@@ -2,12 +2,14 @@
 
 These rules apply across all clients and all agents.
 
-## Deployment Safety
-- Before any AWS deployment, run `aws sts get-caller-identity --profile <env>` and display
-  the account ID and alias to the user. Pause and ask for explicit confirmation.
-- Never deploy to any account whose alias or ID suggests production (contains: prod, prd,
-  production, live) unless the user has confirmed twice.
-- The `--env` flag must point to a named AWS CLI profile — never use the default profile.
+## Deployment & Teardown (customer responsibility)
+- This pipeline produces recommended security controls and compliant IaC; it does
+  not deploy, test, or tear down resources against a live AWS account. Deploying the
+  generated artifacts — and tearing them down afterward — is the customer's
+  responsibility.
+- The generated IaC and control artifacts are what the customer reviews and applies
+  in their own account through their own change process; no agent in this pipeline
+  assumes an AWS profile or mutates account state.
 
 ## State Safety
 - Always write state to `.service-approval/<slug>/<phase>/` relative to the current working directory.
@@ -21,10 +23,6 @@ These rules apply across all clients and all agents.
   `aws iam validate-policy --policy-document file://<file> --policy-type SERVICE_CONTROL_POLICY`
   where applicable.
 - Generated SCPs must include a Deny statement — never generate Allow-only SCPs as the only control.
-
-## Teardown Safety
-- Tester always tears down deployed test resources at the end unless `--keep` is passed.
-- If teardown fails, list the deployed resource ARNs in `test-results.json` under `teardown_failed`.
 
 ## MCP Safety
 - All API parameters, condition keys, and Config rule names must be sourced from MCP — never

@@ -1,6 +1,6 @@
 ---
 name: phase-generate
-description: Rules for Phase 4 (Generate) sub-skills
+description: Rules for Phase 4 (Recommended Guidance) sub-skills
 inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/*/05-recommended-guidance/**"
 ---
