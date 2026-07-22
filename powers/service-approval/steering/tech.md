@@ -10,7 +10,7 @@ alwaysApply: true
 
 - **Python 3.9+** for validators, hooks, and the KB search MCP server
 - **Docker** for `hashicorp/terraform-mcp-server:0.5.1` (stdio transport)
-- **AWS CLI** optional — required only for Phase 5 (Test) and Tier 2 validation
+- **AWS CLI** optional — required only for Tier 2 policy validation (Access Analyzer / CloudFormation `validate-template`)
 
 ## MCP servers
 
@@ -41,7 +41,6 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
 ├── _staging/<ts>/                  ← intake landing zone before slug is known (Phase 0 promotes)
 │   └── 00-intake/intake-manifest.json
 └── <slug>/                          ← per-service root (e.g. awslambda/, awss3/)
-    ├── attestation.md               ← reviewer's audit guide (Phase 7)
     ├── mcp-calls.log                ← every MCP call appended here (service-scoped)
     ├── 00-intake/intake-manifest.json
     ├── 01-assess/
@@ -69,18 +68,9 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── detective/               (Config rules + Lambda handlers, EventBridge)
     │   ├── responsive/              (Lambda remediators, SSM runbooks)
     │   └── iac/                     (CDK, CloudFormation, CDKTF, modular Terraform)
-    ├── 06-test/
-    │   ├── test-results.json
-    │   ├── deployed-resources.json  ← stack ID + ARNs (consumed by Phase 7)
-    │   └── deploy-logs/*.log
-    ├── 07-summarize/
-    │   ├── SUMMARY-REPORT.md
-    │   └── ARTIFACT-FLOW-MATRIX.md
-    └── 08-evidence/
-        ├── attestation-report.md
-        ├── attestation-results.json
-        ├── cli-commands.json
-        └── cli-outputs/*.log
+    └── 06-summarize/
+        ├── SUMMARY-REPORT.md
+        └── ARTIFACT-FLOW-MATRIX.md
 ```
 
 ## Schema contracts

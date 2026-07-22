@@ -24,8 +24,8 @@ enable-auto-sync:  ## Wire .githooks/post-merge so `git pull` auto-syncs
 	@git config core.hooksPath .githooks
 	@echo "Auto-sync enabled. Every 'git pull' will now run install.sh --sync."
 
-test:  ## Run the Python test suite (validators + evidence module)
-	@python3 -m pytest tools/validate/ tools/evidence/ -q
+test:  ## Run the Python test suite (validators)
+	@python3 -m pytest tools/validate/ -q
 
 test-sync:  ## Verify no drift between manifest.yaml and generated client configs (incl. agent mirrors)
 	@python3 tools/sync-ide-configs.py --check

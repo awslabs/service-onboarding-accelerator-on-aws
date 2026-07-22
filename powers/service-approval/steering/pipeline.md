@@ -5,13 +5,15 @@ inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/**"
 ---
 
-# Pipeline — 9 service-approval agents (1 precursor + 8 numbered phases), 26 sub-skills
+# Pipeline — service-approval agents (1 precursor + 6 numbered phases)
 
-The pipeline runs as 9 agents total: an unnumbered **Intake** precursor that
-gathers customer inputs and writes a candidate slug to a staging directory,
-followed by 8 numbered phases (0 Assess → 7 Evidence). Phase 0 (Assess) atomically
+The pipeline runs an unnumbered **Intake** precursor that gathers customer
+inputs and writes a candidate slug to a staging directory, followed by 6
+numbered phases (0 Assess → 5 Summarize). Phase 0 (Assess) atomically
 promotes the staging dir to `.service-approval/<slug>/` after deriving the
-canonical service slug from SAR.
+canonical service slug from SAR. The pipeline recommends controls + compliant
+IaC that the customer deploys themselves; it does not deploy, test, or attest
+against a live account.
 
 ## Hard rules (re-stated)
 
@@ -39,12 +41,11 @@ orchestrator; do not deviate from the steps it prescribes.
 **Sub-skill:** `skills/intake/SKILL.md`
 **Agent:** `sa-intake`
 **Inputs:** `--service`, `--from-intake=<file>`, `--interactive`, plus any
-orchestrator-level CLI flags (`--env`, `--framework`, `--framework-file`,
-`--skip-test`, `--dry-run`, `--keep`, `--timeout`)
+orchestrator-level CLI flags (`--framework`, `--framework-file`,
+`--include-unverified`, `--dry-run`, `--clean`)
 **Outputs:**
 - `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json` — service identity, input folder, framework
-  selection, testing intent (`full-deploy`/`dry-run`/`skip`/`manual-cli`),
-  `service.candidate_slug`, `staging_timestamp`
+  selection, `service.candidate_slug`, `staging_timestamp`
 
 Intake runs BEFORE the canonical service slug is known — that slug is derived
 in Phase 0 (Assess) from the SAR `service_prefix`. Therefore intake writes to a
@@ -66,10 +67,6 @@ Claude Code interactive path (Branch A) uses the same CCMv4-only narrowing
 available behind the `--framework=<type>` CLI flag for advanced operators
 who bypass the interactive intake.
 
-Deployment intent (`testing.mode`) is captured here and consumed by Phase 5 via
-the orchestrator's flag-resolution rules. IaC format selection is NOT done here —
-that happens in Phase 0 (Assess) Step 2b and lands in `iac-support.json`.
-
 If the user has an existing `./service-approval-intake.yaml` (the per-user
 config they fill in from `skills/intake/intake-template.yaml`), the intake
 skill auto-discovers it, renders a summary, and prompts: `[U]se as-is /
@@ -80,6 +77,9 @@ option by design.
 The intake skill is the source of truth for that flow — see
 `skills/intake/SKILL.md` "Existing Intake Flow" section. Don't
 re-implement it here.
+
+IaC format selection is NOT done at intake — that happens in Phase 0 (Assess)
+Step 2b and lands in `iac-support.json`.
 
 
 
@@ -153,7 +153,7 @@ sa-map-assemble           → <slug>/04-map/mapping-results.json         (sequen
 mitigation, every framework objective, the coverage matrix, and the
 threat → mitigation → control traceability. Phase 4 reads it.
 
-## Phase 4 — Generate (3 families in parallel; preventive is a gated sub-pipeline)
+## Phase 4 — Recommended Guidance (3 families in parallel; preventive is a gated sub-pipeline)
 
 **Families:** 3 in parallel. The preventive family runs its sub-skills in order
 (recommender gate → reference-anchored authors → root-cause critic).
@@ -184,43 +184,24 @@ the right `<slug>/05-recommended-guidance/` subdirectory. Artifact count ranges:
 
 Total: 78–111 files depending on service surface area.
 
-## Phase 5 — Test (optional)
-
-**Sub-skill:** `skills/test/SKILL.md`
-Runs only if `--env=<profile>` is provided. Two tiers:
-- Tier 1 (always): static validation via cfn-lint, tflint, cfn-guard parse, OPA check
-- Tier 2 (with creds): AWS API — cfn validate-template, Access Analyzer validate-policy
-
-Output: `<slug>/06-test/test-results.json` plus `<slug>/06-test/deployed-resources.json` (stack ID + ARNs consumed by Phase 7) and `<slug>/06-test/deploy-logs/*.log`.
-
-**Stack lifecycle:** When Phase 7 is in scope (default), Phase 5 leaves the
-deployed CFN stack alive (`smoke-deploy-test.sh --keep`) and records
-`teardown_status: "deferred_to_phase_7"` in `test-results.json`. Phase 7 owns
-teardown. When invoked with `--no-evidence`, Phase 5 reverts to the legacy
-deploy-and-teardown behavior.
-
-## Phase 6 — Summarize
+## Phase 5 — Summarize
 
 **Sub-skill:** `skills/summarize/SKILL.md`
 
 Produces:
-- `<slug>/07-summarize/SUMMARY-REPORT.md` — the customer-facing verdict
-- `<slug>/07-summarize/ARTIFACT-FLOW-MATRIX.md` — per-artifact dependency graph
+- `<slug>/06-summarize/SUMMARY-REPORT.md` — the customer-facing Summary Report
+- `<slug>/06-summarize/ARTIFACT-FLOW-MATRIX.md` — per-artifact dependency graph
 
-The verdict is one of:
-- `APPROVED` — all integrity checks passed, framework coverage above threshold
-- `APPROVED (with exceptions)` — coverage gaps have rationale, no integrity failures
-- `REQUIRES REMEDIATION` — any integrity check failed
+Summarize issues no approve/deny verdict — it reports coverage, mitigation
+traceability, and the artifact inventory so a reviewer can see what was checked.
+The Stop hook still enforces the P1–P7 integrity signals on the run's outputs.
 
-The Stop hook (`ide/hooks/stop.kiro.hook`) enforces P6: if any P1–P5/P7 check
-failed, the verdict MUST be `REQUIRES REMEDIATION`. An `APPROVED` verdict with
-failures is rewritten by the hook.
+## Self-Review Gate (mandatory, runs between Recommended Guidance and Summarize)
 
-## Self-Review Gate (mandatory, runs between Generate and Summarize)
-
-Before entering Phase 6 (Summarize), the orchestrator MUST perform a completeness
-and correctness review of all Phase 4 output. This step exists because Generate
-runs in parallel and gaps are easy to miss when subagents complete independently.
+Before entering Phase 5 (Summarize), the orchestrator MUST perform a completeness
+and correctness review of all Phase 4 (Recommended Guidance) output. This step
+exists because the three families run in parallel and gaps are easy to miss when
+subagents complete independently.
 
 ### Checklist
 
@@ -257,38 +238,6 @@ runs in parallel and gaps are easy to miss when subagents complete independently
 
 ### Outcome
 
-- All checks pass → proceed to Phase 6 (Summarize)
+- All checks pass → proceed to Phase 5 (Summarize)
 - Any check fails → fix the gap, then re-run this gate before proceeding
 - Document any fixes made in `pipeline.log` with tag `[self-review:fix]`
-
-## Phase 7 — Evidence (optional, requires AWS credentials)
-
-**Sub-skill:** `skills/evidence/SKILL.md`
-**Agent:** `sa-evidence`
-
-Runs AWS CLI probes against deployed resources from Phase 5 Test to prove each
-mapped control is actually enforced at runtime. Produces:
-- `<slug>/08-evidence/attestation-report.md` — control × verdict matrix
-- `<slug>/08-evidence/attestation-results.json` — machine-readable results
-- `<slug>/08-evidence/cli-outputs/*.log` — raw stdout/stderr per probe
-- `<slug>/attestation.md` — reviewer's audit guide
-
-**Preconditions:**
-- Phase 5 Test must have run successfully with `--env=<profile>`
-- `<slug>/06-test/deployed-resources.json` must exist with stack ID + resource ARNs
-
-**Skip condition:** Phase 7 is skipped if Phase 5 was not run or failed.
-
-**Teardown ownership:** Phase 7 Step 11 tears down the deployed CFN stack at
-the end of evidence collection. The stack ARN is read from
-`06-test/deployed-resources.json.stack_id`. If
-`intake-manifest.json.testing.keep == true`, teardown is skipped and the stack
-remains alive (intended for manual debugging — operator must clean up
-manually). The outcome is recorded in
-`08-evidence/attestation-results.json.teardown_status` (one of: `completed`,
-`skipped_keep_true`, `failed`, `not_attempted`).
-
-Runs sequentially after Phase 6. Uses service-agnostic CLI synthesis rules (6 families)
-to map each control in `mapping-results.json` to an AWS CLI probe. Controls that
-cannot be CLI-validated (e.g., IaC-time-only CFN Guard rules) are marked as
-`NOT_CLI_VALIDATABLE` with supplemental evidence from `iac-time-evidence/`.

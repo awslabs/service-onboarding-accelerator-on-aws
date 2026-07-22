@@ -90,22 +90,23 @@ With additional flags:
 ```
 /service-approval ./input --service=bedrock-agentcore --framework=ccmv4
 /service-approval --service=kms --dry-run
-/service-approval ./input --service=s3 --env=delegated-admin
+/service-approval ./input --service=s3 --clean
 ```
 
 ## Step 6: Follow the pipeline
 
-The plugin runs 9 phases automatically:
+The plugin runs an Intake precursor plus 6 numbered phases automatically:
 
-1. **Intake** — collects service name, framework choice, testing preferences
+1. **Intake** — collects service name and framework choice
 2. **Assess** — security posture assessment against 5 CAF domains
 3. **Research** — discovers service capabilities, API surface, attack surface (4 parallel sub-skills)
 4. **Validate** — verifies research findings via MCP
 5. **Map** — maps capabilities to control framework objectives
-6. **Generate** — produces all security control artifacts and IaC templates
-7. **Test** — deploys and validates (if `--env` provided)
-8. **Summarize** — produces SUMMARY-REPORT.md
-9. **Evidence** — runs CLI probes for attestation (if Test passed)
+6. **Recommended Guidance** — produces all security control artifacts and IaC templates
+7. **Summarize** — produces SUMMARY-REPORT.md
+
+The pipeline recommends controls + compliant IaC that you deploy yourself; it
+does not deploy, test, or attest against a live account.
 
 You'll see MCP server connections activate as the pipeline progresses. Approve any
 permission prompts for MCP tools (aws-documentation, awsknowledge, awsiac, etc.).
@@ -122,12 +123,10 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
   05-recommended-guidance/        ← all generated artifacts (85+ files)
-  06-test/            ← test-results.json, deployed-resources.json (if --env)
-  07-summarize/       ← SUMMARY-REPORT.md (Summary Report)
-  08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
+  06-summarize/       ← SUMMARY-REPORT.md (Summary Report)
 ```
 
-The key deliverable is `07-summarize/SUMMARY-REPORT.md` — contains the coverage matrix, mitigation traceability, and artifact inventory.
+The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverage matrix, mitigation traceability, and artifact inventory.
 
 ---
 
@@ -137,10 +136,9 @@ The key deliverable is `07-summarize/SUMMARY-REPORT.md` — contains the coverag
 |------|-------------|---------|
 | `--service=<name>` | AWS service ID (e.g., `s3`, `kms`, `bedrock-agentcore`) | Required |
 | `./input-folder` | Folder with input files (`.md`, `.json`, `.xlsx`, `.pdf`, `.docx`) | None |
-| `--env=<profile>` | AWS CLI profile for Test phase + Tier 2 validation | None (skips Test) |
 | `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | `ccmv4` |
 | `--framework-file=<path>` | Explicit path to framework file | Auto-detect |
-| `--skip-test` | Skip deployment validation | false |
+| `--include-unverified` | Include unverified findings in generation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
 | `--clean` | Delete existing state before run | false |
 

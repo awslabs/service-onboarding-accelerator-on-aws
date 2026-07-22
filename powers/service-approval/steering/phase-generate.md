@@ -1,6 +1,6 @@
 ---
 name: phase-generate
-description: Rules for Phase 4 (Generate) sub-skills
+description: Rules for Phase 4 (Recommended Guidance) sub-skills
 inclusion: fileMatch
 fileMatchPattern: "**/.service-approval/*/05-recommended-guidance/**"
 ---
@@ -98,7 +98,7 @@ Failures exit 2 → Kiro auto-retries the write with the error in context.
 Each generator sub-skill MUST produce output across ALL supported engines/formats.
 A single-format output is never acceptable. Specifically:
 
-- `sa-generate-preventive` → SCPs with `_metadata` + `_simulation_tests`
+- `sa-generate-preventive-scp` / `-rcp` / `-iam` → policies with `_metadata` + `_simulation_tests`
 - `sa-generate-detective` → Config Rules as BOTH CloudFormation YAML and Terraform
 - `sa-generate-iac` → One template per format in `iac-support.json` where `supported: true`
 - Proactive controls → MUST exist as Guard + OPA + Checkov (all three)

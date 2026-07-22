@@ -28,7 +28,7 @@ Before writing `SUMMARY-REPORT.md`, verify all expected outputs exist:
 
 ## Self-Review Gate (enforcement)
 
-After Phase 4 (Generate) completes and before Phase 6 (Summarize), the agent
+After Phase 4 (Recommended Guidance) completes and before Phase 5 (Summarize), the agent
 MUST perform a completeness review. Skipping this step is a cultural violation
 equivalent to skipping the Validator.
 
