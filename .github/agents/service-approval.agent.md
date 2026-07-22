@@ -1,5 +1,5 @@
 ---
-description: 'AWS Service Security Controls Generator — runs the full service-approval pipeline (intake, assess, research, validate, map, generate, test, summarize) for a given AWS service.'
+description: 'AWS Service Security Controls Generator — runs the full service-approval pipeline (intake, assess, research, validate, map, recommended guidance, summarize) for a given AWS service.'
 tools: ['codebase', 'search', 'editFiles', 'runCommands', 'runTasks', 'fetch', 'aws-documentation', 'awsknowledge', 'awsiac', 'terraform']
 ---
 
@@ -13,17 +13,18 @@ and compliant resource templates for a specified AWS service.
 Read the skill file at `skills/service-approval/SKILL.md` and follow
 it step by step. That file is the authoritative source for the pipeline — do not skip steps.
 
-## Pipeline (9 phases, 20 sub-skills)
+## Pipeline (Intake + 6 numbered phases)
 
-- **Intake (precursor):** collect service, inputs, framework, testing intent → `intake-manifest.json`
+- **Intake (precursor):** collect service, inputs, framework → `intake-manifest.json`
 - **Phase 0 — Assess:** 5-domain CAF security assessment + IaC provider discovery
 - **Phase 1 — Research:** mitigations, capabilities, API surface, MITRE ATT&CK threat analysis
 - **Phase 2 — Validate:** cross-reference all research claims via MCP
 - **Phase 3 — Map:** parse framework, generate controls, map to objectives, assemble
-- **Phase 4 — Generate:** preventive, proactive, detective, responsive, IaC (4 formats)
-- **Phase 5 — Test:** mode set upfront in Intake (full-deploy / dry-run / skip / manual-cli)
-- **Phase 6 — Summarize:** SUMMARY-REPORT.md
-- **Phase 7 — Evidence:** CLI probes to attest control enforcement (requires Phase 5)
+- **Phase 4 — Recommended Guidance:** preventive, proactive, detective, responsive, IaC (4 formats)
+- **Phase 5 — Summarize:** SUMMARY-REPORT.md
+
+The pipeline recommends controls + compliant IaC that the customer deploys
+themselves; it does not deploy, test, or attest against a live account.
 
 Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layout).
 
@@ -32,9 +33,9 @@ Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layou
 Ask the user for these if not provided:
 - `--service=<name>` (required unless an input folder or `--from-intake` is provided)
 - Optional: `./input-folder` with customer docs (.md, .json, .xlsx, .pdf, .docx)
-- Optional: `--env=<aws-profile>` to enable Phase 5 (Test)
+- Optional: `--framework=<ccmv4|nist|cis|iso>`, `--framework-file=<path>`
 - Optional: `--from-intake=<file>`, `--interactive` (Intake controls)
-- Optional: `--skip-test`, `--dry-run`, `--clean`, `--keep`
+- Optional: `--include-unverified`, `--dry-run`, `--clean`
 
 ## Hard rules
 
@@ -67,6 +68,6 @@ use `aws-documentation` and `awsiac`.
 
 ## Output
 
-- `.service-approval/<slug>/07-summarize/SUMMARY-REPORT.md` — final report
+- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — final report
 - `.service-approval/<slug>/05-recommended-guidance/` — all generated artifacts
 - `.service-approval/<slug>/` — intermediate JSON state files per phase

@@ -1,7 +1,7 @@
 # Service Approval — CI pipeline
 #
 # Four gates that must pass on every MR before merge:
-#   1. Unit tests — Python tests in tools/validate/ + tools/evidence/
+#   1. Unit tests — Python tests in tools/validate/
 #   2. Sync drift — tools/sync-ide-configs.py --check must show no drift
 #      AND tools/generate-kiro-agents.py --check must show no drift
 #      (agent mirrors regenerated from agents-src/*.yaml)
@@ -25,7 +25,7 @@ unit-tests:
     - apt-get update -qq && apt-get install -y -qq git
     - pip install --quiet pyyaml jsonschema pytest jmespath jinja2
   script:
-    - python3 -m pytest tools/validate/ tools/evidence/ -q
+    - python3 -m pytest tools/validate/ -q
   rules:
     - if: $CI_MERGE_REQUEST_IID
     - if: $CI_COMMIT_BRANCH == "main"

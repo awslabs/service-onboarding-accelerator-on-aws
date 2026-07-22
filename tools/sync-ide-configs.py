@@ -195,6 +195,7 @@ def sync_kiro(m: dict, check: bool) -> bool:
         "description": m["description"].strip().replace("\n  ", " "),
         "keywords": m["keywords"],
         "author": m["author"]["name"],
+        "version": m["version"],
     }, check)
 
     mcp_json = REPO / "powers" / "service-approval" / "mcp.json"

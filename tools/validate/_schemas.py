@@ -19,15 +19,15 @@ flat `list[str]` shape as the hand-rolled `check_*` functions in
   schema violation is one line, greppable, with the path into the JSON
   document as a dotted string.
 
-## Registered schemas (evidence-attestation branch, W1):
+## Registered schemas
 
-State files (Phases 0-6):
+State files (Intake + Phases 0-5):
   - checkpoint-results, sar-facts, research, validated,
     map-controls-generated, map-framework-parsed, map-framework-mapped,
-    mapping-results, test-results, iac-support
+    mapping-results, iac-support
 
-Evidence files (Phase 7):
-  - cli-commands, attestation-results, deployed-resources
+Plus derived contracts loaded on demand by name: preventive-plan,
+preventive-coverage, detective-routing, conflict-report.
 """
 from __future__ import annotations
 
