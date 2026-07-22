@@ -12,4 +12,4 @@ tools:
 
 Follow the instructions in `skills/generate-preventive-iam/SKILL.md`.
 
-Read `.service-approval/<slug>/05-generate/preventive-plan.json` and author IAM-family artifacts ONLY for rows where decision == "GENERATE_IAM", dispatching by the control's mechanism to the matching output file and adapting the anchored reference example. Stamp `_metadata.reference` on every artifact. Write to `.service-approval/<slug>/05-generate/preventive/`.
+Read `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` and author IAM-family artifacts ONLY for rows where decision == "GENERATE_IAM", dispatching by the control's mechanism to the matching output file and adapting the anchored reference example. Stamp `_metadata.reference` on every artifact. Write to `.service-approval/<slug>/05-recommended-guidance/preventive/`.

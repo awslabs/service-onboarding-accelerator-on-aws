@@ -63,7 +63,7 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── mapping-results.json
     │   ├── controls-catalog.md
     │   └── framework-mapping.md
-    ├── 05-generate/
+    ├── 05-recommended-guidance/
     │   ├── preventive/              (SCPs, RCPs, resource policies)
     │   ├── proactive/               (CFN Guard, OPA, Checkov, CFN Hooks)
     │   ├── detective/               (Config rules + Lambda handlers, EventBridge)

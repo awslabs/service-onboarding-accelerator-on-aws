@@ -238,7 +238,7 @@ def test_check_service_reads_fw_mapped(tmp_path: Path, monkeypatch) -> None:
     assert any("not found verbatim" in e for e in errors), errors
 
 
-# --- CLI: --strict blocks, advisory (default) does not ------------------------
+# --- CLI: blocks by default, --advisory demotes to exit 0 ---------------------
 
 def _write_run(tmp_path: Path, fw_mapped: dict) -> Path:
     root = tmp_path / ".service-approval" / "svc"
@@ -254,7 +254,7 @@ def _write_run(tmp_path: Path, fw_mapped: dict) -> Path:
     return root
 
 
-def test_cli_strict_blocks_on_violation(tmp_path: Path, monkeypatch) -> None:
+def test_cli_blocks_on_violation_by_default(tmp_path: Path, monkeypatch) -> None:
     import subprocess
     import sys as _sys
     _write_run(tmp_path, _fw_mapped(
@@ -262,9 +262,14 @@ def test_cli_strict_blocks_on_violation(tmp_path: Path, monkeypatch) -> None:
                    "mitigation_alias": "Mitigation.AGENTCORE.AgentRuntime.1",
                    "mitigation_statement": "invented"}))
     script = Path(__file__).resolve().parent / "validate_canopy_facts.py"
+    # Default: block (exit 2). --strict is an accepted no-op alias for the default.
+    default = subprocess.run([_sys.executable, str(script), "--slug", "svc"],
+                             cwd=str(tmp_path), capture_output=True, text=True)
     strict = subprocess.run([_sys.executable, str(script), "--slug", "svc", "--strict"],
                             cwd=str(tmp_path), capture_output=True, text=True)
-    advisory = subprocess.run([_sys.executable, str(script), "--slug", "svc"],
+    # --advisory demotes to exit 0.
+    advisory = subprocess.run([_sys.executable, str(script), "--slug", "svc", "--advisory"],
                               cwd=str(tmp_path), capture_output=True, text=True)
+    assert default.returncode == 2, default.stderr
     assert strict.returncode == 2, strict.stderr
     assert advisory.returncode == 0, advisory.stderr

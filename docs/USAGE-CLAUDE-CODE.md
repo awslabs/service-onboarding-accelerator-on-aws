@@ -121,7 +121,7 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   02-research/        ← research.json
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
-  05-generate/        ← all generated artifacts (85+ files)
+  05-recommended-guidance/        ← all generated artifacts (85+ files)
   06-test/            ← test-results.json, deployed-resources.json (if --env)
   07-summarize/       ← SUMMARY-REPORT.md (Summary Report)
   08-evidence/        ← attestation-report.md, attestation-results.json (if Test passed)
