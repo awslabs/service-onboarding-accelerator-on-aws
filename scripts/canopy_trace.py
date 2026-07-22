@@ -31,6 +31,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+try:
+    from tools import paths
+except ImportError:
+    print("ERROR: tools.paths module not found. Run from the repo root with the "
+          "project venv.", file=sys.stderr)
+    sys.exit(1)
+
 _MITRE_FRAMEWORK_NAME = "MITRE ATT&CK"
 
 
@@ -202,15 +210,18 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.slug:
-        input_dir = Path.cwd() / ".service-approval" / args.slug / "input"
+        try:
+            svc_root = paths.service_root(args.slug)
+        except paths.PathResolutionError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            sys.exit(2)
+        input_dir = svc_root / "input"
         candidates = [p for p in input_dir.glob("*.json")] if input_dir.exists() else []
         if not candidates:
             print(f"SKIP: no JSON files in {input_dir}", file=sys.stderr)
             sys.exit(0)
         canopy_path = candidates[0]
-        output_path: Path | None = (
-            Path.cwd() / ".service-approval" / args.slug / "04-map" / "canopy-trace.json"
-        )
+        output_path: Path | None = svc_root / "04-map" / "canopy-trace.json"
     elif args.canopy_json:
         canopy_path = Path(args.canopy_json)
         output_path = Path(args.output) if args.output else None

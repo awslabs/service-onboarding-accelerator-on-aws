@@ -29,7 +29,7 @@ should use `aws-documentation` and `awsiac` instead. If the skill instructs you 
 
 ## Output
 - Final report: `.service-approval/<service-slug>/07-summarize/SUMMARY-REPORT.md`
-- All controls: `.service-approval/<service-slug>/05-generate/`
+- All controls: `.service-approval/<service-slug>/05-recommended-guidance/`
 - State files: `.service-approval/<service-slug>/` (per-phase subdirectories)
 - Evidence: `.service-approval/<service-slug>/08-evidence/` (if Phase 7 runs)
 

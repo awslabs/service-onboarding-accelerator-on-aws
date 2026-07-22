@@ -49,6 +49,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _CCMV4_GUIDANCE = _REPO_ROOT / "data" / "domain-mapping-guidance" / "ccmv4.json"
 _DEFAULT_THRESHOLD = 0.7
 
+sys.path.insert(0, str(_REPO_ROOT))
+try:
+    from tools import paths
+except ImportError:
+    print("ERROR: tools.paths module not found. Run from the repo root with the "
+          "project venv.", file=sys.stderr)
+    sys.exit(1)
+
 # Generic tokens that carry no discriminating signal for a control objective.
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "of", "to", "for", "in", "on", "by", "with",
@@ -188,7 +196,11 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.slug:
-        map_dir = Path.cwd() / ".service-approval" / args.slug / "04-map"
+        try:
+            map_dir = paths.service_root(args.slug) / "04-map"
+        except paths.PathResolutionError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
         parsed_path = map_dir / "map-framework-parsed.json"
         out_path: Path | None = map_dir / "custom_to_ccmv4_anchor.json"
     elif args.parsed:
