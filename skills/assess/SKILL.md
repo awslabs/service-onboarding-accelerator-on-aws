@@ -396,7 +396,7 @@ Write to `.service-approval/<slug>/01-assess/checkpoint-results.json`:
 ## Step 2b: IaC Provider Discovery
 
 After checkpoint verification, discover which IaC providers support this service. This
-determines what output formats Phase 4 (Generate) will produce. The user does NOT choose
+determines what output formats Phase 4 (Recommended Guidance) will produce. The user does NOT choose
 formats — the pipeline discovers what's available and informs them.
 
 ### Check 1: CloudFormation Support
@@ -514,8 +514,8 @@ Write to `.service-approval/<slug>/01-assess/iac-support.json`:
 }
 ```
 
-Phase 4 (Generate) reads `state/iac-support.json` to determine which formats to produce.
-If the file is missing (e.g., assess was skipped), Generate defaults to CloudFormation only.
+Phase 4 (Recommended Guidance) reads `state/iac-support.json` to determine which formats to produce.
+If the file is missing (e.g., assess was skipped), Recommended Guidance defaults to CloudFormation only.
 
 ---
 
