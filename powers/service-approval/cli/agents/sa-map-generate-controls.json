@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/map-generate-controls/SKILL.md`.\n\nRead the skill file, consume `.service-approval/<slug>/03-validate/validated.json`, and write\n`.service-approval/<slug>/04-map/map-controls-generated.json`.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"

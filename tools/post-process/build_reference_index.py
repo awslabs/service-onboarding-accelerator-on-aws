@@ -102,6 +102,21 @@ REPO_REGISTRY: list[dict] = [
         "globs": ["identity-policies/**/*.md", "resource-policies/**/*.md"],
         "md_policy": True,
     },
+    # Guard-DSL sample rules. Its `.guard` files are CloudFormation Guard rules
+    # keyed by `resourceType == "AWS::X::Y"`, NOT IAM policy JSON — they anchor
+    # BOTH detective Config custom rules (CUSTOM_LAMBDA / CUSTOM_POLICY) AND
+    # proactive CFN Guard rules. Harvested by the Guard-specific walker (see
+    # `kind: guard`); their anchor signal is the governed resource type, not an
+    # IAM action or condition key.
+    {
+        "slug": "aws-config-custom-policy-rule-samples",
+        "owner": "aws-samples",
+        "mechanism": "config-rule",
+        "license": "MIT",
+        "vendor_bodies": True,
+        "globs": ["*.guard"],
+        "kind": "guard",
+    },
 ]
 
 # Mechanism family per directory hint — a few repos mix SCPs and RCPs in one
@@ -112,7 +127,7 @@ _DIR_MECHANISM_HINTS = {
     "vpc_endpoint_policies": "VPCE",
 }
 
-ALLOWED_MECHANISMS = {"SCP", "RCP", "IAM", "permission-boundary", "data-perimeter", "VPCE"}
+ALLOWED_MECHANISMS = {"SCP", "RCP", "IAM", "permission-boundary", "data-perimeter", "VPCE", "config-rule"}
 
 # Condition-key-shaped tokens look like `service:Key` or `aws:Key` or
 # `kms:EncryptionContext:foo`. We harvest these from Condition blocks only.
@@ -182,6 +197,30 @@ def harvest_actions_and_keys(policy: dict) -> tuple[list[str], list[str]]:
                         if isinstance(ckey, str) and _CONDITION_KEY_RE.match(ckey):
                             keys.add(ckey)
     return sorted(actions), sorted(keys)
+
+
+# CloudFormation resource type inside a Guard rule: `resourceType == "AWS::X::Y"`
+# (also matches single quotes and Type == variants some samples use).
+_GUARD_RESOURCE_TYPE_RE = re.compile(
+    r"""(?:resourceType|Type)\s*==\s*['"](AWS::[A-Za-z0-9]+::[A-Za-z0-9]+)['"]"""
+)
+# `# Rule-intent : ...` header comment the samples use to describe each rule.
+_GUARD_INTENT_RE = re.compile(r"#\s*Rule-intent\s*:\s*(.+)", re.IGNORECASE)
+
+
+def harvest_guard_resource_types(text: str) -> tuple[list[str], str]:
+    """Extract governed CloudFormation resource types + intent from a .guard file.
+
+    Guard rules are keyed on the resource type they evaluate (e.g.
+    `AWS::EFS::FileSystem`), not on IAM actions. We store the resource types as
+    the anchor's `governed_resource_types` so `best_anchor` can match a control
+    to a Guard sample covering the same resource type. The intent comes from the
+    `# Rule-intent :` header comment when present, else the first rule name.
+    """
+    resource_types = sorted({m.group(1) for m in _GUARD_RESOURCE_TYPE_RE.finditer(text)})
+    intent_m = _GUARD_INTENT_RE.search(text)
+    intent = intent_m.group(1).strip() if intent_m else ""
+    return resource_types, intent
 
 
 def load_policy_documents(path: Path, md_policy: bool) -> list[dict]:
@@ -276,6 +315,42 @@ def build_index(repos_dir: Path, out_dir: Path) -> dict:
             if ".git" in fpath.parts:
                 continue
             rel = fpath.relative_to(repo_path)
+
+            # Guard-DSL repos: harvest resource types, not IAM policy documents.
+            if spec.get("kind") == "guard":
+                text = fpath.read_text(encoding="utf-8", errors="replace")
+                resource_types, guard_intent = harvest_guard_resource_types(text)
+                # Every Guard anchor must govern at least one resource type.
+                if not resource_types:
+                    continue
+                base_id = slugify(rel.with_suffix("").as_posix())
+                uid, n = base_id, 1
+                while uid in seen_ids:
+                    n += 1
+                    uid = f"{base_id}-{n}"
+                seen_ids.add(uid)
+
+                entry = {
+                    "id": uid,
+                    "repo": slug,
+                    "mechanism": spec["mechanism"],
+                    "intent": guard_intent or intent_from_path(rel),
+                    "governed_actions": [],
+                    "condition_keys": [],
+                    "governed_resource_types": resource_types,
+                    "source_url": f"https://github.com/{spec['owner']}/{slug}/blob/{commit}/{rel.as_posix()}",
+                }
+                if spec["vendor_bodies"]:
+                    body_path = vendor_dir / f"{uid}.guard"
+                    body_path.write_text(text, encoding="utf-8")
+                    entry["source_path"] = (
+                        f"data/reference-repos/{slug}/examples/{uid}.guard"
+                    )
+                else:
+                    entry["source_path"] = None
+                examples_block.append(entry)
+                continue
+
             docs = load_policy_documents(fpath, spec.get("md_policy", False))
             for di, doc in enumerate(docs):
                 actions, keys = harvest_actions_and_keys(doc)

@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/map-framework-mapping/SKILL.md`.\n\nRead the skill file, consume `map-framework-parsed.json` and `map-controls-generated.json`,\nand write `.service-approval/<slug>/04-map/map-framework-mapped.json`.\n\nQuality cap: no control may map to more than 5 objectives.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"

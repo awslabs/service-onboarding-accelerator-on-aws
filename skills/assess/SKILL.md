@@ -128,7 +128,7 @@ The Service Authorization Reference page is the definitive source for IAM action
      have resource types and support resource-level scoping — do NOT mark these as wildcard.
      Similarly, ListTagsForResource typically has resource types listed and is NOT wildcard-only.
      False positives here cause overly permissive `Resource: "*"` in generated IAM policies.
-     Missing entries cause the IaC generator to attempt invalid resource ARN scoping.
+     Missing entries cause generated policies to attempt invalid resource ARN scoping.
 5. Also extract: total action count, SLR details, dependent actions.
 
 **DO NOT write sar-facts.json yet** — Step 0b (below) derives the canonical slug first.
@@ -393,132 +393,6 @@ Write to `.service-approval/<slug>/01-assess/checkpoint-results.json`:
 
 ---
 
-## Step 2b: IaC Provider Discovery
-
-After checkpoint verification, discover which IaC providers support this service. This
-determines what output formats Phase 4 (Recommended Guidance) will produce. The user does NOT choose
-formats — the pipeline discovers what's available and informs them.
-
-### Check 1: CloudFormation Support
-
-Use `aws-documentation` MCP to read the CloudFormation Template Reference page:
-```
-URL: https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/AWS_{CfnPrefix}.html
-```
-
-Record:
-- Number of `AWS::{CfnPrefix}::*` resource types
-- List of resource type names
-- If the page doesn't exist or returns 404 → CloudFormation NOT supported
-
-### Check 2: Terraform Provider Support
-
-Search for Terraform resources:
-```
-Search: "aws_{service_prefix}" OR "awscc_{cfn_prefix}" terraform provider
-```
-
-Determine:
-- Does `hashicorp/aws` have native resources (`aws_{prefix}_*`)?
-- Does `hashicorp/awscc` (Cloud Control) have resources (`awscc_{prefix}_*`)?
-- If CloudFormation is supported, awscc is always available as a fallback
-
-### Check 3: CDK Construct Support
-
-Search for CDK module:
-```
-Search: aws-cdk-lib aws_{service_prefix} OR aws-cdk-lib/aws-{service}
-```
-
-Determine:
-- L2 constructs available? (high-level, opinionated)
-- L1 only? (CfnResource — direct CloudFormation mapping)
-- Alpha module? (`@aws-cdk/aws-{service}-alpha`)
-- If CloudFormation is supported, L1 constructs always exist
-
-### Check 4: CDKTF Support
-
-CDKTF derives from Terraform providers:
-- If `hashicorp/aws` has resources → CDKTF supported via aws provider
-- If only `hashicorp/awscc` → CDKTF supported via awscc provider
-- If neither → CDKTF NOT supported
-
-### Present Findings to User
-
-After discovery, present the results clearly:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  IaC Provider Support: {service_friendly_name}                  │
-├─────────────────────────────────────────────────────────────────┤
-│  CloudFormation  ✓ {N} resource types (AWS::{Prefix}::*)        │
-│  Terraform       ✓ awscc provider / ✓ native aws / ✗ None      │
-│  CDK TypeScript  ✓ L2 constructs / △ L1 only / ✗ None          │
-│  CDKTF           ✓ via {provider} / ✗ Not available             │
-├─────────────────────────────────────────────────────────────────┤
-│  Formats that will be generated:                                │
-│    {list of supported formats}                                  │
-│                                                                 │
-│  Formats NOT available:                                         │
-│    {list with reason}                                           │
-├─────────────────────────────────────────────────────────────────┤
-│  Override: enter formats to skip, or press Enter to accept all  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-If the user wants to skip a supported format (e.g., "skip CDKTF"), record that override.
-If a format is NOT supported, it cannot be forced — the generator has no resources to work with.
-
-### Write Results
-
-Write to `.service-approval/<slug>/01-assess/iac-support.json`:
-
-```json
-{
-  "schema_version": "1.0.0",
-  "service": "{service-name}",
-  "discovered_at": "{ISO-8601 timestamp}",
-  "cloudformation": {
-    "supported": true,
-    "resource_type_count": 15,
-    "resource_types": ["AWS::Service::Resource1", "..."],
-    "template_reference_url": "https://docs.aws.amazon.com/...",
-    "notes": ""
-  },
-  "terraform": {
-    "supported": true,
-    "provider": "awscc|aws|both",
-    "native_resource_count": 0,
-    "cloud_control_available": true,
-    "notes": ""
-  },
-  "cdk": {
-    "supported": true,
-    "construct_level": "L1|L2|L2-alpha",
-    "module_name": "aws-cdk-lib/aws-{service}",
-    "notes": ""
-  },
-  "cdktf": {
-    "supported": true,
-    "derives_from": "aws|awscc",
-    "notes": ""
-  },
-  "generate_formats": {
-    "cloudformation": true,
-    "terraform": true,
-    "cdk_typescript": true,
-    "cdktf": true
-  },
-  "user_overrides": [],
-  "warnings": []
-}
-```
-
-Phase 4 (Recommended Guidance) reads `state/iac-support.json` to determine which formats to produce.
-If the file is missing (e.g., assess was skipped), Recommended Guidance defaults to CloudFormation only.
-
----
-
 ## Step 3: Synthesize CAF Assessment
 
 After all research completes, read the domain research files from `.service-approval/<slug>/01-assess/domains/`.
@@ -631,8 +505,6 @@ consistency check with domain-specific accuracy verification:
 - Verify VPC endpoint service names: Every VPC endpoint service name mentioned must follow the
   format `com.amazonaws.{region}.{service}` (or variant). Fabricated service names are a
   validation failure.
-- Verify CloudFormation resource type count: The number of CFN resource types listed should
-  match the CFN template reference page for the service's prefix.
 
 **DATA validation**:
 - Verify FIPS endpoint: Cross-check the DATA section's FIPS claim against
@@ -755,7 +627,6 @@ Flag contradictions: `> **CROSS-CHECK**: {description}`
 After all steps complete, verify:
 - [ ] `.service-approval/<slug>/01-assess/sar-facts.json` exists and is valid JSON
 - [ ] `.service-approval/<slug>/01-assess/checkpoint-results.json` exists and is valid JSON
-- [ ] `.service-approval/<slug>/01-assess/iac-support.json` exists and is valid JSON
 - [ ] `.service-approval/<slug>/01-assess/assessment-summary.md` exists with all 5 domain sections
 - [ ] GAPS counts match actual table rows
 - [ ] No leaked terminology (check CLAUDE.md terminology rules)
@@ -769,13 +640,11 @@ Assessment complete:
   Service: {service-name}
   SAR: {total_actions} actions, {condition_keys} keys, {resource_types} resource types
   Checkpoints: {passed}/{total} verified
-  IaC support: CFN {✓/✗} | TF {✓/✗} | CDK {L1/L2/✗} | CDKTF {✓/✗}
   Domains: IAM, LOGGING, INFRA, DATA, INCIDENT
   GAPS: {N} requirement gaps, {M} customer actions required
   Artifacts:
     - sar-facts.json
     - checkpoint-results.json
-    - iac-support.json
     - assessment-summary.md
     [- assessment-questionnaire.md (if --questions)]
   Output: .service-approval/<slug>/01-assess/

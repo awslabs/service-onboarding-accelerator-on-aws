@@ -433,7 +433,7 @@ Every control MUST include these fields:
   Indicates which data source authoritatively drives the mechanism's contents.
 - `scope`: Abbreviated code: `ORG`, `ACC`, `RES`
 - `category`: Abbreviated code: `PRV`, `PRO`, `DET`, `COR`
-- `mechanism`: AWS enforcement mechanism (SCP, CloudFormation Hook, AWS Config Rule, VPC Endpoint Policy, IAM Permission Boundary, Resource Policy, IAM Trust Policy, IaC Template, CloudTrail, CloudWatch Alarm, CloudWatch Logs, Kinesis Data Streams, SSM Automation, Lambda Remediation, EventBridge + Step Functions, Tag Policy, OPA Policy, CloudFormation Guard, Compensating Control Documentation)
+- `mechanism`: AWS enforcement mechanism (SCP, CloudFormation Hook, AWS Config Rule, VPC Endpoint Policy, IAM Permission Boundary, Resource Policy, IAM Trust Policy, CloudTrail, CloudWatch Alarm, CloudWatch Logs, Kinesis Data Streams, SSM Automation, EventBridge + Step Functions, Tag Policy, OPA Policy, CloudFormation Guard, Compensating Control Documentation)
 - `mitigation_ids`: Non-empty array — every control MUST trace to at least one mitigation
 - `parameters_controlled`: API parameters this control enforces (from mitigation `request_parameters[]`)
 - `condition_keys`: IAM condition keys used (empty array for non-IAM controls)

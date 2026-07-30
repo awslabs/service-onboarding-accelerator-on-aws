@@ -15,26 +15,6 @@
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
     },
-    "awsiac": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": [
-        "awslabs.aws-iac-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    },
-    "terraform": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "hashicorp/terraform-mcp-server:0.5.1"
-      ]
-    },
     "kb-search": {
       "type": "stdio",
       "command": "python3",

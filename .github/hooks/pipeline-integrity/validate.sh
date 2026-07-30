@@ -2,10 +2,10 @@
 # Service Approval — Copilot sessionEnd hook.
 #
 # Runs after every Copilot coding-agent session. Invokes the shared pipeline
-# integrity validator that enforces the 7 hard rules (no shortcut runs,
-# MCP verification, no templated notes, parameterized IaC, SCP safety,
-# verdict consistency). Exit code 2 signals failure; Copilot surfaces this
-# to the user.
+# integrity validator that enforces the hard rules (no shortcut runs,
+# MCP verification, no templated notes, reference-anchored controls, citation
+# coverage, SCP safety, verdict consistency). Exit code 2 signals failure;
+# Copilot surfaces this to the user.
 #
 # This is the same script Kiro's Stop hook and Claude Code's Stop hook
 # invoke — one source of truth across clients.

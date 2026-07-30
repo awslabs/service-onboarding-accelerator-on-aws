@@ -6,7 +6,6 @@ parallel_group: research
 mcp_servers:
   - aws-documentation
   - awsknowledge
-  - awsiac
 body: |
   Follow the instructions in `skills/research-attack-surface/SKILL.md`.
 

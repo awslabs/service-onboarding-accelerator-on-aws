@@ -7,7 +7,6 @@ tools:
 - shell
 - '@aws-documentation'
 - '@awsknowledge'
-- '@awsiac'
 ---
 
 Follow the instructions in `skills/research-api-surface/SKILL.md`.

@@ -1073,10 +1073,10 @@ def check_iam_action_sourcing_17(
 # Check 14b: API-driven artifacts — enum literals must match parameters[].enum
 # ================================================================
 #
-# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-# responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-# responsive/lambda-remediator/**, iac/**), any enum-style literal list must reference
-# values from validated.json.api_surface.operations[].parameters[].enum.
+# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**),
+# any enum-style literal list must reference values from
+# validated.json.api_surface.operations[].parameters[].enum. (Responsive is
+# reference-only — its artifacts carry no authored enum literals.)
 #
 # Patterns detected (a reasonable subset — language-agnostic literal scan):
 #   cfn-guard / Checkov / OPA / CDK / TF:  `in [<...>]`, `AllowedValues: [<...>]`,
@@ -1093,15 +1093,9 @@ _STRING_LITERAL_PATTERN = re.compile(r"[\"']([A-Z][A-Z0-9_]{1,63})[\"']")
 _API_DRIVEN_PATH_FRAGMENTS = (
     "/proactive/",
     "/detective/config-rule-lambdas/",
-    "/responsive/ssm-runbook",
-    "/responsive/stepfunctions-workflow",
-    "/responsive/lambda-remediator/",
-    "/iac/",
 )
 _API_DRIVEN_BASENAME_PREFIXES = (
     "proactive-",
-    "iac-cdk-",
-    "iac-",
     "handler-",
 )
 _API_DRIVEN_EXTENSIONS = {".guard", ".rego", ".py", ".yaml", ".yml", ".ts", ".tf", ".json"}
@@ -1141,9 +1135,7 @@ def check_api_driven_enum_literals_14b(
 ) -> list[str]:
     """CHECK-14b — Enum-style literal lists must reference parameters[].enum values.
 
-    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-    responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-    responsive/lambda-remediator/**, iac/**).
+    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**).
     Each SCREAMING_SNAKE literal in an `in [...]` / `AllowedValues: [...]` / similar
     enum-style list must appear in validated.json.api_surface.operations[].parameters[].enum.
     """
@@ -1189,7 +1181,7 @@ def check_api_driven_enum_literals_14b(
 # matches its posture:
 #   preventative-request   → preventive/{scp,rcp,iam-policies,permission-boundary,
 #                             resource-policy,vpce-policy,kms-key-policy}*.json
-#   preventative-proactive → proactive/** or iac/**
+#   preventative-proactive → proactive/**
 #   reactive-detective     → detective/config-rule-lambdas/** or detective/config-rules.json
 #                             or detective/access-analyzer.json
 #   reactive-corrective    → responsive/**
@@ -1214,7 +1206,7 @@ def _file_is_in_posture_family(file_path: str, posture: str) -> bool:
             pat in base for pat in _PREV_REQUEST_BASENAME_PATTERNS
         )
     if posture == "preventative-proactive":
-        if "/proactive/" in norm or "/iac/" in norm:
+        if "/proactive/" in norm:
             return True
         if "/detective/" in norm and base in _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES:
             return True
@@ -1252,7 +1244,7 @@ def check_posture_mechanism_consistency_15(
             f"declares _metadata.posture='{posture}' but lives outside the expected "
             f"directory family. preventative-request→preventive/{{scp,rcp,iam-policies,"
             f"permission-boundary,resource-policy,vpce-policy,kms-key-policy,tag-policy}}*.json; "
-            f"preventative-proactive→proactive/** or iac/** or "
+            f"preventative-proactive→proactive/** or "
             f"detective/compensating-controls-documentation.json; "
             f"reactive-detective→detective/config-rule-lambdas/** or one of "
             f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
@@ -1367,8 +1359,6 @@ def _categorize_file(file_path: str) -> str:
         return "responsive"
     if _in("proactive"):
         return "proactive"
-    if _in("iac"):
-        return "iac"
     return "unknown"
 
 
@@ -1481,7 +1471,7 @@ def validate_file(file_path: str) -> list[str]:
 
     # Check 13: Full-body CTRL-* references against mapping-results.json
     # (complements check 11 which only scans the first 30 lines for # CONTROLS: headers)
-    if mapping and category in ("preventive", "detective", "responsive", "proactive", "iac"):
+    if mapping and category in ("preventive", "detective", "responsive", "proactive"):
         errors.extend(check_body_control_id_references(file_path, mapping))
 
     # Check 12: SCP size limit (5120 bytes minified, excluding _metadata)
@@ -1551,18 +1541,8 @@ def validate_file(file_path: str) -> list[str]:
             except (ImportError, Exception):
                 pass
 
-    # Check 13: KMS consumer → key-policy grant parity (IaC only)
-    # Enforces generate-iac/SKILL.md Rule 4 at write time.
-    if category == "iac" and ext in (".yaml", ".yml", ".tf"):
-        try:
-            from validate_kms_consumers import validate_kms_consumers
-            errors.extend(validate_kms_consumers(file_path))
-        except ImportError:
-            pass
-
     # Check 14b: API-driven — enum literals must match parameters[].enum.
-    # Applies to proactive/**, detective/config-rule-lambdas/**, responsive/ssm-runbook*,
-    # responsive/stepfunctions-workflow.json, responsive/lambda-remediator/**, iac/**.
+    # Applies to proactive/**, detective/config-rule-lambdas/**.
     if validated and _is_api_driven_artifact(file_path):
         errors.extend(check_api_driven_enum_literals_14b(file_path, validated))
 

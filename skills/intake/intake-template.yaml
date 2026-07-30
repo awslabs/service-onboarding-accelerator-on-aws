@@ -20,8 +20,6 @@
 #   service-approval --from-intake=path/to/my-service.yaml
 #
 # Only `service.name` is required. Everything else has sensible defaults.
-# IaC output formats are NOT configured here — they are auto-detected in
-# Phase 0 (Assess) based on actual provider support for your service.
 # ─────────────────────────────────────────────────────────────────────────────
 
 service:

@@ -327,8 +327,8 @@ permission-only list, emit it in `api_surface.operations[]` with:
   `"Evaluated during ExecuteStatement/BatchExecuteStatement"`).
 
 Downstream skills use the `source` field to distinguish real ops from virtual ones
-(e.g., `generate-iac` skips parameter generation for virtual ops; `map-generate-controls`
-maps them to IAM controls like any other action).
+(e.g., proactive rule generators skip parameter generation for virtual ops;
+`map-generate-controls` maps them to IAM controls like any other action).
 
 ---
 

@@ -9,11 +9,11 @@
 # keywords), not the per-client manifests directly.
 
 name: service-approval
-version: 1.1.0
+version: 1.2.0
 description: >
-  Generate AWS security controls and compliant IaC for any AWS service.
-  Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended
-  Guidance, Summarize) mapped to CCMv4 (other frameworks deferred).
+  Generate AWS security controls for any AWS service. Runs a pipeline
+  (Intake, Assess, Research, Validate, Map, Recommended Guidance,
+  Summarize) mapped to CCMv4 (other frameworks deferred).
 
 author:
   name: Service Onboarding on AWS Team
@@ -36,10 +36,6 @@ keywords:
   - cfn-guard
   - checkov
   - opa
-  - terraform
-  - cloudformation
-  - cdk
-  - cdktf
   - mitre-attack
   - preventive-controls
   - detective-controls
@@ -106,9 +102,6 @@ skills:
   - slug: generate-detective
     role: phase-4b
     parallel_group: generate
-  - slug: generate-iac
-    role: phase-4c
-    parallel_group: generate
   - slug: summarize
     role: phase-5
 
@@ -129,16 +122,6 @@ mcp_servers:
   awsknowledge:
     type: http
     url: https://knowledge-mcp.global.api.aws
-  awsiac:
-    type: stdio
-    command: uvx
-    args: ["awslabs.aws-iac-mcp-server@latest"]
-    env:
-      FASTMCP_LOG_LEVEL: ERROR
-  terraform:
-    type: stdio
-    command: docker
-    args: ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.5.1"]
   kb-search:
     type: stdio
     command: python3
@@ -217,8 +200,6 @@ integrity_checks:
     max_duplication_pct: 50
   - id: P3
     title: IAM policy logic (mismatched StringEquals/StringNotEquals keys, broad Allow on Resource:* without Condition, SCP without Deny)
-  - id: P4
-    title: IaC parameterization (no placeholder accounts/ARNs)
   - id: P5
     title: Framework coverage threshold + rationale
     min_coverage_pct: 15
@@ -227,6 +208,8 @@ integrity_checks:
     title: Verdict consistency (no false APPROVED)
   - id: P7
     title: Phase-output completeness
+  - id: P12
+    title: Citation coverage (detective/proactive/responsive artifacts carry a resolvable citation)
 
 # ---------------------------------------------------------------------------
 # Test policy — what the sync tool's --check mode verifies.

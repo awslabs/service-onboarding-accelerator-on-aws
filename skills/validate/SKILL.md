@@ -57,7 +57,7 @@ source. `sar-facts.json` / `checkpoint-results.json` remain the authoritative
   If it exists, ask the user verbatim:
 
   > A prior `validated.json` exists (dated {mtime}). This file contains MCP-verified facts
-  > about the service — every downstream artifact (controls, mappings, IaC) depends on it
+  > about the service — every downstream artifact (controls, mappings) depends on it
   > being accurate.
   >
   > Do you want to:
@@ -92,7 +92,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `awsiac`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
 
 ## Verification note rules
 

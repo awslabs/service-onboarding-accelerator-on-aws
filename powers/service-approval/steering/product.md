@@ -8,7 +8,7 @@ alwaysApply: true
 
 ## What it does
 
-Generates a complete set of AWS security controls for any AWS service. Input: a service name plus optional customer docs. Output: a CCMv4-mapped control catalog, 85+ deployable artifacts, and an approval verdict.
+Generates a complete set of AWS security controls for any AWS service. Input: a service name plus optional customer docs. Output: a CCMv4-mapped control catalog, a full set of deployable control artifacts, and an approval verdict.
 
 ## Who uses it
 
@@ -20,7 +20,7 @@ Before this tool, generating compliant controls for a new AWS service required 2
 
 ## Non-goals
 
-- Not a deployment tool. It recommends controls + compliant IaC; deploying and testing them against a live account is the customer's responsibility.
+- Not a deployment tool. It recommends controls; deploying and testing them against a live account is the customer's responsibility.
 - Not a threat model authoring tool. MITRE ATT&CK analysis always runs to identify applicable threats, but the threat model itself (your organization's risk context) is an input, not an output.
 - Not a framework authoring tool. Frameworks (CCMv4, NIST 800-53) are inputs; this Power maps to them.
 
@@ -28,5 +28,5 @@ Before this tool, generating compliant controls for a new AWS service required 2
 
 - Every control traces to at least one framework objective
 - Every capability claim is MCP-verified (no hardcoded training-data values)
-- Every generated IaC artifact deploys cleanly in dry-run mode
+- Every generated control artifact is syntactically valid and policy-sound
 - The final verdict matches the integrity check output (no false APPROVED)

@@ -3,11 +3,10 @@
 These rules apply across all clients and all agents.
 
 ## Deployment & Teardown (customer responsibility)
-- This pipeline produces recommended security controls and compliant IaC; it does
-  not deploy, test, or tear down resources against a live AWS account. Deploying the
-  generated artifacts — and tearing them down afterward — is the customer's
-  responsibility.
-- The generated IaC and control artifacts are what the customer reviews and applies
+- This pipeline produces recommended security controls; it does not deploy, test, or
+  tear down resources against a live AWS account. Applying the generated artifacts —
+  and removing them afterward — is the customer's responsibility.
+- The generated control artifacts are what the customer reviews and applies
   in their own account through their own change process; no agent in this pipeline
   assumes an AWS profile or mutates account state.
 

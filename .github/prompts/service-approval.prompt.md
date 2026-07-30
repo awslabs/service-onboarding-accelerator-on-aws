@@ -1,6 +1,6 @@
 ---
 mode: agent
-description: 'Generate AWS security controls and compliant IaC for a specified AWS service'
+description: 'Generate AWS security controls for a specified AWS service'
 ---
 
 Run the service-approval skill at `skills/service-approval/SKILL.md`.

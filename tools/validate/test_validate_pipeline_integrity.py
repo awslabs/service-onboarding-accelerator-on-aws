@@ -15,8 +15,8 @@ from validate_pipeline_integrity import (
     _resource_type_delimiters,
     check_arn_shapes,
     check_boundary_minimality,
+    check_citation_coverage,
     check_framework_coverage,
-    check_iac_placeholders,
     check_iam_policies,
     check_mcp_log,
     check_phase_outputs,
@@ -314,34 +314,6 @@ def test_non_scp_without_deny_passes(tmp_path: Path) -> None:
     assert not any("SCP has no Deny" in e for e in errors)
 
 
-# ---------- P4: IaC placeholders ----------
-
-
-def test_iac_placeholder_account_fails(tmp_path: Path) -> None:
-    (tmp_path / "template.yaml").write_text(
-        "Resources:\n  Role:\n    Arn: arn:aws:iam::123456789012:role/foo\n"
-    )
-    errors = check_iac_placeholders(tmp_path)
-    assert any("P4" in e and "123456789012" in e for e in errors)
-
-
-def test_iac_placeholder_arn_fragment_fails(tmp_path: Path) -> None:
-    (tmp_path / "stack.ts").write_text(
-        'const kmsArn = "arn:aws:kms:us-east-1:123456789012:key/example";\n'
-    )
-    errors = check_iac_placeholders(tmp_path)
-    # Both the account ID and the ARN fragment should trigger; at least one P4 required.
-    assert any("P4" in e for e in errors)
-
-
-def test_iac_parameterized_passes(tmp_path: Path) -> None:
-    (tmp_path / "template.yaml").write_text(
-        "Parameters:\n  AccountId:\n    Type: String\nResources:\n"
-        '  Role:\n    Arn: !Sub "arn:aws:iam::${AccountId}:role/foo"\n'
-    )
-    assert check_iac_placeholders(tmp_path) == []
-
-
 # ---------- P7: phase-output completeness ----------
 
 
@@ -501,6 +473,21 @@ def test_boundary_minimality_exempts_finalized_run(tmp_path: Path) -> None:
     assert len(check_boundary_minimality(tmp_path)) == 1  # mid-flight
     (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
     assert check_boundary_minimality(tmp_path) == []  # finalized
+
+
+def test_citation_coverage_exempts_finalized_run(tmp_path: Path) -> None:
+    """P12 is a newly-added check — a run that finalized before it existed had
+    no chance to satisfy it and is frozen, so the Stop-hook path must exempt it
+    (mirrors P9/P10/P11). Mid-flight runs still get the strict check."""
+    guidance = tmp_path / "05-recommended-guidance" / "detective"
+    guidance.mkdir(parents=True)
+    # An authored detective artifact with no citation → flagged mid-flight.
+    (guidance / "config-rules.json").write_text(
+        json.dumps({"_metadata": {"posture": "reactive-detective"}, "rules": []})
+    )
+    assert len(check_citation_coverage(tmp_path)) >= 1  # mid-flight (no sentinel)
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_citation_coverage(tmp_path) == []  # finalized → exempt
 
 
 def test_is_finalized_detection(tmp_path: Path) -> None:

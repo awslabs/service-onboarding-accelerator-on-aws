@@ -14,31 +14,13 @@
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
     },
-    "awsiac": {
-      "command": "uvx",
-      "args": [
-        "awslabs.aws-iac-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    },
-    "terraform": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "hashicorp/terraform-mcp-server:0.5.1"
-      ]
-    },
     "kb-search": {
-      "command": "python3",
+      "command": ".venv/bin/python",
       "args": [
         "tools/kb-search-mcp/server.py"
       ],
       "env": {
-        "AWS_PROFILE": "claude-code",
+        "AWS_PROFILE": "claude",
         "AWS_REGION": "us-east-1"
       }
     },
@@ -48,7 +30,7 @@
         "awslabs.iam-mcp-server@latest"
       ],
       "env": {
-        "AWS_PROFILE": "claude-code",
+        "AWS_PROFILE": "claude",
         "AWS_REGION": "us-east-1",
         "FASTMCP_LOG_LEVEL": "ERROR"
       }

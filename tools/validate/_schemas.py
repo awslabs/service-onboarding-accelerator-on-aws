@@ -24,7 +24,7 @@ flat `list[str]` shape as the hand-rolled `check_*` functions in
 State files (Intake + Phases 0-5):
   - checkpoint-results, sar-facts, research, validated,
     map-controls-generated, map-framework-parsed, map-framework-mapped,
-    mapping-results, iac-support
+    mapping-results
 
 Plus derived contracts loaded on demand by name: preventive-plan,
 preventive-coverage, detective-routing, conflict-report.

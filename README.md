@@ -1,12 +1,11 @@
 # Service Approval
 
-Generate AWS security controls and compliant IaC templates for any AWS service.
-Point it at a service (and, optionally, your threat model and control framework);
-it researches the service against authoritative AWS sources, maps every capability
-to a control framework, and produces a full set of **recommended** preventive,
-detective, proactive, and responsive controls plus deployable IaC in four formats.
-It recommends the controls and IaC — **you deploy them yourself**; the tool never
-touches a live account.
+Generate AWS security controls for any AWS service. Point it at a service (and,
+optionally, your threat model and control framework); it researches the service
+against authoritative AWS sources, maps every capability to a control framework,
+and produces a full set of **recommended** preventive, proactive, detective, and
+responsive controls. It recommends the controls — **you deploy them yourself**;
+the tool never touches a live account.
 
 It runs as [Agent Skills](https://agentskills.io), so the same skills work in
 Claude Code, Kiro, and GitHub Copilot.
@@ -18,10 +17,9 @@ Claude Code, Kiro, and GitHub Copilot.
 | You need | When | Why |
 |----------|------|-----|
 | One of: Claude Code, Kiro IDE, or VS Code + GitHub Copilot | always | the client that runs the skills |
-| [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your PATH | always | the `aws-documentation` / `awsiac` MCP servers run via `uvx awslabs.*@latest` |
-| Docker Desktop running | if you use the `terraform` MCP | that MCP server runs as a stdio container |
+| [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your PATH | always | the `aws-documentation` MCP server runs via `uvx awslabs.*@latest` |
 | Python 3.9+ | always | the validators and hooks that gate the pipeline |
-| An AWS CLI profile | optional | only for Tier 2 policy validation (Access Analyzer / CloudFormation `validate-template`); the pipeline never deploys |
+| An AWS CLI profile | optional | only for Tier 2 policy validation (Access Analyzer); the pipeline never deploys |
 
 No AWS credentials are required to generate controls — every fact comes from
 public AWS documentation and knowledge MCP servers.
@@ -127,7 +125,7 @@ directory per phase:
   02-research/             ← research.json (merged from 4 sub-skills)
   03-validate/             ← validated.json
   04-map/                  ← mapping-results.json, controls-catalog.md, framework-mapping.md
-  05-recommended-guidance/ ← all generated control artifacts (preventive, proactive, detective, responsive, IaC)
+  05-recommended-guidance/ ← all generated control artifacts (preventive, proactive, detective, responsive)
   06-summarize/            ← SUMMARY-REPORT.md, ARTIFACT-FLOW-MATRIX.md
   mcp-calls.log            ← MCP call audit log
 ```
@@ -146,7 +144,6 @@ services:
 | Proactive | 12–15 | CFN Guard rules, OPA policies (per resource type), Checkov config + custom policies, CFN hooks |
 | Detective | 34–47 | Config rules + Lambda handlers, EventBridge rules, CloudWatch alarms, Access Analyzer, compensating controls |
 | Responsive | 6 | Lambda remediator + SAM template, SSM runbooks (org + account), Step Functions workflow |
-| IaC | 17–31 | CDK TypeScript, CloudFormation YAML, CDKTF, modular Terraform |
 
 ---
 
@@ -158,13 +155,13 @@ previous phase's output — a strict DAG — and writes to its own directory.
 ![Pipeline flow](docs/pipeline-flow.drawio.png)
 
 - **Intake** — collects the service name and framework choice → `intake-manifest.json`.
-- **Assess** — 5-domain CAF security posture assessment + IaC provider discovery.
+- **Assess** — 5-domain CAF security posture assessment.
 - **Research** — discovers capabilities, API surface, and MITRE ATT&CK attack
   surface (4 parallel sub-skills, then merged) → `research.json`.
 - **Validate** — cross-references every research claim via MCP → `validated.json`.
 - **Map** — parses the framework, generates controls, maps them to objectives, and
   assembles → `mapping-results.json` + reports.
-- **Recommended Guidance** — produces the control artifacts and IaC across all
+- **Recommended Guidance** — produces the control artifacts across all
   categories (preventive is a gated sub-pipeline).
 - **Summarize** — the coverage matrix and control inventory → `SUMMARY-REPORT.md`.
 
@@ -195,7 +192,7 @@ ATT&CK threat mapping.
 |---------|-----|
 | `/service-approval` command not found (Claude Code) | Re-run `./install-claude.sh` from the repo, then `/reload-plugins`. |
 | Kiro doesn't activate the Power | It's keyword-triggered — include "service approval" or the service name, or say "use the service-approval power". |
-| MCP server not connecting (`fetch failed`, `spawn uvx ENOENT`) | Confirm `uv` is on PATH (`which uv`) and Docker is running (`docker ps`); approve the MCP connection when prompted. On macOS, GUI-launched apps may not see `~/.local/bin` — see [`docs/TESTING-KIRO.md`](docs/TESTING-KIRO.md). |
+| MCP server not connecting (`fetch failed`, `spawn uvx ENOENT`) | Confirm `uv` is on PATH (`which uv`); approve the MCP connection when prompted. On macOS, GUI-launched apps may not see `~/.local/bin` — see [`docs/TESTING-KIRO.md`](docs/TESTING-KIRO.md). |
 | Plugin works in the repo but not elsewhere (Claude Code) | The marketplace registration didn't take — `claude plugin marketplace add .` then `claude plugin install service-approval@service-approval --scope user`. |
 | A phase reports too few MCP calls / integrity failure | The Stop hook enforces pipeline integrity (P1–P7); read `06-summarize/SUMMARY-REPORT.md` and `pipeline.log` for which check failed, then re-run from the failing phase. |
 
@@ -210,25 +207,16 @@ review gates, the root-cause critic, reference-anchor enforcement, the
 Canopy-factual check, and conflict detection — are described in
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
-The **deployability checks** below confirm the generated artifacts are
-syntactically valid and policy-sound, and run automatically at session end:
+The **artifact correctness checks** below confirm the generated control
+artifacts are syntactically valid and policy-sound, and run automatically at
+session end:
 
 **Tier 1 — Static (no credentials)**
-- JSON/YAML parse, Terraform validate/fmt, CDK/CDKTF TypeScript compile
-- Python handler compilation, cfn-lint, CFN Guard syntax, OPA check
+- JSON/YAML parse, Python handler compilation
+- cfn-lint, CFN Guard syntax, OPA check
 
 **Tier 2 — AWS API (credentials required)**
-- CloudFormation `validate-template`
 - IAM Access Analyzer `validate-policy` for SCPs, identity policies, resource policies
-
-Run manually:
-```bash
-# Tier 1 only
-python3 tools/validate/validate_deployable.py --tier1-only .service-approval/<slug>/05-recommended-guidance/
-
-# Tier 1 + Tier 2
-python3 tools/validate/validate_deployable.py --profile delegated-admin .service-approval/<slug>/05-recommended-guidance/
-```
 
 ---
 

@@ -1,12 +1,12 @@
 ---
 description: 'AWS Service Security Controls Generator — runs the full service-approval pipeline (intake, assess, research, validate, map, recommended guidance, summarize) for a given AWS service.'
-tools: ['codebase', 'search', 'editFiles', 'runCommands', 'runTasks', 'fetch', 'aws-documentation', 'awsknowledge', 'awsiac', 'terraform']
+tools: ['codebase', 'search', 'editFiles', 'runCommands', 'runTasks', 'fetch', 'aws-documentation', 'awsknowledge']
 ---
 
 # Service Approval — Chat Mode
 
 You are running the `service-approval` skill. Your role is to generate AWS security controls
-and compliant resource templates for a specified AWS service.
+for a specified AWS service.
 
 ## Entrypoint
 
@@ -16,15 +16,15 @@ it step by step. That file is the authoritative source for the pipeline — do n
 ## Pipeline (Intake + 6 numbered phases)
 
 - **Intake (precursor):** collect service, inputs, framework → `intake-manifest.json`
-- **Phase 0 — Assess:** 5-domain CAF security assessment + IaC provider discovery
+- **Phase 0 — Assess:** 5-domain CAF security assessment
 - **Phase 1 — Research:** mitigations, capabilities, API surface, MITRE ATT&CK threat analysis
 - **Phase 2 — Validate:** cross-reference all research claims via MCP
 - **Phase 3 — Map:** parse framework, generate controls, map to objectives, assemble
-- **Phase 4 — Recommended Guidance:** preventive, proactive, detective, responsive, IaC (4 formats)
+- **Phase 4 — Recommended Guidance:** preventive, proactive, detective, responsive
 - **Phase 5 — Summarize:** SUMMARY-REPORT.md
 
-The pipeline recommends controls + compliant IaC that the customer deploys
-themselves; it does not deploy, test, or attest against a live account.
+The pipeline recommends controls that the customer deploys themselves; it does
+not deploy, test, or attest against a live account.
 
 Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layout).
 
@@ -48,10 +48,9 @@ Ask the user for these if not provided:
    through its SKILL.md
 7. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. Minimum 10 entries enforced
 8. Every `verification_note` must be unique and item-specific. No templated notes
-9. IaC must be parameterized. No hardcoded account IDs (`123456789012`) or placeholder ARNs
-10. SCPs must contain at least one `Deny`. `StringEquals` and `StringNotEquals` in the same
-    Condition must target the same key
-11. Verdict matches integrity. Any integrity failure means `REQUIRES REMEDIATION`, not `APPROVED`
+9. SCPs must contain at least one `Deny`. `StringEquals` and `StringNotEquals` in the same
+   Condition must target the same key
+10. Verdict matches integrity. Any integrity failure means `REQUIRES REMEDIATION`, not `APPROVED`
 
 The Stop hook runs `validate_pipeline_integrity.py` and blocks violations.
 
@@ -60,11 +59,6 @@ The Stop hook runs `validate_pipeline_integrity.py` and blocks violations.
 Registered via `.vscode/mcp.json`:
 - `aws-documentation` (HTTP)
 - `awsknowledge` (HTTP)
-- `awsiac` (HTTP)
-- `terraform` (stdio via Docker — `hashicorp/terraform-mcp-server:0.5.1`)
-
-The `aws-cdk` MCP server is not wired in this plugin. For CDK / CDKTF construct lookups,
-use `aws-documentation` and `awsiac`.
 
 ## Output
 

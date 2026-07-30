@@ -8,7 +8,6 @@ Step-by-step guide to install and run the Service Approval Plugin with Kiro IDE.
 
 - [Kiro IDE](https://kiro.dev) installed
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH (for MCP servers)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) running (for Terraform MCP)
 - Python 3.9+ (for kb-search MCP and validators)
 
 ---
@@ -76,11 +75,11 @@ The plugin runs an Intake precursor plus 6 numbered phases:
 3. **Research** — discovers service capabilities, API surface, attack surface
 4. **Validate** — verifies research findings via MCP
 5. **Map** — maps capabilities to control framework objectives
-6. **Recommended Guidance** — produces all security control artifacts and IaC templates
+6. **Recommended Guidance** — produces all security control artifacts
 7. **Summarize** — produces SUMMARY-REPORT.md
 
-The pipeline recommends controls + compliant IaC that you deploy yourself; it
-does not deploy, test, or attest against a live account.
+The pipeline recommends controls that you deploy yourself; it does not deploy,
+test, or attest against a live account.
 
 Kiro runs phases sequentially. You may see MCP connection prompts — approve them
 to allow the plugin to query AWS documentation and knowledge bases.
@@ -96,7 +95,7 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   02-research/        ← research.json
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
-  05-recommended-guidance/        ← all generated artifacts (85+ files)
+  05-recommended-guidance/        ← all generated artifacts
   06-summarize/       ← SUMMARY-REPORT.md (Summary Report)
 ```
 
@@ -116,7 +115,6 @@ service-approval power."
 
 **MCP connection errors (`fetch failed`, `Connection closed`)**
 - Check `uv` is on PATH: open terminal in Kiro and run `which uv`
-- Check Docker is running for Terraform MCP
 - See [`docs/TESTING-KIRO.md`](TESTING-KIRO.md) for detailed MCP troubleshooting
 
 **`workspaceRoot not approved` warning**

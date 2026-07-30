@@ -11,20 +11,19 @@ The pipeline runs an unnumbered **Intake** precursor that gathers customer
 inputs and writes a candidate slug to a staging directory, followed by 6
 numbered phases (0 Assess → 5 Summarize). Phase 0 (Assess) atomically
 promotes the staging dir to `.service-approval/<slug>/` after deriving the
-canonical service slug from SAR. The pipeline recommends controls + compliant
-IaC that the customer deploys themselves; it does not deploy, test, or attest
-against a live account.
+canonical service slug from SAR. The pipeline recommends controls that the
+customer deploys themselves; it does not deploy, test, or attest against a
+live account.
 
 ## Hard rules (re-stated)
 
-The Stop hook enforces P1–P7 failure signals via `validate_pipeline_integrity.py`:
+The Stop hook enforces the following failure signals via `validate_pipeline_integrity.py`:
 
 - **P1** — too few MCP calls. Log every MCP call to `.service-approval/<service-slug>/pipeline.log` (the consolidated debugging artifact, with `[mcp:<server>:call]` source tags); lines are mirrored to `mcp-calls.log` for backward compatibility. Minimum 10 entries enforced. Exempted for finalized runs by the `[pipeline:complete:<VERDICT>]` terminal sentinel.
 - **P2** — `validated.json` items need unique `verification_note`s (≥50% uniqueness required).
 - **P3** — IAM policy logic errors: mismatched `StringEquals`/`StringNotEquals` keys, broad `Allow` on `Resource:*` without `Condition`, SCP without at least one `Deny`.
-- **P4** — IaC templates must be parameterized; no placeholder account IDs or placeholder ARNs.
 - **P5** — framework coverage below 15% with no per-objective rationale.
-- **P6** — verdict matches integrity. Any P1–P5/P7 failure → `REQUIRES REMEDIATION`, not `APPROVED`.
+- **P6** — verdict matches integrity. Any integrity failure → `REQUIRES REMEDIATION`, not `APPROVED`.
 - **P7** — phase-output completeness: every phase dir on disk must contain its declared outputs at min-size thresholds.
 
 **Cultural rules** (skill-based execution, no one-shot generator scripts, every claim
@@ -78,9 +77,6 @@ The intake skill is the source of truth for that flow — see
 `skills/intake/SKILL.md` "Existing Intake Flow" section. Don't
 re-implement it here.
 
-IaC format selection is NOT done at intake — that happens in Phase 0 (Assess)
-Step 2b and lands in `iac-support.json`.
-
 
 
 ## Phase 0 — Assess
@@ -92,13 +88,11 @@ Step 2b and lands in `iac-support.json`.
 - `<slug>/01-assess/sar-facts.json` — SAR extraction (actions, condition keys, resource types)
 - `<slug>/01-assess/checkpoint-results.json` — CAF security assessment per domain
 - `<slug>/01-assess/assessment-summary.md`
-- `<slug>/01-assess/iac-support.json` — per-format IaC provider matrix (CloudFormation, Terraform hashicorp/awscc, CDK, CDKTF); consumed by Phase 4
 
 Runs sequentially. Loads `sar-slugs.json` from `data/` to resolve the service's
 SAR URL. Step 0b derives the canonical slug via `tools/slug.py` and atomically
-moves `_staging/<ts>/` → `<slug>/`. Calls `@awsknowledge` for condition keys,
-`@aws-documentation` for service descriptions, and runs the IaC Provider Discovery
-step that populates `iac-support.json`.
+moves `_staging/<ts>/` → `<slug>/`. Calls `@awsknowledge` for condition keys and
+`@aws-documentation` for service descriptions.
 
 ## Phase 1 — Research (parallel)
 
@@ -110,7 +104,7 @@ Use Kiro CLI 2.0 `/spawn` to run these in parallel:
 ```
 /spawn sa-research-mitigations    (reads input mitigation docs)
 /spawn sa-research-capabilities   (queries awsknowledge for service capabilities)
-/spawn sa-research-api-surface    (queries awsknowledge + awsiac for API operations)
+/spawn sa-research-api-surface    (queries awsknowledge for API operations)
 /spawn sa-research-attack-surface (mandatory — queries MITRE ATT&CK enrichment data)
 ```
 
@@ -153,9 +147,9 @@ sa-map-assemble           → <slug>/04-map/mapping-results.json         (sequen
 mitigation, every framework objective, the coverage matrix, and the
 threat → mitigation → control traceability. Phase 4 reads it.
 
-## Phase 4 — Recommended Guidance (3 families in parallel; preventive is a gated sub-pipeline)
+## Phase 4 — Recommended Guidance (2 families in parallel; preventive is a gated sub-pipeline)
 
-**Families:** 3 in parallel. The preventive family runs its sub-skills in order
+**Families:** 2 in parallel. The preventive family runs its sub-skills in order
 (recommender gate → reference-anchored authors → root-cause critic).
 
 ```
@@ -166,7 +160,6 @@ preventive (in order):
   /spawn sa-generate-preventive-iam        → <slug>/05-recommended-guidance/preventive/ (GENERATE_IAM)
   /spawn sa-generate-preventive-rootcause  → prove anchored + enforcing
 /spawn sa-generate-detective   → <slug>/05-recommended-guidance/detective/, <slug>/05-recommended-guidance/responsive/
-/spawn sa-generate-iac         → <slug>/05-recommended-guidance/iac/ (4 formats + TF modules)
 ```
 
 Every preventive artifact must carry a reference anchor (`_metadata.reference`)
@@ -180,9 +173,8 @@ the right `<slug>/05-recommended-guidance/` subdirectory. Artifact count ranges:
 - Proactive: 12–15 files
 - Detective: 34–47 files
 - Responsive: 6 files
-- IaC: 17–31 files
 
-Total: 78–111 files depending on service surface area.
+Total varies with service surface area.
 
 ## Phase 5 — Summarize
 
@@ -200,7 +192,7 @@ The Stop hook still enforces the P1–P7 integrity signals on the run's outputs.
 
 Before entering Phase 5 (Summarize), the orchestrator MUST perform a completeness
 and correctness review of all Phase 4 (Recommended Guidance) output. This step
-exists because the three families run in parallel and gaps are easy to miss when
+exists because the families run in parallel and gaps are easy to miss when
 subagents complete independently.
 
 ### Checklist
@@ -209,31 +201,24 @@ subagents complete independently.
    against the ranges in `steering/phase-generate.md`. If below minimum for any
    category, re-run that generator sub-skill.
 
-2. **IaC format coverage** — Read `01-assess/iac-support.json`. For every format
-   where `supported: true`, verify corresponding output exists in
-   `05-recommended-guidance/iac/{cdk,cloudformation,cdktf,terraform}/`. Missing format = gap.
-
-3. **Policy engine coverage** — Every proactive control must exist in ALL THREE
+2. **Policy engine coverage** — Every proactive control must exist in ALL THREE
    engines: CFN Guard (`.guard`), OPA (`.rego`), and Checkov (`.py`). A control
    in only one engine is incomplete.
 
-4. **SCP metadata** — Every file in `05-recommended-guidance/preventive/` must have:
+3. **SCP metadata** — Every file in `05-recommended-guidance/preventive/` must have:
    - `_metadata` with control_id, name, ccmv4_objectives, mitre_techniques
    - `_simulation_tests` array with at least one DENY and one ALLOW scenario
    - Control ID in the `Sid` field of each Statement
 
-5. **Control ID annotations** — Spot-check 3 random IaC files. Each resource
-   property that implements a control must have an inline comment with the
-   control ID (`# CTRL-*` in TF/Guard, `// CTRL-*` in CDK/CDKTF,
-   `Comment: CTRL-*` in CFN YAML).
+4. **Control ID annotations** — Spot-check 3 random preventive/proactive policy
+   files. Each rule or statement that implements a control must carry the control
+   ID (`# CTRL-*` in Guard/rego, `Sid: CTRL-*` in JSON policies).
 
-6. **Integrity pre-check** — Run P3 and P4 checks inline:
+5. **Integrity pre-check** — Run the P3 check inline:
    - P3: Every SCP has ≥1 Deny statement; no `StringEquals`/`StringNotEquals`
      targeting different keys in the same Condition block
-   - P4: No placeholder account IDs (`123456789012`, `000000000000`, `111111111111`)
-     in any generated file
 
-7. **Directory structure** — Verify output matches the layout defined in
+6. **Directory structure** — Verify output matches the layout defined in
    `steering/structure.md` (subdirectories, naming conventions).
 
 ### Outcome

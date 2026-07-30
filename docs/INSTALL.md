@@ -69,7 +69,7 @@ If you prefer to install the plugin manually without the script:
    ```
 
 > **Note:** The manual approach does not configure MCP servers. You will need to
-> approve MCP server connections (aws-documentation, awsknowledge, awsiac, etc.)
+> approve MCP server connections (aws-documentation, awsknowledge, etc.)
 > when prompted on first use, or run `./install-claude.sh` afterward to write the
 > MCP config.
 

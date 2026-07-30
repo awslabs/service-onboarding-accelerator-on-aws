@@ -16,7 +16,6 @@ Failure signals:
     P2 — validated.json has templated or empty verification notes
     P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
          keys, broad Allow on Resource:* without Condition, SCP without Deny)
-    P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
     P7 — phase-output completeness: every phase dir on disk must contain
          its declared outputs (mapping-results.json, controls-catalog.md,
@@ -39,6 +38,12 @@ Failure signals:
          HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The guard targets
          scored/keyed confidence, not the English word, so prose that merely uses
          the word "confidence" is not flagged.
+    P12 — citation coverage: every authored artifact under
+         05-recommended-guidance/{detective,proactive,responsive}/ must carry a
+         resolvable citation — a repo anchor (_metadata.reference resolving to a
+         reference-index example) or a doc anchor (_metadata.citation of type
+         aws_doc with an MCP-verified AWS documentation URL). The preventive
+         family is covered separately by P8.
 """
 from __future__ import annotations
 
@@ -51,11 +56,9 @@ from pathlib import Path
 
 MIN_MCP_CALLS = 10
 MIN_FRAMEWORK_COVERAGE_PCT = 15
-PLACEHOLDER_ACCOUNTS = {"123456789012", "000000000000", "111111111111"}
-PLACEHOLDER_ARN_FRAGMENTS = (
-    "arn:aws:kms:us-east-1:123456789012:key/example",
-    "arn:aws:iam::123456789012:role/lambda-exec",
-)
+
+# Vendored/build directories to skip when walking artifact trees.
+SKIP_DIRS = {".terraform", "node_modules", "__pycache__", "cdk.out", ".venv", ".git"}
 
 # Base positive/negative IAM condition operator pairs.
 # Source: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html
@@ -267,8 +270,6 @@ def check_validated_notes(validate_dir: Path) -> list[str]:
 
 
 def _iter_json_files(root: Path):
-    from validate_deployable import SKIP_DIRS
-
     if not root.exists():
         return
     for p in root.rglob("*.json"):
@@ -805,8 +806,6 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
     rendered markdown (mapping .md files + the Summary Report) for band labels.
     Finalized runs are exempt (frozen artifacts cannot be remediated).
     """
-    from validate_deployable import SKIP_DIRS
-
     if is_finalized(service_root):
         return []
 
@@ -842,39 +841,6 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
             rel = report.relative_to(service_root)
             errors.extend(_confidence_scoring_errors_in_text(text, str(rel), True))
 
-    return errors
-
-
-def check_iac_placeholders(iac_dir: Path) -> list[str]:
-    # Reuse the canonical exclude list from validate_deployable so adding a new
-    # vendored-dep dir doesn't require touching two places.
-    from validate_deployable import SKIP_DIRS
-
-    errors: list[str] = []
-    if not iac_dir.exists():
-        return errors
-    for path in iac_dir.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        try:
-            content = path.read_text()
-        except (OSError, UnicodeDecodeError):
-            continue
-        rel = path.relative_to(iac_dir)
-        for acct in PLACEHOLDER_ACCOUNTS:
-            if acct in content:
-                errors.append(
-                    f"P4 {rel}: contains placeholder account ID {acct}. "
-                    f"Use parameters or Sub references, not hardcoded accounts."
-                )
-        for fragment in PLACEHOLDER_ARN_FRAGMENTS:
-            if fragment in content:
-                errors.append(
-                    f"P4 {rel}: contains placeholder ARN '{fragment}'. "
-                    f"IaC must be parameterized."
-                )
     return errors
 
 
@@ -966,7 +932,6 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("sar-facts.json", 256),
         ("checkpoint-results.json", 256),
         ("assessment-summary.md", 1024),
-        ("iac-support.json", 256),
     ],
     "02-research": [
         ("research.json", 1024),
@@ -994,7 +959,7 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
     "05-recommended-guidance": [
         # 05-recommended-guidance/ contains category subdirs, not single files.
         # Existence of at least one of {preventive, proactive, detective,
-        # responsive, iac} signals the phase ran. Empty dir = incomplete.
+        # responsive} signals the phase ran. Empty dir = incomplete.
     ],
     "06-summarize": [
         ("SUMMARY-REPORT.md", 2048),
@@ -1041,7 +1006,7 @@ def check_phase_outputs(service_root: Path) -> list[str]:
     # satisfy the gate. Require at least one actual file.
     generate_dir = service_root / "05-recommended-guidance"
     if generate_dir.exists():
-        categories = ["preventive", "proactive", "detective", "responsive", "iac"]
+        categories = ["preventive", "proactive", "detective", "responsive"]
         any_populated = False
         for cat in categories:
             cat_dir = generate_dir / cat
@@ -1071,6 +1036,30 @@ def check_reference_anchors(service_root: Path) -> list[str]:
     except ImportError:
         return []
     return check_service(service_root)
+
+
+def check_citation_coverage(service_root: Path) -> list[str]:
+    """P12: every detective/proactive/responsive artifact must carry a citation.
+
+    Delegates to validate_citation_coverage.check_service. Imported lazily so a
+    missing module degrades gracefully (returns []) rather than breaking the
+    whole Stop hook — the dedicated PostToolUse path still surfaces citation
+    failures per-file in that case.
+
+    Finalized runs are exempt: P12 is a newly-added check, so a run that
+    finalized before it existed had no chance to satisfy it and cannot be
+    remediated in place (its artifacts are frozen). This mirrors P1/P11 —
+    see is_finalized(). Mid-flight runs (no sentinel) still get the strict check.
+    """
+    if is_finalized(service_root):
+        return []
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validate_citation_coverage import check_service as citation_check  # type: ignore
+    except ImportError:
+        return []
+    # Re-prefix the delegate's "CITATION" errors with P12 for the Stop-hook trail.
+    return [f"P12 {e}" if not e.startswith("P12") else e for e in citation_check(service_root)]
 
 
 # Validator contract: every check_*() must fail-closed when the artifact it
@@ -1144,11 +1133,11 @@ def validate_pipeline(root: Path) -> list[str]:
         controls_dir = service_root / "05-recommended-guidance"
         if controls_dir.exists():
             errors.extend(check_iam_policies(controls_dir))
-            iac_dir = controls_dir / "iac"
-            if iac_dir.exists():
-                errors.extend(check_iac_placeholders(iac_dir))
             # P8: every preventive policy artifact must anchor to a reference.
             errors.extend(check_reference_anchors(service_root))
+            # P12: every detective/proactive/responsive artifact must carry a
+            # resolvable citation (repo anchor or MCP-verified doc anchor).
+            errors.extend(check_citation_coverage(service_root))
             # P9: every Resource ARN must use the SAR-mandated delimiter for its
             # resource type (catches function/* vs function:* silent no-ops).
             errors.extend(check_arn_shapes(service_root))

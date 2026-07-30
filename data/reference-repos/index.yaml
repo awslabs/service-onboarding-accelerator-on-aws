@@ -1,5 +1,12 @@
 version: 1
 repos:
+- slug: aws-config-custom-policy-rule-samples
+  owner: aws-samples
+  url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples
+  commit: 930af91fbf5b6256580b1266fca823ae34a3ccbc
+  license: MIT
+  vendor_bodies: true
+  mechanism_family: config-rule
 - slug: data-perimeter-policy-examples
   owner: aws-samples
   url: https://github.com/aws-samples/data-perimeter-policy-examples
@@ -36,6 +43,189 @@ repos:
   vendor_bodies: true
   mechanism_family: SCP
 examples:
+- id: cloudfront-check-httpversion
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if http versions enabled on a Cloudfront Distribution, by default it checks for
+    http2 or http3 or http2and3. Can be further parameterized to enforce a particular version.
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::CloudFront::Distribution
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/cloudfront_check_httpversion.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/cloudfront-check-httpversion.guard
+- id: cloudwatch-alarm-action-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if CloudWatch Alarms have an associated action
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::CloudWatch::Alarm
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/cloudwatch_alarm_action_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/cloudwatch-alarm-action-check.guard
+- id: deprecated-cfn-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Check if any CloudFront distributions support TLS protocol version 1.0/SSLv3
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::CloudFormation::Stack
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/deprecated_cfn_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/deprecated-cfn-check.guard
+- id: deprecated-cfn-template-usage
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: deprecated cfn template usage
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::CloudFormation::Stack
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/deprecated_cfn_template_usage.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/deprecated-cfn-template-usage.guard
+- id: dynamodb-customer-managed-key
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if DynamoDB tables are encrypted with AWS managed key or Customer managed key
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::DynamoDB::Table
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/dynamodb_customer_managed_key.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/dynamodb-customer-managed-key.guard
+- id: dynamodb-streams-enabled
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if dynamodb streams is enabled for the table
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::DynamoDB::Table
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/dynamodb_streams_enabled.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/dynamodb-streams-enabled.guard
+- id: ec2-src-dest-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Guard rule to check if the source/destination check is disabled
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::EC2::Instance
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/ec2_src_dest_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/ec2-src-dest-check.guard
+- id: efs-backup-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if backup is enabled for the EFS file systems
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::EFS::FileSystem
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/efs_backup_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/efs-backup-check.guard
+- id: efs-encryption-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if encryption is enabled for the EFS file systems
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::EFS::FileSystem
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/efs_encryption_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/efs-encryption-check.guard
+- id: efs-lifecycle-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if EFS Lifecycle Management is turned on
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::EFS::FileSystem
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/efs_lifecycle_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/efs-lifecycle-check.guard
+- id: elb-logging-to-s3-bucket
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if ALB/NLB has logging enabled with s3 bucket
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::ElasticLoadBalancingV2::LoadBalancer
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/elb_logging_to_s3_bucket.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/elb-logging-to-s3-bucket.guard
+- id: iam-root-mfa-disabled-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule to check if Root Account MFA is disabled but MFA for IAM User Console Access is enabled.
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::Config::ConfigRule
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/iam_root_mfa_disabled_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/iam-root-mfa-disabled-check.guard
+- id: lambda-deprecated-runtime
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Guard rule to check that deprecated or soon to be deprecated Lambda function runtimes are used
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::Lambda::Function
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/lambda_deprecated_runtime.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/lambda-deprecated-runtime.guard
+- id: opensearch-security
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if OpenSearch Domains follow security best practice
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::OpenSearch::Domain
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/opensearch_security.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/opensearch-security.guard
+- id: rds-iam-authentication-enabled
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Check if IAM authentication is enabled for "AWS::RDS::DBCluster" and "AWS::RDS::DBInstance"
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::RDS::DBCluster
+  - AWS::RDS::DBInstance
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/rds_iam_authentication_enabled.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/rds-iam-authentication-enabled.guard
+- id: rds-version-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: rds version check
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::RDS::DBCluster
+  - AWS::RDS::DBInstance
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/rds_version_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/rds-version-check.guard
+- id: security-group-internet-check-approval
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if Security Group allows internet access without security approval
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::EC2::SecurityGroup
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/security_group_internet_check_approval.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/security-group-internet-check-approval.guard
+- id: security-group-launch-wizard-check
+  repo: aws-config-custom-policy-rule-samples
+  mechanism: config-rule
+  intent: Rule checks if Security Group name contains 'launch-wizard' in the name
+  governed_actions: []
+  condition_keys: []
+  governed_resource_types:
+  - AWS::EC2::SecurityGroup
+  source_url: https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/930af91fbf5b6256580b1266fca823ae34a3ccbc/security_group_launch_wizard_check.guard
+  source_path: data/reference-repos/aws-config-custom-policy-rule-samples/examples/security-group-launch-wizard-check.guard
 - id: resource-control-policies-data-perimeter-governance-rcp
   repo: data-perimeter-policy-examples
   mechanism: RCP
