@@ -59,7 +59,7 @@
           ]
         },
         "citation": {
-          "$comment": "Typed citation for the intent source — what motivates the control. type==canopy: cite the Canopy mitigation/implementation alias in id; when the Canopy implementation carries a public REFERENCE href, include it as url (MCP-verified, verified_via==mcp). type==reference: cite the reference-repo example in id and url. type==catalog: cite the AWS Control Catalog ARN in id. type==service-doc: cite the AWS doc URL in url.",
+          "$comment": "Typed citation for the intent source — what motivates the control. type==canopy: cite the Canopy mitigation/implementation alias in id; when the Canopy implementation carries a public REFERENCE href, include it as url (verified reachable at generation time — verified_via==mcp in the default mode, or verified_via==web in No-MCP mode where the URL is confirmed with WebFetch per rules/web-access.md). type==reference: cite the reference-repo example in id and url. type==catalog: cite the AWS Control Catalog ARN in id. type==service-doc: cite the AWS doc URL in url.",
           "type": "object",
           "additionalProperties": false,
           "required": ["type"],
@@ -67,7 +67,7 @@
             "type": {"type": "string", "enum": ["canopy", "reference", "catalog", "service-doc"]},
             "id": {"type": "string", "minLength": 1},
             "url": {"type": "string", "minLength": 1},
-            "verified_via": {"type": "string", "enum": ["mcp"]}
+            "verified_via": {"type": "string", "enum": ["mcp", "web"]}
           },
           "anyOf": [
             {"required": ["id"]},

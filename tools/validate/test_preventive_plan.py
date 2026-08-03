@@ -150,3 +150,80 @@ def test_route_decision_still_requires_citation():
     bad = {k: v for k, v in ROUTE.items() if k != "citation"}
     errors = vc.check_preventive_plan(_plan([bad]))
     assert any("SCHEMA" in e and "citation" in e for e in errors), errors
+
+
+# ---- Canopy anchor resolution + No-MCP web verification -------------------
+
+CANOPY_SCP = {
+    "control_id": "CTRL-ORG-PRV-001",
+    "source_control_id": "CTRL-ORG-PRV-001",
+    "mechanism": "SCP",
+    "preventable": True,
+    "enforcing_condition_keys": ["aws:ResourceOrgID"],
+    "decision": "GENERATE_SCP",
+    "anchor": {"source": "canopy", "example_id": "Implementation.X.1"},
+    "citation": {
+        "type": "canopy",
+        "id": "Implementation.X.1",
+        "url": "https://docs.aws.amazon.com/x.html",
+        "verified_via": "web",
+    },
+    "route_to": None,
+    "rationale": "ok",
+    "applicability": {
+        "applies_to": "the resource subset the policy targets",
+        "usage_notes": "scope to those resources; do not apply broadly",
+    },
+}
+
+
+def test_verified_via_web_accepted_no_mcp():
+    """No-MCP runs stamp canopy citation urls verified_via=web (rules/web-access)."""
+    errors = vc.check_preventive_plan(_plan([CANOPY_SCP]))
+    assert not any("SCHEMA" in e for e in errors), errors
+
+
+def test_verified_via_unknown_value_fails():
+    bad = dict(CANOPY_SCP, citation=dict(CANOPY_SCP["citation"], verified_via="carrier-pigeon"))
+    errors = vc.check_preventive_plan(_plan([bad]))
+    assert any("SCHEMA" in e for e in errors), errors
+
+
+def test_canopy_anchor_resolves_against_canopy_index(tmp_path):
+    """A canopy-sourced anchor resolves its alias against 02-research/canopy-index.json,
+    NOT the reference-repo index."""
+    import json
+
+    root = tmp_path / "svc"
+    (root / "02-research").mkdir(parents=True)
+    (root / "05-recommended-guidance").mkdir(parents=True)
+    (root / "02-research" / "canopy-index.json").write_text(
+        json.dumps(
+            {
+                "_metadata": {"service": "x"},
+                "mitigations": [],
+                "implementations": [{"alias": "Implementation.X.1"}],
+            }
+        )
+    )
+    f = root / "05-recommended-guidance" / "preventive-plan.json"
+    f.write_text(json.dumps(_plan([CANOPY_SCP])))
+    # Reference-repo index deliberately does NOT contain the canopy alias.
+    with patch.object(reference_index, "example_ids", lambda *a, **k: {"unrelated"}):
+        errors = vc.check_preventive_plan(_plan([CANOPY_SCP]), str(f))
+    assert errors == [], errors
+
+
+def test_unresolvable_canopy_anchor_fails(tmp_path):
+    import json
+
+    root = tmp_path / "svc"
+    (root / "02-research").mkdir(parents=True)
+    (root / "05-recommended-guidance").mkdir(parents=True)
+    (root / "02-research" / "canopy-index.json").write_text(
+        json.dumps({"_metadata": {"service": "x"}, "mitigations": [], "implementations": []})
+    )
+    f = root / "05-recommended-guidance" / "preventive-plan.json"
+    f.write_text(json.dumps(_plan([CANOPY_SCP])))
+    errors = vc.check_preventive_plan(_plan([CANOPY_SCP]), str(f))
+    assert any("does not resolve in 02-research/canopy-index.json" in e for e in errors), errors

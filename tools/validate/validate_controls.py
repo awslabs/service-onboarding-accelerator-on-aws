@@ -1321,10 +1321,34 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
     if "/05-recommended-guidance/preventive/" not in norm and "/controls/preventive/" not in norm:
         return []
     try:
-        from validate_reference_anchor import check_artifact  # type: ignore
+        from validate_reference_anchor import (  # type: ignore
+            _known_ids,
+            _load_canopy_aliases,
+            _mapping_control_ids,
+            check_artifact,
+        )
     except ImportError:
         return []
-    return check_artifact(file_path)
+    # Locate the service root so the single-file P8 check can resolve a Canopy
+    # anchor against that run's canopy-index.json and check the orphan
+    # source_control_id — parity with the standalone CLI's single-file mode and
+    # the whole-service check_service() path. Without this, a Canopy-anchored
+    # artifact fails the hook because canopy_aliases defaults to None.
+    from pathlib import Path
+
+    known_ids: set[str] | None = None
+    mapping_ids: set[str] | None = None
+    canopy_aliases: set[str] | None = None
+    try:
+        known_ids = _known_ids()
+    except (ImportError, FileNotFoundError):
+        known_ids = None
+    for parent in Path(file_path).resolve().parents:
+        if (parent / "05-recommended-guidance").is_dir() or (parent / "02-research").is_dir():
+            canopy_aliases = _load_canopy_aliases(parent)
+            mapping_ids = _mapping_control_ids(parent)
+            break
+    return check_artifact(file_path, known_ids, mapping_ids, canopy_aliases)
 
 
 def _check_config_support(file_path: str) -> list[str]:
@@ -1387,15 +1411,19 @@ def _categorize_file(file_path: str) -> str:
     return "unknown"
 
 
-def check_preventive_plan(data: dict) -> list[str]:
+def check_preventive_plan(data: dict, file_path: str | None = None) -> list[str]:
     """Validate preventive-plan.json — the recommender's decision plan.
 
     Two layers:
       1. Schema (preventive-plan.schema.json) — shape, decision enum, the
          GENERATE_*-requires-anchor and ROUTE_DETECTIVE-requires-route rules.
-      2. Anchor resolution — every GENERATE_* decision's anchor.example_id must
-         resolve to a real entry in data/reference-repos/index.yaml (the same
-         gate the per-artifact P8 check enforces, applied to the plan up front).
+      2. Anchor resolution — every GENERATE_* decision's anchor must resolve.
+         A reference-repo anchor (anchor.source absent or "reference") must
+         resolve to a real entry in data/reference-repos/index.yaml. A Canopy
+         anchor (anchor.source == "canopy") carries a Canopy implementation/
+         mitigation alias as its example_id and resolves against the run's
+         02-research/canopy-index.json instead — the same dual-anchor rule the
+         per-artifact P8 gate (validate_reference_anchor.py) enforces.
     """
     errors: list[str] = []
     # Schema layer. Lazy import mirrors validate_state's `from _schemas import …`.
@@ -1417,21 +1445,57 @@ def check_preventive_plan(data: dict) -> list[str]:
         known = example_ids()
     except (ImportError, FileNotFoundError):
         known = None
-    if known is not None:
-        for d in data.get("decisions", []):
-            if not isinstance(d, dict):
-                continue
-            if d.get("decision", "").startswith("GENERATE_"):
-                anchor = d.get("anchor") or {}
-                ex_id = anchor.get("example_id")
-                if ex_id and ex_id not in known:
-                    errors.append(
-                        f"preventive-plan: control {d.get('control_id')} decision "
-                        f"{d.get('decision')} anchors to example_id '{ex_id}' which "
-                        f"does not resolve in data/reference-repos/index.yaml. "
-                        f"Pick a real anchor or change the decision to "
-                        f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
-                    )
+
+    # Canopy alias set for the run (when a Canopy index is present next to the
+    # plan). None → no Canopy input; a canopy-sourced anchor is then treated the
+    # same as an unresolvable one.
+    canopy_aliases: set[str] | None = None
+    if file_path:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from canopy_parse import (  # type: ignore
+                canopy_index_aliases,
+                load_canopy_index,
+            )
+
+            # <service_root>/05-recommended-guidance/preventive-plan.json →
+            # <service_root>/02-research/canopy-index.json
+            service_root = os.path.dirname(os.path.dirname(os.path.abspath(file_path)))
+            idx = load_canopy_index(
+                os.path.join(service_root, "02-research", "canopy-index.json")
+            )
+            if idx is not None:
+                canopy_aliases = canopy_index_aliases(idx)
+        except (ImportError, FileNotFoundError):
+            canopy_aliases = None
+
+    for d in data.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        if not d.get("decision", "").startswith("GENERATE_"):
+            continue
+        anchor = d.get("anchor") or {}
+        ex_id = anchor.get("example_id")
+        if not ex_id:
+            continue
+        if anchor.get("source") == "canopy":
+            # Canopy-sourced anchor: resolve the alias against canopy-index.json.
+            if canopy_aliases is not None and ex_id not in canopy_aliases:
+                errors.append(
+                    f"preventive-plan: control {d.get('control_id')} decision "
+                    f"{d.get('decision')} anchors to Canopy alias '{ex_id}' which "
+                    f"does not resolve in 02-research/canopy-index.json. Cite a "
+                    f"real Canopy implementation/mitigation alias or change the "
+                    f"decision to REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+                )
+        elif known is not None and ex_id not in known:
+            errors.append(
+                f"preventive-plan: control {d.get('control_id')} decision "
+                f"{d.get('decision')} anchors to example_id '{ex_id}' which "
+                f"does not resolve in data/reference-repos/index.yaml. "
+                f"Pick a real anchor or change the decision to "
+                f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+            )
     return errors
 
 
@@ -1466,7 +1530,7 @@ def validate_file(file_path: str) -> list[str]:
     # Lives at 05-recommended-guidance/ root (category "unknown"), so dispatch on basename
     # before the category logic. Schema-validated; it is not a policy artifact.
     if basename == "preventive-plan.json" and data is not None:
-        errors.extend(check_preventive_plan(data))
+        errors.extend(check_preventive_plan(data, file_path))
         return errors
 
     # Load state files
