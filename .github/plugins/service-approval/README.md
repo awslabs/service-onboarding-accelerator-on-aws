@@ -18,6 +18,10 @@ The plugin references existing files via relative paths — nothing is duplicate
 
 Copilot auto-discovers `.github/` contents when the repo is opened in VS Code with Copilot Chat in Agent mode. Nothing to install.
 
+> Given a `.zip` of the repo instead of git access? Unzip it and open the extracted
+> folder in VS Code — no clone needed. See "Running from a repo zip" in
+> [`docs/USAGE-COPILOT.md`](../../../docs/USAGE-COPILOT.md).
+
 For clean activation:
 1. Open the repo in VS Code
 2. Open Copilot Chat (Ctrl+Alt+I)
