@@ -13,11 +13,38 @@ Step-by-step guide to install and run the Service Approval Plugin with GitHub Co
 
 ---
 
-## Step 1: Clone the repo
+## Step 1: Get the repo
+
+**Option A — clone (recommended):**
 
 ```bash
 git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 ```
+
+**Option B — from a repo zip.** If you were handed a `.zip` of the repo instead of
+git access, unzip it and use the extracted folder in place of the cloned repo —
+everything Copilot needs (`.github/`, `.vscode/mcp.json`, `skills/`, `rules/`,
+`tools/`) ships inside the zip, so no clone is required:
+
+```bash
+unzip service-onboarding-accelerator-on-aws.zip -d ~/
+# → creates ~/service-onboarding-accelerator-on-aws/ (folder name may vary)
+```
+
+Then treat the extracted folder exactly as the cloned repo for every step below.
+Two things to check after unzipping:
+
+- **Restore the `.github/skills` symlink if the zip flattened it.** Some zip tools
+  don't preserve symlinks. Confirm it resolves:
+  ```bash
+  cd ~/service-onboarding-accelerator-on-aws
+  ls .github/skills/summarize/SKILL.md   # should print the path, not error
+  # if it errors, recreate the symlink:
+  rm -f .github/skills && ln -s ../skills .github/skills
+  ```
+- **Unblock the files on macOS/Windows if they came from a download** (quarantine
+  attribute can block VS Code from reading them): macOS `xattr -dr com.apple.quarantine ~/service-onboarding-accelerator-on-aws`;
+  Windows → right-click the zip → **Properties** → **Unblock** before extracting.
 
 ## Step 2: Open the repo in VS Code
 
