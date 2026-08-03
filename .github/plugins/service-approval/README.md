@@ -73,7 +73,7 @@ Create `.vscode/mcp.json` if missing:
     "aws-documentation": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "args": ["awslabs.aws-documentation-mcp-server@1.1.28"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR",
         "AWS_DOCUMENTATION_PARTITION": "aws"
@@ -86,7 +86,7 @@ Create `.vscode/mcp.json` if missing:
     "mitre-attack": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/stoyky/mitre-attack-mcp", "mitre-attack-mcp"]
+      "args": ["--from", "git+https://github.com/stoyky/mitre-attack-mcp@9ebd694bfc9869e81d5d1a3d3e7964e31a1e9087", "mitre-attack-mcp"]
     }
   }
 }

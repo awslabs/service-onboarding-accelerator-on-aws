@@ -63,7 +63,7 @@ If you see any leftover MCP entries that predate the canonical awslabs/mcp endpo
   ```json
   "aws-documentation": {
     "command": "uvx",
-    "args": ["awslabs.aws-documentation-mcp-server@latest"],
+    "args": ["awslabs.aws-documentation-mcp-server@1.1.28"],
     "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"}
   }
   ```
