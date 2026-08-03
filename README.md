@@ -152,6 +152,7 @@ services:
 | Detective | 34–47 | Config rules + Lambda handlers, EventBridge rules, CloudWatch alarms, Access Analyzer, compensating controls |
 | Responsive | 6 | Lambda remediator + SAM template, SSM runbooks (org + account), Step Functions workflow |
 
+
 ---
 
 ## The pipeline
@@ -191,16 +192,6 @@ ATT&CK threat mapping.
 | `--dry-run` | Lint artifacts only, no deployment | false |
 | `--clean` | Delete existing `.service-approval/` state before the run | false |
 | `--no-mcp` | Run without MCP servers — verify facts over the web (see "Running without MCP" above) | false (MCP is the default) |
-
----
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---------|-----|
-| `/service-approval` command not found (Claude Code) | Re-run `./install-claude.sh` from the repo, then `/reload-plugins`. |
-| Kiro doesn't activate the Power | It's keyword-triggered — include "service approval" or the service name, or say "use the service-approval power". |
-| MCP server not connecting (`fetch failed`, `spawn uvx ENOENT`) | Confirm `uv` is on PATH (`which uv`); approve the MCP connection when prompted. On macOS, GUI-launched apps may not see `~/.local/bin` — see [`docs/TESTING-KIRO.md`](docs/TESTING-KIRO.md). |
 | Plugin works in the repo but not elsewhere (Claude Code) | The marketplace registration didn't take — `claude plugin marketplace add .` then `claude plugin install service-approval@service-approval --scope user`. |
 | A phase reports too few MCP calls / integrity failure | The Stop hook enforces pipeline integrity (P1–P7); read `06-summarize/SUMMARY-REPORT.md` and `pipeline.log` for which check failed, then re-run from the failing phase. |
 
@@ -229,6 +220,7 @@ session end:
 ---
 
 ## How it works / accuracy model
+
 
 The pipeline is built around a deterministic, citation-gated mapping layer and
 reference-anchored preventive controls: every confident mapping cites its evidence,
