@@ -25,3 +25,5 @@ options:
   include_artifact_matrix: true
   include_unverified: false
   clean: false
+  # MCP is the default; set true (or pass --no-mcp) to verify facts over the web.
+  no_mcp: false

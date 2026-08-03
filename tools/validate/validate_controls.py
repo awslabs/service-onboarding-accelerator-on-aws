@@ -1073,10 +1073,10 @@ def check_iam_action_sourcing_17(
 # Check 14b: API-driven artifacts — enum literals must match parameters[].enum
 # ================================================================
 #
-# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-# responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-# responsive/lambda-remediator/**, iac/**), any enum-style literal list must reference
-# values from validated.json.api_surface.operations[].parameters[].enum.
+# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**),
+# any enum-style literal list must reference values from
+# validated.json.api_surface.operations[].parameters[].enum. (Responsive is
+# reference-only — its artifacts carry no authored enum literals.)
 #
 # Patterns detected (a reasonable subset — language-agnostic literal scan):
 #   cfn-guard / Checkov / OPA / CDK / TF:  `in [<...>]`, `AllowedValues: [<...>]`,
@@ -1093,15 +1093,9 @@ _STRING_LITERAL_PATTERN = re.compile(r"[\"']([A-Z][A-Z0-9_]{1,63})[\"']")
 _API_DRIVEN_PATH_FRAGMENTS = (
     "/proactive/",
     "/detective/config-rule-lambdas/",
-    "/responsive/ssm-runbook",
-    "/responsive/stepfunctions-workflow",
-    "/responsive/lambda-remediator/",
-    "/iac/",
 )
 _API_DRIVEN_BASENAME_PREFIXES = (
     "proactive-",
-    "iac-cdk-",
-    "iac-",
     "handler-",
 )
 _API_DRIVEN_EXTENSIONS = {".guard", ".rego", ".py", ".yaml", ".yml", ".ts", ".tf", ".json"}
@@ -1141,9 +1135,7 @@ def check_api_driven_enum_literals_14b(
 ) -> list[str]:
     """CHECK-14b — Enum-style literal lists must reference parameters[].enum values.
 
-    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-    responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-    responsive/lambda-remediator/**, iac/**).
+    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**).
     Each SCREAMING_SNAKE literal in an `in [...]` / `AllowedValues: [...]` / similar
     enum-style list must appear in validated.json.api_surface.operations[].parameters[].enum.
     """
@@ -1189,7 +1181,7 @@ def check_api_driven_enum_literals_14b(
 # matches its posture:
 #   preventative-request   → preventive/{scp,rcp,iam-policies,permission-boundary,
 #                             resource-policy,vpce-policy,kms-key-policy}*.json
-#   preventative-proactive → proactive/** or iac/**
+#   preventative-proactive → proactive/**
 #   reactive-detective     → detective/config-rule-lambdas/** or detective/config-rules.json
 #                             or detective/access-analyzer.json
 #   reactive-corrective    → responsive/**
@@ -1214,7 +1206,7 @@ def _file_is_in_posture_family(file_path: str, posture: str) -> bool:
             pat in base for pat in _PREV_REQUEST_BASENAME_PATTERNS
         )
     if posture == "preventative-proactive":
-        if "/proactive/" in norm or "/iac/" in norm:
+        if "/proactive/" in norm:
             return True
         if "/detective/" in norm and base in _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES:
             return True
@@ -1252,7 +1244,7 @@ def check_posture_mechanism_consistency_15(
             f"declares _metadata.posture='{posture}' but lives outside the expected "
             f"directory family. preventative-request→preventive/{{scp,rcp,iam-policies,"
             f"permission-boundary,resource-policy,vpce-policy,kms-key-policy,tag-policy}}*.json; "
-            f"preventative-proactive→proactive/** or iac/** or "
+            f"preventative-proactive→proactive/** or "
             f"detective/compensating-controls-documentation.json; "
             f"reactive-detective→detective/config-rule-lambdas/** or one of "
             f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
@@ -1329,10 +1321,59 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
     if "/05-recommended-guidance/preventive/" not in norm and "/controls/preventive/" not in norm:
         return []
     try:
-        from validate_reference_anchor import check_artifact  # type: ignore
+        from validate_reference_anchor import (  # type: ignore
+            _known_ids,
+            _load_canopy_aliases,
+            _mapping_control_ids,
+            check_artifact,
+        )
     except ImportError:
         return []
-    return check_artifact(file_path)
+    # Locate the service root so the single-file P8 check can resolve a Canopy
+    # anchor against that run's canopy-index.json and check the orphan
+    # source_control_id — parity with the standalone CLI's single-file mode and
+    # the whole-service check_service() path. Without this, a Canopy-anchored
+    # artifact fails the hook because canopy_aliases defaults to None.
+    from pathlib import Path
+
+    known_ids: set[str] | None = None
+    mapping_ids: set[str] | None = None
+    canopy_aliases: set[str] | None = None
+    try:
+        known_ids = _known_ids()
+    except (ImportError, FileNotFoundError):
+        known_ids = None
+    for parent in Path(file_path).resolve().parents:
+        if (parent / "05-recommended-guidance").is_dir() or (parent / "02-research").is_dir():
+            canopy_aliases = _load_canopy_aliases(parent)
+            mapping_ids = _mapping_control_ids(parent)
+            break
+    return check_artifact(file_path, known_ids, mapping_ids, canopy_aliases)
+
+
+def _check_config_support(file_path: str) -> list[str]:
+    """P13 per-file: a Config-rule artifact must target Config-supported types.
+
+    Imported lazily so a missing module / data file degrades to no-op rather than
+    breaking the hook. Only config-rules.json / config-org-rules.json are gated
+    (validate_config_support keys on those basenames).
+    """
+    try:
+        from validate_config_support import check_artifact  # type: ignore
+    except ImportError:
+        return []
+    try:
+        results = check_artifact(file_path)
+    except (OSError, ValueError):
+        return []
+    return [
+        f"P13 config_support: rule {r['rule_name']!r} targets resource type "
+        f"{r['resource_type']} which AWS Config does not support — a Config rule "
+        f"for it is a silent no-op. Route to CloudTrail/EventBridge or record a "
+        f"reasoned gap."
+        for r in results
+        if r.get("status") == "UNSUPPORTED"
+    ]
 
 
 def _categorize_file(file_path: str) -> str:
@@ -1367,20 +1408,22 @@ def _categorize_file(file_path: str) -> str:
         return "responsive"
     if _in("proactive"):
         return "proactive"
-    if _in("iac"):
-        return "iac"
     return "unknown"
 
 
-def check_preventive_plan(data: dict) -> list[str]:
+def check_preventive_plan(data: dict, file_path: str | None = None) -> list[str]:
     """Validate preventive-plan.json — the recommender's decision plan.
 
     Two layers:
       1. Schema (preventive-plan.schema.json) — shape, decision enum, the
          GENERATE_*-requires-anchor and ROUTE_DETECTIVE-requires-route rules.
-      2. Anchor resolution — every GENERATE_* decision's anchor.example_id must
-         resolve to a real entry in data/reference-repos/index.yaml (the same
-         gate the per-artifact P8 check enforces, applied to the plan up front).
+      2. Anchor resolution — every GENERATE_* decision's anchor must resolve.
+         A reference-repo anchor (anchor.source absent or "reference") must
+         resolve to a real entry in data/reference-repos/index.yaml. A Canopy
+         anchor (anchor.source == "canopy") carries a Canopy implementation/
+         mitigation alias as its example_id and resolves against the run's
+         02-research/canopy-index.json instead — the same dual-anchor rule the
+         per-artifact P8 gate (validate_reference_anchor.py) enforces.
     """
     errors: list[str] = []
     # Schema layer. Lazy import mirrors validate_state's `from _schemas import …`.
@@ -1402,21 +1445,57 @@ def check_preventive_plan(data: dict) -> list[str]:
         known = example_ids()
     except (ImportError, FileNotFoundError):
         known = None
-    if known is not None:
-        for d in data.get("decisions", []):
-            if not isinstance(d, dict):
-                continue
-            if d.get("decision", "").startswith("GENERATE_"):
-                anchor = d.get("anchor") or {}
-                ex_id = anchor.get("example_id")
-                if ex_id and ex_id not in known:
-                    errors.append(
-                        f"preventive-plan: control {d.get('control_id')} decision "
-                        f"{d.get('decision')} anchors to example_id '{ex_id}' which "
-                        f"does not resolve in data/reference-repos/index.yaml. "
-                        f"Pick a real anchor or change the decision to "
-                        f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
-                    )
+
+    # Canopy alias set for the run (when a Canopy index is present next to the
+    # plan). None → no Canopy input; a canopy-sourced anchor is then treated the
+    # same as an unresolvable one.
+    canopy_aliases: set[str] | None = None
+    if file_path:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from canopy_parse import (  # type: ignore
+                canopy_index_aliases,
+                load_canopy_index,
+            )
+
+            # <service_root>/05-recommended-guidance/preventive-plan.json →
+            # <service_root>/02-research/canopy-index.json
+            service_root = os.path.dirname(os.path.dirname(os.path.abspath(file_path)))
+            idx = load_canopy_index(
+                os.path.join(service_root, "02-research", "canopy-index.json")
+            )
+            if idx is not None:
+                canopy_aliases = canopy_index_aliases(idx)
+        except (ImportError, FileNotFoundError):
+            canopy_aliases = None
+
+    for d in data.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        if not d.get("decision", "").startswith("GENERATE_"):
+            continue
+        anchor = d.get("anchor") or {}
+        ex_id = anchor.get("example_id")
+        if not ex_id:
+            continue
+        if anchor.get("source") == "canopy":
+            # Canopy-sourced anchor: resolve the alias against canopy-index.json.
+            if canopy_aliases is not None and ex_id not in canopy_aliases:
+                errors.append(
+                    f"preventive-plan: control {d.get('control_id')} decision "
+                    f"{d.get('decision')} anchors to Canopy alias '{ex_id}' which "
+                    f"does not resolve in 02-research/canopy-index.json. Cite a "
+                    f"real Canopy implementation/mitigation alias or change the "
+                    f"decision to REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+                )
+        elif known is not None and ex_id not in known:
+            errors.append(
+                f"preventive-plan: control {d.get('control_id')} decision "
+                f"{d.get('decision')} anchors to example_id '{ex_id}' which "
+                f"does not resolve in data/reference-repos/index.yaml. "
+                f"Pick a real anchor or change the decision to "
+                f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+            )
     return errors
 
 
@@ -1451,7 +1530,7 @@ def validate_file(file_path: str) -> list[str]:
     # Lives at 05-recommended-guidance/ root (category "unknown"), so dispatch on basename
     # before the category logic. Schema-validated; it is not a policy artifact.
     if basename == "preventive-plan.json" and data is not None:
-        errors.extend(check_preventive_plan(data))
+        errors.extend(check_preventive_plan(data, file_path))
         return errors
 
     # Load state files
@@ -1481,7 +1560,7 @@ def validate_file(file_path: str) -> list[str]:
 
     # Check 13: Full-body CTRL-* references against mapping-results.json
     # (complements check 11 which only scans the first 30 lines for # CONTROLS: headers)
-    if mapping and category in ("preventive", "detective", "responsive", "proactive", "iac"):
+    if mapping and category in ("preventive", "detective", "responsive", "proactive"):
         errors.extend(check_body_control_id_references(file_path, mapping))
 
     # Check 12: SCP size limit (5120 bytes minified, excluding _metadata)
@@ -1531,6 +1610,10 @@ def validate_file(file_path: str) -> list[str]:
         # Check 4: Resource types
         if validated:
             errors.extend(check_resource_types(file_path, data, validated))
+        # P13: Config-supportability — no Config rule may target a resource type
+        # AWS Config does not support (a silent no-op). Fires at write time here
+        # and again at Stop via validate_pipeline_integrity.
+        errors.extend(_check_config_support(file_path))
 
     elif category == "stepfunctions" and data:
         # Check 8: ResultPath
@@ -1551,18 +1634,8 @@ def validate_file(file_path: str) -> list[str]:
             except (ImportError, Exception):
                 pass
 
-    # Check 13: KMS consumer → key-policy grant parity (IaC only)
-    # Enforces generate-iac/SKILL.md Rule 4 at write time.
-    if category == "iac" and ext in (".yaml", ".yml", ".tf"):
-        try:
-            from validate_kms_consumers import validate_kms_consumers
-            errors.extend(validate_kms_consumers(file_path))
-        except ImportError:
-            pass
-
     # Check 14b: API-driven — enum literals must match parameters[].enum.
-    # Applies to proactive/**, detective/config-rule-lambdas/**, responsive/ssm-runbook*,
-    # responsive/stepfunctions-workflow.json, responsive/lambda-remediator/**, iac/**.
+    # Applies to proactive/**, detective/config-rule-lambdas/**.
     if validated and _is_api_driven_artifact(file_path):
         errors.extend(check_api_driven_enum_literals_14b(file_path, validated))
 

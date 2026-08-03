@@ -92,15 +92,9 @@ echo ""
 echo "Checking prerequisites..."
 
 if command -v uv >/dev/null 2>&1; then
-  echo "  ✓ uv found (required for aws-documentation + awsiac + iam MCP servers)"
+  echo "  ✓ uv found (required for aws-documentation + iam MCP servers)"
 else
   echo "  ⚠ uv not found — install: curl -LsSf https://astral.sh/uv/install.sh | sh"
-fi
-
-if command -v docker >/dev/null 2>&1; then
-  echo "  ✓ docker found (required for terraform MCP server)"
-else
-  echo "  ⚠ docker not found — terraform MCP server won't work without Docker Desktop"
 fi
 
 if command -v python3 >/dev/null 2>&1; then

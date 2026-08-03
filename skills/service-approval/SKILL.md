@@ -1,20 +1,20 @@
 ---
 name: service-approval-v3
-description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls and compliant resource templates for any AWS service
+description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
+argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive] [--no-mcp]'
 ---
 
 # Service Approval — Orchestrator v3
 
 Coordinate the service-approval agents to produce a complete set of AWS security controls
-and a compliant resource template for any AWS service.
+for any AWS service.
 
-**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Recommended Guidance (3 sub-skills) → Summarize
+**Pipeline**: Intake → Assess → Research (4 sub-skills) → Validate → Map (4 sub-skills) → Recommended Guidance (2 sub-skills) → Summarize
 
-The pipeline produces recommended security controls + compliant IaC that the
-customer deploys themselves. It does not deploy, test, or attest against a live
-account.
+The pipeline produces recommended security controls (preventive, detective,
+proactive, and responsive guidance) that the customer applies themselves. It
+does not deploy, test, or attest against a live account.
 
 ## Flags
 
@@ -29,6 +29,7 @@ account.
 | `--framework-file=<path>` | Explicit path to framework file — passed to Map phase | auto-detect from input folder |
 | `--from-intake=<file>` | Path to intake YAML — Intake reads this instead of prompting | None |
 | `--interactive` | Force Intake's interactive form even when other flags would satisfy it | false |
+| `--no-mcp` | Run without MCP servers — verify every fact over the web (WebFetch/WebSearch against the `rules/web-access.md` allowlist) instead of calling MCP. Threaded into `intake-manifest.json` as `pipeline_flags.no_mcp`; each phase follows its **No-MCP mode** fallback. | false (MCP is the default) |
 
 ## Agnosticism Guardrails (apply to every sub-skill)
 
@@ -159,8 +160,6 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 |------|-----------|-------------------|
 | `awsknowledge` | HTTP | `https://knowledge-mcp.global.api.aws` |
 | `aws-documentation` | stdio | `uvx awslabs.aws-documentation-mcp-server@latest` |
-| `awsiac` | stdio | `uvx awslabs.aws-iac-mcp-server@latest` |
-| `aws-cdk-mcp-server` | stdio | `npx -y @aws/cdk-mcp-server@latest` |
 
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
 - `Agent` tool in tool list → Claude Code
@@ -173,7 +172,7 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 **Claude Code:**
 ```bash
 INSTALLED=$(claude mcp list 2>/dev/null)
-for MCP in awsknowledge aws-documentation awsiac aws-cdk-mcp-server; do
+for MCP in awsknowledge aws-documentation; do
   echo "$INSTALLED" | grep -q "$MCP" && echo "OK: $MCP" || echo "MISSING: $MCP"
 done
 ```
@@ -181,8 +180,6 @@ For each MISSING entry, run the corresponding add command:
 ```bash
 claude mcp add --transport http awsknowledge https://knowledge-mcp.global.api.aws
 claude mcp add aws-documentation -- uvx awslabs.aws-documentation-mcp-server@latest
-claude mcp add awsiac -- uvx awslabs.aws-iac-mcp-server@latest
-claude mcp add aws-cdk-mcp-server -- npx -y @aws/cdk-mcp-server@latest
 ```
 After adding any MCP, inform the user: "Added missing MCP servers: <list>. They are now active."
 
@@ -191,7 +188,6 @@ If any MCP is listed but shows "Failed to connect" or is unreachable, warn the u
 ```
 MCP degraded coverage:
   aws-documentation UNREACHABLE — Research and Validate will fall back to web search.
-  awsiac UNREACHABLE — Generate will use best-effort generation.
 ```
 Do NOT block execution — continue with degraded coverage and note it in the final report.
 
@@ -238,9 +234,7 @@ For each missing MCP under Path 2, add it to `~/.kiro/settings/mcp.json`:
 {
   "mcpServers": {
     "awsknowledge":       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
-    "aws-documentation":  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"], "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"} },
-    "awsiac":             { "command": "uvx", "args": ["awslabs.aws-iac-mcp-server@latest"], "env": {"FASTMCP_LOG_LEVEL": "ERROR"} },
-    "aws-cdk-mcp-server": { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
+    "aws-documentation":  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"], "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"} }
   }
 }
 ```
@@ -282,8 +276,6 @@ Print instructions for each missing MCP and continue — do not block execution:
 Missing MCP servers detected. Add these to your IDE's MCP configuration:
   awsknowledge:       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" }
   aws-documentation:  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"] }
-  awsiac:             { "command": "uvx", "args": ["awslabs.aws-iac-mcp-server@latest"] }
-  aws-cdk-mcp-server: { "command": "npx", "args": ["-y", "@aws/cdk-mcp-server@latest"] }
 See: https://github.com/awslabs/mcp
 Continuing with degraded MCP coverage — some steps may fall back to web search.
 ```
@@ -337,8 +329,9 @@ Run each phase in order. Pass all relevant flags through.
 ### Intake (Precursor — Mandatory)
 Follow ALL instructions in `skills/intake/SKILL.md` exactly.
 Pass: `--service`, `--from-intake` if provided, `--interactive` if provided,
-and any of `--framework`, `--framework-file` the user supplied at the
-orchestrator level (Intake uses them to pre-fill its form / intake manifest).
+`--no-mcp` if provided, and any of `--framework`, `--framework-file` the user
+supplied at the orchestrator level (Intake uses them to pre-fill its form /
+intake manifest).
 
 When done: verify `.service-approval/_staging/<ts>/00-intake/intake-manifest.json`
 exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0
@@ -370,9 +363,8 @@ When done: verify these files exist before proceeding:
 - `.service-approval/<slug>/01-assess/sar-facts.json`
 - `.service-approval/<slug>/01-assess/checkpoint-results.json`
 - `.service-approval/<slug>/01-assess/assessment-summary.md`
-- `.service-approval/<slug>/01-assess/iac-support.json`
 
-**Skip condition**: Phase 0 is skipped ONLY if all four assessment artifacts already
+**Skip condition**: Phase 0 is skipped ONLY if all three assessment artifacts already
 exist (from a previous `/assess` run). There is no flag to skip assessment.
 
 ### Phase 1: Research (3+1 sub-skills, sequential in this mode)
@@ -439,7 +431,7 @@ Verify these files exist before proceeding:
 - `.service-approval/<slug>/04-map/controls-catalog.md`
 - `.service-approval/<slug>/04-map/framework-mapping.md`
 
-### Phase 4: Recommended Guidance (3 sub-skills, sequential in this mode)
+### Phase 4: Recommended Guidance (2 sub-skills, sequential in this mode)
 
 **Step 4a — Preventive/Proactive (gated sub-pipeline, run in order):**
 1. `skills/generate-preventive-recommend/SKILL.md` — mechanism + anchor decision per
@@ -457,12 +449,7 @@ Follow ALL instructions in `skills/generate-detective/SKILL.md`.
 Pass: `--service`, `--include-unverified` if set.
 Wait for `<slug>/05-recommended-guidance/detective/` and `<slug>/05-recommended-guidance/responsive/` to be populated.
 
-**Step 4c — IaC Templates:**
-Follow ALL instructions in `skills/generate-iac/SKILL.md`.
-Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-recommended-guidance/iac/` to have all 4 formats.
-
-**Step 4d — Final Validation:**
+**Step 4c — Final Validation:**
 Run the final validation from `skills/generate/SKILL.md` → "Final Validation" section.
 
 ### Phase 5: Summarize
@@ -496,11 +483,11 @@ any `_staging/` snapshots) but does not touch the user's
 `./service-approval-intake.yaml`.
 
 ### Phase 0: Assess (Mandatory)
-If all 4 assessment artifacts (`sar-facts.json`, `checkpoint-results.json`,
-`assessment-summary.md`, `iac-support.json`) already exist, skip (previous
+If all 3 assessment artifacts (`sar-facts.json`, `checkpoint-results.json`,
+`assessment-summary.md`) already exist, skip (previous
 `/assess` run).
 Otherwise: dispatch Assessor as foreground subagent.
-Wait for all 4 assessment artifacts.
+Wait for all 3 assessment artifacts.
 
 ### Phase 1: Research (3+1 sub-skills in parallel)
 
@@ -758,9 +745,9 @@ surface its flagged items and proceed. The prose lint (`lint_control_prose
 JSON or the rendered `.md`, so fix the prose and re-render before generation
 consumes the mapping.
 
-### Phase 4: Recommended Guidance (3 families in parallel; preventive is a sequenced sub-pipeline)
+### Phase 4: Recommended Guidance (2 families in parallel; preventive is a sequenced sub-pipeline)
 
-Dispatch the 3 control families simultaneously as background subagents. The
+Dispatch the 2 control families simultaneously as background subagents. The
 **preventive family is one agent that runs its own sub-pipeline in order** — the
 recommender gate, the reference-anchored authors, then the root-cause critic —
 because each step gates the next and must not be parallelized.
@@ -780,21 +767,16 @@ Agent 4: generate-preventive (background) — runs the preventive sub-pipeline I
 Agent 5: generate-detective (background)
   Prompt: Full text of skills/generate-detective/SKILL.md + --service + --include-unverified
   Output: <slug>/05-recommended-guidance/detective/ + <slug>/05-recommended-guidance/responsive/
-
-Agent 6: generate-iac (background)
-  Prompt: Full text of skills/generate-iac/SKILL.md + --service + --include-unverified
-  Output: <slug>/05-recommended-guidance/iac/
 ```
 
-**IMPORTANT:** Dispatch all 3 families in a single message with 3 Agent tool calls.
+**IMPORTANT:** Dispatch both families in a single message with 2 Agent tool calls.
 The preventive agent runs its sub-skills sequentially within that one agent.
 
-When all 3 complete, run the final validation from `skills/generate/SKILL.md`.
-If any IaC templates are missing, re-dispatch the generate-iac agent.
+When both complete, run the final validation from `skills/generate/SKILL.md`.
 
 **Detective top-up for routed objectives.** Because detective runs in parallel
 with preventive here, it cannot see the routing the preventive critic writes at
-the end of its sub-pipeline. After all 3 agents complete, if
+the end of its sub-pipeline. After both agents complete, if
 `<slug>/05-recommended-guidance/detective-routing.json` exists with any `routed[]` entry
 whose `covered_by` is null, re-dispatch `generate-detective` for a top-up pass to
 cover those objectives (its "Routed-from-preventive objectives" section). Then
@@ -816,6 +798,7 @@ python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
     --message "generation review gate: anchor + enforcement + scope"
 
 python3 tools/validate/validate_reference_anchor.py --slug <slug>;   ra=$?
+python3 tools/validate/validate_citation_coverage.py --slug <slug>;  cc=$?
 python3 tools/validate/validate_preventability.py --slug <slug>;      pv=$?
 python3 tools/validate/validate_enforcement.py --slug <slug> --strict; en=$?
 python3 tools/validate/validate_action_scope.py --slug <slug> --strict; as=$?
@@ -824,10 +807,19 @@ python3 tools/validate/validate_detective_routing.py --slug <slug>;   dr=$?
 python3 tools/validate/validate_canopy_facts.py --slug <slug> --strict; cf=$?
 ```
 
+`validate_citation_coverage` is the sibling of `validate_reference_anchor` for the
+non-preventive families: it proves every authored artifact under
+`05-recommended-guidance/{detective,proactive,responsive}/` carries a resolvable
+citation — a repo anchor (`_metadata.reference` resolving to a reference-index
+example) or a doc anchor (`_metadata.citation` of type `aws_doc` with an
+MCP-verified AWS documentation URL). It is a **hard gate** (it also runs in the
+Stop hook as P12).
+
 **Conflict / contradiction detection (deterministic pre-filter → clean-subagent judge).**
 First run the deterministic pre-filter, which surfaces candidate statement pairs that
-share a gated action with opposing posture (an SCP/RCP/IAM Deny vs. an Allow the IaC
-assumes, or two Denies gating the same action with incompatible condition keys):
+share a gated action with opposing posture (an SCP/RCP/IAM Deny vs. an IAM Allow the
+same principal is expected to hold, or two Denies gating the same action with
+incompatible condition keys):
 
 ```bash
 python3 tools/validate/detect_control_conflicts.py --slug <slug> \
@@ -863,6 +855,7 @@ also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisor
   "_metadata": {"service": "<service>", "gate": "post-generate", "generated": "service-approval v3.0.0"},
   "validators": [
     {"name": "validate_reference_anchor", "exit_code": 0, "blocking": true},
+    {"name": "validate_citation_coverage", "exit_code": 0, "blocking": true},
     {"name": "validate_preventability", "exit_code": 0, "blocking": false},
     {"name": "validate_enforcement", "exit_code": 0, "blocking": true},
     {"name": "validate_action_scope", "exit_code": 0, "blocking": true},
@@ -878,9 +871,9 @@ also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisor
 Then log each validator's outcome and close the gate:
 
 ```bash
-for v in "reference_anchor:$ra:1" "preventability:$pv:0" "enforcement:$en:1" \
-         "action_scope:$as:1" "cross:$cx:1" "detective_routing:$dr:0" \
-         "canopy_facts:$cf:1"; do
+for v in "reference_anchor:$ra:1" "citation_coverage:$cc:1" "preventability:$pv:0" \
+         "enforcement:$en:1" "action_scope:$as:1" "cross:$cx:1" \
+         "detective_routing:$dr:0" "canopy_facts:$cf:1"; do
   name=${v%%:*}; rest=${v#*:}; code=${rest%%:*}
   python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
       --source script:validate_$name \
@@ -891,17 +884,21 @@ python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
     --message "generation review gate complete" --extra artifact=generation-review.json
 ```
 
-**Build the preventive-coverage rollup.** After the gate, produce the deterministic,
-file-backed accounting of how many preventive objectives were authored, referred, or
-routed to detective — each traceable to its control id and citation:
+**Build the coverage rollups.** After the gate, produce the deterministic,
+file-backed accounting for both the preventive family and the other three
+families — each row traceable to its control id and citation:
 
 ```bash
 python3 tools/validate/build_preventive_coverage.py --slug <slug>
+python3 tools/validate/build_citation_coverage.py --slug <slug>
 ```
 
-This reads `preventive-plan.json` + `preventive/rootcause-report.json` and writes
-`.service-approval/<slug>/05-recommended-guidance/preventive-coverage.json`. The numbers are
-deterministic (no prose narration); Summarize surfaces them near the top of the report.
+`build_preventive_coverage.py` reads `preventive-plan.json` +
+`preventive/rootcause-report.json` and writes
+`.service-approval/<slug>/05-recommended-guidance/preventive-coverage.json`.
+`build_citation_coverage.py` walks `05-recommended-guidance/{detective,proactive,responsive}/`
+and writes `citation-coverage.json` — every artifact → its repo/doc citation. The
+numbers are deterministic (no prose narration); Summarize surfaces them.
 
 Surface the findings before Summarize so the report's confidence-actions section can
 state which checks ran and passed.
@@ -929,11 +926,11 @@ Phase 3: Map              (2 agents in parallel, then per-domain fan-out + merge
                                         │     CCMv4: 1 subagent per domain (waves) → merge
                                         │     other: 1 foreground pass
                                         └─ 3d: Assemble          (foreground)
-Phase 4: Recommended Guidance (3 agents in parallel, then validate)
+Phase 4: Recommended Guidance (2 agents in parallel, then validate)
 Phase 5: Summarize        (1 agent, foreground)
 ```
 
-Total agents: up to 13, but with 3 parallelization windows that significantly
+Total agents: up to 12, but with 3 parallelization windows that significantly
 reduce wall-clock time.
 
 If any agent fails to complete, proceed to Summarizer with partial results.

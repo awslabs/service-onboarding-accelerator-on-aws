@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/map-assemble/SKILL.md`.\n\nRead the skill file, consume all map-*.json state files, and write:\n- `.service-approval/<slug>/04-map/mapping-results.json`\n- `.service-approval/<slug>/04-map/controls-catalog.md`\n- `.service-approval/<slug>/04-map/framework-mapping.md`",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"

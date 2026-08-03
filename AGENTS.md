@@ -2,7 +2,7 @@
 
 This repo generates AWS security controls for any AWS service via a pipeline
 (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize). It
-recommends controls + IaC that the customer deploys themselves. It runs
+recommends controls that the customer deploys themselves. It runs
 on any [Agent Skills](https://agentskills.io)-compatible client: Claude Code, GitHub
 Copilot, and Kiro.
 
@@ -42,11 +42,11 @@ Agents should:
 
 ```
 Precursor Intake    → _staging/<ts>/00-intake/intake-manifest.json (service, inputs)
-Phase 0 Assess      → <slug>/01-assess/{sar-facts,checkpoint-results,iac-support}.json
+Phase 0 Assess      → <slug>/01-assess/{sar-facts,checkpoint-results}.json, assessment-summary.md
 Phase 1 Research    → <slug>/02-research/research.json (4 parallel sub-skills merged)
 Phase 2 Validate    → <slug>/03-validate/validated.json
 Phase 3 Map         → <slug>/04-map/{mapping-results.json, framework-mapping.md}
-Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/{proactive,preventive,detective,responsive,iac}/
+Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/{preventive,proactive,detective,responsive}/
                       (preventive is a gated sub-pipeline: recommend → reference-anchored
                        authors → root-cause critic; see README "reference-anchored")
 Phase 5 Summarize   → <slug>/06-summarize/SUMMARY-REPORT.md
@@ -63,24 +63,27 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
 1. Never write a one-shot generator script that hardcodes state or controls. Run every
    phase through its `SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP
-   (`awsknowledge`, `aws-documentation`, `awsiac`). Hardcoded values from training data
+   (`awsknowledge`, `aws-documentation`). Hardcoded values from training data
    are banned.
 3. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. Minimum 10 entries.
 4. Every item in `validated.json` must have a unique `verification_note`. Templated
    notes fail the integrity check.
-5. IaC templates must be parameterized. No hardcoded account IDs (`123456789012`) or
-   placeholder ARNs.
-6. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals`
+5. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals`
    in the same Condition must target the same key.
-7. Verdict matches integrity. If any pipeline integrity check fails, the verdict is
+6. Verdict matches integrity. If any pipeline integrity check fails, the verdict is
    `REQUIRES REMEDIATION`, not `APPROVED`.
-8. Every preventive policy artifact must carry a `_metadata.reference` resolving to a
+7. Every preventive policy artifact must carry a `_metadata.reference` resolving to a
    real entry in `data/reference-repos/index.yaml`. Un-anchored preventive policy fails
    the integrity check (P8). If no reference covers an objective, do not author one —
    point to the reference or route the objective to detective.
 
 The Stop hook runs `tools/validate/validate_pipeline_integrity.py` and blocks violations.
 See [`rules/service-approval-safety.md`](rules/service-approval-safety.md) for the full list.
+
+MCP servers are the default, but the pipeline can also run with no MCP servers —
+pass `--no-mcp` (recorded as `pipeline_flags.no_mcp` in the intake manifest) and
+each MCP-using skill follows its **No-MCP mode** fallback, verifying the same
+facts over the web per [`rules/web-access.md`](rules/web-access.md).
 
 ## Directory map
 

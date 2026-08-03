@@ -5,17 +5,13 @@ description: >
   Produces intake-manifest.json consumed by all downstream phases.
   Supports file-based input (intake YAML) for repeatable, batch-friendly execution.
 disable-model-invocation: false
-argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive]"
+argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive] [--no-mcp]"
 ---
 
 # Service Approval — Intake
 
 Collect and validate inputs before the pipeline begins. This phase runs before Phase 0
 (Assess) and produces a manifest that configures the downstream pipeline.
-
-**IaC format selection is NOT part of intake.** The Assess phase (Phase 0) discovers which
-IaC providers support the target service and presents the available options to the user.
-This ensures format decisions are based on facts, not guesses.
 
 ---
 
@@ -29,17 +25,16 @@ AWS service. It produces:
 | **Proactive controls** | CFN Guard rules, CloudFormation hooks, Checkov policies, OPA policies |
 | **Preventive controls** | SCPs, RCPs, declarative policies, permission boundaries, tag policies, resource policies, KMS key policies |
 | **Detective controls** | AWS Config rules (with Lambda handlers), EventBridge rules, CloudWatch alarms, Access Analyzer configurations |
-| **Responsive controls** | Lambda auto-remediators, SSM runbooks, Step Functions remediation workflows |
-| **Compliant IaC templates** | Automatically determined based on provider support (CloudFormation, Terraform, CDK, CDKTF) |
+| **Responsive controls** | References to pre-authored AWS SSM Automation runbooks with how-to-use guides |
 | **Framework mapping** | Controls mapped to CCMv4 objectives (other frameworks are out of scope for now) |
 | **Threat model** | MITRE ATT&CK technique mapping with tactic coverage analysis (always included) |
 
 The pipeline verifies every claim via MCP servers (no hardcoded training data), maps controls
-to your chosen compliance framework, and produces recommended controls + compliant IaC that
-you deploy yourself — not just documentation.
+to your chosen compliance framework, and produces recommended controls that you apply
+yourself — each anchored to a published AWS reference.
 
-**Typical output:** per-service files across 5 control categories (preventive,
-proactive, detective, responsive, IaC), a framework coverage matrix, and a
+**Typical output:** per-service files across 4 control categories (preventive,
+proactive, detective, responsive), a framework coverage matrix, and a
 final Summary Report.
 
 ---
@@ -76,6 +71,13 @@ service-approval --service=s3 ./input --framework=ccmv4
 
 All required fields provided via flags — no prompts needed. `--interactive`
 forces the full prompt flow even when a YAML or manifest exists (escape hatch).
+
+**`--no-mcp`** (default off): when present, record `pipeline_flags.no_mcp = true`
+in the intake manifest. This is the single switch that puts every downstream
+phase into **No-MCP mode** — facts are verified over the web (WebFetch/WebSearch
+against the `rules/web-access.md` allowlist) instead of via MCP servers. MCP is
+the default; only set this when the user passes `--no-mcp` (CLI) or `options.no_mcp:
+true` (intake YAML). The flag is honored non-interactively and is not prompted for.
 
 ---
 
@@ -490,13 +492,11 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "framework": "{type}",
     "framework_file": "{path or null}",
     "include_unverified": false,
-    "clean": false
+    "clean": false,
+    "no_mcp": false
   }
 }
 ```
-
-**Note:** `iac_formats` and `iac_support` are NOT in the intake manifest. They are
-determined by Phase 0 (Assess) and written to `<slug>/01-assess/iac-support.json`.
 
 **Staging → Canonical Promotion:** Phase 0 (Assess) will atomically promote this staging directory to `.service-approval/<slug>/` after deriving the canonical slug from the SAR `service_prefix`. The promotion is described in Phase 0's Step 0b.
 
@@ -514,9 +514,6 @@ After collecting inputs, present a summary:
 │  Input:          {description of inputs}                    │
 │  Framework:      {framework_type}                           │
 │  ATT&CK Mapping: {Yes | No}                                 │
-├─────────────────────────────────────────────────────────────┤
-│  Note: IaC output formats will be determined in Phase 0     │
-│  (Assess) based on actual provider support for this service.│
 └─────────────────────────────────────────────────────────────┘
 
 Proceed? (Y/n)
@@ -542,12 +539,17 @@ Proceed? (Y/n)
 
 | Phase | What it reads from intake-manifest.json |
 |-------|----------------------------------------|
-| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion) |
-| Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface` |
-| Phase 2 (Validate) | `service` |
+| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion), `pipeline_flags.no_mcp` |
+| Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface`, `pipeline_flags.no_mcp` |
+| Phase 2 (Validate) | `service`, `pipeline_flags.no_mcp` |
 | Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
-| Phase 4 (Recommended Guidance) | Reads `<slug>/01-assess/iac-support.json` (from Phase 0), NOT intake |
+| Phase 4 (Recommended Guidance) | `service`, `inputs.include_unverified`, `pipeline_flags.no_mcp` |
 | Phase 5 (Summarize) | Full manifest for report metadata |
+
+`pipeline_flags.no_mcp` (default `false`) is the single switch for **No-MCP
+mode**: when `true`, the phases above verify facts over the web per
+`rules/web-access.md` instead of calling MCP. See each skill's "No-MCP mode"
+subsection.
 
 ---
 
@@ -562,6 +564,5 @@ Intake complete:
   Staging: .service-approval/_staging/{STAGING_TS}/00-intake/intake-manifest.json
 
 Canonical service slug will be derived in Phase 0 (Assess).
-IaC formats will be determined in Phase 0 (Assess).
 Ready for Phase 0.
 ```

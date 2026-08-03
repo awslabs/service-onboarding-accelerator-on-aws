@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/research-api-surface/SKILL.md`.\n\nRead the skill file, execute all steps, and write the output to `.service-approval/<slug>/02-research/research-api-surface.json`.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"

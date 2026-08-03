@@ -78,8 +78,7 @@ shellcheck:
   image: koalaman/shellcheck-alpine:stable
   before_script: []
   script:
-    # Shipped scripts (smoke-deploy-test.sh, install.sh) must lint clean
-    - shellcheck scripts/smoke-deploy-test.sh
+    # Shipped scripts (install.sh) must lint clean
     - shellcheck install.sh
     - shellcheck .githooks/pre-commit
     - shellcheck .githooks/post-merge

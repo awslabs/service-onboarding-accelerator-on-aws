@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 """
-Stop hook: pipeline integrity + cross-artifact + deployability validation.
+Stop hook: pipeline integrity + cross-artifact validation.
 
-Runs three validators against `.service-approval/<slug>/05-recommended-guidance/` when
+Runs two validators against `.service-approval/<slug>/05-recommended-guidance/` when
 the agent signals completion:
 
-  - `validate_pipeline_integrity` (P1-P7) — strict-by-default; integrity
+  - `validate_pipeline_integrity` (P1-P11) — strict-by-default; integrity
     errors always block (exit 2) regardless of VALIDATE_CROSS_STRICT.
   - `validate_cross` — cross-artifact integrity. Warns by default; set
     VALIDATE_CROSS_STRICT=1 to block.
-  - `validate_deployable` — deployability. Tier-1 (static) always runs;
-    Tier-2 (AWS API) runs only when AWS credentials are present. Warns
-    by default; set VALIDATE_DEPLOYABLE_STRICT=1 to block.
 
 Only fires if a service's controls directory exists.
 
 Exit codes:
     0 — pass, or warnings reported (non-blocking)
     2 — strict mode: validation failed (errors on stderr); set
-        VALIDATE_STRICT=0 to fall back to warn-only for cross/deploy
-        checks. P1-P7 integrity checks always strict-block.
+        VALIDATE_STRICT=0 to fall back to warn-only for the cross
+        check. P1-P11 integrity checks always strict-block.
 
 Self-suppression backstop: if the previous N consecutive hook:stop events for
 a service are all `fail` with byte-identical `first_integrity` strings AND
@@ -145,27 +142,19 @@ def main():
 
     # --- Run validations for each service ---
     from validate_cross import validate_all
-    from validate_deployable import validate_deployable, check_aws_credentials
     from validate_pipeline_integrity import validate_pipeline
     from pathlib import Path
 
-    has_creds, _ = check_aws_credentials()
     cross_errors = []
-    deploy_errors = []
 
     for controls_dir in service_dirs:
         # Cross-validation
         cross_errors.extend(validate_all(controls_dir))
 
-        # Deployability validation
-        deploy_errors.extend(
-            validate_deployable(controls_dir, tier1_only=(not has_creds))
-        )
-
     # Pipeline integrity validation (runs once per repo, iterates services internally)
     integrity_errors = validate_pipeline(Path(cwd))
 
-    all_errors = cross_errors + deploy_errors + integrity_errors
+    all_errors = cross_errors + integrity_errors
 
     if not all_errors:
         # Log a pass entry to each service's log so the audit trail isn't
@@ -175,16 +164,15 @@ def main():
             log_hook_fire(
                 "stop",
                 "pass",
-                "all integrity + cross + deploy checks passed",
+                "all integrity + cross checks passed",
                 file_path=controls_dir,
             )
         sys.exit(0)
 
     # Strict-by-default: integrity failures always block.
-    # Set VALIDATE_STRICT=0 to fall back to warn-only for cross/deploy checks.
+    # Set VALIDATE_STRICT=0 to fall back to warn-only for the cross check.
     strict = os.environ.get("VALIDATE_STRICT", "1") != "0" or \
              os.environ.get("VALIDATE_CROSS_STRICT", "0") == "1" or \
-             os.environ.get("VALIDATE_DEPLOYABLE_STRICT", "0") == "1" or \
              bool(integrity_errors)
 
     if strict:
@@ -211,7 +199,6 @@ def main():
                     extra={
                         "first_integrity": current_first_integrity,
                         "first_cross": cross_errors[0][:200] if cross_errors else None,
-                        "first_deploy": deploy_errors[0][:200] if deploy_errors else None,
                     },
                 )
             print(
@@ -231,23 +218,17 @@ def main():
             print(f"CROSS-VALIDATION FAILED ({len(cross_errors)} errors):", file=sys.stderr)
             for e in cross_errors:
                 print(f"  {e}", file=sys.stderr)
-        if deploy_errors:
-            print(f"DEPLOYABILITY VALIDATION FAILED ({len(deploy_errors)} errors):", file=sys.stderr)
-            for e in deploy_errors:
-                print(f"  {e}", file=sys.stderr)
         # Log to each service's audit trail so a post-mortem can find the
         # exact failures without re-grepping the session JSONL.
         for controls_dir in service_dirs:
             log_hook_fire(
                 "stop",
                 "fail",
-                f"integrity={len(integrity_errors)} cross={len(cross_errors)} "
-                f"deploy={len(deploy_errors)}",
+                f"integrity={len(integrity_errors)} cross={len(cross_errors)}",
                 file_path=controls_dir,
                 extra={
                     "first_integrity": current_first_integrity,
                     "first_cross": cross_errors[0][:200] if cross_errors else None,
-                    "first_deploy": deploy_errors[0][:200] if deploy_errors else None,
                 },
             )
         sys.exit(2)
@@ -261,22 +242,11 @@ def main():
                           "Set VALIDATE_CROSS_STRICT=1 to block.",
                 "errors": cross_errors,
             }
-        if deploy_errors:
-            result["deployability"] = {
-                "decision": "warn",
-                "reason": f"Deployability validation found {len(deploy_errors)} issue(s). "
-                          "Set VALIDATE_DEPLOYABLE_STRICT=1 to block.",
-                "errors": deploy_errors,
-            }
-        if not has_creds:
-            result["tier2_skipped"] = True
-            result["tier2_fix"] = "Run: aws sso login --profile delegated-admin"
         for controls_dir in service_dirs:
             log_hook_fire(
                 "stop",
                 "warn",
-                f"cross={len(cross_errors)} deploy={len(deploy_errors)} "
-                f"(non-strict mode)",
+                f"cross={len(cross_errors)} (non-strict mode)",
                 file_path=controls_dir,
             )
         print(json.dumps(result))

@@ -101,7 +101,21 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description of query>"
 ```
 
-Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, `awsiac`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail. The legacy `[Step N] [Capabilities] ...` summary line is optional and may be appended to `mcp-calls.log` for human-readable narrative — it does NOT replace the canonical event.
+Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail. The legacy `[Step N] [Capabilities] ...` summary line is optional and may be appended to `mcp-calls.log` for human-readable narrative — it does NOT replace the canonical event.
+
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), verify the same facts over the web per
+[`rules/web-access.md`](../../rules/web-access.md): fetch the Service
+Authorization Reference and security docs with `WebFetch`/`WebSearch` against the
+allowlisted `docs.aws.amazon.com` domains instead of `awsknowledge` /
+`aws-documentation`. Log each web lookup with `--source web:<source-key>
+--verdict fetch` (or `search`) instead of the `mcp:<server>:call` event above;
+these `web:*` events satisfy the same P1 call floor. Every capability, API
+parameter, and condition key must still be verified — the fact-checking
+requirement is identical; only the transport changes.
 
 ---
 

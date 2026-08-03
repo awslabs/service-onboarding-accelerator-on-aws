@@ -36,7 +36,46 @@ def _canopy() -> dict:
         "threats": [
             {"alias": "Threat.AGENTCORE.AgentRuntime.1", "requestParameters": []}
         ],
+        "implementations": [
+            {
+                "id": "i1",
+                "alias": "Implementation.AGENTCORE.AgentRuntime.1",
+                "behavior": "PREVENTIVE",
+                "implementationType": "AWS::ORGANIZATIONS::SERVICE_CONTROL_POLICY",
+                "implementationGuide": {
+                    "authorization_policy": {
+                        "governed_resource_type": "AWS::BedrockAgentCore::Runtime",
+                        "governed_iam_permissions": [
+                            {"actions": ["bedrock-agentcore:*"],
+                             "resources": ["*"], "condition_keys": ["aws:ResourceOrgID"]},
+                        ],
+                    }
+                },
+                "mappings": [{"type": "MITIGATION", "id": "m1"}],
+            }
+        ],
     }
+
+
+def test_implementation_alias_citation_passes() -> None:
+    """A Canopy citation may anchor to an implementations[] alias (the
+    Canopy-first-across-all-families behavior), not only a mitigation/threat."""
+    plan = {"decisions": [
+        {"control_id": "CTRL-ORG-PRV-001",
+         "plan_actions": ["bedrock-agentcore:*"],
+         "citation": {"type": "canopy", "id": "Implementation.AGENTCORE.AgentRuntime.1"}}
+    ]}
+    assert vcf.check(_canopy(), plan, None) == []
+
+
+def test_fabricated_implementation_alias_fails() -> None:
+    plan = {"decisions": [
+        {"control_id": "CTRL-ORG-PRV-002",
+         "plan_actions": ["bedrock-agentcore:CreateAgentRuntime"],
+         "citation": {"type": "canopy", "id": "Implementation.NOPE.1"}}
+    ]}
+    errors = vcf.check(_canopy(), plan, None)
+    assert any("does not exist" in e and "CTRL-ORG-PRV-002" in e for e in errors), errors
 
 
 def test_valid_canopy_citation_passes() -> None:

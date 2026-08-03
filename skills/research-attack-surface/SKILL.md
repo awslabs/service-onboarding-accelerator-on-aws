@@ -125,6 +125,20 @@ python3 -m tools.validate.log \
 
 Substitute `<server>` with the MCP server name (`mitre-attack`, `awsknowledge`, `kb-search`, etc.). When the bundled-snapshot fallback is used (per the fallback rule above), no MCP event is emitted — that is correct, but the agent should log a `skill:research-attack-surface:retry` event noting the fallback so the audit trail explains the gap.
 
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), the reference-data preference order in
+Step 2.1 shifts: instead of the `mitre-attack` MCP, fetch ATT&CK data over the
+web per [`rules/web-access.md`](../../rules/web-access.md) — `WebFetch`
+`https://attack.mitre.org/matrices/enterprise/` and per-technique
+`https://attack.mitre.org/techniques/T<id>/` — and if `attack.mitre.org` is
+unreachable, fall back to the bundled `data/attack-cloud-matrix.json` snapshot
+exactly as before. Log each web lookup with `--source web:attack-mitre --verdict
+fetch` (or `search`) instead of the `mcp:mitre-attack:call` event; these `web:*`
+events satisfy the same P1 call floor.
+
 ---
 
 ## Step 1: Parse Customer Threat Model (if provided)

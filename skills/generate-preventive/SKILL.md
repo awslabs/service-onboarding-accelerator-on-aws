@@ -50,6 +50,23 @@ print(f'API operations: {len(vj[\"api_surface\"][\"operations\"])}')
 
 Unless `--include-unverified` is set, skip controls where `verified: false`.
 
+## No-MCP mode
+
+This skill uses MCP (`awsknowledge` / `aws-documentation`) at generation time to
+confirm condition keys are valid and that every citation URL is live. **MCP is
+the default.** When the run is in No-MCP mode (`pipeline_flags.no_mcp == true` in
+`00-intake/intake-manifest.json`, set by the `--no-mcp` flag), perform the same
+checks over the web per
+[`rules/web-access.md`](../../rules/web-access.md): `WebFetch` the citation URL
+(and the Service Authorization Reference for condition-key validity) against the
+allowlisted `docs.aws.amazon.com` domains. Log each web lookup with `--source
+web:<source-key> --verdict fetch` instead of the `mcp:<server>:call` event; these
+`web:*` events satisfy the same P1 call floor. The reference-anchored / live-URL
+citation requirement is unchanged in either mode. This authoring guidance applies
+to the preventive/proactive sub-skills (`generate-preventive-scp`,
+`generate-preventive-rcp`, `generate-preventive-iam`,
+`generate-preventive-recommend`) that follow these rules.
+
 ## Artifact Header Template
 
 Every generated artifact MUST include these comment lines at the top:
@@ -70,7 +87,7 @@ artifact implements. For HCL/TypeScript, use comment blocks.
 **CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
 directory family:
 - `preventative-request` → `preventive/{scp,rcp,iam-policies,permission-boundary,resource-policy,vpce-policy,kms-key-policy}*.json`
-- `preventative-proactive` → `proactive/**` or `iac/**`
+- `preventative-proactive` → `proactive/**`
 
 An SCP tagged with `posture: "reactive-detective"` would fail the hook — the upstream
 `map-generate-controls` Rule C1 filter should never have produced it. If the hook
@@ -401,10 +418,10 @@ in `validated.json.api_surface.operations[].parameters[]`:
    — `AWS::ECS::TaskDefinition.EphemeralStorage` only accepts `SizeInGiB`. Before
    asserting `<Path>.<Prop> exists` in a Guard rule, verify the property is actually
    declared on that resource type in the CFN Template Reference
-   (https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/AWS_{cfn_prefix}.html)
-   or via `awsiac` MCP. An assertion on a non-existent property is doubly broken: the
-   rule can never pass a real template, AND a "compliant" template written to satisfy
-   the rule fails cfn-lint E3002 (additional properties not allowed).
+   (https://docs.aws.amazon.com/AWSCloudFormation/latest/TemplateReference/AWS_{cfn_prefix}.html).
+   An assertion on a non-existent property is doubly broken: the rule can never pass a
+   real template, AND a template written to satisfy the rule fails cfn-lint E3002
+   (additional properties not allowed).
 2. **Every enum-literal list (`in [...]`, `AllowedValues: [...]`, `validation {...}`,
    `contains([...], var.x)`) MUST use exact values from `parameters[].enum`.** Do NOT
    re-scrape AWS API reference docs at generate time — the enum values in
@@ -423,18 +440,71 @@ not evaluated by CHECK-14b (they are evaluated by CHECK-14a).
 
 ---
 
+### Proactive citation discipline (REQUIRED)
+
+Every proactive artifact carries a **resolvable citation**, enforced by
+`validate_citation_coverage.py` (Stop-hook P12). Because the rule bodies are not
+JSON (`.guard`, `.rego`, `.yaml`), the citations live in **`proactive/citations.json`**
+— a manifest the validator reads. Write one entry per proactive artifact:
+
+```json
+{
+  "_metadata": {"service": "<service>", "generated": "service-approval v3.0.0"},
+  "artifacts": [
+    {
+      "artifact": "cfn-guard-rules.guard",
+      "reference": {"example_id": "<resolved id>", "repo": "aws-config-custom-policy-rule-samples", "url": "<index source_url>"}
+    },
+    {
+      "artifact": "checkov-config.yaml",
+      "citation": {"type": "aws_doc", "title": "Checkov CloudFormation Policy Index", "url": "https://www.checkov.io/5.Policy%20Index/cloudformation.html", "verified_via": "mcp"}
+    }
+  ]
+}
+```
+
+Sourcing (locked):
+- **Canopy PROACTIVE implementation (first-priority when a Canopy is present)** —
+  before the repo-anchor lookup, check
+  `.service-approval/<slug>/02-research/canopy-index.json` for a `behavior ==
+  "PROACTIVE"` implementation (`mechanism == "CFN Hook"`) matching the control's
+  resource type. Its `governed_resource_properties[]` (`resource_type` +
+  `properties[].path`) give the exact CloudFormation property paths the Guard
+  rule / hook should validate. When one matches, cite it with a Canopy anchor —
+  `{type: "canopy", id: "<implementation alias>", url: "<MCP-verified REFERENCE
+  href>", verified_via: "mcp"}` — in the artifact's `citations.json` entry (and
+  in the `cfn-hooks-policy.json` `_metadata` for a hook). Fall through to the repo
+  anchor below only when Canopy has no matching PROACTIVE implementation.
+- **CFN Guard rules** (`cfn-guard-rules.guard`) → **repo anchor** to
+  `aws-config-custom-policy-rule-samples` (its samples ARE Guard-DSL rules).
+  Resolve with `reference_index.best_anchor("CloudFormation Guard", [], [],
+  resource_types=[<CFN resource type the rules target>])`. Also put the resolved
+  anchor id + url in the `.guard` file's header comment.
+- **Checkov / OPA** (`checkov-config.yaml`, `opa-policies/*.rego`) → **doc anchor**
+  to the Checkov policy-index URL (`https://www.checkov.io/5.Policy%20Index/cloudformation.html`),
+  MCP-verified reachable at generation time and logged to `pipeline.log`. Include
+  the specific `CKV_*` id in the citation title where applicable.
+- **CFN Hooks** (`cfn-hooks-policy.json`) → **two-part** (see its section below):
+  the Guard repo anchor for the rule body PLUS a doc anchor to the CloudFormation
+  Guard Hooks user-guide page — both carried in the file's own `_metadata`.
+- **Tag policy** (`tag-policy.json`) → doc anchor to the AWS Organizations tag-policy
+  doc, in its `_metadata.citation`.
+
+Also write `proactive/citations.json` so the coverage rollup and P12 gate account
+for the non-JSON rule bodies.
+
 ### CloudFormation Guard Rules (`proactive/cfn-guard-rules.guard`)
 
-**Cross-validation constraint**: Every Guard rule MUST pass when evaluated against the
-compliant CloudFormation template generated by generate-iac. The consistency check is:
-```
-cfn-guard validate --rules proactive/CTRL-*.guard --data iac/cloudformation/*.cfn.yaml
-```
-If a guard rule flags a violation in the compliant template, either the guard rule
-uses an incorrect property path or the CFN template is missing a required property.
-Both must be fixed together — trace to the source of the discrepancy.
+**Property-path constraint**: Every Guard rule MUST assert on a property path that is
+actually declared on its target CloudFormation resource type (see the CFN Guard caveat
+in Rule C3). A rule that references a non-existent property can never pass a real
+template deployed by the customer, so verify each path against the CFN Template
+Reference before emitting the rule.
 
-- Use `awsiac` MCP for valid cfn-guard syntax per resource type
+**Citation:** repo anchor to `aws-config-custom-policy-rule-samples` (recorded in
+`proactive/citations.json` and in the `.guard` header comment).
+
+- Use the `aws-documentation` MCP CFN Template Reference for valid cfn-guard syntax per resource type
 - **Every rule MUST have a control ID**: rule name includes control ID.
   Example: `rule enforce_encryption_ctrl_acc_pro_001 { ... }` (format example — NOT a literal ID).
   Do NOT generate "bonus" rules that are not mapped to any CTRL-* control. If a check is
@@ -570,13 +640,30 @@ Both must be fixed together — trace to the source of the discrepancy.
   they remain your responsibility.
 
 ### CloudFormation Hooks Policy (`proactive/cfn-hooks-policy.json`)
-- Use `awsiac` MCP to confirm resource type supports CFN Hooks
+- Use the `aws-documentation` MCP to confirm resource type supports CFN Hooks
 - **Header completeness**: The `CONTROLS` header MUST list ALL proactive controls, not just a
   subset. The hook executes the Guard file which implements all proactive controls, so the hook
   header must claim all of them.
+- **Two-part citation (REQUIRED, in this file's `_metadata`)**: a CFN Hook that runs
+  Guard rules at deploy time via `AWS::Hooks::GuardHook` is a distinct mechanism from
+  a bare Guard file, so it gets BOTH:
+  - `_metadata.reference` — the **repo anchor** for the Guard rule body
+    (`aws-config-custom-policy-rule-samples`, same anchor as `cfn-guard-rules.guard`).
+  - `_metadata.citation` — a **doc anchor** to the **CloudFormation Guard Hooks
+    user-guide** page (`AWS::Hooks::GuardHook`), MCP-discovered and verified at
+    generation time (never hardcoded). Log the MCP fetch to `pipeline.log`.
+  ```json
+  "_metadata": {
+    "reference": {"example_id": "<guard anchor id>", "repo": "aws-config-custom-policy-rule-samples", "url": "<index source_url>"},
+    "citation": {"type": "aws_doc", "title": "Using the AWS CloudFormation Guard Hook", "url": "https://docs.aws.amazon.com/cloudformation-cli/latest/hooks-userguide/...", "verified_via": "mcp"}
+  }
+  ```
+  `validate_citation_coverage.py` requires both to resolve when both are present.
 
 ### Checkov Config (`proactive/checkov-config.yaml`)
 - Check IDs mapping to controls in this cell
+- **Citation:** doc anchor to the Checkov policy-index URL (recorded in
+  `proactive/citations.json`; include the specific `CKV_*` id in the title).
 - **Custom policy directory**: If any custom check IDs are referenced (e.g., `CKV_AWS_<SERVICE>_*`),
   the `custom-policies-dir` MUST point to a directory that exists and contains the actual policy
   definitions. Create `proactive/custom-policies/` and write a `.py` or `.yaml` policy file for
@@ -615,10 +702,10 @@ is_log_target(tags) if {
 }
 ```
 
-`generate-iac` emits this exact tag on any generated access-log sink bucket (see
-`generate-iac/SKILL.md` "Logging target buckets (S3)"). If you change the tag key,
-the tag value, or the predicate name here, update `generate-iac/SKILL.md` in lockstep —
-both skills must agree.
+This predicate lets a log-target sink bucket (tagged `bucket-role: log-target`) be
+exempted from the deny rule, so the rule does not flag the logging bucket itself as a
+violation of the "logging must be enabled" control. Keep the tag key, tag value, and
+predicate name consistent across every proactive rule that references them.
 
 ### Plan-time unknown attributes (Terraform after_unknown)
 

@@ -1,0 +1,229 @@
+{
+  "metadata": {
+    "name": "dsql",
+    "id": "3b0dcec3-688d-5f82-99af-b11e1accb2b8"
+  },
+  "operations": [
+    {"id": "op-1", "service": "dsql", "operation": "CreateCluster"}
+  ],
+  "entities": [
+    {
+      "id": "0fb25b34-6aaa-58a3-b621-4e468552d6de",
+      "name": "Cluster",
+      "entityType": "AWS::DSQL::Cluster",
+      "information": "Aurora DSQL cluster entity."
+    }
+  ],
+  "mitigations": [
+    {
+      "id": "6df5a224-53bf-5499-8fd8-ceb0e14e4928",
+      "alias": "Mitigation.DSQL.1",
+      "statement": "Aurora DSQL service API calls on a governed VPC network should only be made against trusted resources or AWS service-owned resources.",
+      "mitigationContext": [
+        {
+          "type": "SCOPING",
+          "context": "Attach a VPC endpoint policy to restrict access to trusted clusters and accounts.",
+          "mitigationGoalId": "1953369d-27e3-42eb-aa78-cad921548bba"
+        },
+        {
+          "type": "REFERENCE",
+          "context": "Use aws:ResourceOrgID to scope access to your organization.",
+          "links": [
+            {
+              "href": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_data-perimeters.html#access_policies_data-perimeters-resource",
+              "title": "Establishing a resource perimeter"
+            }
+          ]
+        }
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "0fb25b34-6aaa-58a3-b621-4e468552d6de"},
+        {"type": "IMPLEMENTATION", "id": "4f5d297c-2aca-5db9-b7ff-8af1e11287d6"}
+      ]
+    }
+  ],
+  "threats": [
+    {"id": "2dbce4ac-5f74-58f6-81df-c46253d894c0", "alias": "Threat.DSQL.1"}
+  ],
+  "implementations": [
+    {
+      "id": "4f5d297c-2aca-5db9-b7ff-8af1e11287d6",
+      "alias": "Implementation.DSQL.1",
+      "behavior": "PREVENTIVE",
+      "implementationType": "AWS::*::*::RESOURCE_POLICY",
+      "implementationGuide": {
+        "authorization_policy": {
+          "governed_iam_permissions": [
+            {"actions": ["dsql:*"], "resources": ["*"], "condition_keys": ["aws:PrincipalIsAWSService"]},
+            {"actions": ["dsql:*"], "resources": ["*"], "condition_keys": ["aws:ResourceOrgID"]}
+          ],
+          "governed_resource_type": "AWS::EC2::VPCEndpoint"
+        }
+      },
+      "implementationContext": [
+        {
+          "type": "SCOPING",
+          "context": "Conditions dsql:* through the VPC endpoint on aws:ResourceOrgID.",
+          "mitigationId": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"
+        },
+        {
+          "type": "REFERENCE",
+          "context": "Use aws:ResourceOrgID, aws:ResourceOrgPaths, or aws:ResourceAccount.",
+          "links": [
+            {
+              "href": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_data-perimeters.html#access_policies_data-perimeters-resource",
+              "title": "Establishing a resource perimeter"
+            }
+          ]
+        }
+      ],
+      "mappings": [
+        {"type": "MITIGATION", "id": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ]
+    },
+    {
+      "id": "9d1e0a11-2222-5aaa-bbbb-cccccccccccc",
+      "alias": "Implementation.DSQL.2",
+      "behavior": "PREVENTIVE",
+      "implementationType": "AWS::Organizations::Policy::SERVICE_CONTROL_POLICY",
+      "implementationGuide": {
+        "authorization_policy": {
+          "governed_iam_permissions": [
+            {"actions": ["dsql:*"], "resources": ["*"], "condition_keys": ["aws:ResourceOrgID"]}
+          ]
+        }
+      },
+      "implementationContext": [
+        {
+          "type": "REFERENCE",
+          "context": "Resource perimeter guidance.",
+          "links": [
+            {
+              "href": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_data-perimeters.html#access_policies_data-perimeters-resource",
+              "title": "Establishing a resource perimeter"
+            }
+          ]
+        }
+      ],
+      "mappings": [
+        {"type": "MITIGATION", "id": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ]
+    },
+    {
+      "id": "aaaa1111-3333-5aaa-bbbb-dddddddddddd",
+      "alias": "Implementation.DSQL.Stream.3",
+      "behavior": "PREVENTIVE",
+      "implementationType": "AWS::Organizations::Policy::RESOURCE_CONTROL_POLICY",
+      "implementationGuide": {
+        "authorization_policy": {
+          "governed_iam_permissions": [
+            {"actions": ["sts:AssumeRole"], "resources": ["*"], "condition_keys": ["aws:PrincipalIsAWSService", "aws:PrincipalOrgID"]}
+          ]
+        }
+      },
+      "implementationContext": [
+        {
+          "type": "REFERENCE",
+          "context": "Identity perimeter guidance.",
+          "links": [
+            {
+              "href": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_data-perimeters.html#access_policies_data-perimeters-identity",
+              "title": "Establishing an identity perimeter"
+            }
+          ]
+        }
+      ],
+      "mappings": [
+        {"type": "MITIGATION", "id": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ]
+    },
+    {
+      "id": "bbbb2222-4444-5aaa-bbbb-eeeeeeeeeeee",
+      "alias": "Implementation.DSQL.Cluster.7",
+      "behavior": "PREVENTIVE",
+      "implementationType": "AWS::Organizations::Policy::DECLARATIVE_POLICY",
+      "implementationGuide": {
+        "declarative_policy": {
+          "policy_type": "BACKUP_POLICY",
+          "governed_attributes": [
+            {"path": "$.plans.dsql_cluster_backup_plan.selections.resources.dsql_clusters.resource_types"}
+          ]
+        }
+      },
+      "implementationContext": [
+        {"type": "SCOPING", "context": "Backup policy for DSQL clusters.", "mitigationId": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "0fb25b34-6aaa-58a3-b621-4e468552d6de"}
+      ]
+    },
+    {
+      "id": "8a5be3ca-71d9-5106-ae84-2c8b98e42a66",
+      "alias": "Implementation.DSQL.Cluster.2",
+      "behavior": "PROACTIVE",
+      "implementationType": "AWS::CloudFormation::Type::HOOK",
+      "implementationGuide": {
+        "cloudformation_hook": {
+          "governed_resource_properties": [
+            {"resource_type": "AWS::DSQL::Cluster", "properties": [{"path": "$.PolicyDocument"}]}
+          ]
+        }
+      },
+      "implementationContext": [
+        {"type": "SCOPING", "context": "Validates the cluster PolicyDocument at create/update time.", "mitigationId": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "0fb25b34-6aaa-58a3-b621-4e468552d6de"},
+        {"type": "MITIGATION", "id": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ]
+    },
+    {
+      "id": "c3dcf9c1-bc5b-5cd4-915f-a5e973903730",
+      "alias": "Implementation.DSQL.Cluster.3",
+      "behavior": "DETECTIVE",
+      "implementationType": "AWS::CloudTrail::Trail::MANAGEMENT_EVENT",
+      "implementationGuide": {
+        "cloudtrail_event": {
+          "monitored_operations": [
+            {"service": "dsql", "operation": "CreateCluster", "request_parameters": [{"path": "$.policy"}]},
+            {"service": "dsql", "operation": "PutClusterPolicy", "request_parameters": [{"path": "$.policy"}]}
+          ]
+        }
+      },
+      "implementationContext": [
+        {"type": "SCOPING", "context": "Flags CreateCluster and PutClusterPolicy calls.", "mitigationId": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"},
+        {
+          "type": "DATA_PERIMETER",
+          "context": "Monitor the $.policy request parameter.",
+          "links": [
+            {"href": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html", "title": "PutClusterPolicy API reference"}
+          ]
+        }
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "0fb25b34-6aaa-58a3-b621-4e468552d6de"},
+        {"type": "MITIGATION", "id": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ]
+    },
+    {
+      "id": "d4e5f6a7-1111-5cd4-915f-abcdefabcdef",
+      "alias": "Implementation.DSQL.Cluster.6",
+      "behavior": "DETECTIVE",
+      "implementationType": "AWS::Config::ConfigRule",
+      "implementationGuide": {
+        "config_rule": {
+          "rule_type": "PERIODIC",
+          "governed_api_operations": [
+            {"service": "dsql", "operation": "ListClusters", "response_parameters": [{"path": "$.clusters[*].arn"}]}
+          ]
+        }
+      },
+      "implementationContext": [
+        {"type": "SCOPING", "context": "Periodically evaluates DSQL clusters.", "mitigationId": "6df5a224-53bf-5499-8fd8-ceb0e14e4928"}
+      ],
+      "mappings": [
+        {"type": "ENTITY", "id": "0fb25b34-6aaa-58a3-b621-4e468552d6de"}
+      ]
+    }
+  ]
+}

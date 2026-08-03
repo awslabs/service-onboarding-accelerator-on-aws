@@ -65,9 +65,16 @@ def test_every_example_has_source_mechanism_and_action_or_key():
         assert e.get("mechanism") in reference_index.ALLOWED_MECHANISMS, (
             f"{e['id']}: mechanism {e.get('mechanism')!r} not allowed"
         )
-        has_anchor = bool(e.get("governed_actions")) or bool(e.get("condition_keys"))
+        # IAM-shaped anchors (SCP/RCP/IAM/...) carry actions or condition keys.
+        # Guard-DSL (config-rule) anchors carry governed resource types instead.
+        has_anchor = (
+            bool(e.get("governed_actions"))
+            or bool(e.get("condition_keys"))
+            or bool(e.get("governed_resource_types"))
+        )
         assert has_anchor, (
-            f"{e['id']}: must carry at least one governed action or condition key"
+            f"{e['id']}: must carry at least one governed action, condition key, "
+            f"or resource type"
         )
 
 

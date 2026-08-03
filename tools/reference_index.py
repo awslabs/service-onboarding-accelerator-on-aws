@@ -28,6 +28,10 @@ ALLOWED_MECHANISMS = {
     "permission-boundary",
     "data-perimeter",
     "VPCE",
+    # Guard-DSL samples (aws-config-custom-policy-rule-samples). Anchors BOTH
+    # detective Config custom rules AND proactive CFN Guard rules. Its examples
+    # are keyed on governed CloudFormation resource types, not IAM actions.
+    "config-rule",
 }
 
 
@@ -121,6 +125,21 @@ _MECHANISM_FAMILIES = {
     "vpc endpoint policy": ["VPCE", "data-perimeter"],
     "vpce policy": ["VPCE", "data-perimeter"],
     "kms key policy": ["IAM"],
+    # Detective + proactive config/guard mechanisms anchor to the Guard-DSL
+    # sample repo. Both a Config custom rule and a CFN Guard rule evaluate a
+    # governed CloudFormation resource type, so both resolve against the
+    # `config-rule` family (matched by resource-type overlap in score_example).
+    "aws config rule": ["config-rule"],
+    "config rule": ["config-rule"],
+    "custom config rule": ["config-rule"],
+    "config custom rule": ["config-rule"],
+    "cloudformation guard": ["config-rule"],
+    "cfn guard": ["config-rule"],
+    "cloudformation guard rule": ["config-rule"],
+    "cfn guard rule": ["config-rule"],
+    "guard": ["config-rule"],
+    "cloudformation hook": ["config-rule"],
+    "cfn hook": ["config-rule"],
 }
 
 # The permission-boundary example set is a small, curated collection of
@@ -170,7 +189,12 @@ def _norm_key(key: str) -> str:
     return key.strip().lower()
 
 
-def score_example(example: dict, actions: list[str], condition_keys: list[str]) -> float:
+def score_example(
+    example: dict,
+    actions: list[str],
+    condition_keys: list[str],
+    resource_types: list[str] | None = None,
+) -> float:
     """Score one reference example against a control's actions + condition keys.
 
     Condition-key overlap is the stronger signal (an example that uses the same
@@ -178,6 +202,11 @@ def score_example(example: dict, actions: list[str], condition_keys: list[str]) 
     overlap. Score is the weighted Jaccard-style overlap, in [0, 1+]. Higher is
     a better anchor. Action matching is on bare operation names (case-insensitive,
     trailing-wildcard-stripped) so cross-service prefixes don't block a match.
+
+    Guard-DSL (`config-rule`) examples carry no IAM actions/keys — they are keyed
+    on `governed_resource_types` (CloudFormation types like `AWS::EFS::FileSystem`).
+    For those, resource-type overlap is the anchor signal: an example that
+    governs the same resource type the control targets is a match.
     """
     ex_actions = {_bare_action(a) for a in example.get("governed_actions", [])}
     ex_keys = {_norm_key(k) for k in example.get("condition_keys", [])}
@@ -192,7 +221,15 @@ def score_example(example: dict, actions: list[str], condition_keys: list[str]) 
     # example's breadth.
     action_score = action_overlap / len(c_actions) if c_actions else 0.0
     key_score = key_overlap / len(c_keys) if c_keys else 0.0
-    return round(2 * key_score + action_score, 4)
+
+    # Resource-type overlap (Guard-DSL / config-rule anchors). Case-insensitive
+    # exact match on the full CloudFormation type string.
+    ex_rtypes = {r.strip().lower() for r in example.get("governed_resource_types", [])}
+    c_rtypes = {r.strip().lower() for r in (resource_types or [])}
+    rtype_overlap = len(ex_rtypes & c_rtypes)
+    rtype_score = rtype_overlap / len(c_rtypes) if c_rtypes else 0.0
+
+    return round(2 * key_score + action_score + 2 * rtype_score, 4)
 
 
 def rank_anchors(
@@ -200,6 +237,7 @@ def rank_anchors(
     actions: list[str],
     condition_keys: list[str],
     path: Path | None = None,
+    resource_types: list[str] | None = None,
 ) -> list[dict]:
     """Rank reference examples as anchor candidates for a control.
 
@@ -207,13 +245,16 @@ def rank_anchors(
     broken by example id for determinism), restricted to the control's mechanism
     family. An empty list means no example in the family — the recommender should
     emit REFER_TO_REFERENCE for the control. A best score of 0.0 means the family
-    has examples but none overlap the control's actions/keys — still a weak
-    anchor; the recommender should treat 0.0 as "no real anchor".
+    has examples but none overlap the control's actions/keys/resource-types —
+    still a weak anchor; the recommender should treat 0.0 as "no real anchor".
+
+    `resource_types` is used by the config-rule family (Guard-DSL anchors keyed
+    on CloudFormation resource type); it is ignored by the IAM/SCP/RCP families.
     """
     families = set(mechanism_family(control_mechanism))
     candidates = [e for e in examples(path) if e.get("mechanism") in families]
     scored = [
-        {"example": e, "score": score_example(e, actions, condition_keys)}
+        {"example": e, "score": score_example(e, actions, condition_keys, resource_types)}
         for e in candidates
     ]
     scored.sort(key=lambda s: (-s["score"], s["example"].get("id", "")))
@@ -225,6 +266,7 @@ def best_anchor(
     actions: list[str],
     condition_keys: list[str],
     path: Path | None = None,
+    resource_types: list[str] | None = None,
 ) -> dict | None:
     """Return the single best anchor example for a control, or None.
 
@@ -235,7 +277,7 @@ def best_anchor(
     scaffolds whose actions come from the target service, so a zero overlap
     score is expected and still a valid anchor (see PERMISSION_BOUNDARY_FAMILY).
     """
-    ranked = rank_anchors(control_mechanism, actions, condition_keys, path)
+    ranked = rank_anchors(control_mechanism, actions, condition_keys, path, resource_types)
     if not ranked:
         return None
     families = set(mechanism_family(control_mechanism))

@@ -37,7 +37,6 @@ For each item:
 1. Call the most specific MCP for its type:
    - Capabilities, features → `@awsknowledge`
    - IAM condition keys, actions → `@awsknowledge` (SAR)
-   - CFN resource schema, CDK constructs → `@awsiac`
    - Free-form feature docs → `@aws-documentation`
 2. If the MCP confirms: `status: VERIFIED`, note includes the server response summary
 3. If MCP returns nothing or conflicts: `status: UNVERIFIED`, note explains why

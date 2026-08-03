@@ -59,14 +59,15 @@
           ]
         },
         "citation": {
-          "$comment": "Typed citation for the intent source — what motivates the control. type==canopy: cite the Canopy mitigation alias in id. type==reference: cite the reference-repo example in id and url. type==catalog: cite the AWS Control Catalog ARN in id. type==service-doc: cite the AWS doc URL in url.",
+          "$comment": "Typed citation for the intent source — what motivates the control. type==canopy: cite the Canopy mitigation/implementation alias in id; when the Canopy implementation carries a public REFERENCE href, include it as url (verified reachable at generation time — verified_via==mcp in the default mode, or verified_via==web in No-MCP mode where the URL is confirmed with WebFetch per rules/web-access.md). type==reference: cite the reference-repo example in id and url. type==catalog: cite the AWS Control Catalog ARN in id. type==service-doc: cite the AWS doc URL in url.",
           "type": "object",
           "additionalProperties": false,
           "required": ["type"],
           "properties": {
             "type": {"type": "string", "enum": ["canopy", "reference", "catalog", "service-doc"]},
             "id": {"type": "string", "minLength": 1},
-            "url": {"type": "string", "minLength": 1}
+            "url": {"type": "string", "minLength": 1},
+            "verified_via": {"type": "string", "enum": ["mcp", "web"]}
           },
           "anyOf": [
             {"required": ["id"]},
@@ -74,9 +75,17 @@
           ],
           "allOf": [
             {
-              "$comment": "type==canopy MUST cite the mitigation alias in id.",
+              "$comment": "type==canopy MUST cite the alias in id.",
               "if": {"properties": {"type": {"const": "canopy"}}},
               "then": {"required": ["id"]}
+            },
+            {
+              "$comment": "A canopy citation carrying a url must mark it MCP-verified.",
+              "if": {
+                "properties": {"type": {"const": "canopy"}},
+                "required": ["url"]
+              },
+              "then": {"required": ["verified_via"]}
             }
           ]
         },
@@ -90,7 +99,8 @@
               "properties": {
                 "example_id": {"type": "string", "minLength": 1},
                 "repo": {"type": "string"},
-                "url": {"type": "string"}
+                "url": {"type": "string"},
+                "source": {"type": "string", "enum": ["reference", "canopy"]}
               }
             }
           ]

@@ -15,8 +15,9 @@ from validate_pipeline_integrity import (
     _resource_type_delimiters,
     check_arn_shapes,
     check_boundary_minimality,
+    check_citation_coverage,
+    check_config_support,
     check_framework_coverage,
-    check_iac_placeholders,
     check_iam_policies,
     check_mcp_log,
     check_phase_outputs,
@@ -96,6 +97,56 @@ def test_pipeline_log_below_minimum_fails(tmp_path: Path) -> None:
     """pipeline.log present but with too few MCP calls fails P1."""
     pipeline_lines = [
         f"2026-05-14T18:32:0{i}Z [01-assess] [mcp:awsknowledge:call]  q{i}"
+        for i in range(2)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    errors = check_mcp_log(tmp_path)
+    assert len(errors) == 1
+    assert "P1" in errors[0]
+
+
+def test_pipeline_log_web_lookups_counted(tmp_path: Path) -> None:
+    """No-MCP mode: `web:<source>:fetch|search` lookups satisfy the P1 floor.
+
+    Line shape (rules/web-access.md):
+      <ts> [02-research] [web:aws-docs:fetch]  <message>
+    """
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [02-research] [web:aws-docs:fetch]  list_s3.html: q{i}"
+        for i in range(MIN_MCP_CALLS)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_log_web_search_lookups_counted(tmp_path: Path) -> None:
+    """`web:<source>:search` events also count toward the P1 floor."""
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [02-research] [web:attack-mitre:search]  q{i}"
+        for i in range(MIN_MCP_CALLS)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_log_mixed_mcp_and_web_counted(tmp_path: Path) -> None:
+    """A mixed run counts both MCP calls and web lookups against the floor."""
+    half = MIN_MCP_CALLS // 2
+    lines = [
+        f"2026-05-14T18:32:0{i}Z [01-assess] [mcp:awsknowledge:call]  q{i}"
+        for i in range(half)
+    ] + [
+        f"2026-05-14T18:33:0{i}Z [02-research] [web:aws-docs:fetch]  q{i}"
+        for i in range(MIN_MCP_CALLS - half)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(lines))
+    assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_log_web_lookups_below_minimum_fails(tmp_path: Path) -> None:
+    """No-MCP mode with too few web lookups still fails P1."""
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [02-research] [web:aws-docs:fetch]  q{i}"
         for i in range(2)
     ]
     (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
@@ -314,34 +365,6 @@ def test_non_scp_without_deny_passes(tmp_path: Path) -> None:
     assert not any("SCP has no Deny" in e for e in errors)
 
 
-# ---------- P4: IaC placeholders ----------
-
-
-def test_iac_placeholder_account_fails(tmp_path: Path) -> None:
-    (tmp_path / "template.yaml").write_text(
-        "Resources:\n  Role:\n    Arn: arn:aws:iam::123456789012:role/foo\n"
-    )
-    errors = check_iac_placeholders(tmp_path)
-    assert any("P4" in e and "123456789012" in e for e in errors)
-
-
-def test_iac_placeholder_arn_fragment_fails(tmp_path: Path) -> None:
-    (tmp_path / "stack.ts").write_text(
-        'const kmsArn = "arn:aws:kms:us-east-1:123456789012:key/example";\n'
-    )
-    errors = check_iac_placeholders(tmp_path)
-    # Both the account ID and the ARN fragment should trigger; at least one P4 required.
-    assert any("P4" in e for e in errors)
-
-
-def test_iac_parameterized_passes(tmp_path: Path) -> None:
-    (tmp_path / "template.yaml").write_text(
-        "Parameters:\n  AccountId:\n    Type: String\nResources:\n"
-        '  Role:\n    Arn: !Sub "arn:aws:iam::${AccountId}:role/foo"\n'
-    )
-    assert check_iac_placeholders(tmp_path) == []
-
-
 # ---------- P7: phase-output completeness ----------
 
 
@@ -501,6 +524,54 @@ def test_boundary_minimality_exempts_finalized_run(tmp_path: Path) -> None:
     assert len(check_boundary_minimality(tmp_path)) == 1  # mid-flight
     (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
     assert check_boundary_minimality(tmp_path) == []  # finalized
+
+
+def test_citation_coverage_exempts_finalized_run(tmp_path: Path) -> None:
+    """P12 is a newly-added check — a run that finalized before it existed had
+    no chance to satisfy it and is frozen, so the Stop-hook path must exempt it
+    (mirrors P9/P10/P11). Mid-flight runs still get the strict check."""
+    guidance = tmp_path / "05-recommended-guidance" / "detective"
+    guidance.mkdir(parents=True)
+    # An authored detective artifact with no citation → flagged mid-flight.
+    (guidance / "config-rules.json").write_text(
+        json.dumps({"_metadata": {"posture": "reactive-detective"}, "rules": []})
+    )
+    assert len(check_citation_coverage(tmp_path)) >= 1  # mid-flight (no sentinel)
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_citation_coverage(tmp_path) == []  # finalized → exempt
+
+
+def test_config_support_flags_unsupported_type(tmp_path: Path) -> None:
+    """P13: a Config rule targeting a type AWS Config does not support is flagged
+    mid-flight and exempted on a finalized run."""
+    det = tmp_path / "05-recommended-guidance" / "detective"
+    det.mkdir(parents=True)
+    (det / "config-rules.json").write_text(json.dumps({
+        "_metadata": {"posture": "reactive-detective"},
+        "rules": [{"rule_name": "cp-check",
+                   "resource_type": "AWS::Lambda::CapacityProvider"}],
+    }))
+    errors = check_config_support(tmp_path)
+    assert len(errors) == 1 and "P13" in errors[0]
+    assert "AWS::Lambda::CapacityProvider" in errors[0]
+    # finalized → exempt
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_config_support(tmp_path) == []
+
+
+def test_config_support_passes_supported_type(tmp_path: Path) -> None:
+    """A Config rule targeting a supported type (incl. the doc-added DSQL
+    cluster) does not fire P13."""
+    det = tmp_path / "05-recommended-guidance" / "detective"
+    det.mkdir(parents=True)
+    (det / "config-rules.json").write_text(json.dumps({
+        "_metadata": {"posture": "reactive-detective"},
+        "rules": [
+            {"rule_name": "lambda-check", "resource_type": "AWS::Lambda::Function"},
+            {"rule_name": "dsql-check", "resource_type": "AWS::DSQL::Cluster"},
+        ],
+    }))
+    assert check_config_support(tmp_path) == []
 
 
 def test_is_finalized_detection(tmp_path: Path) -> None:

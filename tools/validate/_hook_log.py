@@ -142,7 +142,7 @@ def log_event(
         phase: Phase tag (e.g. "04-map"). If None and file_path is given,
                try to resolve from the path; otherwise tag as "?".
         source: Source identifier (e.g. "hook:post-tool-use", "mcp:awsknowledge",
-                "skill:map-assemble", "script:smoke-deploy-test").
+                "skill:map-assemble", "script:merge-domain-mappings").
         verdict: Status keyword (pass/fail/warn/reject/error/start/end/retry/
                  call/response).
         message: Single-line message.
@@ -267,7 +267,7 @@ def log_mcp(slug: str | None, phase: str | None, server: str, verdict: str,
 
 def log_script(slug: str | None, phase: str | None, script: str, verdict: str,
                message: str, *, extra: dict | None = None) -> None:
-    """Log a subprocess invocation (smoke-deploy-test.sh, etc.)."""
+    """Log a subprocess invocation (merge-domain-mappings.py, etc.)."""
     log_event(
         phase=phase,
         source=f"script:{script}",

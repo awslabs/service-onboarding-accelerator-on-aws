@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/map-parse-framework/SKILL.md`.\n\nRead the skill file, parse the framework file from `input/`, and write\n`.service-approval/<slug>/04-map/map-framework-parsed.json`.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"

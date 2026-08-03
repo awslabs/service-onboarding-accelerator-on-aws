@@ -2,7 +2,7 @@
 """
 Semantic mapping checks (deterministic).
 
-Beyond JSON/YAML syntax (covered by validate_deployable Tier-1) and the catalog
+Beyond JSON/YAML syntax (covered by validate_controls) and the catalog
 cross-check (validate_control_mappings), the mapping has semantic invariants that
 must hold for it to be internally coherent. These are pure structural checks over
 mapping-results.json + the parsed framework + validated.json:

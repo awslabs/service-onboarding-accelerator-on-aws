@@ -45,9 +45,8 @@ Enforced at `sessionEnd` via `.github/hooks/pipeline-integrity/validate.sh`:
 2. Every capability/API/condition-key MCP-verified (no training-data values)
 3. `mcp-calls.log` ≥10 entries
 4. `validated.json` verification notes unique
-5. IaC parameterized — no hardcoded accounts / ARNs
-6. SCPs have ≥1 `Deny`; `StringEquals`/`StringNotEquals` target same key
-7. Verdict matches integrity — no false `APPROVED`
+5. SCPs have ≥1 `Deny`; `StringEquals`/`StringNotEquals` target same key
+6. Verdict matches integrity — no false `APPROVED`
 
 ## MCP servers
 
@@ -55,8 +54,12 @@ Registered via `.vscode/mcp.json` (workspace-scoped):
 
 - `aws-documentation` — service docs, feature references
 - `awsknowledge` — SAR queries, condition keys
-- `awsiac` — IaC lookups (CFN, CDK, TF)
-- `terraform` — Terraform provider details (Docker stdio)
+- `mitre-attack` — MITRE ATT&CK technique/tactic lookups (falls back to the bundled
+  `data/attack-cloud-matrix.json` snapshot when unavailable)
+- `kb-search`, `iam` — optional, used only when configured
+
+The pipeline can also run with no MCP servers at all, using web access instead —
+see the "Running without MCP" section of `docs/USAGE-COPILOT.md`.
 
 Create `.vscode/mcp.json` if missing:
 
@@ -76,17 +79,10 @@ Create `.vscode/mcp.json` if missing:
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
     },
-    "awsiac": {
+    "mitre-attack": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["awslabs.aws-iac-mcp-server@latest"],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    },
-    "terraform": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.5.1"]
+      "args": ["--from", "git+https://github.com/stoyky/mitre-attack-mcp", "mitre-attack-mcp"]
     }
   }
 }
@@ -115,8 +111,8 @@ Create `.vscode/mcp.json` if missing:
 
 ## Output
 
-- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
-- `.service-approval/<slug>/05-recommended-guidance/` — all 78–111 generated artifacts
+- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report (coverage summary, per-domain rollup, threat coverage; links to companion docs)
+- `.service-approval/<slug>/05-recommended-guidance/` — all generated artifacts
 - `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 
 ## Update
@@ -129,4 +125,4 @@ Skills / hooks / instructions are all file-based — Copilot re-reads them every
 
 ## License
 
-MIT
+Apache-2.0

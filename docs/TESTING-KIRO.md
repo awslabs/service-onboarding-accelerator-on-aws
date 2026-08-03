@@ -12,7 +12,7 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
 ## Prerequisites
 
 1. Kiro IDE or Kiro CLI 2.0 installed. Kiro IDE: https://kiro.dev. CLI: `curl -fsSL https://cli.kiro.dev/install | bash`.
-2. **`uv` on PATH** (required for `uvx`-backed MCP servers: `aws-documentation`, `awsiac`, `iam`):
+2. **`uv` on PATH** (required for `uvx`-backed MCP servers: `aws-documentation`, `iam`):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    uv --version   # verify
@@ -31,9 +31,8 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
    ```
 
    Then fully quit Kiro (Cmd+Q) and reopen.
-3. **Docker Desktop running** (for the `terraform` MCP server — stdio via Docker container).
-4. **AWS profile `delegated-admin`** configured in `~/.aws/credentials` (needed for `kb-search` and `iam` MCPs, plus optional Tier 2 policy validation).
-5. Python 3.9+ with `mcp>=1.0.0` and `boto3>=1.35.0`:
+3. **AWS profile `delegated-admin`** configured in `~/.aws/credentials` (needed for `kb-search` and `iam` MCPs, plus optional Tier 2 policy validation).
+4. Python 3.9+ with `mcp>=1.0.0` and `boto3>=1.35.0`:
    ```bash
    pip3 install -r tools/kb-search-mcp/requirements.txt
    ```
@@ -58,19 +57,14 @@ Before installing, check `~/.kiro/settings/mcp.json` for leftover entries from o
 cat ~/.kiro/settings/mcp.json | jq '.mcpServers | keys'
 ```
 
-If you see any of these, remove them (they predate the canonical awslabs/mcp endpoints and will fail):
-- `aws-cdk-mcp-server` — deprecated, not in awslabs/mcp anymore
-- Any `aws-documentation` or `awsiac` with an `"url": "https://..."` field — old guesses, not real endpoints. Replace with the canonical `uvx` configs:
+If you see any leftover MCP entries that predate the canonical awslabs/mcp endpoints, remove them (they will fail). In particular:
+- Any deprecated IaC-focused MCP server no longer used by this Power
+- Any `aws-documentation` with an `"url": "https://..."` field — old guesses, not real endpoints. Replace with the canonical `uvx` config:
   ```json
   "aws-documentation": {
     "command": "uvx",
     "args": ["awslabs.aws-documentation-mcp-server@latest"],
     "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"}
-  },
-  "awsiac": {
-    "command": "uvx",
-    "args": ["awslabs.aws-iac-mcp-server@latest"],
-    "env": {"FASTMCP_LOG_LEVEL": "ERROR"}
   }
   ```
 
@@ -109,7 +103,7 @@ Expect `service-approval` in the output.
 ls .kiro/agents/         # should list sa-*.md files (matches powers/service-approval/ide/agents/)
 ls .kiro/hooks/          # should list *.kiro.hook files (matches powers/service-approval/ide/hooks/)
 ls .kiro/steering/       # should list *.md files (matches powers/service-approval/steering/)
-cat .kiro/settings/mcp.json | jq 'keys'   # should list 6 MCP servers
+cat .kiro/settings/mcp.json | jq 'keys'   # should list the configured MCP servers
 ```
 
 If any is empty, re-run `./install.sh --sync`.
@@ -121,11 +115,10 @@ In Kiro Chat, ask:
 list my MCP servers and tools
 ```
 
-Expect 6 servers: `aws-documentation`, `awsknowledge`, `awsiac`, `terraform`, `kb-search`, `iam`.
+Expect these servers: `aws-documentation`, `awsknowledge`, `kb-search`, `iam`.
 
 If servers show "connection failed":
-- `aws-documentation` / `awsiac` — missing `uv`. Run `curl -LsSf https://astral.sh/uv/install.sh | sh`, then reload Kiro.
-- `terraform` — Docker not running. Start Docker Desktop.
+- `aws-documentation` — missing `uv`. Run `curl -LsSf https://astral.sh/uv/install.sh | sh`, then reload Kiro.
 - `kb-search` — requires `AWS_PROFILE=delegated-admin` valid AWS creds.
 - `iam` — requires `awslabs.iam-mcp-server` binary on PATH.
 
@@ -166,7 +159,7 @@ The agent should run the Intake precursor plus all 6 numbered phases. Watch for:
 - Intake writes `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` before Phase 0
 - Phase 1 (Research) spawns 4 parallel subagents
 - Phase 3 (Map) spawns 2 early + 2 sequential
-- Phase 4 (Recommended Guidance) spawns 3 parallel
+- Phase 4 (Recommended Guidance) spawns 2 parallel families
 - Phase 5 (Summarize) writes `.service-approval/<service-slug>/06-summarize/SUMMARY-REPORT.md`
 
 End state should be a completed `SUMMARY-REPORT.md` (the report issues no approve/deny verdict), not silence.
@@ -201,14 +194,10 @@ rm -rf .kiro/
 **Cause**: old config used unreachable HTTP URL. Fixed in May 2026 to stdio via `uvx`.
 **Fix**: `git pull` then `./install.sh --sync`. Install `uv` if not present.
 
-### `Failed to connect to MCP server "awsiac": fetch failed`
+### `Failed to connect to MCP server "<deprecated-server>": Connection closed`
 
-Same as above.
-
-### `Failed to connect to MCP server "aws-cdk-mcp-server": Connection closed`
-
-**Cause**: `aws-cdk-mcp-server` is NOT in this plugin's config. Left over from a prior Kiro install in `~/.kiro/settings/mcp.json` (user-level) or somewhere else.
-**Fix**: edit `~/.kiro/settings/mcp.json` and remove the `aws-cdk-mcp-server` entry. The service-approval Power uses `awsiac` and `aws-documentation` instead.
+**Cause**: a deprecated MCP server is NOT in this plugin's config. Left over from a prior Kiro install in `~/.kiro/settings/mcp.json` (user-level) or somewhere else.
+**Fix**: edit `~/.kiro/settings/mcp.json` and remove the stale entry. The service-approval Power uses `aws-documentation` and `awsknowledge` instead.
 
 ### `Security Warning: MCP configuration contains environment variables that have not been approved: workspaceRoot`
 
@@ -251,4 +240,4 @@ python3 -c "import yaml; print(yaml.safe_load(open('powers/service-approval/POWE
 ### Agent runs but MCP calls aren't logged
 
 **Cause**: agents aren't invoking MCP tools (falling back on training data, violates rule 2).
-**Fix**: ensure `.kiro/settings/mcp.json` has all 6 servers and they're "connected" in Kiro's MCP panel. Restart Kiro. Confirm the workspace is trusted (`.kiro/` files require trusted workspace).
+**Fix**: ensure `.kiro/settings/mcp.json` has all configured servers and they're "connected" in Kiro's MCP panel. Restart Kiro. Confirm the workspace is trusted (`.kiro/` files require trusted workspace).
