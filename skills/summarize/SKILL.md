@@ -31,18 +31,21 @@ to them. It issues **no** approve/deny verdict.
 | Service AWS documentation URL | `sar-facts.json.sar_url` (the Service Authorization Reference page) |
 | Framework name | `mapping-results.json.framework.name` |
 | Objective counts (MAPPED / total) | `mapping-results.json.framework_mapping[]` — a **count** for the Summary of Findings; the per-objective table lives in `framework-mapping.md`, not this report |
+| Coverage totals | `mapping-results.json.framework_coverage_summary` — `total_objectives`, `mapped`, `not_applicable`, `uncertain` for the Coverage Summary |
+| Per-domain coverage | `mapping-results.json.framework_coverage_summary.by_domain` — one row per domain (keyed by domain code); resolve the **full domain name** from the `domain` field on `mapping-results.json.framework_mapping[]` |
 | Threat coverage | `mapping-results.json.attack_coverage` |
 | Control counts (4 families) | `05-recommended-guidance/{preventive,proactive,detective,responsive}/` — counts for the findings paragraph; the per-artifact index lives in `controls-catalog.md` |
 | Which deliverables exist | the files present under `04-map/` and `05-recommended-guidance/` — drives the Output Guide |
 | Unverified count | `validated.json.unverified_count` |
 
-**Coverage grading is computed but NOT shown, and the per-objective mapping is NOT
-re-reported here.** The pipeline still computes per-objective status/coverage
-internally (validators read it from `mapping-results.json`), and the full
-objective-by-objective table is rendered in `framework-mapping.md`. This report
-gives only a **count** ("N of M objectives covered") in Summary of Findings and a
-pointer to `framework-mapping.md` — no objective table, no coverage column, no
-Fully/Partial/Supportive grade.
+**Coverage counts are shown; per-objective grading is NOT re-reported here.** The
+report shows coverage as **counts only** (no percentages): the objective totals in
+the Coverage Summary and one count-only row per domain in the Domain Coverage
+Summary. The pipeline still computes per-objective status/coverage internally
+(validators read it from `mapping-results.json`), and the full
+objective-by-objective table — with its Fully/Partial/Supportive grades — is
+rendered in `framework-mapping.md`. This report does not re-render that objective
+table or any Fully/Partial/Supportive grade, and shows **no percentages anywhere**.
 
 **Terminology rules (customer-facing document):**
 - NO internal/pipeline terms: no "pipeline", no MCP/skill/agent names, no internal
@@ -60,13 +63,19 @@ downstream consumers anchor on H2, so do not use H3 for section headers. **Every
 section opens with a 1-2 sentence description of its purpose.** Keep the whole
 report short; push detail into the linked companion docs.
 
-The Summary Report is a **high-level overview of the whole process** — what was
-done, what was found, how to use the results, and what the output files are. It
-does **not** re-report the framework mapping (that lives in `framework-mapping.md`)
-or recap every artifact/objective. Push all granular detail into the companion
-docs and link to them.
+The Summary Report is a **high-level overview** — what was found, how the framework
+and threat model are covered, and what the output files are. It does **not**
+re-report the framework mapping (that lives in `framework-mapping.md`) or recap
+every artifact/objective. Push all granular detail into the companion docs and
+link to them.
 
 Emit the sections in exactly this order:
+
+1. **Service Overview**
+2. **Summary of Findings**
+3. **Coverage Summary and Domain Coverage Summary**
+4. **MITRE ATT&CK Threat Coverage**
+5. **Output Guide**
 
 ### 1. Service Overview
 > *Describe what this section is: a two-to-three sentence orientation to the
@@ -99,20 +108,57 @@ If `validated.json.unverified_count` is 0, add a single line: **"All items
 verified."** Only render a list of unverified items if `unverified_count > 0` (id
 + reason per item). Do not ship an empty "UNVERIFIED" section.
 
-### 3. What Was Done
-> *Describe what this section is: a high-level, customer-facing narrative of the
-> process that produced these results — no pipeline/skill/agent names.*
+### 3. Coverage Summary and Domain Coverage Summary
+> *Describe what this section is: a count-only rollup of how the framework is
+> covered — totals first, then one row per domain. No percentages.*
 
-A short paragraph (or a few bullets) describing, at altitude, what the process did:
-the service's capabilities were verified against AWS documentation; those
-capabilities were mapped to the {framework-name} control framework; preventive,
-proactive, detective, and responsive controls were generated, each anchored to a
-public AWS reference or a Canopy-cited source; and applicable adversary techniques
-were analyzed. **No tables, no per-objective rows, no internal terms** — this is
-the "how we got here" orientation, not a re-report. Point the reader to the later
-sections and companion docs for detail.
+Read `mapping-results.json.framework_coverage_summary`. Report **counts only — no
+percentages anywhere in this section**.
 
-### 4. How to Use These Results (Output Guide)
+First, a one-line **Coverage Summary** of the totals from the top-level fields
+(`total_objectives`, `mapped`, `not_applicable`, `uncertain`):
+
+```markdown
+**Coverage Summary:** {mapped} of {total_objectives} objectives mapped;
+{not_applicable} not applicable; {uncertain} uncertain.
+```
+
+Then a **Domain Coverage Summary** table — one row per domain from
+`by_domain`. Write the **full domain name**, not the domain code: resolve each
+`by_domain` key (e.g. `CEK`) to its full name (e.g. "Cryptography, Encryption & Key
+Management") from the `domain` field on `mapping-results.json.framework_mapping[]`.
+Columns are counts only — **do not** add a Coverage % column:
+
+```markdown
+| Domain | Objectives | Mapped | Not Applicable |
+|---|---|---|---|
+| Cryptography, Encryption & Key Management | 21 | 19 | 2 |
+| Identity & Access Management | 16 | 13 | 2 |
+```
+
+For the full objective-by-objective detail — status, coverage level, and reason —
+point the reader to `framework-mapping.md`; do not render that table here.
+
+### 4. MITRE ATT&CK Threat Coverage
+> *Describe what this section is: which adversary techniques the generated controls
+> address. Always present (MITRE ATT&CK analysis is mandatory). Keep it short.*
+
+Brief. Read `mapping-results.json.attack_coverage`. Title adapts to the threat
+model source (mirrors `skills/research-attack-surface/SKILL.md` naming): "MITRE
+ATT&CK Threat Coverage (v{version})" by default; "STRIDE Threat Coverage",
+"{combined} Threat Coverage", or "Threat Model Coverage ({source})" per source.
+
+Render the compact tactic rollup plus a couple of gap lines — the table and a few
+lines, not a technique-by-technique essay. Report **counts only — no coverage
+percentage column**. Do not expand this section:
+
+```markdown
+| Tactic / Category | Techniques | Covered |
+|---|---|---|
+| Initial Access (TA0001) | 3 | 2 |
+```
+
+### 5. Output Guide
 > *Describe what this section is: a compact guide to the deliverables — what each
 > file is and how to use it — so the reader knows where to go for detail.*
 
@@ -148,24 +194,6 @@ Companion docs (in the guidance folder):
 
 Exclude vendored/build directories (`node_modules/`, `.terraform/`, `__pycache__/`,
 `.git/`, lockfiles) — the output guide is a reader's map, not a file dump.
-
-### 5. Threat Model Coverage
-> *Describe what this section is: which adversary techniques the generated controls
-> address. Always present (MITRE ATT&CK analysis is mandatory). Keep it short.*
-
-Brief. Read `mapping-results.json.attack_coverage`. Title adapts to the threat
-model source (mirrors `skills/research-attack-surface/SKILL.md` naming): "MITRE
-ATT&CK Threat Coverage (v{version})" by default; "STRIDE Threat Coverage",
-"{combined} Threat Coverage", or "Threat Model Coverage ({source})" per source.
-
-Render the compact tactic rollup plus a couple of gap lines — the table and a few
-lines, not a technique-by-technique essay. Do not expand this section:
-
-```markdown
-| Tactic / Category | Techniques | Covered | Coverage |
-|---|---|---|---|
-| Initial Access (TA0001) | 3 | 2 | 67% |
-```
 
 ## Pipeline-Complete Sentinel
 

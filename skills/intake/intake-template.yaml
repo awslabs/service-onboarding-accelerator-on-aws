@@ -66,3 +66,8 @@ options:
 
   # Delete existing .service-approval/ state before run
   clean: false
+
+  # Run without MCP servers — verify every fact over the web (WebFetch/WebSearch
+  # against the rules/web-access.md allowlist) instead of calling MCP. MCP is the
+  # default; set true only to run in No-MCP mode. Equivalent to the --no-mcp flag.
+  no_mcp: false

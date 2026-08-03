@@ -86,18 +86,22 @@ On first run, Copilot may prompt you to approve MCP server connections:
 - `awsknowledge` — AWS knowledge base
 - `mitre-attack` — MITRE ATT&CK techniques
 
-Click **Allow** for each. These are read-only research tools.
+Click **Allow** for each. These are read-only research tools. Two additional
+servers (`kb-search`, `iam`) are optional and used only when configured.
+
+> **Running without MCP:** the pipeline can also run with no MCP servers at all,
+> using web access instead. See [Running without MCP](#running-without-mcp) below.
 
 ## Step 7: Follow the pipeline
 
 The plugin runs an Intake precursor plus 6 numbered phases:
 
-1. **Intake** — collects service name and framework choice
+1. **Intake** *(precursor)* — collects service name and framework choice
 2. **Assess** — security posture assessment against 5 CAF domains
 3. **Research** — discovers service capabilities, API surface, attack surface
 4. **Validate** — verifies research findings via MCP
 5. **Map** — maps capabilities to control framework objectives
-6. **Recommended Guidance** — produces all security control artifacts
+6. **Recommended Guidance** — produces all security control artifacts (preventive, proactive, detective, responsive)
 7. **Summarize** — produces SUMMARY-REPORT.md
 
 The pipeline recommends controls that you deploy yourself; it does not deploy,
@@ -121,7 +125,10 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   06-summarize/       ← SUMMARY-REPORT.md (Summary Report)
 ```
 
-The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverage matrix, mitigation traceability, and artifact inventory. Open it directly in VS Code to review.
+The key deliverable is `06-summarize/SUMMARY-REPORT.md` — a brief, service-first
+overview that links out to the companion docs (`framework-mapping.md`,
+`controls-catalog.md`) and includes a coverage summary, a per-domain coverage
+rollup, and MITRE ATT&CK threat coverage. Open it directly in VS Code to review.
 
 ---
 
@@ -136,6 +143,43 @@ The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverag
 | `--include-unverified` | Include unverified findings in generation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
 | `--clean` | Delete existing state before run | false |
+| `--no-mcp` | Run without MCP — verify facts over the web (see "Running without MCP") | false |
+
+---
+
+## Running without MCP
+
+MCP servers are the **default** and recommended path. The pipeline can also run
+with no MCP servers at all — it verifies the same facts over the web instead,
+using Copilot's `WebFetch`/`WebSearch` against an allowlist of AWS documentation
+domains. Use this when MCP servers can't be installed (e.g. no `uv`/`uvx`, a
+locked-down environment, or an air-gapped run relying on bundled snapshots).
+
+To run in no-MCP mode, add the **`--no-mcp` flag** to your invocation:
+
+```
+@service-approval ./input --service=<name> --no-mcp
+```
+
+The flag is recorded in the intake manifest as `pipeline_flags.no_mcp` and puts
+every phase into its **No-MCP mode** fallback — no config changes, no need to
+remove `.vscode/mcp.json`. (You can also set `options.no_mcp: true` in an intake
+YAML.) Keep the `fetch` tool enabled for the agent (it is in the agent's tool
+list) so `WebFetch`/`WebSearch` are available.
+
+In no-MCP mode:
+- Each skill's **No-MCP mode** subsection maps its MCP calls to allowlisted
+  `WebFetch`/`WebSearch` lookups — see [`rules/web-access.md`](../rules/web-access.md)
+  for the domain allowlist, per-source URL patterns, and logging format.
+- MITRE ATT&CK data comes from `attack.mitre.org` (or the bundled
+  `data/attack-cloud-matrix.json` snapshot if unreachable), so
+  threat-surface analysis still works offline.
+- The pipeline-integrity check counts `web:*` lookups toward the same
+  minimum-lookup floor that MCP calls satisfy in the default mode, so the run
+  still passes its integrity gate.
+
+Everything else — phases, flags, output tree, and the fact-verification
+requirement — is identical to the default MCP run.
 
 ---
 

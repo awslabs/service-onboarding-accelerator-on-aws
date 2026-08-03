@@ -9,8 +9,10 @@ artifacts instead of running real MCP-driven research/validation/generation.
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
-    P1 — pipeline.log / mcp-calls.log missing or too few MCP calls
-         (exempted when pipeline.log carries the
+    P1 — pipeline.log / mcp-calls.log missing or too few external lookups
+         (MCP calls in the default mode, or `web:<source>:fetch|search`
+         events in no-MCP mode — both count toward the same floor;
+         exempted when pipeline.log carries the
          `[pipeline:complete:FINALIZED]` terminal sentinel — finalized
          runs are immutable, retroactive remediation impossible)
     P2 — validated.json has templated or empty verification notes
@@ -107,6 +109,13 @@ def _load_json(path: Path) -> dict | None:
 
 
 _MCP_CALL_TOKEN_RE = re.compile(r"\[mcp:[^\]]+:call\]")
+# No-MCP mode: external lookups go through WebFetch/WebSearch instead of MCP,
+# logged as `[web:<source>:fetch]` / `[web:<source>:search]` (see
+# rules/web-access.md). Anchored at the source-tag column so a message body
+# containing the literal text cannot inflate the count. These count toward the
+# same P1 floor as MCP calls — a run in no-MCP mode satisfies P1 with web
+# lookups, and a mixed run counts both.
+_WEB_LOOKUP_TOKEN_RE = re.compile(r"\[web:[^\]]+:(?:fetch|search)\]")
 # Terminal-state sentinel emitted by summarize/evidence at end of pipeline.
 # Anchor at the source-tag column (3rd bracketed token of a pipeline.log
 # line) so a message body containing the literal text can't satisfy the
@@ -142,11 +151,13 @@ def check_mcp_log(service_root: Path) -> list[str]:
     """Check MCP call count from the consolidated pipeline.log.
 
     Counts lines whose source matches the canonical `[mcp:<server>:call]`
-    token in pipeline.log. Anchored regex so a message field that happens
-    to contain the literal text `[mcp:` or `:call]` cannot inflate the
-    count (e.g., a `skill:research:start` event whose message describes
-    "starting [mcp:awsknowledge:call] phase" would substring-match but not
-    regex-match).
+    token in pipeline.log, plus no-MCP-mode `[web:<source>:fetch]` /
+    `[web:<source>:search]` lookups (rules/web-access.md) — both count
+    toward the same floor. Anchored regexes so a message field that happens
+    to contain the literal text `[mcp:`, `[web:`, `:call]`, or `:fetch]`
+    cannot inflate the count (e.g., a `skill:research:start` event whose
+    message describes "starting [mcp:awsknowledge:call] phase" would
+    substring-match but not regex-match).
 
     Falls back to the legacy mcp-calls.log shadow file. Legacy lines start
     with literal "MCP CALL"; we anchor with `startswith` so a message
@@ -172,9 +183,10 @@ def check_mcp_log(service_root: Path) -> list[str]:
     call_lines: list[str] = []
 
     if pipeline_log.exists():
+        # Count MCP calls AND no-MCP-mode web lookups against the same floor.
         call_lines.extend(
             ln for ln in content.splitlines()
-            if _MCP_CALL_TOKEN_RE.search(ln)
+            if _MCP_CALL_TOKEN_RE.search(ln) or _WEB_LOOKUP_TOKEN_RE.search(ln)
         )
 
     # Either source — pipeline.log uses the new format; mcp-calls.log may
@@ -195,9 +207,10 @@ def check_mcp_log(service_root: Path) -> list[str]:
 
     if len(call_lines) < MIN_MCP_CALLS:
         errors.append(
-            f"P1 pipeline.log has {len(call_lines)} logged MCP calls "
+            f"P1 pipeline.log has {len(call_lines)} logged external lookups "
             f"(minimum {MIN_MCP_CALLS}). Validate and Research phases must "
-            f"call MCP for every capability, API parameter, and condition key."
+            f"verify every capability, API parameter, and condition key via "
+            f"MCP (default) or WebFetch/WebSearch (no-MCP mode)."
         )
     return errors
 

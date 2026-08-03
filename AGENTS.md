@@ -80,6 +80,11 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
 The Stop hook runs `tools/validate/validate_pipeline_integrity.py` and blocks violations.
 See [`rules/service-approval-safety.md`](rules/service-approval-safety.md) for the full list.
 
+MCP servers are the default, but the pipeline can also run with no MCP servers —
+pass `--no-mcp` (recorded as `pipeline_flags.no_mcp` in the intake manifest) and
+each MCP-using skill follows its **No-MCP mode** fallback, verifying the same
+facts over the web per [`rules/web-access.md`](rules/web-access.md).
+
 ## Directory map
 
 | Path | What's in it |

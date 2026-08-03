@@ -2,7 +2,7 @@
 name: service-approval-v3
 description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive]'
+argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive] [--no-mcp]'
 ---
 
 # Service Approval — Orchestrator v3
@@ -29,6 +29,7 @@ does not deploy, test, or attest against a live account.
 | `--framework-file=<path>` | Explicit path to framework file — passed to Map phase | auto-detect from input folder |
 | `--from-intake=<file>` | Path to intake YAML — Intake reads this instead of prompting | None |
 | `--interactive` | Force Intake's interactive form even when other flags would satisfy it | false |
+| `--no-mcp` | Run without MCP servers — verify every fact over the web (WebFetch/WebSearch against the `rules/web-access.md` allowlist) instead of calling MCP. Threaded into `intake-manifest.json` as `pipeline_flags.no_mcp`; each phase follows its **No-MCP mode** fallback. | false (MCP is the default) |
 
 ## Agnosticism Guardrails (apply to every sub-skill)
 
@@ -328,8 +329,9 @@ Run each phase in order. Pass all relevant flags through.
 ### Intake (Precursor — Mandatory)
 Follow ALL instructions in `skills/intake/SKILL.md` exactly.
 Pass: `--service`, `--from-intake` if provided, `--interactive` if provided,
-and any of `--framework`, `--framework-file` the user supplied at the
-orchestrator level (Intake uses them to pre-fill its form / intake manifest).
+`--no-mcp` if provided, and any of `--framework`, `--framework-file` the user
+supplied at the orchestrator level (Intake uses them to pre-fill its form /
+intake manifest).
 
 When done: verify `.service-approval/_staging/<ts>/00-intake/intake-manifest.json`
 exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0

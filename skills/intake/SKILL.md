@@ -5,7 +5,7 @@ description: >
   Produces intake-manifest.json consumed by all downstream phases.
   Supports file-based input (intake YAML) for repeatable, batch-friendly execution.
 disable-model-invocation: false
-argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive]"
+argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive] [--no-mcp]"
 ---
 
 # Service Approval — Intake
@@ -71,6 +71,13 @@ service-approval --service=s3 ./input --framework=ccmv4
 
 All required fields provided via flags — no prompts needed. `--interactive`
 forces the full prompt flow even when a YAML or manifest exists (escape hatch).
+
+**`--no-mcp`** (default off): when present, record `pipeline_flags.no_mcp = true`
+in the intake manifest. This is the single switch that puts every downstream
+phase into **No-MCP mode** — facts are verified over the web (WebFetch/WebSearch
+against the `rules/web-access.md` allowlist) instead of via MCP servers. MCP is
+the default; only set this when the user passes `--no-mcp` (CLI) or `options.no_mcp:
+true` (intake YAML). The flag is honored non-interactively and is not prompted for.
 
 ---
 
@@ -485,7 +492,8 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "framework": "{type}",
     "framework_file": "{path or null}",
     "include_unverified": false,
-    "clean": false
+    "clean": false,
+    "no_mcp": false
   }
 }
 ```
@@ -531,12 +539,17 @@ Proceed? (Y/n)
 
 | Phase | What it reads from intake-manifest.json |
 |-------|----------------------------------------|
-| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion) |
-| Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface` |
-| Phase 2 (Validate) | `service` |
+| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion), `pipeline_flags.no_mcp` |
+| Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface`, `pipeline_flags.no_mcp` |
+| Phase 2 (Validate) | `service`, `pipeline_flags.no_mcp` |
 | Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
-| Phase 4 (Recommended Guidance) | `service`, `inputs.include_unverified` |
+| Phase 4 (Recommended Guidance) | `service`, `inputs.include_unverified`, `pipeline_flags.no_mcp` |
 | Phase 5 (Summarize) | Full manifest for report metadata |
+
+`pipeline_flags.no_mcp` (default `false`) is the single switch for **No-MCP
+mode**: when `true`, the phases above verify facts over the web per
+`rules/web-access.md` instead of calling MCP. See each skill's "No-MCP mode"
+subsection.
 
 ---
 

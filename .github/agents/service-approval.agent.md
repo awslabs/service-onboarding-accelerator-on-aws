@@ -1,6 +1,6 @@
 ---
 description: 'AWS Service Security Controls Generator — runs the full service-approval pipeline (intake, assess, research, validate, map, recommended guidance, summarize) for a given AWS service.'
-tools: ['codebase', 'search', 'editFiles', 'runCommands', 'runTasks', 'fetch', 'aws-documentation', 'awsknowledge']
+tools: ['codebase', 'search', 'editFiles', 'runCommands', 'runTasks', 'fetch', 'aws-documentation', 'awsknowledge', 'mitre-attack']
 ---
 
 # Service Approval — Chat Mode
@@ -35,7 +35,7 @@ Ask the user for these if not provided:
 - Optional: `./input-folder` with customer docs (.md, .json, .xlsx, .pdf, .docx)
 - Optional: `--framework=<ccmv4|nist|cis|iso>`, `--framework-file=<path>`
 - Optional: `--from-intake=<file>`, `--interactive` (Intake controls)
-- Optional: `--include-unverified`, `--dry-run`, `--clean`
+- Optional: `--include-unverified`, `--dry-run`, `--clean`, `--no-mcp` (run without MCP; verify over the web)
 
 ## Hard rules
 
@@ -57,8 +57,14 @@ The Stop hook runs `validate_pipeline_integrity.py` and blocks violations.
 ## MCP servers
 
 Registered via `.vscode/mcp.json`:
-- `aws-documentation` (HTTP)
+- `aws-documentation` (stdio, via `uvx`)
 - `awsknowledge` (HTTP)
+- `mitre-attack` (stdio, via `uvx`; falls back to bundled `data/attack-cloud-matrix.json`)
+- `kb-search`, `iam` — optional, used only when configured
+
+The pipeline can also run without any MCP servers — pass `--no-mcp` and facts are
+verified over the web instead. See the "Running without MCP" section of
+`docs/USAGE-COPILOT.md`.
 
 ## Output
 

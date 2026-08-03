@@ -65,6 +65,17 @@ python3 -m tools.validate.log \
 
 Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, etc.).
 
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), read the SAR page and security docs over
+the web per [`rules/web-access.md`](../../rules/web-access.md) — `WebFetch` the
+allowlisted `docs.aws.amazon.com` URLs instead of `awsknowledge` /
+`aws-documentation`. Log each web lookup with `--source web:<source-key>
+--verdict fetch` (or `search`) instead of the `mcp:<server>:call` event above;
+these `web:*` events satisfy the same P1 call floor.
+
 ---
 
 ## Step 0: SAR Pre-Read

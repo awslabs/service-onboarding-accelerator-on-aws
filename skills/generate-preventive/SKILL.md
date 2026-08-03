@@ -50,6 +50,23 @@ print(f'API operations: {len(vj[\"api_surface\"][\"operations\"])}')
 
 Unless `--include-unverified` is set, skip controls where `verified: false`.
 
+## No-MCP mode
+
+This skill uses MCP (`awsknowledge` / `aws-documentation`) at generation time to
+confirm condition keys are valid and that every citation URL is live. **MCP is
+the default.** When the run is in No-MCP mode (`pipeline_flags.no_mcp == true` in
+`00-intake/intake-manifest.json`, set by the `--no-mcp` flag), perform the same
+checks over the web per
+[`rules/web-access.md`](../../rules/web-access.md): `WebFetch` the citation URL
+(and the Service Authorization Reference for condition-key validity) against the
+allowlisted `docs.aws.amazon.com` domains. Log each web lookup with `--source
+web:<source-key> --verdict fetch` instead of the `mcp:<server>:call` event; these
+`web:*` events satisfy the same P1 call floor. The reference-anchored / live-URL
+citation requirement is unchanged in either mode. This authoring guidance applies
+to the preventive/proactive sub-skills (`generate-preventive-scp`,
+`generate-preventive-rcp`, `generate-preventive-iam`,
+`generate-preventive-recommend`) that follow these rules.
+
 ## Artifact Header Template
 
 Every generated artifact MUST include these comment lines at the top:

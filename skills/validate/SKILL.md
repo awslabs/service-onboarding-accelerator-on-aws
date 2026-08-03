@@ -94,6 +94,22 @@ python3 -m tools.validate.log \
 
 Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
 
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), verify every claim over the web per
+[`rules/web-access.md`](../../rules/web-access.md): `WebFetch` the Service
+Authorization Reference (`docs.aws.amazon.com/service-authorization/...`) for
+condition keys / actions / resources, and the IAM Access Analyzer API reference
+for SCP/RCP/permission-boundary feasibility, instead of `awsknowledge` /
+`aws-documentation`. Log each web lookup with `--source web:<source-key>
+--verdict fetch` (or `search`) instead of the `mcp:<server>:call` event above;
+these `web:*` events satisfy the same P1 call floor. Validate remains the
+verification skill — the requirement to confirm every capability, parameter, and
+condition key is unchanged; only the transport changes. Direct `aws
+accessanalyzer validate-policy` CLI checks are available in either mode.
+
 ## Verification note rules
 
 Every `verification_note` must be specific to the item being verified. Do NOT copy-paste a

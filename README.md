@@ -17,12 +17,19 @@ Claude Code, Kiro, and GitHub Copilot.
 | You need | When | Why |
 |----------|------|-----|
 | One of: Claude Code, Kiro IDE, or VS Code + GitHub Copilot | always | the client that runs the skills |
-| [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your PATH | always | the `aws-documentation` MCP server runs via `uvx awslabs.*@latest` |
+| [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your PATH | default mode | the `aws-documentation` MCP server runs via `uvx awslabs.*@latest`; not needed in no-MCP mode |
 | Python 3.9+ | always | the validators and hooks that gate the pipeline |
 | An AWS CLI profile | optional | only for Tier 2 policy validation (Access Analyzer); the pipeline never deploys |
 
 No AWS credentials are required to generate controls — every fact comes from
 public AWS documentation and knowledge MCP servers.
+
+**Running without MCP:** MCP servers are the default, but the whole pipeline can
+also run with no MCP servers at all — pass the `--no-mcp` flag and every fact is
+verified over the web against an allowlist of AWS documentation domains instead.
+See [`rules/web-access.md`](rules/web-access.md) for the mechanism and the
+"Running without MCP" section of [`docs/USAGE-COPILOT.md`](docs/USAGE-COPILOT.md)
+for details.
 
 ---
 
@@ -183,6 +190,7 @@ ATT&CK threat mapping.
 | `--include-unverified` | Include unverified findings in generation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
 | `--clean` | Delete existing `.service-approval/` state before the run | false |
+| `--no-mcp` | Run without MCP servers — verify facts over the web (see "Running without MCP" above) | false (MCP is the default) |
 
 ---
 

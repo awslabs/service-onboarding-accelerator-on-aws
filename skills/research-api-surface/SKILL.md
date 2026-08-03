@@ -70,6 +70,19 @@ python3 -m tools.validate.log \
 
 Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail.
 
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), read the Service Authorization Reference
+over the web per [`rules/web-access.md`](../../rules/web-access.md): `WebFetch`
+`https://docs.aws.amazon.com/service-authorization/latest/reference/list_<service>.html`
+instead of the `awsknowledge` SAR read, and extract the full actions and
+condition-keys tables the same way. Log each web lookup with `--source
+web:aws-docs --verdict fetch` instead of the `mcp:<server>:call` event above;
+these `web:*` events satisfy the same P1 call floor. The complete-API-surface
+requirement is unchanged — only the transport changes.
+
 ---
 
 ## Step 1: Get the Authoritative Action List

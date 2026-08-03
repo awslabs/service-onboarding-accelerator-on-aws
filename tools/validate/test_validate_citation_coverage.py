@@ -67,6 +67,13 @@ def test_doc_anchor_not_mcp_verified_fails(tmp_path):
     assert any("verified_via must be 'mcp'" in e for e in errors)
 
 
+def test_doc_anchor_web_verified_passes(tmp_path):
+    """No-MCP mode: a doc anchor stamped verified_via='web' is accepted."""
+    web = dict(_GOOD_DOC, verified_via="web")
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": web}})
+    assert vcc.check_artifact(f, known_ids=set()) == []
+
+
 def test_repo_anchor_resolves(tmp_path):
     ref = {"example_id": "efs-encryption-check", "repo": "aws-config-custom-policy-rule-samples",
            "url": "https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/sha/efs_encryption_check.guard"}
@@ -157,6 +164,18 @@ def test_canopy_citation_with_verified_url_passes(tmp_path):
         "id": "Implementation.DSQL.Cluster.6",
         "url": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html",
         "verified_via": "mcp",
+    }
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    assert vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES) == []
+
+
+def test_canopy_citation_web_verified_url_passes(tmp_path):
+    """No-MCP mode: a canopy citation URL stamped verified_via='web' passes."""
+    citation = {
+        "type": "canopy",
+        "id": "Implementation.DSQL.Cluster.6",
+        "url": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html",
+        "verified_via": "web",
     }
     f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
     assert vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES) == []

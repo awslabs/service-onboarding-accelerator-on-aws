@@ -17,8 +17,9 @@ Three citation mechanisms (any one satisfies the gate):
      aws-config-custom-policy-rule-samples (a Guard-DSL repo).
 
   2. **Doc anchor** — `_metadata.citation = {type: "aws_doc", title, url,
-     verified_via: "mcp"}` whose `url` is a well-formed AWS documentation URL
-     that was MCP-verified reachable at generation time (logged to pipeline.log).
+     verified_via: "mcp"|"web"}` whose `url` is a well-formed AWS documentation
+     URL proven reachable at generation time and logged to pipeline.log —
+     via an MCP fetch (default) or a WebFetch in no-MCP mode.
      Used by AWS-managed Config rules (managed-rule doc), Checkov/OPA (Checkov
      policy-index doc), EventBridge/alarms/CloudTrail (relevant AWS doc), CFN
      Hooks (two-part: repo anchor for the Guard body + a doc anchor to the
@@ -98,6 +99,12 @@ _AWS_DOC_URL_RE = re.compile(
     r"^https://(docs\.aws\.amazon\.com|www\.checkov\.io)/[^\s]+$"
 )
 
+# A citation URL is proven live at generation time either by an MCP fetch
+# (default mode) or, in no-MCP mode, a WebFetch against the allowlisted domains
+# (rules/web-access.md). Both are accepted; a training-data guess (neither) is
+# still a hard fail.
+_VERIFIED_VIA_VALUES = {"mcp", "web"}
+
 
 def _known_ids() -> set[str]:
     if example_ids is None:
@@ -172,11 +179,12 @@ def _canopy_anchor_errors(
                 f"the implementation's public REFERENCE href and must be "
                 f"MCP-verified reachable at generation time, never a guess."
             )
-        if citation.get("verified_via") != "mcp":
+        if citation.get("verified_via") not in _VERIFIED_VIA_VALUES:
             errors.append(
                 f"CITATION {basename}: _metadata.citation carries a url but "
-                f"verified_via is not 'mcp' — the Canopy REFERENCE link must be "
-                f"proven live by an MCP fetch at generation time."
+                f"verified_via is not 'mcp' or 'web' — the Canopy REFERENCE link "
+                f"must be proven live by an MCP fetch (default) or a WebFetch "
+                f"(no-MCP mode) at generation time."
             )
     return errors
 
@@ -221,10 +229,11 @@ def _doc_anchor_errors(basename: str, citation: dict) -> list[str]:
             f"at generation time and logged to pipeline.log — never a "
             f"training-data guess."
         )
-    if citation.get("verified_via") != "mcp":
+    if citation.get("verified_via") not in _VERIFIED_VIA_VALUES:
         errors.append(
             f"CITATION {basename}: _metadata.citation.verified_via must be 'mcp' "
-            f"— the URL is proven live by an MCP fetch at generation time."
+            f"or 'web' — the URL is proven live by an MCP fetch (default) or a "
+            f"WebFetch (no-MCP mode) at generation time."
         )
     return errors
 

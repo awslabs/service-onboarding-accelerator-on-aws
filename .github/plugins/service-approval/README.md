@@ -54,6 +54,12 @@ Registered via `.vscode/mcp.json` (workspace-scoped):
 
 - `aws-documentation` — service docs, feature references
 - `awsknowledge` — SAR queries, condition keys
+- `mitre-attack` — MITRE ATT&CK technique/tactic lookups (falls back to the bundled
+  `data/attack-cloud-matrix.json` snapshot when unavailable)
+- `kb-search`, `iam` — optional, used only when configured
+
+The pipeline can also run with no MCP servers at all, using web access instead —
+see the "Running without MCP" section of `docs/USAGE-COPILOT.md`.
 
 Create `.vscode/mcp.json` if missing:
 
@@ -72,6 +78,11 @@ Create `.vscode/mcp.json` if missing:
     "awsknowledge": {
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
+    },
+    "mitre-attack": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/stoyky/mitre-attack-mcp", "mitre-attack-mcp"]
     }
   }
 }
@@ -100,7 +111,7 @@ Create `.vscode/mcp.json` if missing:
 
 ## Output
 
-- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
+- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report (coverage summary, per-domain rollup, threat coverage; links to companion docs)
 - `.service-approval/<slug>/05-recommended-guidance/` — all generated artifacts
 - `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 
@@ -114,4 +125,4 @@ Skills / hooks / instructions are all file-based — Copilot re-reads them every
 
 ## License
 
-MIT
+Apache-2.0
