@@ -103,6 +103,26 @@ The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverag
 
 ---
 
+## Running without MCP
+
+MCP servers are the **default** and recommended path. The pipeline can also run
+with no MCP servers at all — it verifies the same facts over the web instead. Ask
+Kiro to run in no-MCP mode (e.g. "run service approval for s3 without MCP") or
+set `options.no_mcp: true` in an intake YAML; either records
+`pipeline_flags.no_mcp` in the intake manifest and puts every phase into its
+**No-MCP mode** fallback.
+
+No-MCP mode uses an **open discovery → allowlisted fetch → narrow cite** loop: an
+open `WebSearch` finds the right AWS page, an allowlisted `WebFetch` reads it, and
+citations stay on `docs.aws.amazon.com`. Threat data comes from
+`attack.mitre.org` or the bundled `data/attack-cloud-matrix.json` snapshot, so
+the pipeline works offline too.
+
+See [How no-MCP mode works](NO-MCP.md) for the full walkthrough and
+[`rules/web-access.md`](../rules/web-access.md) for the policy.
+
+---
+
 ## Troubleshooting
 
 **Power doesn't appear in the Powers panel**

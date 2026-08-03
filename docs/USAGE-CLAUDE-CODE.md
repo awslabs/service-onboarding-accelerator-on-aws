@@ -139,6 +139,30 @@ The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverag
 | `--include-unverified` | Include unverified findings in generation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
 | `--clean` | Delete existing state before run | false |
+| `--no-mcp` | Run without MCP servers — verify facts over the web (see "Running without MCP" below) | false (MCP is the default) |
+
+---
+
+## Running without MCP
+
+MCP servers are the **default** and recommended path. The pipeline can also run
+with no MCP servers at all — pass the **`--no-mcp` flag** and every fact is
+verified over the web instead:
+
+```
+/service-approval ./input --service=<name> --no-mcp
+```
+
+The flag is recorded in the intake manifest as `pipeline_flags.no_mcp` and puts
+every phase into its **No-MCP mode** fallback (you can also set
+`options.no_mcp: true` in an intake YAML). No-MCP mode uses an **open discovery →
+allowlisted fetch → narrow cite** loop: an open `WebSearch` finds the right AWS
+page, an allowlisted `WebFetch` reads it, and citations stay on
+`docs.aws.amazon.com`. Threat data comes from `attack.mitre.org` or the bundled
+`data/attack-cloud-matrix.json` snapshot, so the pipeline works offline too.
+
+See [How no-MCP mode works](NO-MCP.md) for the full walkthrough and
+[`rules/web-access.md`](../rules/web-access.md) for the policy.
 
 ---
 

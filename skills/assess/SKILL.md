@@ -70,9 +70,10 @@ Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentati
 **MCP is the default.** When the run is in No-MCP mode
 (`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
 `--no-mcp` flag), read the SAR page and security docs over
-the web per [`rules/web-access.md`](../../rules/web-access.md) — `WebFetch` the
-allowlisted `docs.aws.amazon.com` URLs instead of `awsknowledge` /
-`aws-documentation`. Log each web lookup with `--source web:<source-key>
+the web per [`rules/web-access.md`](../../rules/web-access.md) using the
+discovery→verify loop: run open `WebSearch` to find the right page, then
+`WebFetch` the authoritative `docs.aws.amazon.com` URL instead of `awsknowledge`
+/ `aws-documentation`. Log each web lookup with `--source web:<source-key>
 --verdict fetch` (or `search`) instead of the `mcp:<server>:call` event above;
 these `web:*` events satisfy the same P1 call floor.
 

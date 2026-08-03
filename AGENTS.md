@@ -82,8 +82,10 @@ See [`rules/service-approval-safety.md`](rules/service-approval-safety.md) for t
 
 MCP servers are the default, but the pipeline can also run with no MCP servers —
 pass `--no-mcp` (recorded as `pipeline_flags.no_mcp` in the intake manifest) and
-each MCP-using skill follows its **No-MCP mode** fallback, verifying the same
-facts over the web per [`rules/web-access.md`](rules/web-access.md).
+each MCP-using skill follows its **No-MCP mode** fallback: an open `WebSearch`
+finds the right AWS page, an allowlisted `WebFetch` reads it, and citations stay
+on `docs.aws.amazon.com`. See [How no-MCP mode works](docs/NO-MCP.md) and
+[`rules/web-access.md`](rules/web-access.md).
 
 ## Directory map
 

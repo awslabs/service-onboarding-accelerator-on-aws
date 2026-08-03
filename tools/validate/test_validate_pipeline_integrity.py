@@ -129,6 +129,32 @@ def test_pipeline_log_web_search_lookups_counted(tmp_path: Path) -> None:
     assert check_mcp_log(tmp_path) == []
 
 
+def test_pipeline_log_web_open_discovery_search_counted(tmp_path: Path) -> None:
+    """Open-discovery queries log as `web:search:search` and count toward P1."""
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [02-research] [web:search:search]  q{i}"
+        for i in range(MIN_MCP_CALLS)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    assert check_mcp_log(tmp_path) == []
+
+
+def test_pipeline_log_blocked_reject_not_counted(tmp_path: Path) -> None:
+    """A refused off-allowlist fetch (`web:blocked:reject`) does NOT satisfy P1.
+
+    Blocked calls are logged with verdict `reject`, not `fetch`/`search`, so they
+    never inflate the minimum-lookup floor (rules/web-access.md).
+    """
+    pipeline_lines = [
+        f"2026-05-14T18:32:0{i}Z [02-research] [web:blocked:reject]  off-allowlist q{i}"
+        for i in range(MIN_MCP_CALLS)
+    ]
+    (tmp_path / "pipeline.log").write_text("\n".join(pipeline_lines))
+    errors = check_mcp_log(tmp_path)
+    assert len(errors) == 1
+    assert "P1" in errors[0]
+
+
 def test_pipeline_log_mixed_mcp_and_web_counted(tmp_path: Path) -> None:
     """A mixed run counts both MCP calls and web lookups against the floor."""
     half = MIN_MCP_CALLS // 2

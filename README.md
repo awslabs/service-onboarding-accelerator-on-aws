@@ -26,10 +26,9 @@ public AWS documentation and knowledge MCP servers.
 
 **Running without MCP:** MCP servers are the default, but the whole pipeline can
 also run with no MCP servers at all — pass the `--no-mcp` flag and every fact is
-verified over the web against an allowlist of AWS documentation domains instead.
-See [`rules/web-access.md`](rules/web-access.md) for the mechanism and the
-"Running without MCP" section of [`docs/USAGE-COPILOT.md`](docs/USAGE-COPILOT.md)
-for details.
+verified over the web via an open-discovery search that reads and cites only
+authoritative AWS sources. See [How no-MCP mode works](docs/NO-MCP.md) for the
+full walkthrough and [`rules/web-access.md`](rules/web-access.md) for the policy.
 
 ---
 
@@ -71,6 +70,7 @@ guides:
 | Kiro IDE | [`docs/USAGE-KIRO.md`](docs/USAGE-KIRO.md) |
 | GitHub Copilot | [`docs/USAGE-COPILOT.md`](docs/USAGE-COPILOT.md) |
 | All clients + troubleshooting | [`docs/INSTALL.md`](docs/INSTALL.md) |
+| Running without MCP | [`docs/NO-MCP.md`](docs/NO-MCP.md) |
 
 > Windows needs Developer Mode ON for the symlink install (one-time toggle).
 

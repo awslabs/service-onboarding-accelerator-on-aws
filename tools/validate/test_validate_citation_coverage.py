@@ -74,6 +74,30 @@ def test_doc_anchor_web_verified_passes(tmp_path):
     assert vcc.check_artifact(f, known_ids=set()) == []
 
 
+# No-MCP mode widens the WebFetch allowlist (aws.amazon.com blogs, boto3/awscli
+# refs, AWS-owned GitHub repos) for *discovery and reading*, but artifact
+# *citations* stay narrow: docs.aws.amazon.com (+ the Checkov policy-index host).
+# A fact found on a blog or SDK reference must be re-confirmed on the
+# authoritative doc page before it is cited. These cases lock that in — the
+# fetch-only hosts are NOT accepted as citation URLs.
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://aws.amazon.com/blogs/security/some-post/",
+        "https://aws.amazon.com/aurora-dsql/faqs/",
+        "https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/dsql.html",
+        "https://awscli.amazonaws.com/v2/documentation/api/latest/reference/dsql/index.html",
+        "https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/main/x.guard",
+    ],
+)
+def test_fetch_only_hosts_not_citable(tmp_path, url):
+    """Hosts fetchable-in-discovery but off the citation allowlist are rejected."""
+    bad = dict(_GOOD_DOC, url=url)
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": bad}})
+    errors = vcc.check_artifact(f, known_ids=set())
+    assert any("not a" in e and "AWS documentation URL" in e for e in errors)
+
+
 def test_repo_anchor_resolves(tmp_path):
     ref = {"example_id": "efs-encryption-check", "repo": "aws-config-custom-policy-rule-samples",
            "url": "https://github.com/aws-samples/aws-config-custom-policy-rule-samples/blob/sha/efs_encryption_check.guard"}
