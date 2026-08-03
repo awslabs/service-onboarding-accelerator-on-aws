@@ -108,12 +108,13 @@ Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-docu
 **MCP is the default.** When the run is in No-MCP mode
 (`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
 `--no-mcp` flag), verify the same facts over the web per
-[`rules/web-access.md`](../../rules/web-access.md): fetch the Service
-Authorization Reference and security docs with `WebFetch`/`WebSearch` against the
-allowlisted `docs.aws.amazon.com` domains instead of `awsknowledge` /
-`aws-documentation`. Log each web lookup with `--source web:<source-key>
---verdict fetch` (or `search`) instead of the `mcp:<server>:call` event above;
-these `web:*` events satisfy the same P1 call floor. Every capability, API
+[`rules/web-access.md`](../../rules/web-access.md) using the discovery→verify
+loop: run open `WebSearch` to find the right page, then `WebFetch` the
+authoritative Service Authorization Reference and security docs on
+`docs.aws.amazon.com` instead of `awsknowledge` / `aws-documentation`. Log each
+web lookup with `--source web:<source-key> --verdict fetch` (or `search`)
+instead of the `mcp:<server>:call` event above; these `web:*` events satisfy the
+same P1 call floor. Every capability, API
 parameter, and condition key must still be verified — the fact-checking
 requirement is identical; only the transport changes.
 

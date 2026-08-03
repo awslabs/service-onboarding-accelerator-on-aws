@@ -78,10 +78,14 @@ Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-docu
 over the web per [`rules/web-access.md`](../../rules/web-access.md): `WebFetch`
 `https://docs.aws.amazon.com/service-authorization/latest/reference/list_<service>.html`
 instead of the `awsknowledge` SAR read, and extract the full actions and
-condition-keys tables the same way. Log each web lookup with `--source
-web:aws-docs --verdict fetch` instead of the `mcp:<server>:call` event above;
-these `web:*` events satisfy the same P1 call floor. The complete-API-surface
-requirement is unchanged — only the transport changes.
+condition-keys tables the same way. For any operation or parameter not on the
+SAR page, use the discovery→verify loop — open `WebSearch` to find the
+authoritative `docs.aws.amazon.com` API-reference page, then `WebFetch` it. Log
+each web lookup with `--source web:aws-docs --verdict fetch` (or `--source
+web:search --verdict search` for a discovery query) instead of the
+`mcp:<server>:call` event above; these `web:*` events satisfy the same P1 call
+floor. The complete-API-surface requirement is unchanged — only the transport
+changes.
 
 ---
 

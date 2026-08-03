@@ -135,9 +135,12 @@ web per [`rules/web-access.md`](../../rules/web-access.md) — `WebFetch`
 `https://attack.mitre.org/matrices/enterprise/` and per-technique
 `https://attack.mitre.org/techniques/T<id>/` — and if `attack.mitre.org` is
 unreachable, fall back to the bundled `data/attack-cloud-matrix.json` snapshot
-exactly as before. Log each web lookup with `--source web:attack-mitre --verdict
-fetch` (or `search`) instead of the `mcp:mitre-attack:call` event; these `web:*`
-events satisfy the same P1 call floor.
+exactly as before. For supporting AWS threat context, use the discovery→verify
+loop (open `WebSearch`, then `WebFetch` the authoritative `docs.aws.amazon.com`
+page). Log each web lookup with `--source web:attack-mitre --verdict fetch` (or
+`--source web:search --verdict search` for a discovery query) instead of the
+`mcp:mitre-attack:call` event; these `web:*` events satisfy the same P1 call
+floor.
 
 ---
 

@@ -57,10 +57,13 @@ confirm condition keys are valid and that every citation URL is live. **MCP is
 the default.** When the run is in No-MCP mode (`pipeline_flags.no_mcp == true` in
 `00-intake/intake-manifest.json`, set by the `--no-mcp` flag), perform the same
 checks over the web per
-[`rules/web-access.md`](../../rules/web-access.md): `WebFetch` the citation URL
-(and the Service Authorization Reference for condition-key validity) against the
-allowlisted `docs.aws.amazon.com` domains. Log each web lookup with `--source
-web:<source-key> --verdict fetch` instead of the `mcp:<server>:call` event; these
+[`rules/web-access.md`](../../rules/web-access.md) using the discovery→verify
+loop: run open `WebSearch` to find the right page, then `WebFetch` the citation
+URL (and the Service Authorization Reference for condition-key validity) on
+`docs.aws.amazon.com`. Cited URLs stay on `docs.aws.amazon.com` — a fact
+discovered on a blog or SDK reference must be confirmed on the authoritative doc
+page before it is cited. Log each web lookup with `--source web:<source-key>
+--verdict fetch` (or `search`) instead of the `mcp:<server>:call` event; these
 `web:*` events satisfy the same P1 call floor. The reference-anchored / live-URL
 citation requirement is unchanged in either mode. This authoring guidance applies
 to the preventive/proactive sub-skills (`generate-preventive-scp`,

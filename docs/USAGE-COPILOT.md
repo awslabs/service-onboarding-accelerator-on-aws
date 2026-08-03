@@ -194,16 +194,18 @@ remove `.vscode/mcp.json`. (You can also set `options.no_mcp: true` in an intake
 YAML.) Keep the `fetch` tool enabled for the agent (it is in the agent's tool
 list) so `WebFetch`/`WebSearch` are available.
 
-In no-MCP mode:
-- Each skill's **No-MCP mode** subsection maps its MCP calls to allowlisted
-  `WebFetch`/`WebSearch` lookups — see [`rules/web-access.md`](../rules/web-access.md)
-  for the domain allowlist, per-source URL patterns, and logging format.
-- MITRE ATT&CK data comes from `attack.mitre.org` (or the bundled
-  `data/attack-cloud-matrix.json` snapshot if unreachable), so
-  threat-surface analysis still works offline.
-- The pipeline-integrity check counts `web:*` lookups toward the same
-  minimum-lookup floor that MCP calls satisfy in the default mode, so the run
-  still passes its integrity gate.
+In no-MCP mode, each phase replaces its MCP calls with web access using an
+**open discovery → allowlisted fetch → narrow cite** loop: an open `WebSearch`
+finds the right AWS page, an allowlisted `WebFetch` reads it, and citations stay
+on `docs.aws.amazon.com`. MITRE ATT&CK data comes from `attack.mitre.org` (or the
+bundled `data/attack-cloud-matrix.json` snapshot if unreachable). The
+pipeline-integrity check counts `web:*` lookups toward the same minimum-lookup
+floor that MCP calls satisfy in the default mode.
+
+**See [How no-MCP mode works](NO-MCP.md)** for the full walkthrough — which
+domains it searches and reads, how it maps to the MCPs, the `web:*` logging and
+P1 floor, and the offline-snapshot fallbacks — and
+[`rules/web-access.md`](../rules/web-access.md) for the policy itself.
 
 Everything else — phases, flags, output tree, and the fact-verification
 requirement — is identical to the default MCP run.

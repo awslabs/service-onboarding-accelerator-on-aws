@@ -45,14 +45,17 @@ one the table below specifies for each artifact:
 **MCP is the default.** When the run is in No-MCP mode
 (`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
 `--no-mcp` flag), prove each citation URL live over the web
-per [`rules/web-access.md`](../../rules/web-access.md): `WebFetch` the doc /
-REFERENCE URL against the allowlisted `docs.aws.amazon.com` domains instead of
+per [`rules/web-access.md`](../../rules/web-access.md) using the discovery→verify
+loop: run open `WebSearch` to find the right page when the URL is unknown, then
+`WebFetch` the doc / REFERENCE URL on `docs.aws.amazon.com` instead of
 `awsknowledge` / `aws-documentation`, and stamp `verified_via: "web"` (instead of
-`"mcp"`) on the citation. Log each web lookup with `--source web:<source-key>
---verdict fetch` instead of the `mcp:<server>:call` event; these `web:*` events
-satisfy the same P1 call floor, and P12 accepts either `verified_via` value. The
-resolvable-citation / live-URL requirement is unchanged — only the transport
-changes; still NEVER hardcode a URL from training data.
+`"mcp"`) on the citation. Cited URLs stay on `docs.aws.amazon.com` — a managed
+rule or fact discovered on a blog must be confirmed on the authoritative doc page
+before it is cited. Log each web lookup with `--source web:<source-key> --verdict
+fetch` (or `search`) instead of the `mcp:<server>:call` event; these `web:*`
+events satisfy the same P1 call floor, and P12 accepts either `verified_via`
+value. The resolvable-citation / live-URL requirement is unchanged — only the
+transport changes; still NEVER hardcode a URL from training data.
 
 ### Canopy-first sourcing (when a Canopy threat-model was provided)
 
