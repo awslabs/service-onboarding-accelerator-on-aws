@@ -314,6 +314,16 @@ def check_research_mitigations(data: dict) -> list[str]:
     return schema_errors(data, "research-mitigations")
 
 
+def check_canopy_index(data: dict) -> list[str]:
+    """Validate canopy-index.json — the normalized Canopy citation index.
+
+    Shape/required-field checks live in schemas/canopy-index.schema.json. The
+    index is written by research-mitigations for a Canopy-shaped input and is
+    the source of truth a `type: "canopy"` citation resolves its alias against.
+    """
+    return schema_errors(data, "canopy-index")
+
+
 # ================================================================
 # Check S7: research-capabilities schema
 # ================================================================
@@ -1252,6 +1262,9 @@ def validate_state_file(file_path: str) -> list[str]:
 
     elif basename == "checkpoint-results.json":
         errors.extend(check_checkpoint_results(data))
+
+    elif basename == "canopy-index.json":
+        errors.extend(check_canopy_index(data))
 
     elif "research-mitigations" in basename:
         errors.extend(check_required_fields(data, basename))

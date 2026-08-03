@@ -30,18 +30,19 @@ to them. It issues **no** approve/deny verdict.
 | Service name + friendly name | `validated.json.service`, `sar-facts.json` |
 | Service AWS documentation URL | `sar-facts.json.sar_url` (the Service Authorization Reference page) |
 | Framework name | `mapping-results.json.framework.name` |
-| Per-objective status + **reason** | `mapping-results.json.framework_mapping[]` (`status`, `reason` / `na_reason`) |
-| Objective applicability reason | `applicability-matrix.json` (when present) |
+| Objective counts (MAPPED / total) | `mapping-results.json.framework_mapping[]` — a **count** for the Summary of Findings; the per-objective table lives in `framework-mapping.md`, not this report |
 | Threat coverage | `mapping-results.json.attack_coverage` |
-| Control catalog (4 families) + citations | `05-recommended-guidance/{preventive,proactive,detective,responsive}/` + `citation-coverage.json` |
-| Preventive rollup | `05-recommended-guidance/preventive-coverage.json` |
+| Control counts (4 families) | `05-recommended-guidance/{preventive,proactive,detective,responsive}/` — counts for the findings paragraph; the per-artifact index lives in `controls-catalog.md` |
+| Which deliverables exist | the files present under `04-map/` and `05-recommended-guidance/` — drives the Output Guide |
 | Unverified count | `validated.json.unverified_count` |
 
-**Coverage grading is computed but NOT shown.** The pipeline still computes the
-per-objective coverage level internally (validators read it from
-`mapping-results.json`); the report does **not** render a coverage column or a
-Fully/Partial/Supportive grade. It shows only `MAPPED` / `N/A` status plus the
-reason.
+**Coverage grading is computed but NOT shown, and the per-objective mapping is NOT
+re-reported here.** The pipeline still computes per-objective status/coverage
+internally (validators read it from `mapping-results.json`), and the full
+objective-by-objective table is rendered in `framework-mapping.md`. This report
+gives only a **count** ("N of M objectives covered") in Summary of Findings and a
+pointer to `framework-mapping.md` — no objective table, no coverage column, no
+Fully/Partial/Supportive grade.
 
 **Terminology rules (customer-facing document):**
 - NO internal/pipeline terms: no "pipeline", no MCP/skill/agent names, no internal
@@ -58,6 +59,12 @@ Write `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md`. The title is H1
 downstream consumers anchor on H2, so do not use H3 for section headers. **Every
 section opens with a 1-2 sentence description of its purpose.** Keep the whole
 report short; push detail into the linked companion docs.
+
+The Summary Report is a **high-level overview of the whole process** — what was
+done, what was found, how to use the results, and what the output files are. It
+does **not** re-report the framework mapping (that lives in `framework-mapping.md`)
+or recap every artifact/objective. Push all granular detail into the companion
+docs and link to them.
 
 Emit the sections in exactly this order:
 
@@ -92,103 +99,73 @@ If `validated.json.unverified_count` is 0, add a single line: **"All items
 verified."** Only render a list of unverified items if `unverified_count > 0` (id
 + reason per item). Do not ship an empty "UNVERIFIED" section.
 
-### 3. Framework Coverage — {framework-name}
-> *Describe what this section is: which framework objectives are supported or not,
-> and WHY, with no coverage grade.*
+### 3. What Was Done
+> *Describe what this section is: a high-level, customer-facing narrative of the
+> process that produced these results — no pipeline/skill/agent names.*
 
-Use the framework name from `mapping-results.json.framework.name` (default "CSA
-CCMv4"; `--framework=nist|cis|iso` or a custom file changes it). Render the full
-objective table with **status and reason only — no coverage column**:
+A short paragraph (or a few bullets) describing, at altitude, what the process did:
+the service's capabilities were verified against AWS documentation; those
+capabilities were mapped to the {framework-name} control framework; preventive,
+proactive, detective, and responsive controls were generated, each anchored to a
+public AWS reference or a Canopy-cited source; and applicable adversary techniques
+were analyzed. **No tables, no per-objective rows, no internal terms** — this is
+the "how we got here" orientation, not a re-report. Point the reader to the later
+sections and companion docs for detail.
+
+### 4. How to Use These Results (Output Guide)
+> *Describe what this section is: a compact guide to the deliverables — what each
+> file is and how to use it — so the reader knows where to go for detail.*
+
+A compact table of the deliverables with a one-line "what it is / how to use it"
+each. High level, **not** a per-artifact file dump. List only the files this run
+actually produced.
 
 ```markdown
-| {Framework} Objective ID | Title | Domain | Status | Why |
-|---|---|---|---|---|
-| {objective_id} | {title} | {domain} | MAPPED / N/A | {reason} |
+| Deliverable | What it is / how to use it |
+|---|---|
+| SUMMARY-REPORT.md | This overview — start here. |
+| framework-mapping.md | The full objective-by-objective framework mapping with status and reason. Go here for the complete coverage detail. |
+| controls-catalog.md | The catalog of every generated control with its citation. Go here for the per-artifact index. |
+| preventive/ proactive/ detective/ responsive/ | The generated control artifacts, one folder per family. Review and adapt the policies/rules before deploying. |
+| preventive-coverage.json | Deterministic accounting of how each preventive objective was handled (authored / referred / routed). |
+| citation-coverage.json | Every non-preventive artifact's citation (repo anchor, AWS doc, or Canopy alias + link). |
+| README.md / PROVENANCE.md | Provenance and how the guidance folder is organized. |
 ```
 
-For **every** objective, the "Why" is pulled verbatim (or lightly reworded to
-customer-facing prose) from `mapping-results.json.framework_mapping[].reason` /
-`na_reason`, or from `applicability-matrix.json` when the objective is N/A by
-applicability. **Do not invent a reason** — if a row has no reason in state, write
-"See control catalog" and flag it, do not fabricate a justification. "Satisfied
-By" control IDs are not a separate column here; the control catalog (section 5)
-carries the control detail.
+For the full objective-by-objective framework detail, point the reader to
+`framework-mapping.md` **instead of** rendering the objective table here. Link the
+companion docs that exist in this run's guidance folder:
 
-### 4. Threat Model Coverage
+```markdown
+Companion docs (in the guidance folder):
+[framework-mapping.md](../04-map/framework-mapping.md) ·
+[controls-catalog.md](../04-map/controls-catalog.md) ·
+[README.md](../05-recommended-guidance/README.md) ·
+[PROVENANCE.md](../05-recommended-guidance/PROVENANCE.md) ·
+[preventive-coverage.json](../05-recommended-guidance/preventive-coverage.json) ·
+[citation-coverage.json](../05-recommended-guidance/citation-coverage.json)
+```
+
+Exclude vendored/build directories (`node_modules/`, `.terraform/`, `__pycache__/`,
+`.git/`, lockfiles) — the output guide is a reader's map, not a file dump.
+
+### 5. Threat Model Coverage
 > *Describe what this section is: which adversary techniques the generated controls
-> address. Always present (MITRE ATT&CK analysis is mandatory).*
+> address. Always present (MITRE ATT&CK analysis is mandatory). Keep it short.*
 
 Brief. Read `mapping-results.json.attack_coverage`. Title adapts to the threat
 model source (mirrors `skills/research-attack-surface/SKILL.md` naming): "MITRE
 ATT&CK Threat Coverage (v{version})" by default; "STRIDE Threat Coverage",
 "{combined} Threat Coverage", or "Threat Model Coverage ({source})" per source.
 
-Render a compact tactic heat map and a short list of uncovered HIGH-applicability
-techniques with the recommended control type — keep it to the table plus a few
-gap lines, not a technique-by-technique essay:
+Render the compact tactic rollup plus a couple of gap lines — the table and a few
+lines, not a technique-by-technique essay. Do not expand this section:
 
 ```markdown
 | Tactic / Category | Techniques | Covered | Coverage |
 |---|---|---|---|
 | Initial Access (TA0001) | 3 | 2 | 67% |
 ```
-
-### 5. Control Catalog
-> *Describe what this section is: the index of every generated control artifact,
-> grouped by the four families, each with its citation — the renamed "Artifact
-> Manifest".*
-
-Group by the four families: **Preventive, Proactive, Detective, Responsive.** For
-each family, list its artifacts with the **citation** each carries (repo anchor
-`example_id` + URL, or doc anchor title + URL) read from `citation-coverage.json`.
-Do not restate policy bodies — link out. Close the section with pointers to the
-companion docs rather than duplicating them:
-
-```markdown
-| Family | Artifact | Citation |
-|---|---|---|
-| Preventive | scp-policy.json | {example_id} — {url} |
-| Detective | config-rules.json | {managed-rule doc url} |
-| Proactive | cfn-guard-rules.guard | {example_id} — {url} |
-| Responsive | ssm-runbook-reference.md | AWS-{Runbook} — {runbook doc url} |
-
-Full provenance and per-artifact detail (companion docs in the guidance folder):
-[README.md](../05-recommended-guidance/README.md) ·
-[PROVENANCE.md](../05-recommended-guidance/PROVENANCE.md) ·
-[preventive-coverage.json](../05-recommended-guidance/preventive-coverage.json) ·
-[citation-coverage.json](../05-recommended-guidance/citation-coverage.json)
-
-(Link only the companion docs that exist in this run's guidance folder.)
-```
-
-Exclude vendored/build directories from any file listing (`node_modules/`,
-`.terraform/`, `__pycache__/`, `.git/`, lockfiles) so the catalog stays a
-human-readable index, not a dump.
-
-### 6. Preventive Coverage Rollup
-> *Describe what this section is: the deterministic accounting of how each
-> preventive objective was handled — authored, referred, or routed to detective.*
-
-Read **verbatim** from
-`.service-approval/<slug>/05-recommended-guidance/preventive-coverage.json` (built by
-`build_preventive_coverage.py`). Do NOT hand-write or estimate the numbers. If the
-file is absent (no preventive controls in this run), state that plainly and omit
-the table.
-
-```markdown
-Of {objectives} preventive objectives: **{authored}** have a policy generated from
-a public AWS reference example, **{referred}** point to a reference example the
-customer applies, and **{routed_to_detective}** are covered by detective controls
-(not preventable at request time).
-
-| Control | Coverage | Mechanism | Reference / Citation | Why |
-|---|---|---|---|---|
-| {control_id} | {Authored / Referred / Routed to detective} | {mechanism} | {anchor example_id + url, or citation type + id/url} | {reason} |
-```
-
-The counts come straight from `totals`; each row from `controls[]`. A reader can
-verify every number by following the control id and citation back to the generated
-artifacts. Descriptive, not a judgment.
 
 ## Pipeline-Complete Sentinel
 

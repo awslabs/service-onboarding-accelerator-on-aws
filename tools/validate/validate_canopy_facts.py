@@ -55,7 +55,11 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from canopy_parse import is_canopy_shape, is_canopy_threats_shape  # type: ignore
+from canopy_parse import (  # type: ignore
+    is_canopy_shape,
+    is_canopy_threats_shape,
+    parse_canopy_implementations,
+)
 
 
 def _load_json(path: Path) -> dict | None:
@@ -83,8 +87,31 @@ def _normalize_text(text: str) -> str:
     return " ".join("".join(kept).split())
 
 
+def _implementation_index(canopy: dict) -> dict[str, dict]:
+    """`{implementation_alias: parsed-implementation-row}` for the export.
+
+    Canopy `implementations[]` carry their own `alias` (e.g.
+    `Implementation.DSQL.2`). A preventive/detective control may anchor a
+    Canopy citation directly to an implementation (the round that added
+    Canopy-first citations across all four families), so an implementation
+    alias is an equally valid Canopy citation target as a mitigation/threat
+    alias. Returns {} for a non-Canopy or implementation-only doc.
+    """
+    return {
+        row["alias"]: row
+        for row in parse_canopy_implementations(canopy)
+        if isinstance(row, dict) and row.get("alias")
+    }
+
+
 def mitigation_statement(canopy: dict, alias: str) -> str:
-    """The Canopy `statement` for a mitigation/threat alias (empty if none)."""
+    """The Canopy `statement` for a mitigation/threat alias (empty if none).
+
+    Implementation aliases carry no free-text `statement` (their intent lives
+    in a typed policy body), so they return empty — a citation that quotes a
+    statement while anchoring to an implementation is caught by the verbatim
+    check as text the export does not contain.
+    """
     for m in canopy.get("mitigations", []) or []:
         if isinstance(m, dict) and m.get("alias") == alias:
             return str(m.get("statement") or "")
@@ -95,7 +122,7 @@ def mitigation_statement(canopy: dict, alias: str) -> str:
 
 
 def canopy_alias_set(canopy: dict) -> set[str]:
-    """All mitigation + threat aliases present in the Canopy export."""
+    """All mitigation + threat + implementation aliases present in the export."""
     out: set[str] = set()
     for m in canopy.get("mitigations", []) or []:
         if isinstance(m, dict) and m.get("alias"):
@@ -103,6 +130,7 @@ def canopy_alias_set(canopy: dict) -> set[str]:
     for t in canopy.get("threats", []) or []:
         if isinstance(t, dict) and t.get("alias"):
             out.add(t["alias"])
+    out.update(_implementation_index(canopy).keys())
     return out
 
 
@@ -126,6 +154,20 @@ def mitigation_operations(canopy: dict, alias: str) -> set[str]:
         for cp in t.get("requestParameters", []) or []:
             if isinstance(cp, dict) and cp.get("operation"):
                 ops.add(str(cp["operation"]).lower())
+    # Implementation aliases: governed operations come from the parsed guide —
+    # authorization_policy actions (bare op, wildcards dropped), config-rule
+    # governed_api_operations, and cloudtrail monitored_operations. An empty set
+    # (e.g. a `dsql:*` wildcard policy) leaves the op-drift check a no-op, as it
+    # is for a resource-level-only mitigation.
+    impl = _implementation_index(canopy).get(alias)
+    if impl:
+        for action in impl.get("actions", []) or []:
+            if isinstance(action, str) and not action.endswith("*"):
+                ops.add(_bare_op(action))
+        for key in ("governed_api_operations", "monitored_operations"):
+            for op in impl.get(key, []) or []:
+                if isinstance(op, dict) and op.get("operation"):
+                    ops.add(str(op["operation"]).lower())
     return ops
 
 

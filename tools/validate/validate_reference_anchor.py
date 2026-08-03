@@ -8,9 +8,20 @@ artifact must trace to a known-good example in the reference index
 the gate that makes "we only generate when we can anchor to a reference"
 checkable rather than aspirational.
 
-Rule: every policy artifact under <slug>/05-recommended-guidance/preventive/ MUST carry a
-`_metadata.reference` whose `example_id` resolves to a real entry in the
-reference index. An artifact with no resolvable anchor is a hard failure.
+Rule: every policy artifact under <slug>/05-recommended-guidance/preventive/ MUST anchor to
+a known-good example. Two anchor mechanisms satisfy the rule:
+
+  1. **Repo anchor** — `_metadata.reference` whose `example_id` resolves to a
+     real entry in the reference index.
+  2. **Canopy anchor** — `_metadata.citation = {type: "canopy", id: "<alias>"}`
+     whose alias resolves to a real mitigation/implementation in the ingested
+     Canopy index (02-research/canopy-index.json). Canopy supplies both the
+     control intent AND the policy shape (governed actions + condition_keys), so
+     a Canopy-anchored preventive control is fully anchored — a repo `reference`
+     is no longer mandatory when a resolvable Canopy anchor is present.
+
+An artifact with neither a resolvable repo anchor nor a resolvable Canopy anchor
+is a hard failure.
 
 `_metadata.reference` shape (written by the preventive authoring sub-skills):
 
@@ -20,6 +31,18 @@ reference index. An artifact with no resolvable anchor is a hard failure.
         "example_id": "service-control-policy-examples-deny-...",
         "repo": "service-control-policy-examples",
         "url": "https://github.com/aws-samples/.../blob/<sha>/<path>"
+      }
+    }
+
+`_metadata.citation` shape for a Canopy anchor:
+
+    "_metadata": {
+      ...
+      "citation": {
+        "type": "canopy",
+        "id": "Implementation.DSQL.2",
+        "url": "https://docs.aws.amazon.com/.../data-perimeters.html",
+        "verified_via": "mcp"
       }
     }
 
@@ -58,6 +81,14 @@ except Exception:  # pragma: no cover - import guard
             "iam trust policy", "trust policy",
         }
 
+# Canopy anchor resolution — a `type: "canopy"` citation resolves the anchor
+# requirement for a preventive artifact when its alias is in the ingested index.
+try:
+    from canopy_parse import canopy_index_aliases, load_canopy_index  # type: ignore
+except Exception:  # pragma: no cover - import guard
+    canopy_index_aliases = None
+    load_canopy_index = None
+
 
 # Files under preventive/ that are documentation, not enforcing policy.
 _DOC_ONLY_BASENAMES = {
@@ -79,6 +110,33 @@ def _known_ids() -> set[str]:
         return example_ids()
     except FileNotFoundError:
         return set()
+
+
+def _load_canopy_aliases(service_root: Path) -> set[str] | None:
+    """Return the resolvable Canopy alias set for a service, or None if absent.
+
+    None means the run has no canopy-index.json (no Canopy input). A canopy
+    anchor cited without an index is unresolvable — see _canopy_anchor_alias.
+    """
+    if load_canopy_index is None or canopy_index_aliases is None:
+        return None
+    index = load_canopy_index(str(service_root / "02-research" / "canopy-index.json"))
+    if index is None:
+        return None
+    return canopy_index_aliases(index)
+
+
+def _canopy_anchor_alias(meta: dict) -> str | None:
+    """Return the cited Canopy alias when _metadata.citation is a canopy anchor.
+
+    Returns the alias string for a `{type: "canopy", id: <alias>}` citation, or
+    None when the artifact carries no canopy citation.
+    """
+    citation = meta.get("citation")
+    if isinstance(citation, dict) and citation.get("type") == "canopy":
+        alias = str(citation.get("id", "")).strip()
+        return alias or None
+    return None
 
 
 def _is_gap_or_stub(meta: dict, data: dict) -> bool:
@@ -176,8 +234,14 @@ def check_artifact(
     file_path: str,
     known_ids: set[str] | None = None,
     mapping_ids: set[str] | None = None,
+    canopy_aliases: set[str] | None = None,
 ) -> list[str]:
-    """Validate one preventive artifact's reference anchor. Returns errors."""
+    """Validate one preventive artifact's reference anchor. Returns errors.
+
+    `canopy_aliases` is the resolvable Canopy alias set for the run; a
+    `{type: "canopy"}` citation resolves the anchor requirement when its alias is
+    a member. None means no canopy-index.json was found for the run.
+    """
     errors: list[str] = []
     basename = os.path.basename(file_path)
     if not basename.endswith(".json"):
@@ -266,17 +330,67 @@ def check_artifact(
             )
         return errors
 
+    ids = known_ids if known_ids is not None else _known_ids()
+    reference = meta.get("reference")
+    has_repo_anchor = isinstance(reference, dict) and reference.get("example_id")
+    repo_resolves = bool(has_repo_anchor and reference["example_id"] in ids)
+
+    # Canopy anchor: a resolvable `{type: "canopy"}` citation fully anchors a
+    # preventive artifact — Canopy supplies both the control intent and the
+    # policy shape (governed actions + condition_keys), so a repo `reference` is
+    # not additionally required. The artifact is anchored when EITHER the repo
+    # anchor OR the Canopy anchor resolves.
+    canopy_alias = _canopy_anchor_alias(meta)
+    if canopy_alias is not None:
+        canopy_resolves = canopy_aliases is not None and canopy_alias in canopy_aliases
+        # Fail only when neither anchor resolves — a repo anchor that resolves
+        # still carries the artifact even if the Canopy index is not loaded.
+        if not canopy_resolves and not repo_resolves:
+            if canopy_aliases is None:
+                errors.append(
+                    f"P8 reference_anchor: {basename} cites Canopy alias "
+                    f"{canopy_alias!r} but no canopy-index.json was found at "
+                    f"02-research/canopy-index.json — a Canopy anchor must resolve "
+                    f"to an ingested Canopy alias."
+                )
+            else:
+                errors.append(
+                    f"P8 reference_anchor: {basename} cites Canopy alias "
+                    f"{canopy_alias!r} which does not resolve to any "
+                    f"mitigation/implementation alias in canopy-index.json. Cite a "
+                    f"real Canopy alias."
+                )
+        # A repo reference, when ALSO present, must resolve — a bogus repo anchor
+        # is never acceptable, even alongside a good Canopy anchor.
+        if has_repo_anchor and not repo_resolves:
+            errors.append(
+                f"P8 reference_anchor: {basename} references example_id "
+                f"'{reference['example_id']}' which does not resolve to any entry "
+                f"in data/reference-repos/index.yaml."
+            )
+        # Orphan + applicability checks still apply to a Canopy-anchored artifact.
+        sid = meta.get("source_control_id")
+        if mapping_ids is not None and sid is not None and sid not in mapping_ids:
+            errors.append(
+                f"P8 reference_anchor: {basename} declares source_control_id "
+                f"'{sid}' which does not exist in mapping-results.json — orphan "
+                f"artifact."
+            )
+        errors.extend(_applicability_errors(basename, meta))
+        return errors
+
     # An authored preventive policy with no anchor is the original P8
     # failure mode; flag it before the resolution check.
-    reference = meta.get("reference")
-    if not isinstance(reference, dict) or not reference.get("example_id"):
+    if not has_repo_anchor:
         if _is_authored_policy(data):
             errors.append(
                 f"P8 reference_anchor: {basename} emits a preventive policy but "
-                f"carries no _metadata.reference.example_id. Every preventive control "
-                f"must anchor to a reference example in data/reference-repos/index.yaml "
-                f"(or be a gap/skip stub). If no reference covers this objective, do not "
-                f"author a policy — point to the reference or route to detective."
+                f"carries no _metadata.reference.example_id and no resolvable "
+                f"Canopy citation. Every preventive control must anchor to a "
+                f"reference example in data/reference-repos/index.yaml or a Canopy "
+                f"implementation (or be a gap/skip stub). If nothing covers this "
+                f"objective, do not author a policy — point to the reference or "
+                f"route to detective."
             )
         else:
             # REFER/pointer with no Statement body, no anchor, and no
@@ -292,7 +406,6 @@ def check_artifact(
             )
         return errors
 
-    ids = known_ids if known_ids is not None else _known_ids()
     example_id = reference["example_id"]
     if example_id not in ids:
         errors.append(
@@ -328,8 +441,9 @@ def check_service(service_root: Path) -> list[str]:
         return errors
     ids = _known_ids()
     mids = _mapping_control_ids(service_root)
+    canopy_aliases = _load_canopy_aliases(service_root)
     for fpath in sorted(prev_dir.glob("*.json")):
-        errors.extend(check_artifact(str(fpath), ids, mids))
+        errors.extend(check_artifact(str(fpath), ids, mids, canopy_aliases))
     return errors
 
 
@@ -343,7 +457,14 @@ def main() -> None:
         root = Path(os.getcwd()) / ".service-approval" / args.slug
         errors = check_service(root)
     elif args.file:
-        errors = check_artifact(args.file)
+        # Locate the service root so a single-file check can resolve a Canopy
+        # anchor against that run's canopy-index.json.
+        canopy_aliases: set[str] | None = None
+        for parent in Path(args.file).resolve().parents:
+            if (parent / "05-recommended-guidance").is_dir() or (parent / "02-research").is_dir():
+                canopy_aliases = _load_canopy_aliases(parent)
+                break
+        errors = check_artifact(args.file, canopy_aliases=canopy_aliases)
     else:
         parser.error("provide a file path OR --slug")
 

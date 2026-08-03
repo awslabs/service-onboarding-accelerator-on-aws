@@ -21,9 +21,14 @@ This is one of the focused generate sub-skills. Each writes to separate director
 
 Every JSON artifact this skill writes under `detective/` and `responsive/` MUST
 carry a **resolvable citation** in its `_metadata`, enforced by
-`validate_citation_coverage.py` (Stop-hook P12). There are two forms; use the one
-the table below specifies for each artifact:
+`validate_citation_coverage.py` (Stop-hook P12). There are three forms; use the
+one the table below specifies for each artifact:
 
+- **Canopy anchor (first-priority when a Canopy is present)** — `_metadata.citation
+  = {type: "canopy", id: "<alias>", url: "<REFERENCE href>", verified_via: "mcp"}`
+  whose `id` resolves to a mitigation/implementation `alias` in
+  `.service-approval/<slug>/02-research/canopy-index.json`. See "Canopy-first
+  sourcing" below.
 - **Repo anchor** — `_metadata.reference = {example_id, repo, url}` whose
   `example_id` resolves to an entry in `data/reference-repos/index.yaml`. Used for
   **custom Config rules** (CUSTOM_LAMBDA / CUSTOM_POLICY), which anchor to
@@ -34,6 +39,27 @@ the table below specifies for each artifact:
   verified_via: "mcp"}` where `url` is an AWS documentation page **fetched via MCP
   at generation time** (`awsknowledge` / `aws-documentation`) to prove it is live,
   and the call logged to `pipeline.log`. NEVER hardcode a URL from training data.
+
+### Canopy-first sourcing (when a Canopy threat-model was provided)
+
+Before the managed-rule / custom-rule lookup for a control, check
+`.service-approval/<slug>/02-research/canopy-index.json` for a `behavior ==
+"DETECTIVE"` implementation matching the control's resource type / monitored
+operation:
+
+- A `mechanism == "Config Rule"` implementation carries `governed_api_operations[]`
+  (`service` + `operation` + `response_parameters[].path`) — use those to shape the
+  Config rule's evaluation, and cite it (`type: "canopy"`, id = the implementation
+  `alias`), linking to the implementation's REFERENCE `href` (or its mapped
+  mitigation's cited link) as the doc URL.
+- A `mechanism == "CloudTrail"` implementation carries `monitored_operations[]`
+  (`operation` + `request_parameters[].path`) — use those to shape the CloudTrail /
+  EventBridge rule, cited the same way.
+
+MCP-verify the REFERENCE `href` at generation time (`awsknowledge` /
+`aws-documentation`) and log the call to `pipeline.log`; stamp `verified_via:
+"mcp"`. **Fall through** to the managed-rule / repo-anchor / doc-anchor paths below
+only when Canopy has no matching implementation for the control.
 
 | Artifact | Citation form |
 |----------|---------------|
@@ -100,6 +126,42 @@ artifact filename(s) back into that entry's `covered_by` field** so the routing
 loop is closed. `validate_detective_routing.py` confirms every routed entry ends
 up with a real `covered_by` artifact. This top-up runs AFTER the root-cause
 critic; the orchestrator sequences a detective pass once the critic finishes.
+
+## Config-supportability gate (REQUIRED before emitting any Config rule)
+
+AWS Config cannot record every resource type — a Config rule for an unsupported
+type is a silent no-op. **Before emitting a Config rule (managed or custom) for a
+resource type, confirm AWS Config supports it.** Source of truth:
+`data/config-supported-resource-types.json` (built from the botocore Config
+`ResourceType` enum + doc-confirmed additions from the public AWS Config
+"Supported Resource Types" reference).
+
+Probe each candidate resource type:
+
+```bash
+python3 tools/validate/validate_config_support.py --resource-type "AWS::<Service>::<Resource>" --json
+# {"resource_type": "...", "status": "SUPPORTED" | "UNSUPPORTED"}
+```
+
+- **SUPPORTED** → emit the Config rule as normal.
+- **UNSUPPORTED** → do **NOT** emit a Config rule. Instead:
+  - route the control to an alternate detective mechanism — a CloudTrail
+    data/management event or an EventBridge rule on the control-plane API call, or
+  - record the gap in `detective-routing.json` (or a `NOT_APPLICABLE` stub) with
+    the reason `"AWS Config does not support AWS::<Service>::<Resource>"`, cited to
+    the resource-config-reference doc
+    (`https://docs.aws.amazon.com/config/latest/developerguide/resource-config-reference.html`).
+
+**Canopy divergence:** if Canopy proposes a Config rule (`config_rule`
+implementation) for a type the doc list does not support, the deterministic gate
+wins — Canopy can be aspirational. Do not emit the Config rule; log the
+divergence to `pipeline.log` and route/gap the control as above. (The doc is the
+freshest source of truth and can be ahead of the SDK enum — e.g.
+`AWS::DSQL::Cluster` is doc-supported; the data file carries such additions.)
+
+`validate_config_support.py --slug <slug>` runs at generation review and the P13
+Stop-hook integrity check hard-fails a run that emitted a Config rule for an
+unsupported type.
 
 ## Artifact Header Template
 

@@ -49,6 +49,22 @@ def test_totals_and_buckets(tmp_path):
     assert t["uncited"] == 1             # uncited.json
 
 
+def test_canopy_citation_bucketed_separately(tmp_path):
+    """A type==canopy citation is bucketed as canopy_anchor, not doc_anchor."""
+    g = _mk(tmp_path)
+    canopy = {"type": "canopy", "id": "Implementation.DSQL.Cluster.6",
+              "url": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html",
+              "verified_via": "mcp"}
+    _w(g / "detective" / "config-rules.json", {"_metadata": {"citation": canopy}})
+    cov = bcc.build_coverage(g, service="dsql")
+    t = cov["totals"]
+    assert t["canopy_anchor"] == 1
+    assert t["doc_anchor"] == 0
+    row = cov["artifacts"][0]
+    assert row["category"] == "canopy_anchor"
+    assert row["citation"]["id"] == "Implementation.DSQL.Cluster.6"
+
+
 def test_doc_only_basenames_skipped(tmp_path):
     g = _mk(tmp_path)
     _w(g / "detective" / "compensating-controls-documentation.json", {"x": 1})

@@ -138,6 +138,106 @@ def test_proactive_manifest_empty_fails(tmp_path):
     assert any("has no" in e and "artifacts[]" in e for e in errors)
 
 
+# --- Canopy citation anchor -------------------------------------------------
+
+_CANOPY_ALIASES = {"Implementation.DSQL.Cluster.6", "Mitigation.DSQL.1"}
+
+
+def test_canopy_citation_resolvable_passes(tmp_path):
+    """A canopy citation whose alias resolves in the index passes."""
+    citation = {"type": "canopy", "id": "Implementation.DSQL.Cluster.6"}
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    assert vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES) == []
+
+
+def test_canopy_citation_with_verified_url_passes(tmp_path):
+    """A canopy citation carrying an MCP-verified AWS doc URL passes."""
+    citation = {
+        "type": "canopy",
+        "id": "Implementation.DSQL.Cluster.6",
+        "url": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html",
+        "verified_via": "mcp",
+    }
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    assert vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES) == []
+
+
+def test_canopy_citation_unresolvable_alias_fails(tmp_path):
+    """An alias not in the ingested index is a hard fail."""
+    citation = {"type": "canopy", "id": "Implementation.NOPE.1"}
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    errors = vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES)
+    assert any("does not resolve" in e for e in errors)
+
+
+def test_canopy_citation_no_index_fails(tmp_path):
+    """A canopy citation with no canopy-index available cannot be resolved."""
+    citation = {"type": "canopy", "id": "Implementation.DSQL.Cluster.6"}
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    errors = vcc.check_artifact(f, known_ids=set(), canopy_aliases=None)
+    assert any("no canopy-index.json" in e for e in errors)
+
+
+def test_canopy_citation_malformed_url_fails(tmp_path):
+    """A canopy citation URL that isn't a well-formed AWS doc URL fails."""
+    citation = {
+        "type": "canopy",
+        "id": "Implementation.DSQL.Cluster.6",
+        "url": "https://example.com/made-up",
+        "verified_via": "mcp",
+    }
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    errors = vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES)
+    assert any("not a" in e and "AWS documentation URL" in e for e in errors)
+
+
+def test_canopy_citation_url_not_mcp_verified_fails(tmp_path):
+    """A canopy citation with a URL but verified_via != mcp fails."""
+    citation = {
+        "type": "canopy",
+        "id": "Implementation.DSQL.Cluster.6",
+        "url": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html",
+    }
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    errors = vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES)
+    assert any("verified_via is not 'mcp'" in e for e in errors)
+
+
+def test_canopy_citation_missing_id_fails(tmp_path):
+    """A canopy citation with no id fails."""
+    citation = {"type": "canopy"}
+    f = _write(tmp_path / "config-rules.json", {"_metadata": {"citation": citation}})
+    errors = vcc.check_artifact(f, known_ids=set(), canopy_aliases=_CANOPY_ALIASES)
+    assert any("carries no id" in e for e in errors)
+
+
+def test_check_service_resolves_canopy_from_index(tmp_path):
+    """check_service loads canopy-index.json and resolves canopy citations."""
+    root = tmp_path / ".service-approval" / "dsql"
+    (root / "02-research").mkdir(parents=True)
+    (root / "05-recommended-guidance" / "detective").mkdir(parents=True)
+    index = {
+        "_metadata": {"service": "dsql"},
+        "mitigations": [{"id": "m1", "alias": "Mitigation.DSQL.1"}],
+        "implementations": [
+            {"id": "i1", "alias": "Implementation.DSQL.Cluster.6",
+             "behavior": "DETECTIVE", "mechanism": "Config Rule"}
+        ],
+    }
+    (root / "02-research" / "canopy-index.json").write_text(json.dumps(index))
+    _write(
+        root / "05-recommended-guidance" / "detective" / "config-rules.json",
+        {"_metadata": {"citation": {"type": "canopy", "id": "Implementation.DSQL.Cluster.6"}}},
+    )
+    assert vcc.check_service(root) == []
+    # A bogus alias fails.
+    _write(
+        root / "05-recommended-guidance" / "detective" / "other.json",
+        {"_metadata": {"citation": {"type": "canopy", "id": "Implementation.BOGUS"}}},
+    )
+    assert any("does not resolve" in e for e in vcc.check_service(root))
+
+
 def test_check_service_walks_all_families(tmp_path):
     root = tmp_path / ".service-approval" / "svc"
     guidance = root / "05-recommended-guidance"

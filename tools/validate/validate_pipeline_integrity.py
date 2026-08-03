@@ -41,9 +41,15 @@ Failure signals:
     P12 — citation coverage: every authored artifact under
          05-recommended-guidance/{detective,proactive,responsive}/ must carry a
          resolvable citation — a repo anchor (_metadata.reference resolving to a
-         reference-index example) or a doc anchor (_metadata.citation of type
-         aws_doc with an MCP-verified AWS documentation URL). The preventive
-         family is covered separately by P8.
+         reference-index example), a doc anchor (_metadata.citation of type
+         aws_doc with an MCP-verified AWS documentation URL), or a Canopy anchor
+         (_metadata.citation of type canopy resolving to an ingested Canopy
+         alias). The preventive family is covered separately by P8.
+    P13 — Config-supportability: every emitted Config-rule artifact under
+         05-recommended-guidance/detective/ must target a resource type AWS
+         Config supports (per data/config-supported-resource-types.json). A
+         Config rule for an unsupported type is a silent no-op — route it to
+         CloudTrail/EventBridge or record a reasoned gap instead.
 """
 from __future__ import annotations
 
@@ -1062,6 +1068,43 @@ def check_citation_coverage(service_root: Path) -> list[str]:
     return [f"P12 {e}" if not e.startswith("P12") else e for e in citation_check(service_root)]
 
 
+def check_config_support(service_root: Path) -> list[str]:
+    """P13: every emitted Config-rule artifact must target a Config-supported type.
+
+    Delegates to validate_config_support.check_service. Imported lazily so a
+    missing module or data file degrades gracefully (returns []) rather than
+    breaking the whole Stop hook — the dedicated pre-generation gate in the
+    detective skill still catches unsupported types earlier in the run.
+
+    Finalized runs are exempt: P13 is a newly-added check, so a run that
+    finalized before it existed cannot be remediated in place. Mirrors P1/P11/P12.
+    """
+    if is_finalized(service_root):
+        return []
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validate_config_support import check_service as config_check  # type: ignore
+    except ImportError:
+        return []
+    errors: list[str] = []
+    try:
+        results = config_check(service_root)
+    except (OSError, ValueError):
+        # Data file missing/malformed — a broken install. The dedicated CLI
+        # surfaces this loudly; don't brick the Stop hook.
+        return []
+    for r in results:
+        if r.get("status") == "UNSUPPORTED":
+            errors.append(
+                f"P13 config_support: {r['artifact']} rule "
+                f"{r['rule_name']!r} targets resource type {r['resource_type']} "
+                f"which AWS Config does not support — a Config rule for it is a "
+                f"silent no-op. Route this control to CloudTrail/EventBridge or "
+                f"record a reasoned gap instead."
+            )
+    return errors
+
+
 # Validator contract: every check_*() must fail-closed when the artifact it
 # reads exists but is missing/malformed. Pass-7 audit (2026-05-19) confirmed:
 #   - P1, P2, P5, P7 fail-closed with explicit `P{N}`-prefixed errors.
@@ -1136,8 +1179,11 @@ def validate_pipeline(root: Path) -> list[str]:
             # P8: every preventive policy artifact must anchor to a reference.
             errors.extend(check_reference_anchors(service_root))
             # P12: every detective/proactive/responsive artifact must carry a
-            # resolvable citation (repo anchor or MCP-verified doc anchor).
+            # resolvable citation (repo anchor, MCP-verified doc anchor, or
+            # resolvable Canopy anchor).
             errors.extend(check_citation_coverage(service_root))
+            # P13: every emitted Config rule must target a Config-supported type.
+            errors.extend(check_config_support(service_root))
             # P9: every Resource ARN must use the SAR-mandated delimiter for its
             # resource type (catches function/* vs function:* silent no-ops).
             errors.extend(check_arn_shapes(service_root))

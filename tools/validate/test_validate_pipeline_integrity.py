@@ -16,6 +16,7 @@ from validate_pipeline_integrity import (
     check_arn_shapes,
     check_boundary_minimality,
     check_citation_coverage,
+    check_config_support,
     check_framework_coverage,
     check_iam_policies,
     check_mcp_log,
@@ -488,6 +489,39 @@ def test_citation_coverage_exempts_finalized_run(tmp_path: Path) -> None:
     assert len(check_citation_coverage(tmp_path)) >= 1  # mid-flight (no sentinel)
     (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
     assert check_citation_coverage(tmp_path) == []  # finalized → exempt
+
+
+def test_config_support_flags_unsupported_type(tmp_path: Path) -> None:
+    """P13: a Config rule targeting a type AWS Config does not support is flagged
+    mid-flight and exempted on a finalized run."""
+    det = tmp_path / "05-recommended-guidance" / "detective"
+    det.mkdir(parents=True)
+    (det / "config-rules.json").write_text(json.dumps({
+        "_metadata": {"posture": "reactive-detective"},
+        "rules": [{"rule_name": "cp-check",
+                   "resource_type": "AWS::Lambda::CapacityProvider"}],
+    }))
+    errors = check_config_support(tmp_path)
+    assert len(errors) == 1 and "P13" in errors[0]
+    assert "AWS::Lambda::CapacityProvider" in errors[0]
+    # finalized → exempt
+    (tmp_path / "pipeline.log").write_text(_FINALIZED_LINE)
+    assert check_config_support(tmp_path) == []
+
+
+def test_config_support_passes_supported_type(tmp_path: Path) -> None:
+    """A Config rule targeting a supported type (incl. the doc-added DSQL
+    cluster) does not fire P13."""
+    det = tmp_path / "05-recommended-guidance" / "detective"
+    det.mkdir(parents=True)
+    (det / "config-rules.json").write_text(json.dumps({
+        "_metadata": {"posture": "reactive-detective"},
+        "rules": [
+            {"rule_name": "lambda-check", "resource_type": "AWS::Lambda::Function"},
+            {"rule_name": "dsql-check", "resource_type": "AWS::DSQL::Cluster"},
+        ],
+    }))
+    assert check_config_support(tmp_path) == []
 
 
 def test_is_finalized_detection(tmp_path: Path) -> None:

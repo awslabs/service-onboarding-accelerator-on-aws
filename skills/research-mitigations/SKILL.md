@@ -99,6 +99,41 @@ mismatch, not a real empty mitigation list.
 A reference parser implementing this detector lives at
 `tools/validate/canopy_parse.py` — covered by `test_canopy_parse.py`.
 
+#### Canopy citation index (Shape B only)
+
+A Canopy export also carries a top-level `implementations[]` array — typed
+control examples (preventive SCP / RCP / resource-based / declarative policy,
+proactive CloudFormation Hooks, detective AWS Config rules / CloudTrail events).
+Each implementation carries the exact governed actions + condition keys (or API
+operations / resource properties) AND a REFERENCE link to the public AWS
+documentation it is grounded in. This is the **first-priority citation source**
+for every control family downstream: a control anchored to a Canopy
+implementation cites that implementation's `alias` and links straight to its
+public doc URL.
+
+When the input is Canopy-shaped, persist the normalized index so downstream
+citation lookups and the citation validator resolve against one source of truth:
+
+```python
+import json, sys
+sys.path.insert(0, "tools/validate")
+from canopy_parse import build_canopy_index
+
+data = json.load(open("<canopy-file>"))
+index = build_canopy_index(data, service="<service-name>")
+with open(".service-approval/<slug>/02-research/canopy-index.json", "w") as f:
+    json.dump(index, f, indent=2)
+```
+
+`canopy-index.json` (schema: `schemas/canopy-index.schema.json`) holds the
+normalized `mitigations[]` (alias + statement + cited REFERENCE links) and
+`implementations[]` (behavior, mechanism, governed actions/keys, and the
+REFERENCE `href`s). Write it whenever the input is Shape B; skip it otherwise
+(no Canopy → no index, and citation resolution only requires it when a
+`type: "canopy"` citation is present). The recommender and the authoring /
+detective / proactive skills read this file first when deciding each control's
+citation.
+
 ### Markdown files (Mitigation Report)
 
 Mitigation reports (e.g. `input/<Service Name> — Mitigation Report.md`)

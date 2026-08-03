@@ -1327,6 +1327,31 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
     return check_artifact(file_path)
 
 
+def _check_config_support(file_path: str) -> list[str]:
+    """P13 per-file: a Config-rule artifact must target Config-supported types.
+
+    Imported lazily so a missing module / data file degrades to no-op rather than
+    breaking the hook. Only config-rules.json / config-org-rules.json are gated
+    (validate_config_support keys on those basenames).
+    """
+    try:
+        from validate_config_support import check_artifact  # type: ignore
+    except ImportError:
+        return []
+    try:
+        results = check_artifact(file_path)
+    except (OSError, ValueError):
+        return []
+    return [
+        f"P13 config_support: rule {r['rule_name']!r} targets resource type "
+        f"{r['resource_type']} which AWS Config does not support — a Config rule "
+        f"for it is a silent no-op. Route to CloudTrail/EventBridge or record a "
+        f"reasoned gap."
+        for r in results
+        if r.get("status") == "UNSUPPORTED"
+    ]
+
+
 def _categorize_file(file_path: str) -> str:
     """Determine artifact category from file path.
 
@@ -1521,6 +1546,10 @@ def validate_file(file_path: str) -> list[str]:
         # Check 4: Resource types
         if validated:
             errors.extend(check_resource_types(file_path, data, validated))
+        # P13: Config-supportability — no Config rule may target a resource type
+        # AWS Config does not support (a silent no-op). Fires at write time here
+        # and again at Stop via validate_pipeline_integrity.
+        errors.extend(_check_config_support(file_path))
 
     elif category == "stepfunctions" and data:
         # Check 8: ResultPath

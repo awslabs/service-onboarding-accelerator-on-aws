@@ -22,8 +22,11 @@ reference, or route the objective to a detective/proactive control instead.
 - `.service-approval/<slug>/04-map/mapping-results.json` — controls (filter `category == "PRV"`)
 - `.service-approval/<slug>/03-validate/validated.json` — API surface + condition keys
 - `data/reference-repos/index.yaml` — the reference anchor library (via `tools/reference_index.py`)
-- (optional) Canopy threat-model — when one was provided for this service, its
-  `mitigations[]` carry the control intent and citation; see "Sourcing order" below.
+- (optional) `.service-approval/<slug>/02-research/canopy-index.json` — when a
+  Canopy threat-model was provided, its normalized `mitigations[]` +
+  `implementations[]` carry the control intent, the preventive policy shape
+  (governed actions + condition keys), and the public REFERENCE doc URL; this is
+  the first-priority citation source. See "Sourcing order" below.
 
 **Output:** `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` — the per-control
 decision plan consumed by `generate-preventive-scp`, `-rcp`, and `-iam`.
@@ -54,28 +57,36 @@ When deciding the enforcement mechanism and anchor for each preventive control,
 walk the source list in this order — stop at the first source that yields a
 usable answer, fall through only when nothing applies:
 
-1. **Canopy mitigation (highest priority)** — if a Canopy threat-model was
-   provided for this service, its `mitigations[]` entries supply the control
-   intent (`statement` field), the exact operation+parameter to gate
-   (`configurationRequestParameters[]`), and the citation (the mitigation's
-   `alias`). Treat a Canopy mitigation as the authoritative source of intent
-   for any control that maps to it; record `citation: {type: "canopy", id:
-   "<alias>"}` on the plan row. **IMPORTANT:** Canopy contains NO preventive
-   policy TEXT — its implementations are only AWS Config rules (detective)
-   and CloudFormation Hooks (proactive). A Canopy-anchored preventive control
-   STILL must resolve a reference-repo example for the SCP/RCP/IAM policy
-   BODY (source 2 below); if no reference example matches, downgrade the
-   decision to detective/proactive (`ROUTE_DETECTIVE` with `route_to:
-   "detective"` or `"proactive"`). Canopy supplies intent and citation, not
-   policy body.
-2. **Reference-repo index** (`data/reference-repos/index.yaml`) — the
-   deterministic ranker (`tools/reference_index.py`) scores published AWS
-   sample policies by mechanism + action + condition-key overlap. This
-   produces the policy BODY anchor (`citation: {type: "reference", id:
-   "<example_id>", url: "<source_url>"}`).
+1. **Canopy implementation (highest priority).** When a Canopy threat-model was
+   provided for this service, `.service-approval/<slug>/02-research/canopy-index.json`
+   holds its normalized `mitigations[]` and `implementations[]`. If it has an
+   implementation whose `behavior == "PREVENTIVE"` and whose `mechanism` +
+   governed `actions[]` / `condition_keys[]` match the control, use it as the
+   anchor. Canopy carries the preventive policy SHAPE: the implementation's
+   `authorization_policy` gives the exact `actions`, `resources`, and
+   `condition_keys` to author, and its REFERENCE context links to a public AWS
+   documentation URL. Record:
+   - `anchor: {source: "canopy", example_id: "<implementation.alias>"}` — the
+     Canopy implementation resolves the anchor requirement.
+   - `citation: {type: "canopy", id: "<implementation.alias>", url: "<REFERENCE
+     href if present>", verified_via: "mcp"}` — cite the implementation `alias`
+     and link straight to the public doc it is grounded in.
+
+   This **replaces** the old "a Canopy-anchored preventive control must still
+   resolve a reference-repo body" rule — Canopy now supplies both the intent AND
+   the policy shape plus a cited public doc URL, so **a Canopy implementation is a
+   complete anchor** for a `GENERATE_*` decision. When the implementation carries
+   no REFERENCE `href` of its own, fall back to the linked mitigation's cited
+   link (`canopy-index.json` `mitigations[].reference_links`).
+2. **Reference-repo index** (`data/reference-repos/index.yaml`) — fallback when
+   no Canopy implementation matches. The deterministic ranker
+   (`tools/reference_index.py`) scores published AWS sample policies by
+   mechanism + action + condition-key overlap. This produces the policy BODY
+   anchor (`citation: {type: "reference", id: "<example_id>", url:
+   "<source_url>"}`).
 3. **AWS Control Catalog API** — for objectives the AWS Control Catalog
    covers, cite the catalog control ARN directly (`citation: {type:
-   "catalog", id: "<arn>"}`). Use only when neither Canopy intent nor a
+   "catalog", id: "<arn>"}`). Use only when neither a Canopy implementation nor a
    reference-repo example matches and the catalog has an explicit control.
 4. **Service-specific AWS documentation** — last resort, only when the
    prior three sources have nothing. Cite the exact doc URL (`citation:
@@ -84,10 +95,20 @@ usable answer, fall through only when nothing applies:
    prior sources support.
 
 The plan row records both the **intent source** (Canopy / catalog /
-service-doc — what motivates the control) and the **anchor** (the reference
-example whose body we adapt). For a Canopy-driven control authored against
-a reference-repo body, the row carries the Canopy citation AND the
-reference anchor; the authoring sub-skill consumes both.
+service-doc — what motivates the control) and the **anchor** (the example whose
+body we adapt). When the anchor is Canopy-derived, set `anchor.source: "canopy"`
+and the `example_id` to the Canopy implementation `alias`; when it is a
+reference-repo body, set the repo `example_id` (and, if a Canopy mitigation also
+motivated the control, carry the Canopy `citation` alongside the reference
+anchor — the authoring sub-skill consumes both).
+
+**Every Canopy REFERENCE `href` surfaced as a citation `url` MUST be MCP-verified
+reachable at generation time** (fetch it via the `aws-documentation` /
+`awsknowledge` MCP and log the call to `pipeline.log`), and the citation MUST
+carry `verified_via: "mcp"` — the same discipline the `service-doc` / `aws_doc`
+anchors follow. The citation validator hard-fails a Canopy citation whose alias
+does not resolve in `canopy-index.json` or whose `url` is not a well-formed,
+MCP-verified AWS doc URL.
 
 ## Step 1 — Preventability (root-cause) verdict per control
 
@@ -137,9 +158,16 @@ that match it** before recording them on the plan row:
 Record the chosen, intent-aligned keys in the plan row's
 `enforcing_condition_keys[]`; the authoring sub-skill uses exactly those.
 
-## Step 2 — Reference anchor per control
+## Step 2 — Anchor per control (Canopy first, then reference-repo)
 
-For each `FEASIBLE` control, find a matching reference example with the
+For each `FEASIBLE` control, first check `canopy-index.json` (Sourcing order
+step 1): if a `behavior == "PREVENTIVE"` implementation matches the control's
+mechanism and governed actions/condition keys, that implementation IS the anchor
+(`anchor.source: "canopy"`, `example_id: "<alias>"`) — skip the reference-repo
+ranker for that control. Only when no Canopy implementation matches do you run
+the reference-repo ranker below.
+
+For a control with no Canopy match, find a matching reference example with the
 deterministic ranker in the shared loader. It restricts to the control's
 mechanism family and scores each example by overlap with the control's governed
 actions and condition keys (condition-key overlap weighted 2x — a closer
@@ -357,11 +385,14 @@ Every emitted decision MUST carry:
 
   Author `applicability` from the same real parameters you use for
   `application_guidance.placeholders[]` and the reference example's placeholders —
-  never templated generic text. **Omit it for a canopy-only citation that carries
-  just an `id` and no URL** (there is no external link to clarify), and for
-  `ROUTE_DETECTIVE` rows (they surface no preventive policy). When a decision
-  surfaces a URL, `applicability` is required with non-empty `applies_to` +
-  `usage_notes` — the schema and the reference-anchor validator both enforce it.
+  never templated generic text. A Canopy citation now usually carries a REFERENCE
+  `url`, so **`applicability` is required whenever the Canopy citation surfaces a
+  URL** (same rule as a `reference` / `service-doc` citation). **Omit it only for
+  a Canopy citation that truly has no link** (an `id` and no `url`, and no
+  `anchor.url`) — there is no external link to clarify — and for `ROUTE_DETECTIVE`
+  rows (they surface no preventive policy). When a decision surfaces a URL,
+  `applicability` is required with non-empty `applies_to` + `usage_notes` — the
+  schema and the reference-anchor validator both enforce it.
 
 ## Step 4 — Hand-off summary
 

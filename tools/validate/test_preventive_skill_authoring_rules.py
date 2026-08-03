@@ -201,9 +201,10 @@ def test_no_dangerous_confused_deputy_sid_pair(skill_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sourcing-order rule (recommender): Canopy must be the first-priority intent
-# source, and the SKILL must state Canopy supplies intent + citation but not
-# policy body — Canopy implementations are Config rules + CFN hooks only.
+# Sourcing-order rule (recommender): Canopy must be the first-priority source,
+# and the SKILL must state Canopy implementations supply BOTH the intent AND the
+# preventive policy shape (governed actions + condition keys) plus a cited public
+# doc URL — a Canopy implementation is a complete anchor for GENERATE_*.
 # ---------------------------------------------------------------------------
 
 
@@ -226,24 +227,29 @@ def test_recommend_skill_documents_canopy_first() -> None:
     )
 
 
-def test_recommend_skill_states_canopy_supplies_intent_not_body() -> None:
-    """Canopy contains no preventive policy text — the recommend SKILL must
-    say so and require a separate reference-repo body anchor (or downgrade
-    to detective/proactive)."""
+def test_recommend_skill_states_canopy_supplies_policy_shape() -> None:
+    """A Canopy implementation now supplies the preventive policy SHAPE
+    (governed actions + condition keys) AND a cited public doc URL, so it is a
+    complete anchor for a GENERATE_* decision. The recommend SKILL must say so
+    and must NOT retain the old (false) 'Canopy has no preventive policy text'
+    claim."""
     text = _recommend_skill_text()
+    # New: Canopy implementation supplies the policy shape (actions/condition
+    # keys) and counts as a complete anchor.
     assert re.search(
-        r"Canopy.{0,200}(no|NO).{0,80}(preventive|policy).{0,80}(text|body|TEXT|BODY)",
+        r"Canopy implementation.{0,400}(authorization_policy|policy\s+shape|condition_keys|actions)",
         text,
         re.DOTALL,
-    ), "recommend SKILL must state Canopy contains no preventive policy text/body"
+    ), "recommend SKILL must state a Canopy implementation supplies the policy shape"
     assert re.search(
-        r"Canopy.{0,200}(intent|citation).{0,400}(reference[- ]repo|policy\s+body|policy\s+BODY|downgrade)",
+        r"Canopy implementation is a\s+complete anchor",
         text,
-        re.DOTALL,
-    ), (
-        "recommend SKILL must say Canopy supplies intent + citation and that "
-        "the policy body still requires a reference-repo anchor (or downgrade)"
-    )
+    ), "recommend SKILL must state a Canopy implementation is a complete anchor"
+    # The stale 'Canopy contains NO preventive policy TEXT' claim must be gone.
+    assert not re.search(
+        r"Canopy contains (no|NO)\b.{0,40}(preventive)?\s*(policy)?\s*(TEXT|text|BODY|body)",
+        text,
+    ), "recommend SKILL must NOT retain the stale 'Canopy has no preventive policy text' claim"
 
 
 @pytest.mark.parametrize("skill_path", _skill_paths(), ids=lambda p: p.parent.name)

@@ -447,6 +447,17 @@ JSON (`.guard`, `.rego`, `.yaml`), the citations live in **`proactive/citations.
 ```
 
 Sourcing (locked):
+- **Canopy PROACTIVE implementation (first-priority when a Canopy is present)** —
+  before the repo-anchor lookup, check
+  `.service-approval/<slug>/02-research/canopy-index.json` for a `behavior ==
+  "PROACTIVE"` implementation (`mechanism == "CFN Hook"`) matching the control's
+  resource type. Its `governed_resource_properties[]` (`resource_type` +
+  `properties[].path`) give the exact CloudFormation property paths the Guard
+  rule / hook should validate. When one matches, cite it with a Canopy anchor —
+  `{type: "canopy", id: "<implementation alias>", url: "<MCP-verified REFERENCE
+  href>", verified_via: "mcp"}` — in the artifact's `citations.json` entry (and
+  in the `cfn-hooks-policy.json` `_metadata` for a hook). Fall through to the repo
+  anchor below only when Canopy has no matching PROACTIVE implementation.
 - **CFN Guard rules** (`cfn-guard-rules.guard`) → **repo anchor** to
   `aws-config-custom-policy-rule-samples` (its samples ARE Guard-DSL rules).
   Resolve with `reference_index.best_anchor("CloudFormation Guard", [], [],

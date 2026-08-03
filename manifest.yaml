@@ -9,7 +9,7 @@
 # keywords), not the per-client manifests directly.
 
 name: service-approval
-version: 1.2.0
+version: 1.3.0
 description: >
   Generate AWS security controls for any AWS service. Runs a pipeline
   (Intake, Assess, Research, Validate, Map, Recommended Guidance,
@@ -210,6 +210,8 @@ integrity_checks:
     title: Phase-output completeness
   - id: P12
     title: Citation coverage (detective/proactive/responsive artifacts carry a resolvable citation)
+  - id: P13
+    title: Config-supportability (no Config rule emitted for a resource type AWS Config does not support)
 
 # ---------------------------------------------------------------------------
 # Test policy — what the sync tool's --check mode verifies.
