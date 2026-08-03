@@ -159,7 +159,7 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 | Name | Transport | Endpoint / Command |
 |------|-----------|-------------------|
 | `awsknowledge` | HTTP | `https://knowledge-mcp.global.api.aws` |
-| `aws-documentation` | stdio | `uvx awslabs.aws-documentation-mcp-server@latest` |
+| `aws-documentation` | stdio | `uvx awslabs.aws-documentation-mcp-server@1.1.28` |
 
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
 - `Agent` tool in tool list → Claude Code
@@ -179,7 +179,7 @@ done
 For each MISSING entry, run the corresponding add command:
 ```bash
 claude mcp add --transport http awsknowledge https://knowledge-mcp.global.api.aws
-claude mcp add aws-documentation -- uvx awslabs.aws-documentation-mcp-server@latest
+claude mcp add aws-documentation -- uvx awslabs.aws-documentation-mcp-server@1.1.28
 ```
 After adding any MCP, inform the user: "Added missing MCP servers: <list>. They are now active."
 
@@ -234,7 +234,7 @@ For each missing MCP under Path 2, add it to `~/.kiro/settings/mcp.json`:
 {
   "mcpServers": {
     "awsknowledge":       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" },
-    "aws-documentation":  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"], "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"} }
+    "aws-documentation":  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@1.1.28"], "env": {"FASTMCP_LOG_LEVEL": "ERROR", "AWS_DOCUMENTATION_PARTITION": "aws"} }
   }
 }
 ```
@@ -275,7 +275,7 @@ Print instructions for each missing MCP and continue — do not block execution:
 ```
 Missing MCP servers detected. Add these to your IDE's MCP configuration:
   awsknowledge:       { "type": "http", "url": "https://knowledge-mcp.global.api.aws" }
-  aws-documentation:  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@latest"] }
+  aws-documentation:  { "command": "uvx", "args": ["awslabs.aws-documentation-mcp-server@1.1.28"] }
 See: https://github.com/awslabs/mcp
 Continuing with degraded MCP coverage — some steps may fall back to web search.
 ```

@@ -17,13 +17,13 @@ stages:
 default:
   image: python:3.12-slim
   before_script:
-    - pip install --quiet pyyaml jsonschema pytest
+    - pip install --quiet pyyaml==6.0.2 jsonschema==4.23.0 pytest==8.3.4
 
 unit-tests:
   stage: verify
   before_script:
     - apt-get update -qq && apt-get install -y -qq git
-    - pip install --quiet pyyaml jsonschema pytest jmespath jinja2
+    - pip install --quiet pyyaml==6.0.2 jsonschema==4.23.0 pytest==8.3.4 jmespath==1.0.1 jinja2==3.1.4
   script:
     - python3 -m pytest tools/validate/ -q
   rules:
@@ -75,7 +75,7 @@ schema-validity:
 
 shellcheck:
   stage: verify
-  image: koalaman/shellcheck-alpine:stable
+  image: koalaman/shellcheck-alpine:v0.10.0
   before_script: []
   script:
     # Shipped scripts (install.sh) must lint clean
