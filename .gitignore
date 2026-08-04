@@ -61,3 +61,7 @@ Thumbs.db
 # Per-user intake config (filled in by the user before each pipeline run;
 # the plugin's intake template lives at skills/intake/intake-template.yaml).
 service-approval-intake.yaml
+# Per-run input data — supplied by the user at runtime, not committed.
+input/*canopy*.json
+input/dsql.json
+**/*-canopy.json
