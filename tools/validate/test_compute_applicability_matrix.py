@@ -31,8 +31,8 @@ def _load_module():
 cam = _load_module()
 
 
-def _canopy(mitigation_statements, entity_infos=None):
-    """Build a minimal Canopy doc with the given mitigation statements and,
+def _threat_model(mitigation_statements, entity_infos=None):
+    """Build a minimal AWS Threat Model doc with the given mitigation statements and,
     optionally, entity information prose (which must NEVER drive a capability)."""
     return {
         "metadata": {"name": "test-service"},
@@ -47,7 +47,7 @@ def _canopy(mitigation_statements, entity_infos=None):
 
 def test_capability_present_from_statement():
     caps = cam.derive_capabilities(
-        _canopy(["An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)"]),
+        _threat_model(["An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)"]),
         json.loads((REPO / "data" / "service-capability-rules.json").read_text()),
     )
     assert caps["customer_manages_keys"]["state"] == cam.PRESENT
@@ -57,19 +57,19 @@ def test_capability_present_from_statement():
 def test_patching_not_inferred_from_entity_prose():
     """REGRESSION: a Layer entity's 'custom runtime' description must NOT assert
     customer-managed patching. With no patching STATEMENT, the flag is unknown."""
-    canopy = _canopy(
+    threat_model = _threat_model(
         mitigation_statements=["An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)"],
         entity_infos=["A custom runtime, or configuration files that can be reused across multiple lambda functions"],
     )
     caps = cam.derive_capabilities(
-        canopy, json.loads((REPO / "data" / "service-capability-rules.json").read_text())
+        threat_model, json.loads((REPO / "data" / "service-capability-rules.json").read_text())
     )
     assert caps["customer_managed_patching"]["state"] == cam.UNKNOWN
 
 
 def test_absent_wins_over_present():
     caps = cam.derive_capabilities(
-        _canopy(["The operating system is patched by AWS; the customer should also patch the operating system"]),
+        _threat_model(["The operating system is patched by AWS; the customer should also patch the operating system"]),
         json.loads((REPO / "data" / "service-capability-rules.json").read_text()),
     )
     # 'patched by aws' is an absent_when signal and wins over any present match.
@@ -80,7 +80,7 @@ def test_absent_wins_over_present():
 
 def test_serverless_category_derived():
     caps = cam.derive_capabilities(
-        _canopy([
+        _threat_model([
             "An AWS Lambda function IAM execution role should be accessed only by trusted identities",
             "An AWS Lambda function should be configured to send application and system logs to CloudWatch Logs",
         ]),
@@ -100,12 +100,12 @@ def test_unknown_capability_defers_to_kb_default():
     CEK-03 as N/A — encryption objectives defer to the KB default (absent from
     the matrix). (LOG-02 is a category fact for serverless and IS screened; see
     test_log_protection_na_for_serverless.)"""
-    canopy = _canopy([
+    threat_model = _threat_model([
         "An AWS Lambda function IAM execution role should be accessed only by trusted identities",
         "An AWS Lambda function should be encrypted with an AWS KMS Customer Managed Key (CMK)",
     ])
     result = cam.evaluate_applicability(
-        cam.derive_capabilities(canopy, json.loads((REPO / "data" / "service-capability-rules.json").read_text())),
+        cam.derive_capabilities(threat_model, json.loads((REPO / "data" / "service-capability-rules.json").read_text())),
         ["serverless_compute"],
         json.loads((REPO / "data" / "objective-applicability-rules.json").read_text()),
     )
@@ -114,11 +114,11 @@ def test_unknown_capability_defers_to_kb_default():
 
 
 def test_tvm10_na_for_serverless_via_category_not_prose():
-    canopy = _canopy([
+    threat_model = _threat_model([
         "An AWS Lambda function IAM execution role should be accessed only by trusted identities",
     ])
     caps = cam.derive_capabilities(
-        canopy, json.loads((REPO / "data" / "service-capability-rules.json").read_text())
+        threat_model, json.loads((REPO / "data" / "service-capability-rules.json").read_text())
     )
     result = cam.evaluate_applicability(
         caps, ["serverless_compute"],
@@ -131,12 +131,12 @@ def test_tvm10_na_for_serverless_via_category_not_prose():
 def test_backup_capability_unlocks_bcr08_over_category_na():
     """A service that IS serverless-shaped but demonstrably exposes a backup API
     keeps BCR-08 applicable — a present capability beats the category fact."""
-    canopy = _canopy([
+    threat_model = _threat_model([
         "An execution role should only be assumable by the service principal",
         "The datastore should have automated backup with point-in-time recovery enabled",
     ])
     caps = cam.derive_capabilities(
-        canopy, json.loads((REPO / "data" / "service-capability-rules.json").read_text())
+        threat_model, json.loads((REPO / "data" / "service-capability-rules.json").read_text())
     )
     result = cam.evaluate_applicability(
         caps, ["serverless_compute"],
@@ -166,13 +166,13 @@ def test_intrinsic_na_capability_independent():
     assert result["HRS-01"]["applicable"] is False
 
 
-# --- end-to-end on the real Lambda Canopy -----------------------------------
+# --- end-to-end on the real Lambda AWS Threat Model -----------------------------------
 
 def test_real_lambda_matrix_acceptance():
-    lambda_canopy = REPO / "runs" / "with-canopy" / "input" / "lambda-canopy.json"
-    if not lambda_canopy.exists():
+    lambda_threat_model = REPO / "runs" / "with-threat-model" / "input" / "lambda-threat-model.json"
+    if not lambda_threat_model.exists():
         return
-    result = cam.compute_matrix(lambda_canopy)
+    result = cam.compute_matrix(lambda_threat_model)
     assert result["service_categories"] == ["serverless_compute"]
     caps = result["derived_capabilities"]
     # The prose bug is gone: patching is unknown, not present.

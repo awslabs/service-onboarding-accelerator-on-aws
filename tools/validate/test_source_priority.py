@@ -3,7 +3,7 @@
 ONE source-priority hierarchy is applied consistently wherever the pipeline
 pulls an external fact or citation:
 
-    1. Canopy  →  2. AWS Control Catalog API  →  3. service-specific AWS docs
+    1. AWS Threat Model  →  2. AWS Control Catalog API  →  3. service-specific AWS docs
 
 (the reference-repo index supplies the vetted policy *body* under that intent).
 The hierarchy must be stated in the skills that pull facts/citations — not only
@@ -36,7 +36,7 @@ def test_named_skills_state_the_hierarchy():
     for slug in _NAMED_SKILLS:
         text = _skill_text(slug)
         low = text.lower()
-        assert "canopy" in low, f"{slug} does not mention Canopy"
+        assert "aws threat model" in low, f"{slug} does not mention AWS Threat Model"
         assert "control catalog" in low, f"{slug} does not mention the Control Catalog"
         # The service-doc tier — accept either phrasing.
         assert (
@@ -46,24 +46,24 @@ def test_named_skills_state_the_hierarchy():
         ), f"{slug} does not name the service-doc tier"
 
 
-def test_named_skills_order_canopy_before_catalog_before_docs():
+def test_named_skills_order_threat_model_before_catalog_before_docs():
     """The three tiers must appear in the documented order in each skill."""
     for slug in _NAMED_SKILLS:
         low = _skill_text(slug).lower()
-        i_canopy = low.find("canopy")
+        i_threat_model = low.find("aws threat model")
         i_catalog = low.find("control catalog")
         i_doc = low.find("service-specific aws doc")
         if i_doc == -1:
             i_doc = low.find("service's own pages")
-        assert -1 < i_canopy < i_catalog < i_doc, (
-            f"{slug}: tiers not in Canopy → Control Catalog → service-doc order "
-            f"(positions: canopy={i_canopy}, catalog={i_catalog}, doc={i_doc})"
+        assert -1 < i_threat_model < i_catalog < i_doc, (
+            f"{slug}: tiers not in AWS Threat Model → Control Catalog → service-doc order "
+            f"(positions: threat_model={i_threat_model}, catalog={i_catalog}, doc={i_doc})"
         )
 
 
 def test_skills_note_reference_repo_supplies_body_not_citation():
     """The known wrinkle must be reconciled: reference repos supply the vetted
-    policy BODY under the Canopy/catalog/doc intent — they are not a
+    policy BODY under the AWS Threat Model/catalog/doc intent — they are not a
     fact/citation source themselves."""
     for slug in ("research-capabilities", "validate", "map"):
         low = _skill_text(slug).lower()
@@ -78,4 +78,4 @@ def test_recommender_citation_enum_unchanged_and_required():
     decision = schema["$defs"]["decision"]
     assert "citation" in decision["required"], "citation must be required on every decision"
     enum = decision["properties"]["citation"]["properties"]["type"]["enum"]
-    assert enum == ["canopy", "reference", "catalog", "service-doc"], enum
+    assert enum == ["threat_model", "reference", "catalog", "service-doc"], enum

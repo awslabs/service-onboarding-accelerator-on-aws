@@ -39,6 +39,7 @@ _ALLOWED_PREFIXES = ()
 _ALLOWED_FILENAMES = (
     "test_no_legacy_path_refs.py",  # this test (matches the literal in its allow rules)
     "test_intake_promotion.py",     # explicit migration test fixture
+    "test_hook_legacy_detection.py",  # exercises the legacy-layout detector directly
     "test_paths.py",                # W1 helper test
     "tools/paths.py",               # W1 — legacy_state_dir() documents the path
     "hook_post_tool_use.py",        # legacy detection + migration warning text

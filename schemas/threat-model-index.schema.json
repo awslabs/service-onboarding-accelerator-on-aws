@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://schemas/canopy-index.schema.json",
-  "title": "canopy-index.json",
-  "description": "Normalized Canopy citation index. Written by research-mitigations when the input is a Canopy export at .service-approval/<slug>/02-research/canopy-index.json. It is the single source of truth downstream citation lookups and the citation validator resolve a canopy citation alias against. Carries the normalized mitigations[] (parse_canopy_mitigations + the mitigation's cited REFERENCE links) and implementations[] (parse_canopy_implementations) from tools/validate/canopy_parse.py.",
+  "$id": "https://schemas/threat-model-index.schema.json",
+  "title": "threat-model-index.json",
+  "description": "Normalized AWS Threat Model citation index. Written by research-mitigations when the input is an AWS Threat Model export at .service-approval/<slug>/02-research/threat-model-index.json. It is the single source of truth downstream citation lookups and the citation validator resolve a threat_model citation alias against. Carries the normalized mitigations[] (parse_threat_model_mitigations + the mitigation's cited REFERENCE links) and implementations[] (parse_threat_model_implementations) from tools/validate/threat_model_parse.py.",
   "type": "object",
   "additionalProperties": false,
   "required": ["_metadata", "mitigations", "implementations"],

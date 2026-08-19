@@ -221,7 +221,7 @@ def _has_concrete_citation(entry: dict, cm: dict) -> bool:
     """Whether a mapped-control row carries a concrete citation of its evidence.
 
     A concrete citation names the specific objective sub-requirement satisfied
-    AND a source (Canopy mitigation, reference example, or AWS doc). The citation
+    AND a source (AWS Threat Model mitigation, reference example, or AWS doc). The citation
     may live on the control-mapping row (preferred) or the objective entry.
     """
     for holder in (cm, entry):

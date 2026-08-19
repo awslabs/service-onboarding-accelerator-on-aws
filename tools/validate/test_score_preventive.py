@@ -151,7 +151,7 @@ def test_plan_metrics_full_credit():
     plan = {
         "decisions": [
             {"control_id": "CTRL-ORG-PRV-001", "source_control_id": "CTRL-ORG-PRV-001",
-             "decision": "GENERATE_SCP", "citation": {"type": "canopy", "id": "Mitigation.LAMBDA.1"}},
+             "decision": "GENERATE_SCP", "citation": {"type": "threat_model", "id": "Mitigation.LAMBDA.1"}},
             {"control_id": "CTRL-ACC-PRV-002", "source_control_id": "CTRL-ACC-PRV-002",
              "decision": "REFER_TO_REFERENCE", "citation": {"type": "reference", "url": "https://x"},
              "rationale": "no anchor covers this objective"},

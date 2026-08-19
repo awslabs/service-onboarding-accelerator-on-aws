@@ -11,7 +11,7 @@ every artifact's provenance from one file.
 
 Bucketing per artifact:
   - has _metadata.reference (repo anchor)  → "repo_anchor"
-  - has _metadata.citation (type canopy)   → "canopy_anchor"
+  - has _metadata.citation (type threat_model)   → "threat_model_anchor"
   - has _metadata.citation (aws_doc)       → "doc_anchor"
   - has both (e.g. CFN Hooks)              → "repo_anchor+doc_anchor"
   - gap/skip stub or doc-only              → "exempt"
@@ -53,7 +53,7 @@ def _manifest_rows(family: str, data: dict) -> list[dict]:
         citation = e.get("citation")
         has_ref = isinstance(reference, dict) and reference.get("example_id")
         has_cit = isinstance(citation, dict)
-        cit_kind = "canopy_anchor" if (has_cit and citation.get("type") == "canopy") else "doc_anchor"
+        cit_kind = "threat_model_anchor" if (has_cit and citation.get("type") == "threat_model") else "doc_anchor"
         if has_ref and has_cit:
             category = f"repo_anchor+{cit_kind}"
         elif has_ref:
@@ -91,7 +91,7 @@ def _classify(meta: dict) -> tuple[str, dict | None, dict | None]:
     citation = meta.get("citation")
     has_ref = isinstance(reference, dict) and reference.get("example_id")
     has_cit = isinstance(citation, dict)
-    cit_kind = "canopy_anchor" if (has_cit and citation.get("type") == "canopy") else "doc_anchor"
+    cit_kind = "threat_model_anchor" if (has_cit and citation.get("type") == "threat_model") else "doc_anchor"
     if has_ref and has_cit:
         return f"repo_anchor+{cit_kind}", reference, citation
     if has_ref:
@@ -143,7 +143,7 @@ def build_coverage(guidance_dir: Path, service: str = "unknown") -> dict:
         "artifacts": len(rows),
         "repo_anchor": sum(1 for r in rows if "repo_anchor" in r["category"]),
         "doc_anchor": sum(1 for r in rows if "doc_anchor" in r["category"]),
-        "canopy_anchor": sum(1 for r in rows if "canopy_anchor" in r["category"]),
+        "threat_model_anchor": sum(1 for r in rows if "threat_model_anchor" in r["category"]),
         "exempt": sum(1 for r in rows if r["category"] == "exempt"),
         "uncited": sum(1 for r in rows if r["category"] == "uncited"),
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Deterministic Canopy traceability resolver.
+"""Deterministic AWS Threat Model traceability resolver.
 
-Canopy threat-model exports carry MITRE ATT&CK technique IDs on the *threat*
+AWS Threat Model threat-model exports carry MITRE ATT&CK technique IDs on the *threat*
 objects, not on the mitigations. Every mitigation links to the threats it
 addresses, and every threat links to the frameworks (MITRE ATT&CK) it belongs
 to. So a mitigation's MITRE techniques are recoverable by walking a two-hop
@@ -15,13 +15,13 @@ This module builds, per mitigation UUID, the traceability record
 {alias, statement, mitre_techniques[], threat_aliases[]} and threads the
 alias / UUID / MITRE techniques onto generated controls (additive fields).
 
-Controls generated from synthetic assessment gaps (no Canopy mitigation
+Controls generated from synthetic assessment gaps (no AWS Threat Model mitigation
 behind them) have no alias/UUID/MITRE — they carry empty arrays and a
 `source: "assessment_gap"` marker rather than an error.
 
 Usage:
-    python3 scripts/canopy_trace.py <canopy-json> [--output <path>]
-    python3 scripts/canopy_trace.py --slug <slug>
+    python3 scripts/threat_model_trace.py <threat-model-json> [--output <path>]
+    python3 scripts/threat_model_trace.py --slug <slug>
 """
 from __future__ import annotations
 
@@ -42,10 +42,10 @@ except ImportError:
 _MITRE_FRAMEWORK_NAME = "MITRE ATT&CK"
 
 
-def _threats_by_id(canopy: dict[str, Any]) -> dict[str, dict]:
+def _threats_by_id(threat_model: dict[str, Any]) -> dict[str, dict]:
     """threat UUID -> threat entry."""
     out: dict[str, dict] = {}
-    for t in canopy.get("threats", []) or []:
+    for t in threat_model.get("threats", []) or []:
         if isinstance(t, dict) and t.get("id"):
             out[t["id"]] = t
     return out
@@ -64,8 +64,8 @@ def _threat_mitre_ids(threat: dict[str, Any]) -> list[str]:
     return ids
 
 
-def build_trace_index(canopy: dict[str, Any]) -> dict[str, dict]:
-    """Build mitigation-UUID -> traceability record from a Canopy export.
+def build_trace_index(threat_model: dict[str, Any]) -> dict[str, dict]:
+    """Build mitigation-UUID -> traceability record from an AWS Threat Model export.
 
     Each record:
       {
@@ -78,10 +78,10 @@ def build_trace_index(canopy: dict[str, Any]) -> dict[str, dict]:
     A mitigation with no THREAT mapping (or whose threats carry no MITRE
     FRAMEWORK mapping) yields empty lists — never a crash.
     """
-    threats = _threats_by_id(canopy)
+    threats = _threats_by_id(threat_model)
     index: dict[str, dict] = {}
 
-    for mit in canopy.get("mitigations", []) or []:
+    for mit in threat_model.get("mitigations", []) or []:
         if not isinstance(mit, dict):
             continue
         uuid = mit.get("id")
@@ -111,7 +111,7 @@ def build_trace_index(canopy: dict[str, Any]) -> dict[str, dict]:
     return index
 
 
-def build_alias_index(canopy: dict[str, Any]) -> dict[str, dict]:
+def build_alias_index(threat_model: dict[str, Any]) -> dict[str, dict]:
     """Same records as build_trace_index but keyed by mitigation alias.
 
     Controls thread mitigation *aliases* (e.g. Mitigation.LAMBDA.Function.1)
@@ -120,7 +120,7 @@ def build_alias_index(canopy: dict[str, Any]) -> dict[str, dict]:
     from this index (they are still present in the by-UUID index).
     """
     by_alias: dict[str, dict] = {}
-    for uuid, rec in build_trace_index(canopy).items():
+    for uuid, rec in build_trace_index(threat_model).items():
         alias = rec.get("alias")
         if alias:
             by_alias[alias] = {"mitigation_uuid": uuid, **rec}
@@ -131,13 +131,13 @@ def thread_onto_control(control: dict[str, Any], alias_index: dict[str, dict]) -
     """Attach additive traceability fields to a single control in place.
 
     A control's `mitigation_alias`/`mitigation_uuid` (when set by
-    research-mitigations from a Canopy source) resolve to the traceability
+    research-mitigations from an AWS Threat Model source) resolve to the traceability
     record; the control gains:
-      - mitigation_uuid, mitigation_alias  (the Canopy source identity)
+      - mitigation_uuid, mitigation_alias  (the AWS Threat Model source identity)
       - mitre_techniques[]                 (union across the control's mitigations)
-      - trace_source: "canopy" | "assessment_gap"
+      - trace_source: "threat_model" | "assessment_gap"
 
-    A control with no resolvable Canopy alias (a synthetic assessment-gap
+    A control with no resolvable AWS Threat Model alias (a synthetic assessment-gap
     control) gets empty MITRE + trace_source "assessment_gap" — never an error.
     The pre-existing `mitigation_ids[]` (M-<Resource>.N) are left untouched for
     backward compatibility.
@@ -174,23 +174,23 @@ def thread_onto_control(control: dict[str, Any], alias_index: dict[str, dict]) -
         if uuids:
             control["mitigation_uuid"] = sorted(set(uuids))[0]
         control["mitre_techniques"] = sorted(mitre)
-        # Verbatim Canopy statement of the primary mitigation, so a downstream
+        # Verbatim AWS Threat Model statement of the primary mitigation, so a downstream
         # citation can quote it and be provenance-checked against the export.
         primary_stmt = statement_by_alias.get(control["mitigation_alias"], "")
         if primary_stmt:
             control["mitigation_statement"] = primary_stmt
-        control["trace_source"] = "canopy"
+        control["trace_source"] = "threat_model"
     else:
-        # Synthetic / no-Canopy control: empty traceability, explicit marker.
+        # Synthetic / no-AWS Threat Model control: empty traceability, explicit marker.
         control.setdefault("mitre_techniques", [])
         control["trace_source"] = "assessment_gap"
 
     return control
 
 
-def thread_controls(controls: list[dict], canopy: dict[str, Any]) -> list[dict]:
+def thread_controls(controls: list[dict], threat_model: dict[str, Any]) -> list[dict]:
     """Thread traceability onto every control (in place) and return the list."""
-    alias_index = build_alias_index(canopy)
+    alias_index = build_alias_index(threat_model)
     for ctrl in controls:
         if isinstance(ctrl, dict):
             thread_onto_control(ctrl, alias_index)
@@ -204,7 +204,7 @@ def _load_json(path: Path) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("canopy_json", nargs="?", help="Path to Canopy threat model JSON")
+    parser.add_argument("threat_model_json", nargs="?", help="Path to AWS Threat Model threat model JSON")
     parser.add_argument("--slug", help="Service slug (looks in .service-approval/<slug>/input/)")
     parser.add_argument("--output", "-o", help="Output path (default: stdout JSON)")
     args = parser.parse_args()
@@ -220,25 +220,25 @@ def main() -> None:
         if not candidates:
             print(f"SKIP: no JSON files in {input_dir}", file=sys.stderr)
             sys.exit(0)
-        canopy_path = candidates[0]
-        output_path: Path | None = svc_root / "04-map" / "canopy-trace.json"
-    elif args.canopy_json:
-        canopy_path = Path(args.canopy_json)
+        threat_model_path = candidates[0]
+        output_path: Path | None = svc_root / "04-map" / "threat-model-trace.json"
+    elif args.threat_model_json:
+        threat_model_path = Path(args.threat_model_json)
         output_path = Path(args.output) if args.output else None
     else:
-        parser.error("Provide a Canopy JSON path or --slug")
+        parser.error("Provide an AWS Threat Model JSON path or --slug")
         return
 
-    if not canopy_path.exists():
-        print(f"ERROR: file not found: {canopy_path}", file=sys.stderr)
+    if not threat_model_path.exists():
+        print(f"ERROR: file not found: {threat_model_path}", file=sys.stderr)
         sys.exit(1)
 
-    canopy = _load_json(canopy_path)
-    index = build_trace_index(canopy)
+    threat_model = _load_json(threat_model_path)
+    index = build_trace_index(threat_model)
     resolved = sum(1 for r in index.values() if r["mitre_techniques"])
     result = {
         "schema_version": "1.0",
-        "source_file": canopy_path.name,
+        "source_file": threat_model_path.name,
         "mitigation_count": len(index),
         "mitigations_with_mitre": resolved,
         "trace": index,
@@ -249,7 +249,7 @@ def main() -> None:
         with open(output_path, "w") as fh:
             json.dump(result, fh, indent=2)
         print(
-            f"Canopy trace written: {output_path}\n"
+            f"AWS Threat Model trace written: {output_path}\n"
             f"  Mitigations: {len(index)}\n"
             f"  With >=1 MITRE technique: {resolved}",
             file=sys.stderr,

@@ -47,6 +47,18 @@ If `--framework-file` is not provided, scan the input folder for framework files
 If multiple framework files found, ask the user which to use.
 If no framework file found and `--framework` is set, use built-in domain reference.
 
+### Customer framework notes (optional)
+
+If `inputs.framework_notes` is present in `00-intake/intake-manifest.json`, read
+it before parsing. It is free-text guidance from the customer about how their
+controls are structured — for example how control IDs and sub-control IDs are
+formatted, which column holds the control text, or how requirements are grouped.
+
+Use it to interpret non-obvious conventions in the framework file (e.g. to
+recognize a sub-control column, or to split a combined ID like `AIS-01.2` into a
+parent control and a sub-control). It is advisory only: never let it override
+what the file actually contains, and never fail if it is absent or `null`.
+
 ---
 
 ## Step 1: Parse Framework File

@@ -52,7 +52,7 @@ def _service_doc_citation(control: dict) -> dict:
     a typed pointer at the upstream control id so the row still validates.
     """
     cit = control.get("citation")
-    if isinstance(cit, dict) and cit.get("type") in {"canopy", "reference", "catalog", "service-doc"}:
+    if isinstance(cit, dict) and cit.get("type") in {"threat_model", "reference", "catalog", "service-doc"}:
         return cit  # already typed by mapping
     cid = control.get("id", "unknown")
     return {"type": "service-doc", "id": cid}
@@ -103,11 +103,11 @@ def build_plan(mapping: dict, validated: dict) -> dict:
 
         # When we have a reference-repo anchor, the citation for the body is
         # the reference example. Mapping may carry a richer intent citation
-        # (e.g. a Canopy mitigation alias) — honor it; otherwise fall back to
+        # (e.g. an AWS Threat Model mitigation alias) — honor it; otherwise fall back to
         # the reference itself as both intent and body source.
         intent_citation = control.get("citation")
         if not (isinstance(intent_citation, dict) and intent_citation.get("type") in
-                {"canopy", "reference", "catalog", "service-doc"}):
+                {"threat_model", "reference", "catalog", "service-doc"}):
             intent_citation = {
                 "type": "reference",
                 "id": best["id"],

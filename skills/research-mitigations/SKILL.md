@@ -46,7 +46,7 @@ the wrong branch silently drops every mitigation.
 own `mitigations[]` sub-array. For each entity, read `resource_type` and walk
 its mitigations.
 
-**Shape B — top-level (Canopy export):** the file has a top-level
+**Shape B — top-level (AWS Threat Model export):** the file has a top-level
 `mitigations[]` array AND `entities[]` entries with NO `mitigations` sub-key.
 Each top-level mitigation carries `alias`, `statement`,
 `configurationRequestParameters[]` (each `{service, operation, paths[].path}`),
@@ -97,40 +97,40 @@ zero-count outcome from a non-empty input set is almost always a shape
 mismatch, not a real empty mitigation list.
 
 A reference parser implementing this detector lives at
-`tools/validate/canopy_parse.py` — covered by `test_canopy_parse.py`.
+`tools/validate/threat_model_parse.py` — covered by `test_threat_model_parse.py`.
 
-#### Canopy citation index (Shape B only)
+#### AWS Threat Model citation index (Shape B only)
 
-A Canopy export also carries a top-level `implementations[]` array — typed
+An AWS Threat Model export also carries a top-level `implementations[]` array — typed
 control examples (preventive SCP / RCP / resource-based / declarative policy,
 proactive CloudFormation Hooks, detective AWS Config rules / CloudTrail events).
 Each implementation carries the exact governed actions + condition keys (or API
 operations / resource properties) AND a REFERENCE link to the public AWS
 documentation it is grounded in. This is the **first-priority citation source**
-for every control family downstream: a control anchored to a Canopy
+for every control family downstream: a control anchored to an AWS Threat Model
 implementation cites that implementation's `alias` and links straight to its
 public doc URL.
 
-When the input is Canopy-shaped, persist the normalized index so downstream
+When the input is AWS Threat Model-shaped, persist the normalized index so downstream
 citation lookups and the citation validator resolve against one source of truth:
 
 ```python
 import json, sys
 sys.path.insert(0, "tools/validate")
-from canopy_parse import build_canopy_index
+from threat_model_parse import build_threat_model_index
 
-data = json.load(open("<canopy-file>"))
-index = build_canopy_index(data, service="<service-name>")
-with open(".service-approval/<slug>/02-research/canopy-index.json", "w") as f:
+data = json.load(open("<threat-model-file>"))
+index = build_threat_model_index(data, service="<service-name>")
+with open(".service-approval/<slug>/02-research/threat-model-index.json", "w") as f:
     json.dump(index, f, indent=2)
 ```
 
-`canopy-index.json` (schema: `schemas/canopy-index.schema.json`) holds the
+`threat-model-index.json` (schema: `schemas/threat-model-index.schema.json`) holds the
 normalized `mitigations[]` (alias + statement + cited REFERENCE links) and
 `implementations[]` (behavior, mechanism, governed actions/keys, and the
 REFERENCE `href`s). Write it whenever the input is Shape B; skip it otherwise
-(no Canopy → no index, and citation resolution only requires it when a
-`type: "canopy"` citation is present). The recommender and the authoring /
+(no AWS Threat Model → no index, and citation resolution only requires it when a
+`type: "threat_model"` citation is present). The recommender and the authoring /
 detective / proactive skills read this file first when deciding each control's
 citation.
 
@@ -234,8 +234,8 @@ Compile all extracted mitigations into a structured array:
 ```
 
 `alias` and `configuration_request_parameters` are populated only when the
-source provides them (e.g. the Canopy top-level shape). The flat
-`request_parameters[]` list MUST always be populated — for the Canopy shape,
+source provides them (e.g. the AWS Threat Model top-level shape). The flat
+`request_parameters[]` list MUST always be populated — for the AWS Threat Model shape,
 flatten every `configurationRequestParameters[].paths[].path` into it.
 
 **Quality rules:**

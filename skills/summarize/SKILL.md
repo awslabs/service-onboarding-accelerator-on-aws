@@ -174,7 +174,7 @@ actually produced.
 | controls-catalog.md | The catalog of every generated control with its citation. Go here for the per-artifact index. |
 | preventive/ proactive/ detective/ responsive/ | The generated control artifacts, one folder per family. Review and adapt the policies/rules before deploying. |
 | preventive-coverage.json | Deterministic accounting of how each preventive objective was handled (authored / referred / routed). |
-| citation-coverage.json | Every non-preventive artifact's citation (repo anchor, AWS doc, or Canopy alias + link). |
+| citation-coverage.json | Every non-preventive artifact's citation (repo anchor, AWS doc, or AWS Threat Model alias + link). |
 | README.md / PROVENANCE.md | Provenance and how the guidance folder is organized. |
 ```
 

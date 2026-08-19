@@ -1323,32 +1323,32 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
     try:
         from validate_reference_anchor import (  # type: ignore
             _known_ids,
-            _load_canopy_aliases,
+            _load_threat_model_aliases,
             _mapping_control_ids,
             check_artifact,
         )
     except ImportError:
         return []
-    # Locate the service root so the single-file P8 check can resolve a Canopy
-    # anchor against that run's canopy-index.json and check the orphan
+    # Locate the service root so the single-file P8 check can resolve an AWS Threat Model
+    # anchor against that run's threat-model-index.json and check the orphan
     # source_control_id — parity with the standalone CLI's single-file mode and
-    # the whole-service check_service() path. Without this, a Canopy-anchored
-    # artifact fails the hook because canopy_aliases defaults to None.
+    # the whole-service check_service() path. Without this, an AWS Threat Model-anchored
+    # artifact fails the hook because threat_model_aliases defaults to None.
     from pathlib import Path
 
     known_ids: set[str] | None = None
     mapping_ids: set[str] | None = None
-    canopy_aliases: set[str] | None = None
+    threat_model_aliases: set[str] | None = None
     try:
         known_ids = _known_ids()
     except (ImportError, FileNotFoundError):
         known_ids = None
     for parent in Path(file_path).resolve().parents:
         if (parent / "05-recommended-guidance").is_dir() or (parent / "02-research").is_dir():
-            canopy_aliases = _load_canopy_aliases(parent)
+            threat_model_aliases = _load_threat_model_aliases(parent)
             mapping_ids = _mapping_control_ids(parent)
             break
-    return check_artifact(file_path, known_ids, mapping_ids, canopy_aliases)
+    return check_artifact(file_path, known_ids, mapping_ids, threat_model_aliases)
 
 
 def _check_config_support(file_path: str) -> list[str]:
@@ -1419,10 +1419,10 @@ def check_preventive_plan(data: dict, file_path: str | None = None) -> list[str]
          GENERATE_*-requires-anchor and ROUTE_DETECTIVE-requires-route rules.
       2. Anchor resolution — every GENERATE_* decision's anchor must resolve.
          A reference-repo anchor (anchor.source absent or "reference") must
-         resolve to a real entry in data/reference-repos/index.yaml. A Canopy
-         anchor (anchor.source == "canopy") carries a Canopy implementation/
+         resolve to a real entry in data/reference-repos/index.yaml. An AWS Threat Model
+         anchor (anchor.source == "threat_model") carries an AWS Threat Model implementation/
          mitigation alias as its example_id and resolves against the run's
-         02-research/canopy-index.json instead — the same dual-anchor rule the
+         02-research/threat-model-index.json instead — the same dual-anchor rule the
          per-artifact P8 gate (validate_reference_anchor.py) enforces.
     """
     errors: list[str] = []
@@ -1446,28 +1446,28 @@ def check_preventive_plan(data: dict, file_path: str | None = None) -> list[str]
     except (ImportError, FileNotFoundError):
         known = None
 
-    # Canopy alias set for the run (when a Canopy index is present next to the
-    # plan). None → no Canopy input; a canopy-sourced anchor is then treated the
+    # AWS Threat Model alias set for the run (when an AWS Threat Model index is present next to the
+    # plan). None → no AWS Threat Model input; a threat-model-sourced anchor is then treated the
     # same as an unresolvable one.
-    canopy_aliases: set[str] | None = None
+    threat_model_aliases: set[str] | None = None
     if file_path:
         try:
             sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-            from canopy_parse import (  # type: ignore
-                canopy_index_aliases,
-                load_canopy_index,
+            from threat_model_parse import (  # type: ignore
+                threat_model_index_aliases,
+                load_threat_model_index,
             )
 
             # <service_root>/05-recommended-guidance/preventive-plan.json →
-            # <service_root>/02-research/canopy-index.json
+            # <service_root>/02-research/threat-model-index.json
             service_root = os.path.dirname(os.path.dirname(os.path.abspath(file_path)))
-            idx = load_canopy_index(
-                os.path.join(service_root, "02-research", "canopy-index.json")
+            idx = load_threat_model_index(
+                os.path.join(service_root, "02-research", "threat-model-index.json")
             )
             if idx is not None:
-                canopy_aliases = canopy_index_aliases(idx)
+                threat_model_aliases = threat_model_index_aliases(idx)
         except (ImportError, FileNotFoundError):
-            canopy_aliases = None
+            threat_model_aliases = None
 
     for d in data.get("decisions", []):
         if not isinstance(d, dict):
@@ -1478,14 +1478,14 @@ def check_preventive_plan(data: dict, file_path: str | None = None) -> list[str]
         ex_id = anchor.get("example_id")
         if not ex_id:
             continue
-        if anchor.get("source") == "canopy":
-            # Canopy-sourced anchor: resolve the alias against canopy-index.json.
-            if canopy_aliases is not None and ex_id not in canopy_aliases:
+        if anchor.get("source") == "threat_model":
+            # AWS Threat Model-sourced anchor: resolve the alias against threat-model-index.json.
+            if threat_model_aliases is not None and ex_id not in threat_model_aliases:
                 errors.append(
                     f"preventive-plan: control {d.get('control_id')} decision "
-                    f"{d.get('decision')} anchors to Canopy alias '{ex_id}' which "
-                    f"does not resolve in 02-research/canopy-index.json. Cite a "
-                    f"real Canopy implementation/mitigation alias or change the "
+                    f"{d.get('decision')} anchors to AWS Threat Model alias '{ex_id}' which "
+                    f"does not resolve in 02-research/threat-model-index.json. Cite a "
+                    f"real AWS Threat Model implementation/mitigation alias or change the "
                     f"decision to REFER_TO_REFERENCE / ROUTE_DETECTIVE."
                 )
         elif known is not None and ex_id not in known:

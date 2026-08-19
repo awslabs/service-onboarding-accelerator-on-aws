@@ -13,14 +13,14 @@ a known-good example. Two anchor mechanisms satisfy the rule:
 
   1. **Repo anchor** — `_metadata.reference` whose `example_id` resolves to a
      real entry in the reference index.
-  2. **Canopy anchor** — `_metadata.citation = {type: "canopy", id: "<alias>"}`
+  2. **AWS Threat Model anchor** — `_metadata.citation = {type: "threat_model", id: "<alias>"}`
      whose alias resolves to a real mitigation/implementation in the ingested
-     Canopy index (02-research/canopy-index.json). Canopy supplies both the
+     AWS Threat Model index (02-research/threat-model-index.json). AWS Threat Model supplies both the
      control intent AND the policy shape (governed actions + condition_keys), so
-     a Canopy-anchored preventive control is fully anchored — a repo `reference`
-     is no longer mandatory when a resolvable Canopy anchor is present.
+     an AWS Threat Model-anchored preventive control is fully anchored — a repo `reference`
+     is no longer mandatory when a resolvable AWS Threat Model anchor is present.
 
-An artifact with neither a resolvable repo anchor nor a resolvable Canopy anchor
+An artifact with neither a resolvable repo anchor nor a resolvable AWS Threat Model anchor
 is a hard failure.
 
 `_metadata.reference` shape (written by the preventive authoring sub-skills):
@@ -34,12 +34,12 @@ is a hard failure.
       }
     }
 
-`_metadata.citation` shape for a Canopy anchor:
+`_metadata.citation` shape for an AWS Threat Model anchor:
 
     "_metadata": {
       ...
       "citation": {
-        "type": "canopy",
+        "type": "threat_model",
         "id": "Implementation.DSQL.2",
         "url": "https://docs.aws.amazon.com/.../data-perimeters.html",
         "verified_via": "mcp"
@@ -81,13 +81,13 @@ except Exception:  # pragma: no cover - import guard
             "iam trust policy", "trust policy",
         }
 
-# Canopy anchor resolution — a `type: "canopy"` citation resolves the anchor
+# AWS Threat Model anchor resolution — a `type: "threat_model"` citation resolves the anchor
 # requirement for a preventive artifact when its alias is in the ingested index.
 try:
-    from canopy_parse import canopy_index_aliases, load_canopy_index  # type: ignore
+    from threat_model_parse import threat_model_index_aliases, load_threat_model_index  # type: ignore
 except Exception:  # pragma: no cover - import guard
-    canopy_index_aliases = None
-    load_canopy_index = None
+    threat_model_index_aliases = None
+    load_threat_model_index = None
 
 
 # Files under preventive/ that are documentation, not enforcing policy.
@@ -112,28 +112,28 @@ def _known_ids() -> set[str]:
         return set()
 
 
-def _load_canopy_aliases(service_root: Path) -> set[str] | None:
-    """Return the resolvable Canopy alias set for a service, or None if absent.
+def _load_threat_model_aliases(service_root: Path) -> set[str] | None:
+    """Return the resolvable AWS Threat Model alias set for a service, or None if absent.
 
-    None means the run has no canopy-index.json (no Canopy input). A canopy
-    anchor cited without an index is unresolvable — see _canopy_anchor_alias.
+    None means the run has no threat-model-index.json (no AWS Threat Model input). A threat_model
+    anchor cited without an index is unresolvable — see _threat_model_anchor_alias.
     """
-    if load_canopy_index is None or canopy_index_aliases is None:
+    if load_threat_model_index is None or threat_model_index_aliases is None:
         return None
-    index = load_canopy_index(str(service_root / "02-research" / "canopy-index.json"))
+    index = load_threat_model_index(str(service_root / "02-research" / "threat-model-index.json"))
     if index is None:
         return None
-    return canopy_index_aliases(index)
+    return threat_model_index_aliases(index)
 
 
-def _canopy_anchor_alias(meta: dict) -> str | None:
-    """Return the cited Canopy alias when _metadata.citation is a canopy anchor.
+def _threat_model_anchor_alias(meta: dict) -> str | None:
+    """Return the cited AWS Threat Model alias when _metadata.citation is a threat_model anchor.
 
-    Returns the alias string for a `{type: "canopy", id: <alias>}` citation, or
-    None when the artifact carries no canopy citation.
+    Returns the alias string for a `{type: "threat_model", id: <alias>}` citation, or
+    None when the artifact carries no threat_model citation.
     """
     citation = meta.get("citation")
-    if isinstance(citation, dict) and citation.get("type") == "canopy":
+    if isinstance(citation, dict) and citation.get("type") == "threat_model":
         alias = str(citation.get("id", "")).strip()
         return alias or None
     return None
@@ -173,7 +173,7 @@ def _applicability_errors(basename: str, meta: dict) -> list[str]:
     """Enforce: a URL-surfacing artifact must carry a non-empty applicability.
 
     Tied to the presence of a customer-facing URL (see `_surfaces_url`). A
-    canopy-only artifact with just an id and no URL is exempt — there is no
+    threat-model-only artifact with just an id and no URL is exempt — there is no
     external link to clarify.
     """
     if not _surfaces_url(meta):
@@ -234,13 +234,13 @@ def check_artifact(
     file_path: str,
     known_ids: set[str] | None = None,
     mapping_ids: set[str] | None = None,
-    canopy_aliases: set[str] | None = None,
+    threat_model_aliases: set[str] | None = None,
 ) -> list[str]:
     """Validate one preventive artifact's reference anchor. Returns errors.
 
-    `canopy_aliases` is the resolvable Canopy alias set for the run; a
-    `{type: "canopy"}` citation resolves the anchor requirement when its alias is
-    a member. None means no canopy-index.json was found for the run.
+    `threat_model_aliases` is the resolvable AWS Threat Model alias set for the run; a
+    `{type: "threat_model"}` citation resolves the anchor requirement when its alias is
+    a member. None means no threat-model-index.json was found for the run.
     """
     errors: list[str] = []
     basename = os.path.basename(file_path)
@@ -335,40 +335,40 @@ def check_artifact(
     has_repo_anchor = isinstance(reference, dict) and reference.get("example_id")
     repo_resolves = bool(has_repo_anchor and reference["example_id"] in ids)
 
-    # Canopy anchor: a resolvable `{type: "canopy"}` citation fully anchors a
-    # preventive artifact — Canopy supplies both the control intent and the
+    # AWS Threat Model anchor: a resolvable `{type: "threat_model"}` citation fully anchors a
+    # preventive artifact — AWS Threat Model supplies both the control intent and the
     # policy shape (governed actions + condition_keys), so a repo `reference` is
     # not additionally required. The artifact is anchored when EITHER the repo
-    # anchor OR the Canopy anchor resolves.
-    canopy_alias = _canopy_anchor_alias(meta)
-    if canopy_alias is not None:
-        canopy_resolves = canopy_aliases is not None and canopy_alias in canopy_aliases
+    # anchor OR the AWS Threat Model anchor resolves.
+    threat_model_alias = _threat_model_anchor_alias(meta)
+    if threat_model_alias is not None:
+        threat_model_resolves = threat_model_aliases is not None and threat_model_alias in threat_model_aliases
         # Fail only when neither anchor resolves — a repo anchor that resolves
-        # still carries the artifact even if the Canopy index is not loaded.
-        if not canopy_resolves and not repo_resolves:
-            if canopy_aliases is None:
+        # still carries the artifact even if the AWS Threat Model index is not loaded.
+        if not threat_model_resolves and not repo_resolves:
+            if threat_model_aliases is None:
                 errors.append(
-                    f"P8 reference_anchor: {basename} cites Canopy alias "
-                    f"{canopy_alias!r} but no canopy-index.json was found at "
-                    f"02-research/canopy-index.json — a Canopy anchor must resolve "
-                    f"to an ingested Canopy alias."
+                    f"P8 reference_anchor: {basename} cites AWS Threat Model alias "
+                    f"{threat_model_alias!r} but no threat-model-index.json was found at "
+                    f"02-research/threat-model-index.json — an AWS Threat Model anchor must resolve "
+                    f"to an ingested AWS Threat Model alias."
                 )
             else:
                 errors.append(
-                    f"P8 reference_anchor: {basename} cites Canopy alias "
-                    f"{canopy_alias!r} which does not resolve to any "
-                    f"mitigation/implementation alias in canopy-index.json. Cite a "
-                    f"real Canopy alias."
+                    f"P8 reference_anchor: {basename} cites AWS Threat Model alias "
+                    f"{threat_model_alias!r} which does not resolve to any "
+                    f"mitigation/implementation alias in threat-model-index.json. Cite a "
+                    f"real AWS Threat Model alias."
                 )
         # A repo reference, when ALSO present, must resolve — a bogus repo anchor
-        # is never acceptable, even alongside a good Canopy anchor.
+        # is never acceptable, even alongside a good AWS Threat Model anchor.
         if has_repo_anchor and not repo_resolves:
             errors.append(
                 f"P8 reference_anchor: {basename} references example_id "
                 f"'{reference['example_id']}' which does not resolve to any entry "
                 f"in data/reference-repos/index.yaml."
             )
-        # Orphan + applicability checks still apply to a Canopy-anchored artifact.
+        # Orphan + applicability checks still apply to an AWS Threat Model-anchored artifact.
         sid = meta.get("source_control_id")
         if mapping_ids is not None and sid is not None and sid not in mapping_ids:
             errors.append(
@@ -386,8 +386,8 @@ def check_artifact(
             errors.append(
                 f"P8 reference_anchor: {basename} emits a preventive policy but "
                 f"carries no _metadata.reference.example_id and no resolvable "
-                f"Canopy citation. Every preventive control must anchor to a "
-                f"reference example in data/reference-repos/index.yaml or a Canopy "
+                f"AWS Threat Model citation. Every preventive control must anchor to a "
+                f"reference example in data/reference-repos/index.yaml or an AWS Threat Model "
                 f"implementation (or be a gap/skip stub). If nothing covers this "
                 f"objective, do not author a policy — point to the reference or "
                 f"route to detective."
@@ -441,9 +441,9 @@ def check_service(service_root: Path) -> list[str]:
         return errors
     ids = _known_ids()
     mids = _mapping_control_ids(service_root)
-    canopy_aliases = _load_canopy_aliases(service_root)
+    threat_model_aliases = _load_threat_model_aliases(service_root)
     for fpath in sorted(prev_dir.glob("*.json")):
-        errors.extend(check_artifact(str(fpath), ids, mids, canopy_aliases))
+        errors.extend(check_artifact(str(fpath), ids, mids, threat_model_aliases))
     return errors
 
 
@@ -457,14 +457,14 @@ def main() -> None:
         root = Path(os.getcwd()) / ".service-approval" / args.slug
         errors = check_service(root)
     elif args.file:
-        # Locate the service root so a single-file check can resolve a Canopy
-        # anchor against that run's canopy-index.json.
-        canopy_aliases: set[str] | None = None
+        # Locate the service root so a single-file check can resolve an AWS Threat Model
+        # anchor against that run's threat-model-index.json.
+        threat_model_aliases: set[str] | None = None
         for parent in Path(args.file).resolve().parents:
             if (parent / "05-recommended-guidance").is_dir() or (parent / "02-research").is_dir():
-                canopy_aliases = _load_canopy_aliases(parent)
+                threat_model_aliases = _load_threat_model_aliases(parent)
                 break
-        errors = check_artifact(args.file, canopy_aliases=canopy_aliases)
+        errors = check_artifact(args.file, threat_model_aliases=threat_model_aliases)
     else:
         parser.error("provide a file path OR --slug")
 

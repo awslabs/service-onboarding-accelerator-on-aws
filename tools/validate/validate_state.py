@@ -314,14 +314,14 @@ def check_research_mitigations(data: dict) -> list[str]:
     return schema_errors(data, "research-mitigations")
 
 
-def check_canopy_index(data: dict) -> list[str]:
-    """Validate canopy-index.json — the normalized Canopy citation index.
+def check_threat_model_index(data: dict) -> list[str]:
+    """Validate threat-model-index.json — the normalized AWS Threat Model citation index.
 
-    Shape/required-field checks live in schemas/canopy-index.schema.json. The
-    index is written by research-mitigations for a Canopy-shaped input and is
-    the source of truth a `type: "canopy"` citation resolves its alias against.
+    Shape/required-field checks live in schemas/threat-model-index.schema.json. The
+    index is written by research-mitigations for an AWS Threat Model-shaped input and is
+    the source of truth a `type: "threat_model"` citation resolves its alias against.
     """
-    return schema_errors(data, "canopy-index")
+    return schema_errors(data, "threat-model-index")
 
 
 # ================================================================
@@ -1263,8 +1263,8 @@ def validate_state_file(file_path: str) -> list[str]:
     elif basename == "checkpoint-results.json":
         errors.extend(check_checkpoint_results(data))
 
-    elif basename == "canopy-index.json":
-        errors.extend(check_canopy_index(data))
+    elif basename == "threat-model-index.json":
+        errors.extend(check_threat_model_index(data))
 
     elif "research-mitigations" in basename:
         errors.extend(check_required_fields(data, basename))

@@ -56,16 +56,16 @@ def test_gates_emit_lifecycle_logging():
     assert "tools.validate.log" in text
 
 
-def test_post_map_gate_runs_semantic_and_canopy_checks():
+def test_post_map_gate_runs_semantic_and_threat_model_checks():
     """The post-map gate must run the deterministic semantic mapping checks and
-    the Canopy-factual citation check (W5)."""
+    the AWS Threat Model-factual citation check (W5)."""
     text = _skill_text()
     assert "validate_mapping_semantics.py" in text
-    assert "validate_canopy_facts.py" in text
+    assert "validate_threat_model_facts.py" in text
 
 
-def test_post_generate_gate_runs_canopy_and_conflict_detection():
-    """The post-generate gate must run the Canopy-factual check and the conflict
+def test_post_generate_gate_runs_threat_model_and_conflict_detection():
+    """The post-generate gate must run the AWS Threat Model-factual check and the conflict
     pre-filter, and dispatch a clean subagent judge (W5)."""
     text = _skill_text()
     assert "detect_control_conflicts.py" in text

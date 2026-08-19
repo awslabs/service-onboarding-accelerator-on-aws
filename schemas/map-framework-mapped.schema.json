@@ -68,12 +68,12 @@
         "mitre_techniques": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "MITRE ATT&CK technique ids resolved from the Canopy source for the mapped controls."
+          "description": "MITRE ATT&CK technique ids resolved from the AWS Threat Model source for the mapped controls."
         },
         "mitigation_refs": {
           "type": "array",
           "items": {"type": "object", "additionalProperties": true},
-          "description": "Canopy mitigation references (alias + uuid) the mapping cites."
+          "description": "AWS Threat Model mitigation references (alias + uuid) the mapping cites."
         },
         "coverage": {
           "type": "string",
@@ -110,7 +110,7 @@
               "citation": {
                 "type": "object",
                 "additionalProperties": true,
-                "description": "Evidence for this control's mapping: the specific objective sub-requirement satisfied + its source (canopy | assessment_gap | aws_doc), optionally the mitigation alias/uuid and MITRE techniques. Presence of objective_requirement + source is what makes a MAPPED row a confident (non-UNCERTAIN) mapping.",
+                "description": "Evidence for this control's mapping: the specific objective sub-requirement satisfied + its source (threat_model | assessment_gap | aws_doc), optionally the mitigation alias/uuid and MITRE techniques. Presence of objective_requirement + source is what makes a MAPPED row a confident (non-UNCERTAIN) mapping.",
                 "properties": {
                   "control_id": {"type": "string"},
                   "mechanism_class": {"type": "string"},

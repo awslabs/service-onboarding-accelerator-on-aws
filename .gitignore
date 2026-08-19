@@ -61,7 +61,12 @@ Thumbs.db
 # Per-user intake config (filled in by the user before each pipeline run;
 # the plugin's intake template lives at skills/intake/intake-template.yaml).
 service-approval-intake.yaml
-# Per-run input data — supplied by the user at runtime, not committed.
+# AWS Threat Model data must not be committed (product/provenance policy).
+# Real threat-model files are supplied at runtime, not stored in the repo.
+# Both the current and the legacy filenames are ignored so neither gets
+# committed by accident.
+input/*threat-model*.json
 input/*canopy*.json
 input/dsql.json
+**/*-threat-model.json
 **/*-canopy.json

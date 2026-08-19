@@ -8,8 +8,12 @@ Step-by-step guide to install and run the Service Approval Plugin with GitHub Co
 
 - [VS Code](https://code.visualstudio.com/) with [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot) extension installed
 - GitHub Copilot subscription (Individual, Business, or Enterprise)
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH (for MCP servers)
-- Python 3.9+ (for kb-search MCP and validators)
+- [`git`](https://git-scm.com/downloads) — to clone this repository (skip if you were handed a zip)
+- [Python](https://www.python.org/downloads/) 3.9+ (`python3 --version`) — validators and hooks
+- The Python packages in [`requirements.txt`](../requirements.txt) — installed in Step 1 below
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH — only for default MCP mode; skip if you always use `--no-mcp`
+
+No AWS account or credentials are required to generate controls.
 
 ---
 
@@ -45,6 +49,32 @@ Two things to check after unzipping:
 - **Unblock the files on macOS/Windows if they came from a download** (quarantine
   attribute can block VS Code from reading them): macOS `xattr -dr com.apple.quarantine ~/service-onboarding-accelerator-on-aws`;
   Windows → right-click the zip → **Properties** → **Unblock** before extracting.
+
+**Install the Python packages** (either option). From the repo folder:
+
+```bash
+cd service-onboarding-accelerator-on-aws
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+```
+
+> On Windows PowerShell, use `py -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt`.
+
+Confirm everything the pipeline needs is present (each line prints `PASS` or
+`MISSING`; a `MISSING` for `uv` is fine if you only use `--no-mcp`):
+
+```bash
+check() { if eval "$2" >/dev/null 2>&1; then echo "PASS     $1"; else echo "MISSING  $1"; fi; }
+PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
+check "git"                "command -v git"
+check "python3 (>=3.9)"    "$PY -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,9) else 1)'"
+check "pyyaml"             "$PY -c 'import yaml'"
+check "jsonschema"         "$PY -c 'import jsonschema'"
+check "pytest"             "$PY -c 'import pytest'"
+check "uv (MCP mode only)" "command -v uv"
+```
+
+(The PowerShell equivalent is in the [README](../README.md#verify-your-setup).)
 
 ## Step 2: Open the repo in VS Code
 

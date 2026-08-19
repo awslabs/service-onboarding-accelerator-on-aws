@@ -31,6 +31,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -151,6 +152,30 @@ def slugify(text: str) -> str:
     text = text.strip().lower()
     text = re.sub(r"[^a-z0-9]+", "-", text)
     return text.strip("-")
+
+
+# Cap on example-id (and therefore example filename) length. Descriptive
+# reference-repo slugs reach 160+ chars; nested under
+# data/reference-repos/<repo>/examples/ they push the full path toward the
+# Windows MAX_PATH (~260) limit on `git clone`/checkout. We bound the id so the
+# vendored filename stays short.
+MAX_ID_LEN = 48
+_ID_HASH_LEN = 6
+
+
+def shorten_id(base_id: str) -> str:
+    """Bound an example id to MAX_ID_LEN characters, deterministically.
+
+    Ids at or under the cap are returned unchanged, so a shortened id is a
+    fixed point (running this twice is a no-op) and regeneration is idempotent.
+    Longer ids are truncated and given a short hash suffix derived from the
+    full id — human readability is preserved by the entry's `intent` field.
+    """
+    if len(base_id) <= MAX_ID_LEN:
+        return base_id
+    digest = hashlib.sha1(base_id.encode("utf-8")).hexdigest()[:_ID_HASH_LEN]
+    keep = MAX_ID_LEN - _ID_HASH_LEN - 1  # room for the '-' + hash suffix
+    return base_id[:keep].rstrip("-") + "-" + digest
 
 
 def intent_from_path(rel_path: Path) -> str:
@@ -323,7 +348,7 @@ def build_index(repos_dir: Path, out_dir: Path) -> dict:
                 # Every Guard anchor must govern at least one resource type.
                 if not resource_types:
                     continue
-                base_id = slugify(rel.with_suffix("").as_posix())
+                base_id = shorten_id(slugify(rel.with_suffix("").as_posix()))
                 uid, n = base_id, 1
                 while uid in seen_ids:
                     n += 1
@@ -360,6 +385,7 @@ def build_index(repos_dir: Path, out_dir: Path) -> dict:
                     continue
                 base_id = slugify(rel.with_suffix("").as_posix())
                 ex_id = base_id if len(docs) == 1 else f"{base_id}-{di}"
+                ex_id = shorten_id(ex_id)
                 # Disambiguate any residual collisions.
                 uid, n = ex_id, 1
                 while uid in seen_ids:
