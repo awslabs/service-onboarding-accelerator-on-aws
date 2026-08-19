@@ -424,7 +424,25 @@ Are you providing any of the following? (select all that apply)
 - If no framework file is provided, leave `framework_type` unset
   (the user's intake reply determines whether CCMv4 is included).
 
-### 3. Additional Options (optional)
+### 3. Control framework notes (optional)
+
+If the customer provided a control framework, invite them to describe its format
+and structure in their own words. This is free text — there is no required
+format. It helps the mapping phase interpret non-obvious conventions.
+
+```
+Anything we should know about how your controls are structured? (optional)
+For example: how control IDs and any sub-control IDs are formatted, which
+column holds the control text, how requirements are grouped, or which controls
+matter most. Leave blank to skip.
+```
+
+- Record the customer's reply verbatim as `inputs.framework_notes` (a single
+  string). Leave it `null` if they skip.
+- Do not parse, validate, or reshape the text — pass it through untouched so the
+  Map phase can read it alongside the framework file.
+
+### 4. Additional Options (optional)
 
 ```
 Additional options:
@@ -477,6 +495,7 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "has_custom_framework": true|false,
     "framework_type": "ccmv4 | null",
     "framework_file": "{path or null}",
+    "framework_notes": "{customer's free-text description of their control format/structure, or null}",
     "has_mitigation_report": true|false,
     "input_files": [
       {"path": "...", "type": "threat_model|framework|mitigation_report|context"}
@@ -513,6 +532,7 @@ After collecting inputs, present a summary:
 │  Service:        {friendly_name} ({service-id})             │
 │  Input:          {description of inputs}                    │
 │  Framework:      {framework_type}                           │
+│  Framework notes:{"provided" | "none"}                      │
 │  ATT&CK Mapping: {Yes | No}                                 │
 └─────────────────────────────────────────────────────────────┘
 
@@ -542,7 +562,7 @@ Proceed? (Y/n)
 | Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion), `pipeline_flags.no_mcp` |
 | Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface`, `pipeline_flags.no_mcp` |
 | Phase 2 (Validate) | `service`, `pipeline_flags.no_mcp` |
-| Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
+| Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file`, `inputs.framework_notes` (optional customer guidance on control format/structure) |
 | Phase 4 (Recommended Guidance) | `service`, `inputs.include_unverified`, `pipeline_flags.no_mcp` |
 | Phase 5 (Summarize) | Full manifest for report metadata |
 

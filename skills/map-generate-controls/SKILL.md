@@ -525,10 +525,10 @@ cannot be implemented:
 - Describe what compensating measures should be taken
 - Include in the controls array like any other control
 
-### 2.8.1 Doc reference for non-Canopy controls (`doc_reference`)
+### 2.8.1 Doc reference for non-AWS Threat Model controls (`doc_reference`)
 
-Controls that are NOT sourced from a Canopy mitigation (`trace_source: "assessment_gap"` —
-the compensating / assessment-gap controls from §2.6 and §2.8) do not carry a Canopy
+Controls that are NOT sourced from an AWS Threat Model mitigation (`trace_source: "assessment_gap"` —
+the compensating / assessment-gap controls from §2.6 and §2.8) do not carry an AWS Threat Model
 citation, so the framework-mapping report cites an **AWS documentation** source for them
 instead. Attach a `doc_reference` to every such control:
 
@@ -550,9 +550,9 @@ Rules:
 - Pick the page that documents *why* the compensating control exists — typically the AWS
   doc that establishes the capability gap the control compensates for (e.g. the RCP or
   declarative-policy supported-services list when the service is absent from it).
-- Canopy-sourced controls (`trace_source: "canopy"`) do NOT get a `doc_reference` — they
-  cite their Canopy mitigation. `doc_reference` is optional in the schema and present only
-  on non-Canopy controls.
+- AWS Threat Model-sourced controls (`trace_source: "threat_model"`) do NOT get a `doc_reference` — they
+  cite their AWS Threat Model mitigation. `doc_reference` is optional in the schema and present only
+  on non-AWS Threat Model controls.
 
 ---
 
@@ -622,18 +622,18 @@ Config rule), use the intent of the **primary mitigation** (first in `mitigation
 
 ---
 
-## Phase 3c: Canopy Traceability Threading (MANDATORY)
+## Phase 3c: AWS Threat Model Traceability Threading (MANDATORY)
 
-After intent tagging, thread the source mitigation's Canopy identity and MITRE ATT&CK
+After intent tagging, thread the source mitigation's AWS Threat Model identity and MITRE ATT&CK
 techniques onto each control. This step is **deterministic** — the MITRE techniques are
-recovered from the Canopy source, never invented or fetched from an external service.
+recovered from the AWS Threat Model source, never invented or fetched from an external service.
 
-**Why.** A Canopy mitigation carries an `alias` (e.g. `Mitigation.LAMBDA.Function.1`) and a
+**Why.** An AWS Threat Model mitigation carries an `alias` (e.g. `Mitigation.LAMBDA.Function.1`) and a
 UUID; the MITRE ATT&CK technique IDs live on the *threat* objects the mitigation addresses.
-Threading these onto controls lets the final `framework-mapping.md` cite the exact Canopy
+Threading these onto controls lets the final `framework-mapping.md` cite the exact AWS Threat Model
 mitigation and MITRE technique behind every mapped row.
 
-**Resolver:** `scripts/canopy_trace.py` walks the golden-source chain
+**Resolver:** `scripts/threat_model_trace.py` walks the golden-source chain
 `mitigation.mappings[type=="THREAT"].id → threats[].id → threat.mappings[type=="FRAMEWORK",
 frameworkName=="MITRE ATT&CK"].id` to build, per mitigation, `{alias, statement,
 mitre_techniques[], threat_aliases[]}`.
@@ -642,22 +642,22 @@ mitre_techniques[], threat_aliases[]}`.
 1. For each control, collect the `alias` of each source mitigation (from
    `validated.json.existing_mitigations[]`, matched by `mitigation_ids[]`) and stamp it as
    `mitigation_aliases[]` on the control.
-2. Run the resolver over the Canopy input and thread onto each control (additive fields):
+2. Run the resolver over the AWS Threat Model input and thread onto each control (additive fields):
    ```python
    import importlib.util, json
-   spec = importlib.util.spec_from_file_location("canopy_trace", "scripts/canopy_trace.py")
+   spec = importlib.util.spec_from_file_location("threat_model_trace", "scripts/threat_model_trace.py")
    ct = importlib.util.module_from_spec(spec); spec.loader.exec_module(ct)
-   canopy = json.load(open("<the Canopy input json>"))   # the intake threat-model file
-   ct.thread_controls(controls, canopy)
+   threat_model = json.load(open("<the AWS Threat Model input json>"))   # the intake threat-model file
+   ct.thread_controls(controls, threat_model)
    ```
    Each control gains `mitigation_alias`, `mitigation_aliases[]`, `mitigation_uuid`,
-   `mitigation_uuids[]`, `mitre_techniques[]`, and `trace_source: "canopy"`.
-3. **No-Canopy / synthetic controls.** A control derived from an assessment gap (no real
-   Canopy mitigation behind it) has no resolvable alias — the resolver marks it
+   `mitigation_uuids[]`, `mitre_techniques[]`, and `trace_source: "threat_model"`.
+3. **No-AWS Threat Model / synthetic controls.** A control derived from an assessment gap (no real
+   AWS Threat Model mitigation behind it) has no resolvable alias — the resolver marks it
    `trace_source: "assessment_gap"` with an empty `mitre_techniques[]`. This is expected,
    not an error.
 
-**Provenance note:** `mitre_techniques[]` here is resolved deterministically from the Canopy
+**Provenance note:** `mitre_techniques[]` here is resolved deterministically from the AWS Threat Model
 source and is authoritative for downstream citation. It is distinct from the heuristic
 `attack_techniques[]` (§2.7), which is derived by action/mechanism alignment; keep both.
 

@@ -49,19 +49,19 @@ def test_totals_and_buckets(tmp_path):
     assert t["uncited"] == 1             # uncited.json
 
 
-def test_canopy_citation_bucketed_separately(tmp_path):
-    """A type==canopy citation is bucketed as canopy_anchor, not doc_anchor."""
+def test_threat_model_citation_bucketed_separately(tmp_path):
+    """A type==threat_model citation is bucketed as threat_model_anchor, not doc_anchor."""
     g = _mk(tmp_path)
-    canopy = {"type": "canopy", "id": "Implementation.DSQL.Cluster.6",
+    threat_model = {"type": "threat_model", "id": "Implementation.DSQL.Cluster.6",
               "url": "https://docs.aws.amazon.com/aurora-dsql/latest/APIReference/API_PutClusterPolicy.html",
               "verified_via": "mcp"}
-    _w(g / "detective" / "config-rules.json", {"_metadata": {"citation": canopy}})
+    _w(g / "detective" / "config-rules.json", {"_metadata": {"citation": threat_model}})
     cov = bcc.build_coverage(g, service="dsql")
     t = cov["totals"]
-    assert t["canopy_anchor"] == 1
+    assert t["threat_model_anchor"] == 1
     assert t["doc_anchor"] == 0
     row = cov["artifacts"][0]
-    assert row["category"] == "canopy_anchor"
+    assert row["category"] == "threat_model_anchor"
     assert row["citation"]["id"] == "Implementation.DSQL.Cluster.6"
 
 

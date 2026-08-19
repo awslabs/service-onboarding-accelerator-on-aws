@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "description": "Controlled vocabulary for classifying Canopy mitigation statements into canonical security intents. Each pattern matches the mitigation statement text (case-insensitive substring or regex) and assigns a structured intent_id and security_domain. Consumed by map-generate-controls to tag controls, and by map-framework-mapping to constrain objective eligibility.",
+  "description": "Controlled vocabulary for classifying AWS Threat Model mitigation statements into canonical security intents. Each pattern matches the mitigation statement text (case-insensitive substring or regex) and assigns a structured intent_id and security_domain. Consumed by map-generate-controls to tag controls, and by map-framework-mapping to constrain objective eligibility.",
   "patterns": [
     {
       "intent_id": "cmk_encryption",

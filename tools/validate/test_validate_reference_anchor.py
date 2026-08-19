@@ -422,15 +422,15 @@ def test_url_cited_artifact_with_empty_applicability_field_fails(tmp_path):
     assert any("usage_notes" in e and "empty" in e for e in errors), errors
 
 
-def test_canopy_only_no_url_without_applicability_passes(tmp_path):
-    """A canopy-only artifact (citation id, no URL, no reference URL) surfaces no
+def test_threat_model_only_no_url_without_applicability_passes(tmp_path):
+    """A threat-model-only artifact (citation id, no URL, no reference URL) surfaces no
     external link, so applicability is not required."""
     path = _write(
         tmp_path / "scp-policy.json",
         {
             "_metadata": {
                 "reference": {"example_id": "real-anchor-id"},
-                "citation": {"type": "canopy", "id": "M-fn.0"},
+                "citation": {"type": "threat_model", "id": "M-fn.0"},
             },
             "Statement": [{"Effect": "Deny", "Action": "s3:*", "Resource": "*"}],
         },
@@ -438,54 +438,54 @@ def test_canopy_only_no_url_without_applicability_passes(tmp_path):
     assert vra.check_artifact(path, KNOWN) == []
 
 
-# --- P8 Canopy anchor acceptance --------------------------------------------
+# --- P8 AWS Threat Model anchor acceptance --------------------------------------------
 
-_CANOPY = {"Implementation.DSQL.2", "Mitigation.DSQL.1"}
+_THREAT_MODEL = {"Implementation.DSQL.2", "Mitigation.DSQL.1"}
 
 
-def test_canopy_anchor_no_repo_reference_passes(tmp_path):
-    """An authored preventive policy anchored ONLY to a resolvable Canopy
+def test_threat_model_anchor_no_repo_reference_passes(tmp_path):
+    """An authored preventive policy anchored ONLY to a resolvable AWS Threat Model
     implementation passes — a repo reference is no longer mandatory."""
     path = _write(
         tmp_path / "scp-policy.json",
         {
             "_metadata": {
                 "posture": "preventative-request",
-                "citation": {"type": "canopy", "id": "Implementation.DSQL.2"},
+                "citation": {"type": "threat_model", "id": "Implementation.DSQL.2"},
             },
             "Version": "2012-10-17",
             "Statement": [{"Effect": "Deny", "Action": "dsql:*", "Resource": "*"}],
         },
     )
-    assert vra.check_artifact(path, KNOWN, canopy_aliases=_CANOPY) == []
+    assert vra.check_artifact(path, KNOWN, threat_model_aliases=_THREAT_MODEL) == []
 
 
-def test_canopy_anchor_unresolvable_fails(tmp_path):
-    """An authored policy whose only anchor is a bogus Canopy alias hard-fails."""
+def test_threat_model_anchor_unresolvable_fails(tmp_path):
+    """An authored policy whose only anchor is a bogus AWS Threat Model alias hard-fails."""
     path = _write(
         tmp_path / "scp-policy.json",
         {
             "_metadata": {
                 "posture": "preventative-request",
-                "citation": {"type": "canopy", "id": "Implementation.BOGUS"},
+                "citation": {"type": "threat_model", "id": "Implementation.BOGUS"},
             },
             "Version": "2012-10-17",
             "Statement": [{"Effect": "Deny", "Action": "dsql:*", "Resource": "*"}],
         },
     )
-    errors = vra.check_artifact(path, KNOWN, canopy_aliases=_CANOPY)
-    assert any("does not resolve to any" in e and "canopy-index" in e for e in errors)
+    errors = vra.check_artifact(path, KNOWN, threat_model_aliases=_THREAT_MODEL)
+    assert any("does not resolve to any" in e and "threat-model-index" in e for e in errors)
 
 
-def test_canopy_anchor_with_url_requires_applicability(tmp_path):
-    """A Canopy anchor that surfaces a URL still needs an applicability block."""
+def test_threat_model_anchor_with_url_requires_applicability(tmp_path):
+    """An AWS Threat Model anchor that surfaces a URL still needs an applicability block."""
     path = _write(
         tmp_path / "scp-policy.json",
         {
             "_metadata": {
                 "posture": "preventative-request",
                 "citation": {
-                    "type": "canopy",
+                    "type": "threat_model",
                     "id": "Implementation.DSQL.2",
                     "url": "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_data-perimeters.html",
                     "verified_via": "mcp",
@@ -495,12 +495,12 @@ def test_canopy_anchor_with_url_requires_applicability(tmp_path):
             "Statement": [{"Effect": "Deny", "Action": "dsql:*", "Resource": "*"}],
         },
     )
-    errors = vra.check_artifact(path, KNOWN, canopy_aliases=_CANOPY)
+    errors = vra.check_artifact(path, KNOWN, threat_model_aliases=_THREAT_MODEL)
     assert any("applicability" in e for e in errors)
 
 
-def test_canopy_anchor_bogus_repo_reference_still_fails(tmp_path):
-    """A good Canopy anchor does NOT excuse a bogus repo reference that's also
+def test_threat_model_anchor_bogus_repo_reference_still_fails(tmp_path):
+    """A good AWS Threat Model anchor does NOT excuse a bogus repo reference that's also
     present — a claimed repo anchor must resolve."""
     path = _write(
         tmp_path / "scp-policy.json",
@@ -508,11 +508,11 @@ def test_canopy_anchor_bogus_repo_reference_still_fails(tmp_path):
             "_metadata": {
                 "posture": "preventative-request",
                 "reference": {"example_id": "not-a-real-id"},
-                "citation": {"type": "canopy", "id": "Implementation.DSQL.2"},
+                "citation": {"type": "threat_model", "id": "Implementation.DSQL.2"},
             },
             "Version": "2012-10-17",
             "Statement": [{"Effect": "Deny", "Action": "dsql:*", "Resource": "*"}],
         },
     )
-    errors = vra.check_artifact(path, KNOWN, canopy_aliases=_CANOPY)
+    errors = vra.check_artifact(path, KNOWN, threat_model_aliases=_THREAT_MODEL)
     assert any("not-a-real-id" in e for e in errors)

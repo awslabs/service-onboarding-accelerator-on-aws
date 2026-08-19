@@ -16,7 +16,7 @@ Metrics per run (all in [0, 1], higher is better):
   - action_real_rate    : fraction of target-service IAM actions across the
                           artifacts that are real (sourced), per CHECK-17
   - citation_rate       : fraction of preventive-plan decisions carrying a typed
-                          citation (canopy / reference / catalog / service-doc)
+                          citation (threat_model / reference / catalog / service-doc)
   - mapping_link_rate   : fraction of preventive-plan decisions whose
                           source_control_id traces back to a mapping control
   - disclosure_rate     : fraction of non-generating decisions (REFER /

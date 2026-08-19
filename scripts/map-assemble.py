@@ -488,10 +488,10 @@ def identify_coverage_gaps(
         if f.get("status") == "MAPPED" and f.get("coverage") in COVERAGE_SUPPORTIVE
     ]
 
-    # Suggested controls: controls that are NOT sourced from a Canopy mitigation
-    # (`trace_source != "canopy"`, i.e. the assessment-gap / compensating
-    # controls). The main per-objective mapping cites only Canopy-sourced
-    # controls; these non-Canopy controls are surfaced separately as suggestions
+    # Suggested controls: controls that are NOT sourced from an AWS Threat Model mitigation
+    # (`trace_source != "threat_model"`, i.e. the assessment-gap / compensating
+    # controls). The main per-objective mapping cites only AWS Threat Model-sourced
+    # controls; these non-AWS Threat Model controls are surfaced separately as suggestions
     # a reviewer should confirm against their cited AWS source.
     uncited_controls = build_uncited_controls(controls, fw_mapped, ctrl_to_objs)
     # Back-compat alias: `control_orphan` retains the {control_id, name} shape any
@@ -525,7 +525,7 @@ def identify_coverage_gaps(
 
 
 def control_source_ref(ctrl: dict) -> str:
-    """Return a specific AWS-documentation reference for a non-Canopy control.
+    """Return a specific AWS-documentation reference for a non-AWS Threat Model control.
 
     Prefers a `doc_reference` threaded onto the control upstream (MCP-verified in
     map-generate-controls) — either a plain URL string or an object carrying
@@ -555,13 +555,13 @@ def build_uncited_controls(
     fw_mapped: dict,
     ctrl_to_objs: dict[str, list[str]],
 ) -> list[dict]:
-    """List the controls that are NOT sourced from a Canopy mitigation.
+    """List the controls that are NOT sourced from an AWS Threat Model mitigation.
 
-    The main per-objective mapping cites only Canopy-sourced controls
-    (`trace_source == "canopy"`). Controls with `trace_source != "canopy"` — the
+    The main per-objective mapping cites only AWS Threat Model-sourced controls
+    (`trace_source == "threat_model"`). Controls with `trace_source != "threat_model"` — the
     assessment-gap / compensating controls — are surfaced separately as
     suggestions for review, each with a specific AWS-documentation `source`
-    reference so a reviewer can cross-check it. Canopy controls, including those
+    reference so a reviewer can cross-check it. AWS Threat Model controls, including those
     that share a mitigation with an already-mapped twin, are never listed here:
     they belong in the main mapping (defense-in-depth — multiple control IDs may
     map to one objective) or, if genuinely no objective fits, are simply not
@@ -569,8 +569,8 @@ def build_uncited_controls(
     """
     out: list[dict] = []
     for c in controls:
-        if c.get("trace_source") == "canopy":
-            continue  # Canopy-sourced controls belong in the main mapping
+        if c.get("trace_source") == "threat_model":
+            continue  # AWS Threat Model-sourced controls belong in the main mapping
         out.append(
             {
                 "control_id": c["id"],
@@ -779,8 +779,8 @@ def _citation_cell(cm: dict, ctrl: dict) -> str:
     """Render the citation cell for a mapped-control row in framework-mapping.md.
 
     Prefers the row-level citation (objective_requirement + source + mitigation
-    alias). Falls back to the control's threaded Canopy alias so the rendered md
-    still shows the Canopy source even for a citation-free legacy mapping.
+    alias). Falls back to the control's threaded AWS Threat Model alias so the rendered md
+    still shows the AWS Threat Model source even for a citation-free legacy mapping.
     """
     cit = cm.get("citation") if isinstance(cm.get("citation"), dict) else {}
     bits: list[str] = []
@@ -797,7 +797,7 @@ def _citation_cell(cm: dict, ctrl: dict) -> str:
 
 
 def _mitre_cell(cm: dict, ctrl: dict) -> str:
-    """Render the MITRE ATT&CK cell — techniques resolved from the Canopy source."""
+    """Render the MITRE ATT&CK cell — techniques resolved from the AWS Threat Model source."""
     techniques: list[str] = []
     cit = cm.get("citation") if isinstance(cm.get("citation"), dict) else {}
     for src in (cit.get("mitre_techniques"), ctrl.get("mitre_techniques")):
@@ -863,7 +863,7 @@ def _mitigation_statement_indexes(
 
     The verbatim mitigation statement is pulled from the resolved mitigation
     list (customer `existing_mitigations` or the synthetic assessment-gap
-    mitigations), keyed by Canopy alias and by mitigation id. The
+    mitigations), keyed by AWS Threat Model alias and by mitigation id. The
     threat_mitigation_map (keyed by mitigation_id) is a fallback so a control
     that only carries `mitigation_ids` still resolves a statement.
     """
@@ -887,17 +887,17 @@ def _mitigation_statement_indexes(
 def _catalog_citation_lines(
     ctrl: dict, by_alias: dict[str, str], by_id: dict[str, str]
 ) -> list[str]:
-    """Render the Canopy citation (or assessment-gap label) lines for a control.
+    """Render the AWS Threat Model citation (or assessment-gap label) lines for a control.
 
-    Every control derives from a Canopy mitigation (alias + UUID + verbatim
+    Every control derives from an AWS Threat Model mitigation (alias + UUID + verbatim
     statement, cited here) or from an assessment gap (labelled as a
-    recommendation with no Canopy source). Control IDs are minted by this tool
-    because Canopy does not carry control IDs.
+    recommendation with no AWS Threat Model source). Control IDs are minted by this tool
+    because AWS Threat Model does not carry control IDs.
     """
     out: list[str] = []
     if ctrl.get("trace_source") == "assessment_gap" or not ctrl.get("mitigation_alias"):
         out.append(
-            "- **Source:** assessment gap (no Canopy mitigation; recommended control)"
+            "- **Source:** assessment gap (no AWS Threat Model mitigation; recommended control)"
         )
         return out
 
@@ -909,12 +909,12 @@ def _catalog_citation_lines(
             if by_id.get(mid):
                 statement = by_id[mid]
                 break
-    cite = f"- **Canopy mitigation:** `{alias}`"
+    cite = f"- **AWS Threat Model mitigation:** `{alias}`"
     if uuid:
         cite += f" (UUID `{uuid}`)"
     out.append(cite)
     if statement:
-        out.append(f"- **Canopy statement:** {statement}")
+        out.append(f"- **AWS Threat Model statement:** {statement}")
     return out
 
 
@@ -955,10 +955,10 @@ def write_controls_catalog(
     )
     lines.append("")
     lines.append(
-        "> Every control is derived from a Canopy mitigation (its alias and "
+        "> Every control is derived from an AWS Threat Model mitigation (its alias and "
         "statement are cited below each control); control IDs are assigned by "
-        "this tool because Canopy does not carry control IDs. Controls with no "
-        "Canopy source are labelled as recommendations (assessment-gap driven)."
+        "this tool because AWS Threat Model does not carry control IDs. Controls with no "
+        "AWS Threat Model source are labelled as recommendations (assessment-gap driven)."
     )
     lines.append("")
 
@@ -1065,7 +1065,7 @@ def write_controls_catalog(
                 lines.append(
                     f"- **Mitigations:** {', '.join(ctrl.get('mitigation_ids', []))}"
                 )
-                # Canopy provenance: alias + UUID + verbatim statement, or an
+                # AWS Threat Model provenance: alias + UUID + verbatim statement, or an
                 # explicit assessment-gap recommendation label.
                 lines.extend(_catalog_citation_lines(ctrl, by_alias, by_id))
                 if ctrl.get("framework_objectives"):
@@ -1202,22 +1202,22 @@ def write_framework_mapping(
             if status == "MAPPED":
                 lines.append(f"**{oid}: {title}** — Coverage: {obj.get('coverage', '')}\n")
                 lines.append("")
-                # The main mapping cites only Canopy-sourced controls. Controls
-                # not backed by a Canopy mitigation (assessment-gap / compensating)
+                # The main mapping cites only AWS Threat Model-sourced controls. Controls
+                # not backed by an AWS Threat Model mitigation (assessment-gap / compensating)
                 # are surfaced in the "Suggestions for Review" section instead, so
                 # they are filtered out of the per-objective tables here.
-                canopy_rows = [
+                threat_model_rows = [
                     cm for cm in obj.get("controls", [])
-                    if ctrl_index.get(cm["control_id"], {}).get("trace_source") == "canopy"
+                    if ctrl_index.get(cm["control_id"], {}).get("trace_source") == "threat_model"
                 ]
-                if canopy_rows:
+                if threat_model_rows:
                     lines.append(
                         "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Source | MITRE |"
                     )
                     lines.append(
                         "|------------|-------|----------|-------|----------------|-----------|--------|-------|"
                     )
-                    for cm in canopy_rows:
+                    for cm in threat_model_rows:
                         cid = cm["control_id"]
                         ctrl = ctrl_index.get(cid, {})
                         cat = CATEGORY_LABELS.get(
@@ -1265,18 +1265,18 @@ def write_framework_mapping(
             f"(missing={sorted(missing)[:10]}, extra={sorted(extra)[:10]})"
         )
 
-    # Controls not sourced from a Canopy mitigation. The main mapping above cites
-    # only Canopy-sourced controls; these are the assessment-gap / compensating
+    # Controls not sourced from an AWS Threat Model mitigation. The main mapping above cites
+    # only AWS Threat Model-sourced controls; these are the assessment-gap / compensating
     # controls the accelerator suggests. Each carries a specific AWS-documentation
     # Source reference so a reviewer can confirm it independently.
     suggested = coverage_gaps.get("uncited_controls") or coverage_gaps.get(
         "control_orphan", []
     )
     if suggested:
-        lines.append("## Controls Not Sourced from Canopy (Suggestions for Review)\n")
+        lines.append("## Controls Not Sourced from AWS Threat Model (Suggestions for Review)\n")
         lines.append("")
         lines.append(
-            "These controls are not backed by a Canopy mitigation, so they are "
+            "These controls are not backed by an AWS Threat Model mitigation, so they are "
             "not cited in the main mapping above. They are suggested for review — "
             "confirm each against the cited AWS documentation source before "
             "adopting it."
@@ -1293,7 +1293,7 @@ def write_framework_mapping(
     # section and a "Mitigation Traceability" table. The underlying data still
     # lives in mapping-results.json (`coverage_gaps`, `threat_mitigation_map`)
     # for downstream consumers and internal gates; it is simply not rendered
-    # here because every control now cites its Canopy mitigation directly in
+    # here because every control now cites its AWS Threat Model mitigation directly in
     # the catalog, and the mitigation-level rollup is not actionable for the
     # customer reading this report.
 

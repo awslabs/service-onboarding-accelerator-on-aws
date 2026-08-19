@@ -44,8 +44,8 @@ Failure signals:
          05-recommended-guidance/{detective,proactive,responsive}/ must carry a
          resolvable citation — a repo anchor (_metadata.reference resolving to a
          reference-index example), a doc anchor (_metadata.citation of type
-         aws_doc with an MCP-verified AWS documentation URL), or a Canopy anchor
-         (_metadata.citation of type canopy resolving to an ingested Canopy
+         aws_doc with an MCP-verified AWS documentation URL), or an AWS Threat Model anchor
+         (_metadata.citation of type threat_model resolving to an ingested AWS Threat Model
          alias). The preventive family is covered separately by P8.
     P13 — Config-supportability: every emitted Config-rule artifact under
          05-recommended-guidance/detective/ must target a resource type AWS
@@ -1193,7 +1193,7 @@ def validate_pipeline(root: Path) -> list[str]:
             errors.extend(check_reference_anchors(service_root))
             # P12: every detective/proactive/responsive artifact must carry a
             # resolvable citation (repo anchor, MCP-verified doc anchor, or
-            # resolvable Canopy anchor).
+            # resolvable AWS Threat Model anchor).
             errors.extend(check_citation_coverage(service_root))
             # P13: every emitted Config rule must target a Config-supported type.
             errors.extend(check_config_support(service_root))

@@ -156,11 +156,11 @@
             "url": {
               "type": "string",
               "pattern": "^https://docs\\.aws\\.amazon\\.com/.*",
-              "description": "Deep-link to the specific AWS documentation page (ideally with a #section anchor) that backs a control not sourced from a Canopy mitigation. MCP-verified (awsknowledge / aws-documentation) and logged to mcp-calls.log; never a training-data guess."
+              "description": "Deep-link to the specific AWS documentation page (ideally with a #section anchor) that backs a control not sourced from an AWS Threat Model mitigation. MCP-verified (awsknowledge / aws-documentation) and logged to mcp-calls.log; never a training-data guess."
             },
             "title": {"type": "string", "minLength": 1}
           },
-          "description": "Optional — specific AWS-documentation reference for a non-Canopy (trace_source != 'canopy') control, so the framework-mapping Source column can cite a cross-checkable page. Present on assessment-gap / compensating controls; absent on Canopy-sourced controls (they cite the mitigation instead)."
+          "description": "Optional — specific AWS-documentation reference for a non-AWS Threat Model (trace_source != 'threat_model') control, so the framework-mapping Source column can cite a cross-checkable page. Present on assessment-gap / compensating controls; absent on AWS Threat Model-sourced controls (they cite the mitigation instead)."
         },
         "attack_techniques": {
           "type": "array",
@@ -169,35 +169,35 @@
         },
         "mitigation_alias": {
           "type": "string",
-          "description": "Optional — the primary Canopy mitigation alias (e.g. Mitigation.LAMBDA.Function.1) the control derives from. Threaded deterministically from the Canopy source so the final mapping can cite it."
+          "description": "Optional — the primary AWS Threat Model mitigation alias (e.g. Mitigation.LAMBDA.Function.1) the control derives from. Threaded deterministically from the AWS Threat Model source so the final mapping can cite it."
         },
         "mitigation_aliases": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "Optional — all Canopy mitigation aliases this control derives from."
+          "description": "Optional — all AWS Threat Model mitigation aliases this control derives from."
         },
         "mitigation_uuid": {
           "type": "string",
-          "description": "Optional — the primary Canopy mitigation UUID the control derives from."
+          "description": "Optional — the primary AWS Threat Model mitigation UUID the control derives from."
         },
         "mitigation_uuids": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "Optional — all Canopy mitigation UUIDs this control derives from."
+          "description": "Optional — all AWS Threat Model mitigation UUIDs this control derives from."
         },
         "mitigation_statement": {
           "type": "string",
-          "description": "Optional — verbatim Canopy statement of the primary source mitigation, threaded by scripts/canopy_trace.py so a downstream citation can quote it and be provenance-checked against the export. Present only on controls with trace_source == 'canopy'."
+          "description": "Optional — verbatim AWS Threat Model statement of the primary source mitigation, threaded by scripts/threat_model_trace.py so a downstream citation can quote it and be provenance-checked against the export. Present only on controls with trace_source == 'threat_model'."
         },
         "mitre_techniques": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "Optional — MITRE ATT&CK technique IDs resolved deterministically from the Canopy source (mitigation -> THREAT mapping -> threat -> FRAMEWORK mapping). Empty for controls derived from synthetic assessment gaps."
+          "description": "Optional — MITRE ATT&CK technique IDs resolved deterministically from the AWS Threat Model source (mitigation -> THREAT mapping -> threat -> FRAMEWORK mapping). Empty for controls derived from synthetic assessment gaps."
         },
         "trace_source": {
           "type": "string",
-          "enum": ["canopy", "assessment_gap"],
-          "description": "Provenance of a control's traceability: 'canopy' when it resolves to a real Canopy mitigation (alias/UUID/MITRE present), 'assessment_gap' for synthetic gap-derived controls (empty traceability)."
+          "enum": ["threat_model", "assessment_gap"],
+          "description": "Provenance of a control's traceability: 'threat_model' when it resolves to a real AWS Threat Model mitigation (alias/UUID/MITRE present), 'assessment_gap' for synthetic gap-derived controls (empty traceability)."
         },
         "mitigation_intent": {
           "type": "string",

@@ -14,21 +14,87 @@ Claude Code, Kiro, and GitHub Copilot.
 
 ## Prerequisites
 
+You do **not** need to be an AWS user or have AWS credentials to generate
+controls — every fact comes from public AWS documentation and knowledge sources.
+You do need a few common developer tools.
+
 | You need | When | Why |
 |----------|------|-----|
 | One of: Claude Code, Kiro IDE, or VS Code + GitHub Copilot | always | the client that runs the skills |
-| [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your PATH | default mode | the `aws-documentation` MCP server runs via `uvx awslabs.*@latest`; not needed in no-MCP mode |
-| Python 3.9+ | always | the validators and hooks that gate the pipeline |
+| [`git`](https://git-scm.com/downloads) | always | to clone this repository |
+| [Python](https://www.python.org/downloads/) 3.9 or newer | always | the validators and hooks that gate the pipeline |
+| The Python packages in [`requirements.txt`](requirements.txt) | always | `pyyaml`, `jsonschema`, `pytest`, and helpers the tooling imports |
+| [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on your PATH | default mode only | the `aws-documentation` MCP server runs via `uvx awslabs.*@latest`; **not** needed with `--no-mcp` |
 | An AWS CLI profile | optional | only for Tier 2 policy validation (Access Analyzer); the pipeline never deploys |
 
-No AWS credentials are required to generate controls — every fact comes from
-public AWS documentation and knowledge MCP servers.
+### Set up from zero
+
+If you are starting with none of the above, work through these once:
+
+1. **Install a client** — [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview),
+   [Kiro](https://kiro.dev/), or VS Code with the
+   [GitHub Copilot](https://code.visualstudio.com/docs/copilot/overview) extension.
+2. **Install git** — [git-scm.com/downloads](https://git-scm.com/downloads); check with `git --version`.
+3. **Install Python 3.9+** — [python.org/downloads](https://www.python.org/downloads/);
+   check with `python3 --version`.
+4. **Clone the repo and install the Python packages** into a virtual environment:
+
+   ```bash
+   git clone git@github.com:awslabs/service-onboarding-accelerator-on-aws.git
+   cd service-onboarding-accelerator-on-aws
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt      # macOS / Linux
+   # Windows PowerShell:  py -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt
+   ```
+
+5. **Install `uv`** (default MCP mode only) —
+   [astral.sh/uv](https://docs.astral.sh/uv/getting-started/installation/);
+   check with `uv --version`. Skip if you will always run with `--no-mcp`.
+
+Then run the [prerequisite check](#verify-your-setup) below to confirm everything
+is in place, and continue to [Install](#install).
 
 **Running without MCP:** MCP servers are the default, but the whole pipeline can
 also run with no MCP servers at all — pass the `--no-mcp` flag and every fact is
 verified over the web via an open-discovery search that reads and cites only
 authoritative AWS sources. See [How no-MCP mode works](docs/NO-MCP.md) for the
 full walkthrough and [`rules/web-access.md`](rules/web-access.md) for the policy.
+
+### Verify your setup
+
+Run the block for your shell from inside the cloned repo. Each line prints
+`PASS` or `MISSING` so you can see what still needs installing. (`uv` is only
+required for default MCP mode; a `MISSING` there is fine if you use `--no-mcp`.)
+
+**macOS / Linux (bash):**
+
+```bash
+# Run from the repository root, after creating .venv (see step 4 above).
+check() { if eval "$2" >/dev/null 2>&1; then echo "PASS     $1"; else echo "MISSING  $1"; fi; }
+PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
+check "git"                 "command -v git"
+check "python3 (>=3.9)"     "$PY -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,9) else 1)'"
+check "python venv (.venv)" "test -x .venv/bin/python"
+check "pyyaml"              "$PY -c 'import yaml'"
+check "jsonschema"          "$PY -c 'import jsonschema'"
+check "pytest"              "$PY -c 'import pytest'"
+check "uv (MCP mode only)"  "command -v uv"
+```
+
+**Windows (PowerShell):**
+
+```powershell
+# Run from the repository root, after creating .venv (see step 4 above).
+function Check($name, $ok) { if ($ok) { "PASS     $name" } else { "MISSING  $name" } }
+$py = if (Test-Path .\.venv\Scripts\python.exe) { ".\.venv\Scripts\python.exe" } else { "python" }
+Check "git"                 ([bool](Get-Command git -ErrorAction SilentlyContinue))
+Check "python (>=3.9)"      ((& $py -c "import sys; print(1 if sys.version_info[:2] >= (3,9) else 0)") -eq "1")
+Check "python venv (.venv)" (Test-Path .\.venv\Scripts\python.exe)
+Check "pyyaml"              ((& $py -c "import yaml; print(1)" 2>$null) -eq "1")
+Check "jsonschema"          ((& $py -c "import jsonschema; print(1)" 2>$null) -eq "1")
+Check "pytest"              ((& $py -c "import pytest; print(1)" 2>$null) -eq "1")
+Check "uv (MCP mode only)"  ([bool](Get-Command uv -ErrorAction SilentlyContinue))
+```
 
 ---
 
@@ -203,7 +269,7 @@ Two complementary layers keep the output trustworthy.
 
 The **review gates and correctness checks** that run *during* the pipeline — two
 review gates, the root-cause critic, reference-anchor enforcement, the
-Canopy-factual check, and conflict detection — are described in
+AWS Threat Model-factual check, and conflict detection — are described in
 [`docs/DESIGN.md`](docs/DESIGN.md).
 
 The **artifact correctness checks** below confirm the generated control
@@ -225,7 +291,7 @@ session end:
 The pipeline is built around a deterministic, citation-gated mapping layer and
 reference-anchored preventive controls: every confident mapping cites its evidence,
 and every preventive policy is adapted from a published AWS sample rather than
-invented. The full accuracy model — the applicability screen, Canopy traceability
+invented. The full accuracy model — the applicability screen, AWS Threat Model traceability
 and citation verification, per-domain coverage ceilings, the source-priority order,
 and the validation layers — is documented in **[`docs/DESIGN.md`](docs/DESIGN.md)**.
 

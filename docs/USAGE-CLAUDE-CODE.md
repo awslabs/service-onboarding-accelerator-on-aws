@@ -7,17 +7,41 @@ Step-by-step guide to install and run the Service Approval Plugin with Claude Co
 ## Prerequisites
 
 - [Claude Code](https://code.claude.com) installed (CLI or VS Code extension)
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH (for MCP servers)
-- Python 3.9+ (for kb-search MCP and validators)
+- [`git`](https://git-scm.com/downloads) — to clone this repository
+- [Python](https://www.python.org/downloads/) 3.9+ (`python3 --version`) — validators and hooks
+- The Python packages in [`requirements.txt`](../requirements.txt) — installed in Step 2 below
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH — only for default MCP mode; skip if you always use `--no-mcp`
+
+No AWS account or credentials are required to generate controls.
 
 ---
 
-## Step 1: Clone the repo
+## Step 1: Clone the repo and install Python packages
 
 ```bash
 git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 cd service-onboarding-accelerator-on-aws
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
+
+> On Windows PowerShell, use `py -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt`.
+
+Then confirm everything the pipeline needs is present (each line prints `PASS`
+or `MISSING`; a `MISSING` for `uv` is fine if you only use `--no-mcp`):
+
+```bash
+check() { if eval "$2" >/dev/null 2>&1; then echo "PASS     $1"; else echo "MISSING  $1"; fi; }
+PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
+check "git"                "command -v git"
+check "python3 (>=3.9)"    "$PY -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,9) else 1)'"
+check "pyyaml"             "$PY -c 'import yaml'"
+check "jsonschema"         "$PY -c 'import jsonschema'"
+check "pytest"             "$PY -c 'import pytest'"
+check "uv (MCP mode only)" "command -v uv"
+```
+
+(The PowerShell equivalent is in the [README](../README.md#verify-your-setup).)
 
 ## Step 2: Run the installer
 
@@ -198,3 +222,16 @@ git pull
 ```
 
 The plugin auto-updates since it's symlinked from the marketplace.
+
+---
+
+## Uninstall
+
+```
+/plugin uninstall service-approval@service-approval
+/plugin marketplace remove service-approval
+```
+
+Then delete the cloned repo (and the `.venv/` inside it). Removing the repo is
+enough on its own — Claude Code stops discovering the plugin once the
+marketplace symlink target is gone.

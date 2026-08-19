@@ -1,10 +1,10 @@
-"""Reference parser for the Canopy threat-model JSON shape.
+"""Reference parser for the AWS Threat Model threat-model JSON shape.
 
-Canopy exports use a top-level `mitigations[]` and `threats[]`, with each
+AWS Threat Model exports use a top-level `mitigations[]` and `threats[]`, with each
 mitigation carrying `mappings[]` whose entries point back at `entities[]`,
 `mitigation goals`, threats, and implementations. The earlier
 research-mitigations parser only iterated `entities[].mitigations[]`, which
-silently dropped every Canopy mitigation.
+silently dropped every AWS Threat Model mitigation.
 
 This module is the reference implementation used by tests; the
 research-mitigations and research-attack-surface skills follow the same
@@ -17,8 +17,8 @@ import json
 from typing import Any
 
 
-def is_canopy_shape(data: dict[str, Any]) -> bool:
-    """Return True when the file looks like a Canopy export.
+def is_threat_model_shape(data: dict[str, Any]) -> bool:
+    """Return True when the file looks like an AWS Threat Model export.
 
     Detector: top-level `mitigations[]` is present AND `entities[]` entries
     do NOT carry a `mitigations` sub-key. Either condition alone is
@@ -35,10 +35,10 @@ def is_canopy_shape(data: dict[str, Any]) -> bool:
     return not any("mitigations" in e for e in entities if isinstance(e, dict))
 
 
-def is_canopy_threats_shape(data: dict[str, Any]) -> bool:
-    """Return True when the file carries a top-level Canopy `threats[]`.
+def is_threat_model_threats_shape(data: dict[str, Any]) -> bool:
+    """Return True when the file carries a top-level AWS Threat Model `threats[]`.
 
-    Distinct from `is_canopy_shape` — research-attack-surface only needs the
+    Distinct from `is_threat_model_shape` — research-attack-surface only needs the
     threat list, not the mitigation list, so the detector is independent.
     """
     threats = data.get("threats")
@@ -52,24 +52,24 @@ def is_canopy_threats_shape(data: dict[str, Any]) -> bool:
 
 
 def _entity_resource_type(entity: dict[str, Any]) -> str:
-    """Recover a resource_type string from a Canopy entity entry."""
+    """Recover a resource_type string from an AWS Threat Model entity entry."""
     return entity.get("resource_type") or entity.get("entityType") or ""
 
 
 # ---------------------------------------------------------------------------
 # Implementation ingestion
 # ---------------------------------------------------------------------------
-# Newer Canopy exports (e.g. the Aurora DSQL export) carry a top-level
+# Newer AWS Threat Model exports (e.g. the Aurora DSQL export) carry a top-level
 # `implementations[]` array alongside `mitigations[]`. Each implementation is a
 # typed control example: a preventive policy (SCP / RCP / resource-based policy /
 # declarative policy), a proactive CloudFormation Hook, or a detective AWS Config
 # rule / CloudTrail event. It carries the exact governed actions, condition keys,
 # API operations, or resource properties AND a REFERENCE link to the public AWS
 # documentation the example is grounded in. This lets the pipeline cite the
-# Canopy implementation directly (its `alias`) and link straight to that public
+# AWS Threat Model implementation directly (its `alias`) and link straight to that public
 # doc — the first-priority citation source for every control family.
 
-# Map Canopy `implementationType` → the pipeline's mechanism vocabulary. The
+# Map AWS Threat Model `implementationType` → the pipeline's mechanism vocabulary. The
 # mechanism strings mirror the values map-generate-controls / the reference index
 # use so downstream matching lines up.
 _IMPLEMENTATION_TYPE_TO_MECHANISM = {
@@ -84,7 +84,7 @@ _IMPLEMENTATION_TYPE_TO_MECHANISM = {
 
 
 def _mechanism_for_implementation_type(implementation_type: str) -> str:
-    """Return the mechanism string for a Canopy `implementationType`.
+    """Return the mechanism string for an AWS Threat Model `implementationType`.
 
     Resource-based policies use the wildcard form `AWS::*::*::RESOURCE_POLICY`
     (the service/resource segments vary), so match on the `RESOURCE_POLICY`
@@ -101,7 +101,7 @@ def _mechanism_for_implementation_type(implementation_type: str) -> str:
 def _collect_reference_links(context_entries: list[Any]) -> list[dict[str, str]]:
     """Flatten every `links[]` carried by an implementation/mitigation context.
 
-    Canopy attaches public AWS documentation URLs to REFERENCE (and, for some
+    AWS Threat Model attaches public AWS documentation URLs to REFERENCE (and, for some
     detective implementations, DATA_PERIMETER) context entries. Both are public
     doc anchors we want to surface as the citation URL, so collect links from any
     context entry that carries them, de-duplicated by href.
@@ -214,8 +214,8 @@ def _dedup(items: list[str]) -> list[str]:
     return out
 
 
-def parse_canopy_implementations(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Normalize a Canopy doc's top-level `implementations[]` into control rows.
+def parse_threat_model_implementations(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize an AWS Threat Model doc's top-level `implementations[]` into control rows.
 
     Each output entry carries:
       - id / alias: the source `id` (UUID) and `alias`
@@ -231,8 +231,8 @@ def parse_canopy_implementations(data: dict[str, Any]) -> list[dict[str, Any]]:
         implementation's REFERENCE/DATA_PERIMETER context
       - mitigation_ids[] / entity_ids[]: from mappings[]
 
-    Returns [] when the doc carries no `implementations[]` array (older Canopy
-    exports and non-Canopy files).
+    Returns [] when the doc carries no `implementations[]` array (older AWS Threat Model
+    exports and non-AWS Threat Model files).
     """
     implementations = data.get("implementations")
     if not isinstance(implementations, list):
@@ -270,16 +270,16 @@ def parse_canopy_implementations(data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def parse_canopy_mitigation_index(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+def parse_threat_model_mitigation_index(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return `{mitigation_id: {alias, statement, scoping_context, reference_links}}`.
 
-    A control that maps to a Canopy mitigation can pull that mitigation's cited
+    A control that maps to an AWS Threat Model mitigation can pull that mitigation's cited
     public doc link (from its `mitigationContext[type==REFERENCE].links`) even
     when the matching implementation carries no link of its own. Keyed by the
     mitigation's source `id` (UUID) so an implementation's `mitigation_ids[]`
-    resolve directly. Returns {} for a non-Canopy or implementation-only doc.
+    resolve directly. Returns {} for a non-AWS Threat Model or implementation-only doc.
     """
-    if not is_canopy_shape(data):
+    if not is_threat_model_shape(data):
         return {}
     index: dict[str, dict[str, Any]] = {}
     for mit in data.get("mitigations", []):
@@ -295,8 +295,8 @@ def parse_canopy_mitigation_index(data: dict[str, Any]) -> dict[str, dict[str, A
     return index
 
 
-def parse_canopy_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Walk a Canopy-shaped doc's top-level mitigations[] and emit
+def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Walk an AWS Threat Model-shaped doc's top-level mitigations[] and emit
     `existing_mitigations[]` entries.
 
     Each output entry carries:
@@ -309,7 +309,7 @@ def parse_canopy_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]:
       - resource_type: recovered via mappings[type=="ENTITY"].id ->
             entities[].id -> entityType (or resource_type when present)
     """
-    if not is_canopy_shape(data):
+    if not is_threat_model_shape(data):
         return []
 
     entities_by_id = {
@@ -351,7 +351,7 @@ def parse_canopy_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]:
                 "id": mit.get("id", ""),
                 "alias": mit.get("alias", ""),
                 "statement": mit.get("statement", ""),
-                "mitigation_goal": mit.get("statement", ""),  # Canopy folds goal into statement
+                "mitigation_goal": mit.get("statement", ""),  # AWS Threat Model folds goal into statement
                 "request_parameters": flat_paths,
                 "configuration_request_parameters": cfg_params,
                 "resource_type": resource_type,
@@ -363,30 +363,30 @@ def parse_canopy_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
-def build_canopy_index(data: dict[str, Any], service: str = "") -> dict[str, Any]:
-    """Assemble the persisted canopy-index.json payload from a Canopy doc.
+def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[str, Any]:
+    """Assemble the persisted threat-model-index.json payload from an AWS Threat Model doc.
 
-    Shape validated by schemas/canopy-index.schema.json. The `mitigations[]` are
+    Shape validated by schemas/threat-model-index.schema.json. The `mitigations[]` are
     the normalized parse (id + alias + statement + cited REFERENCE links) and
     `implementations[]` are the typed control examples. This is the single source
-    of truth a downstream `type: "canopy"` citation resolves its alias against.
+    of truth a downstream `type: "threat_model"` citation resolves its alias against.
     """
     return {
         "_metadata": {
             "service": service or (data.get("metadata") or {}).get("name") or "unknown",
-            "source": "canopy",
+            "source": "threat_model",
             "generated": "service-approval",
         },
-        "mitigations": parse_canopy_mitigations(data),
-        "implementations": parse_canopy_implementations(data),
+        "mitigations": parse_threat_model_mitigations(data),
+        "implementations": parse_threat_model_implementations(data),
     }
 
 
-def canopy_index_aliases(index: dict[str, Any]) -> set[str]:
-    """Return the set of every resolvable alias in a canopy-index.json payload.
+def threat_model_index_aliases(index: dict[str, Any]) -> set[str]:
+    """Return the set of every resolvable alias in a threat-model-index.json payload.
 
     The union of mitigation `alias` and implementation `alias`. A
-    `type: "canopy"` citation's `id` must be a member of this set — an
+    `type: "threat_model"` citation's `id` must be a member of this set — an
     unresolvable alias is a hard failure in validate_citation_coverage.py.
     """
     aliases: set[str] = set()
@@ -399,11 +399,11 @@ def canopy_index_aliases(index: dict[str, Any]) -> set[str]:
     return aliases
 
 
-def load_canopy_index(path: str) -> dict[str, Any] | None:
-    """Load a canopy-index.json file, or None when it is absent/unreadable.
+def load_threat_model_index(path: str) -> dict[str, Any] | None:
+    """Load a threat-model-index.json file, or None when it is absent/unreadable.
 
-    Absence is not itself an error here — a run with no Canopy input has no
-    index, and citation resolution only requires it when a `type: "canopy"`
+    Absence is not itself an error here — a run with no AWS Threat Model input has no
+    index, and citation resolution only requires it when a `type: "threat_model"`
     citation is actually present. The caller decides how to treat None.
     """
     try:

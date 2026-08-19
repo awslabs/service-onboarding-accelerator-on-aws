@@ -325,7 +325,7 @@ def test_category_applicable_is_clean():
 
 # --- Check 5: citation-as-gate -----------------------------------------------
 
-def _cited(oid, cid, requirement="the specific sub-requirement", source="canopy"):
+def _cited(oid, cid, requirement="the specific sub-requirement", source="threat_model"):
     return _mapped([
         {"objective_id": oid, "status": "MAPPED",
          "controls": [{"control_id": cid, "rationale": "r",
@@ -343,7 +343,7 @@ def test_confident_mapped_without_citation_fails():
         # A second row carries a citation → the mapping opts into the gate.
         {"objective_id": "IAM-09", "status": "MAPPED",
          "controls": [{"control_id": "C2", "rationale": "r",
-                       "citation": {"objective_requirement": "x", "source": "canopy"}}]},
+                       "citation": {"objective_requirement": "x", "source": "threat_model"}}]},
     ])
     controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]),
                       _ctrl("C2", "SCP", name="privileged role segregation", keywords=["iam"]))

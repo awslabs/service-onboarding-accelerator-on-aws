@@ -15,7 +15,7 @@ Produce `.service-approval/<slug>/03-validate/validated.json`.
 When confirming a claim or attaching a citation, consult sources in this fixed
 order and cite the **highest-priority** source that supports the claim:
 
-1. **Canopy** — the customer-provided mitigation/threat export, when present
+1. **AWS Threat Model** — the customer-provided mitigation/threat export, when present
    (authoritative intent + top citation).
 2. **AWS Control Catalog API** — the control→objective authority.
 3. **Service-specific AWS documentation** — the target service's own pages only;

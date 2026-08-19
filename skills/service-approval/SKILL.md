@@ -622,7 +622,7 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
 python3 tools/validate/validate_control_mappings.py --slug <slug>; cm=$?
 python3 tools/validate/lint_control_prose.py --slug <slug> --strict; lp=$?
 python3 tools/validate/validate_mapping_semantics.py --slug <slug>; ms=$?
-python3 tools/validate/validate_canopy_facts.py --slug <slug> --strict; cf=$?
+python3 tools/validate/validate_threat_model_facts.py --slug <slug> --strict; cf=$?
 python3 tools/validate/validate_domain_applicability.py --slug <slug>; da=$?
 python3 tools/validate/validate_domain_mapping_accuracy.py --slug <slug>; ma=$?
 python3 tools/validate/validate_control_dedup.py --slug <slug>; cd=$?
@@ -644,7 +644,7 @@ was introduced only at render time (the `.md` making a claim stronger than the
 source JSON — an "upward re-wording" divergence). It runs `--strict`, so a prose
 finding gates the map phase: re-word the offending control to objective level and
 re-render before generation consumes the mapping. The cross-check's purpose is to
-confirm every mapping can point to a citation (Canopy mitigation, reference
+confirm every mapping can point to a citation (AWS Threat Model mitigation, reference
 example, Control Catalog, or a service-specific doc) before any control is authored.
 
 **Persist the review artifact** so the gate leaves a machine-readable trace —
@@ -657,7 +657,7 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
     {"name": "validate_control_mappings", "exit_code": 0, "blocking": false},
     {"name": "lint_control_prose", "exit_code": 0, "blocking": true},
     {"name": "validate_mapping_semantics", "exit_code": 0, "blocking": false},
-    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": true},
+    {"name": "validate_threat_model_facts", "exit_code": 0, "blocking": true},
     {"name": "validate_domain_applicability", "exit_code": 0, "blocking": false},
     {"name": "validate_domain_mapping_accuracy", "exit_code": 0, "blocking": false},
     {"name": "validate_control_dedup", "exit_code": 0, "blocking": false}
@@ -671,15 +671,15 @@ write `.service-approval/<slug>/04-map/mapping-review.json`:
 `validate_mapping_semantics` runs the deterministic S1/S2/S3 checks (every
 satisfied-by control id resolves, every mapped objective id exists in the parsed
 framework, no control claims an action/condition key absent from `validated.json`).
-`validate_canopy_facts` confirms every Canopy-cited row (a map/framework-mapping
-citation with `source == "canopy"`, or a preventive-plan citation with
-`type == "canopy"`) names a mitigation alias that exists in the provided Canopy
+`validate_threat_model_facts` confirms every AWS Threat Model-cited row (a map/framework-mapping
+citation with `source == "threat_model"`, or a preventive-plan citation with
+`type == "threat_model"`) names a mitigation alias that exists in the provided AWS Threat Model
 export, whose governed operations are consistent with the control's actions, and
 whose quoted `mitigation_statement` (when present) appears verbatim in the
 export. It runs `--strict` here, so a fabricated alias, drifted operation, or
 non-verbatim statement blocks the map phase; MAPPED rows are checked and
 UNCERTAIN rows are exempt. `validate_mapping_semantics` is advisory (reported in
-`mapping-review.json`); the Canopy-facts check also runs in the post-generate gate.
+`mapping-review.json`); the AWS Threat Model-facts check also runs in the post-generate gate.
 
 Then log the outcome:
 
@@ -694,8 +694,8 @@ python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_mapping_semantics \
     --verdict $([ $ms -eq 0 ] && echo pass || echo warn) --message "semantic mapping checks (S1/S2/S3)"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
-    --source script:validate_canopy_facts \
-    --verdict $([ $cf -eq 0 ] && echo pass || echo warn) --message "Canopy-factual citation check"
+    --source script:validate_threat_model_facts \
+    --verdict $([ $cf -eq 0 ] && echo pass || echo warn) --message "AWS Threat Model-factual citation check"
 python3 -m tools.validate.log --slug <slug> --phase 04-map \
     --source script:validate_domain_applicability \
     --verdict $([ $da -eq 0 ] && echo pass || echo warn) --message "framework-domain applicability check"
@@ -804,7 +804,7 @@ python3 tools/validate/validate_enforcement.py --slug <slug> --strict; en=$?
 python3 tools/validate/validate_action_scope.py --slug <slug> --strict; as=$?
 python3 tools/validate/validate_cross.py .service-approval/<slug>/05-recommended-guidance; cx=$?
 python3 tools/validate/validate_detective_routing.py --slug <slug>;   dr=$?
-python3 tools/validate/validate_canopy_facts.py --slug <slug> --strict; cf=$?
+python3 tools/validate/validate_threat_model_facts.py --slug <slug> --strict; cf=$?
 ```
 
 `validate_citation_coverage` is the sibling of `validate_reference_anchor` for the
@@ -861,7 +861,7 @@ also run in the Stop hook — P3/P8/P9/P10 + X4); the routing summary is advisor
     {"name": "validate_action_scope", "exit_code": 0, "blocking": true},
     {"name": "validate_cross", "exit_code": 0, "blocking": true},
     {"name": "validate_detective_routing", "exit_code": 0, "blocking": false},
-    {"name": "validate_canopy_facts", "exit_code": 0, "blocking": true},
+    {"name": "validate_threat_model_facts", "exit_code": 0, "blocking": true},
     {"name": "conflict_detection", "exit_code": 0, "blocking": false}
   ],
   "flagged": []
@@ -873,7 +873,7 @@ Then log each validator's outcome and close the gate:
 ```bash
 for v in "reference_anchor:$ra:1" "citation_coverage:$cc:1" "preventability:$pv:0" \
          "enforcement:$en:1" "action_scope:$as:1" "cross:$cx:1" \
-         "detective_routing:$dr:0" "canopy_facts:$cf:1"; do
+         "detective_routing:$dr:0" "threat_model_facts:$cf:1"; do
   name=${v%%:*}; rest=${v#*:}; code=${rest%%:*}
   python3 -m tools.validate.log --slug <slug> --phase 05-recommended-guidance \
       --source script:validate_$name \

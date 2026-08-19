@@ -24,10 +24,10 @@ carry a **resolvable citation** in its `_metadata`, enforced by
 `validate_citation_coverage.py` (Stop-hook P12). There are three forms; use the
 one the table below specifies for each artifact:
 
-- **Canopy anchor (first-priority when a Canopy is present)** — `_metadata.citation
-  = {type: "canopy", id: "<alias>", url: "<REFERENCE href>", verified_via: "mcp"}`
+- **AWS Threat Model anchor (first-priority when an AWS Threat Model is present)** — `_metadata.citation
+  = {type: "threat_model", id: "<alias>", url: "<REFERENCE href>", verified_via: "mcp"}`
   whose `id` resolves to a mitigation/implementation `alias` in
-  `.service-approval/<slug>/02-research/canopy-index.json`. See "Canopy-first
+  `.service-approval/<slug>/02-research/threat-model-index.json`. See "AWS Threat Model-first
   sourcing" below.
 - **Repo anchor** — `_metadata.reference = {example_id, repo, url}` whose
   `example_id` resolves to an entry in `data/reference-repos/index.yaml`. Used for
@@ -57,16 +57,16 @@ events satisfy the same P1 call floor, and P12 accepts either `verified_via`
 value. The resolvable-citation / live-URL requirement is unchanged — only the
 transport changes; still NEVER hardcode a URL from training data.
 
-### Canopy-first sourcing (when a Canopy threat-model was provided)
+### AWS Threat Model-first sourcing (when an AWS Threat Model threat-model was provided)
 
 Before the managed-rule / custom-rule lookup for a control, check
-`.service-approval/<slug>/02-research/canopy-index.json` for a `behavior ==
+`.service-approval/<slug>/02-research/threat-model-index.json` for a `behavior ==
 "DETECTIVE"` implementation matching the control's resource type / monitored
 operation:
 
 - A `mechanism == "Config Rule"` implementation carries `governed_api_operations[]`
   (`service` + `operation` + `response_parameters[].path`) — use those to shape the
-  Config rule's evaluation, and cite it (`type: "canopy"`, id = the implementation
+  Config rule's evaluation, and cite it (`type: "threat_model"`, id = the implementation
   `alias`), linking to the implementation's REFERENCE `href` (or its mapped
   mitigation's cited link) as the doc URL.
 - A `mechanism == "CloudTrail"` implementation carries `monitored_operations[]`
@@ -76,7 +76,7 @@ operation:
 MCP-verify the REFERENCE `href` at generation time (`awsknowledge` /
 `aws-documentation`) and log the call to `pipeline.log`; stamp `verified_via:
 "mcp"`. **Fall through** to the managed-rule / repo-anchor / doc-anchor paths below
-only when Canopy has no matching implementation for the control.
+only when AWS Threat Model has no matching implementation for the control.
 
 | Artifact | Citation form |
 |----------|---------------|
@@ -169,9 +169,9 @@ python3 tools/validate/validate_config_support.py --resource-type "AWS::<Service
     the resource-config-reference doc
     (`https://docs.aws.amazon.com/config/latest/developerguide/resource-config-reference.html`).
 
-**Canopy divergence:** if Canopy proposes a Config rule (`config_rule`
+**AWS Threat Model divergence:** if AWS Threat Model proposes a Config rule (`config_rule`
 implementation) for a type the doc list does not support, the deterministic gate
-wins — Canopy can be aspirational. Do not emit the Config rule; log the
+wins — AWS Threat Model can be aspirational. Do not emit the Config rule; log the
 divergence to `pipeline.log` and route/gap the control as above. (The doc is the
 freshest source of truth and can be ahead of the SDK enum — e.g.
 `AWS::DSQL::Cluster` is doc-supported; the data file carries such additions.)

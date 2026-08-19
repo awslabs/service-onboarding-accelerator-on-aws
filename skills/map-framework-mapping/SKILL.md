@@ -364,7 +364,7 @@ accordingly.
 Multiple control IDs legitimately mapping to one objective is **expected**, not spray:
 a single mitigation is commonly implemented as a preventive/proactive twin (SCP, RCP,
 CloudFormation Guard) plus a detective twin (AWS Config rule) plus a responsive twin (SSM
-Automation), and each is a distinct layer of defense. When a Canopy control shares one of
+Automation), and each is a distinct layer of defense. When an AWS Threat Model control shares one of
 its `mitigation_ids` with a control you already mapped to an objective, evaluate that
 control for the **same** objective too:
 - Map it as its **own row** with its own `rationale` describing *its* mechanism (the Config
@@ -378,11 +378,11 @@ control for the **same** objective too:
   objective's `allow_mechanisms` and none is in `deny_mechanisms` (same eligibility gate as
   any other control).
 - Do NOT banish a redundant twin to an "uncited" / suggestions list just because a sibling
-  already maps. **Every Canopy-sourced control must appear as a MAPPED row under an
+  already maps. **Every AWS Threat Model-sourced control must appear as a MAPPED row under an
   objective its mechanism class legitimately satisfies** (or, only if genuinely no objective
-  fits its mechanism, be left unmapped — never dumped to the non-Canopy suggestions
-  section). The assemble step lists ONLY non-Canopy (`trace_source != "canopy"`) controls in
-  "Suggestions for Review"; a Canopy control that reaches no objective is a mapping gap to
+  fits its mechanism, be left unmapped — never dumped to the non-AWS Threat Model suggestions
+  section). The assemble step lists ONLY non-AWS Threat Model (`trace_source != "threat_model"`) controls in
+  "Suggestions for Review"; an AWS Threat Model control that reaches no objective is a mapping gap to
   fix here, not a suggestion.
 
 ### 1.2 Objective coverage rollup (coverage-level consistency)
@@ -414,16 +414,16 @@ converts "silently wrong" into "explicitly uncertain."
   "objective_requirement": "<the specific sub-requirement of THIS objective the control satisfies>",
   "mitigation_alias": "Mitigation.LAMBDA.Function.3",
   "mitigation_uuid": "…",
-  "mitigation_statement": "<the mitigation's Canopy statement, VERBATIM — copy from the control's threaded mitigation_statement, do not paraphrase>",
+  "mitigation_statement": "<the mitigation's AWS Threat Model statement, VERBATIM — copy from the control's threaded mitigation_statement, do not paraphrase>",
   "mitre_techniques": ["T1530"],
-  "source": "canopy"           // canopy | assessment_gap | aws_doc
+  "source": "threat_model"           // threat_model | assessment_gap | aws_doc
 }
 ```
 
-When `source == "canopy"`, copy `mitigation_statement` **verbatim** from the
+When `source == "threat_model"`, copy `mitigation_statement` **verbatim** from the
 control's threaded `mitigation_statement` field (resolved deterministically from
-the Canopy export by map-generate-controls). A deterministic validator confirms
-this text appears verbatim in the Canopy export's `mitigations[].statement`; a
+the AWS Threat Model export by map-generate-controls). A deterministic validator confirms
+this text appears verbatim in the AWS Threat Model export's `mitigations[].statement`; a
 paraphrased or invented statement FAILs the map gate. If you cannot copy the
 statement verbatim, omit the `mitigation_statement` field rather than paraphrase.
 
@@ -431,7 +431,7 @@ Decide per row (the row's `status` is the signal — there is no separate
 confidence score field):
 
 - **You can name the concrete linkage** (this control's mechanism ↔ this
-  objective's named sub-requirement, backed by a Canopy mitigation or an AWS
+  objective's named sub-requirement, backed by an AWS Threat Model mitigation or an AWS
   doc): emit `status:"MAPPED"` with the full citation
   (`objective_requirement` + `source` are what make it concrete).
 - **You believe there is a relationship but cannot produce that concrete
@@ -445,15 +445,15 @@ confidence score field):
 concrete citation (`objective_requirement` + `source`): fix the citation or
 demote the row to `UNCERTAIN`. It does NOT fail an `UNCERTAIN` row.
 
-### 1.4 Traceability (attach the Canopy source + MITRE)
+### 1.4 Traceability (attach the AWS Threat Model source + MITRE)
 
 Each control was threaded with `mitigation_alias`, `mitigation_uuid`,
 `mitigation_statement`, and `mitre_techniques[]` in map-generate-controls (Phase
-3c, resolved deterministically from the Canopy source). Copy those onto the
-citation so the rendered `framework-mapping.md` can cite the exact Canopy
+3c, resolved deterministically from the AWS Threat Model source). Copy those onto the
+citation so the rendered `framework-mapping.md` can cite the exact AWS Threat Model
 mitigation and MITRE techniques behind the mapping, and so the citation can be
 provenance-checked against the export. A control with `trace_source:"assessment_gap"`
-has no Canopy alias — set `source:"assessment_gap"` and leave the
+has no AWS Threat Model alias — set `source:"assessment_gap"` and leave the
 mitigation/MITRE fields empty.
 
 ---
@@ -537,13 +537,13 @@ After building the initial mapping, check for controls not mapped to any objecti
 1. Read the control's mechanism and `security_rationale`
 2. Search framework objectives for alignment by mechanism (not just domain keyword)
 3. If a genuine match exists, add the mapping with a specific rationale
-4. A Canopy-sourced control (`trace_source == "canopy"`) that shares a mitigation with an
+4. An AWS Threat Model-sourced control (`trace_source == "threat_model"`) that shares a mitigation with an
    already-mapped control is a **defense-in-depth twin**, not an orphan — map it to the
    same objective per Phase 1 Step 6 rather than leaving it orphaned.
 5. Only leave a control orphaned if it truly has no framework objective match its mechanism
-   class satisfies. A leftover Canopy orphan is a signal to re-check Step 6 — it must not be
-   silently dropped or pushed to the non-Canopy "Suggestions for Review" section (that
-   section is `trace_source != "canopy"` controls only).
+   class satisfies. A leftover AWS Threat Model orphan is a signal to re-check Step 6 — it must not be
+   silently dropped or pushed to the non-AWS Threat Model "Suggestions for Review" section (that
+   section is `trace_source != "threat_model"` controls only).
 
 ---
 
@@ -625,7 +625,7 @@ shape:
             "mitigation_alias": "Mitigation.LAMBDA.Function.6",
             "mitigation_uuid": "…",
             "mitre_techniques": ["T1078"],
-            "source": "canopy"
+            "source": "threat_model"
           }
         }
       ]
@@ -637,7 +637,7 @@ shape:
       "status": "UNCERTAIN",
       "coverage": "N/A",
       "reason": "Candidate control relates to authorization but the specific sub-requirement linkage could not be evidenced.",
-      "review_reason": "No Canopy mitigation or AWS doc concretely ties this control's mechanism to the objective's uniquely-identified-user requirement.",
+      "review_reason": "No AWS Threat Model mitigation or AWS doc concretely ties this control's mechanism to the objective's uniquely-identified-user requirement.",
       "controls": [
         {
           "control_id": "CTRL-ACC-PRV-002",

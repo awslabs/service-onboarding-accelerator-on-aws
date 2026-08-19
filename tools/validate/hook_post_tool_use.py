@@ -29,15 +29,38 @@ from _hook_log import log_hook_fire  # noqa: E402
 _LEGACY_GRACE_PERIOD_S = 24 * 3600
 
 
+def _rel_under_service_approval(norm: str) -> str | None:
+    """Return the path portion after the pipeline's '.service-approval/' root.
+
+    Every layout decision (is-ours, legacy vs current, controls vs state) MUST
+    be anchored to this jail. Matching a bare '/state/', '/controls/', or
+    '/service-approval/' anywhere in the absolute path lets an *ancestor*
+    directory named 'state', 'controls', or 'service-approval' (e.g. a repo
+    cloned under ~/work/controls/) masquerade as the pipeline's own layout,
+    which produced spurious legacy-layout warnings — and, after the grace
+    window, hard-fails — on every write.
+
+    Uses the last '.service-approval/' occurrence so a clone nested inside
+    another '.service-approval/' tree still resolves to its own state jail.
+    Returns None when the write is not under a '.service-approval/' tree.
+    """
+    marker = "/.service-approval/"
+    idx = norm.rfind(marker)
+    if idx == -1:
+        return None
+    return norm[idx + len(marker):]
+
+
 def _legacy_marker_for(norm: str) -> str | None:
     """Return the .LEGACY-LAYOUT-DETECTED marker path for the given write target.
 
     Returns None if the target isn't under a .service-approval/ tree at all.
     """
-    parts = norm.replace("/.service-approval/", "/.service-approval|", 1).split("|", 1)
-    if len(parts) != 2:
+    marker = "/.service-approval/"
+    idx = norm.rfind(marker)
+    if idx == -1:
         return None
-    sa_dir = parts[0] + "/.service-approval"
+    sa_dir = norm[:idx] + "/.service-approval"
     return os.path.join(sa_dir, ".LEGACY-LAYOUT-DETECTED")
 
 
@@ -53,7 +76,8 @@ def _emit_legacy_migration_warning(norm: str, file_path: str) -> str | None:
     Returns the marker path if one was relevant (created or already present),
     so the caller can check its age for the hard-fail grace window.
     """
-    if "/state/" not in norm and "/controls/" not in norm:
+    rel = _rel_under_service_approval(norm)
+    if rel is None or not (rel.startswith("state/") or rel.startswith("controls/")):
         return None
 
     marker = _legacy_marker_for(norm)
@@ -128,7 +152,8 @@ def main():
     # Legacy (fallback): /controls/ or /state/ for migration only — emit
     # a one-time warning marker so users know to migrate; after a 24h
     # grace period, hard-fail to force the user to migrate.
-    if ("/.service-approval/" in norm or "/service-approval/" in norm):
+    rel = _rel_under_service_approval(norm)
+    if rel is not None:
         marker = _emit_legacy_migration_warning(norm, file_path)
         if marker is not None and _legacy_marker_grace_exhausted(marker):
             # Grace exhausted — reject the write.
@@ -150,13 +175,15 @@ def main():
             )
             sys.exit(2)
 
-        # Check if it's in a 05-recommended-guidance/ directory (controls)
-        if "/05-recommended-guidance/" in norm or "/controls/" in norm:
+        # Check if it's in a 05-recommended-guidance/ directory (controls) —
+        # current layout, or the legacy controls/<category>/ layout. Anchored
+        # to `rel` so an ancestor path segment can't misroute the dispatch.
+        if "/05-recommended-guidance/" in rel or rel.startswith("controls/"):
             from validate_controls import validate_file
             errors = validate_file(file_path)
         # Check if it's in a numbered phase directory (state) — range(7) covers
-        # 00-intake through 06-summarize.
-        elif any(f"/{p:02d}-" in norm for p in range(7)) or "/state/" in norm:
+        # 00-intake through 06-summarize — or the legacy state/ layout.
+        elif any(f"/{p:02d}-" in rel for p in range(7)) or rel.startswith("state/"):
             from validate_state import validate_state_file
             errors = validate_state_file(file_path)
         else:

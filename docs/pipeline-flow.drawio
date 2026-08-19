@@ -58,7 +58,7 @@
             <mxPoint x="2020" y="791" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="inputs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontColor=#232F3E;" value="Inputs&lt;br&gt;&lt;br&gt;• AWS service name&lt;br&gt;• Input folder (threat model,&lt;br&gt;  mitigation report, framework file)&lt;br&gt;• Canopy export" vertex="1">
+        <mxCell id="inputs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontColor=#232F3E;" value="Inputs&lt;br&gt;&lt;br&gt;• AWS service name&lt;br&gt;• Input folder (threat model,&lt;br&gt;  mitigation report, framework file)&lt;br&gt;• AWS Threat Model export" vertex="1">
           <mxGeometry height="140" width="180" x="-140" y="201" as="geometry" />
         </mxCell>
         <mxCell id="p00" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#ED7100;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="00 — Intake&#xa;(precursor)" vertex="1">
@@ -127,7 +127,7 @@
         <mxCell id="deliverable" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F4EA;strokeColor=#3F8624;strokeWidth=3;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;fontColor=#232F3E;" value="Deliverable to customer&#xa;&#xa;Recommended security controls.&#xa;The customer applies them themselves —&#xa;the pipeline does not deploy, test, or&#xa;attest against a live account." vertex="1">
           <mxGeometry height="160" width="320" x="2268" y="189" as="geometry" />
         </mxCell>
-        <mxCell id="gates" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;fontStyle=2;align=center;verticalAlign=middle;fontColor=#3B4A57;dashed=1;" value="Guardrails on every phase:  PostToolUse + Stop hooks · validate_pipeline_integrity (P1–P11) · check_phase_complete precondition gate · MCP-verified facts logged to pipeline.log · citation-gated mapping (Canopy → Control Catalog → service docs)" vertex="1">
+        <mxCell id="gates" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;fontStyle=2;align=center;verticalAlign=middle;fontColor=#3B4A57;dashed=1;" value="Guardrails on every phase:  PostToolUse + Stop hooks · validate_pipeline_integrity (P1–P11) · check_phase_complete precondition gate · MCP-verified facts logged to pipeline.log · citation-gated mapping (AWS Threat Model → Control Catalog → service docs)" vertex="1">
           <mxGeometry height="60" width="2080" x="160" y="452" as="geometry" />
         </mxCell>
         <mxCell id="legend_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5A6B7B;strokeWidth=1.5;" value="" vertex="1">
