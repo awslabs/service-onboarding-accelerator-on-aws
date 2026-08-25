@@ -252,6 +252,7 @@ ATT&CK threat mapping.
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`, `s3`, `kms`) | Required if no folder |
 | `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | `ccmv4` (asked at intake; flag bypasses the prompt) |
 | `--framework-file=<path>` | Explicit path to a framework file | Auto-detect from input |
+| `--framework-specification="<text>"` | Free-text notes on a custom framework's structure (control/sub-control ID format, columns, grouping); if you supply a custom framework and omit this, intake offers to ask | None |
 | `--from-intake=<file>` | Read an intake YAML instead of prompting | None |
 | `--interactive` | Force the interactive intake form | false |
 | `--include-unverified` | Include unverified findings in generation | false |
