@@ -2,7 +2,7 @@
 name: service-approval-v3
 description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--from-intake=<file>] [--interactive] [--no-mcp]'
+argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]'
 ---
 
 # Service Approval — Orchestrator v3
@@ -27,6 +27,7 @@ does not deploy, test, or attest against a live account.
 | `--clean` | Delete existing .service-approval/ state before run | false |
 | `--framework=<type>` | Control framework type (ccmv4, nist, cis, iso) — passed to Map phase | auto-detect |
 | `--framework-file=<path>` | Explicit path to framework file — passed to Map phase | auto-detect from input folder |
+| `--framework-specification="<text>"` | Free-text description of a custom framework's structure (control/sub-control ID format, column layout, grouping) — recorded as `inputs.framework_specification` and read by the Map phase | None (only relevant with a custom framework) |
 | `--from-intake=<file>` | Path to intake YAML — Intake reads this instead of prompting | None |
 | `--interactive` | Force Intake's interactive form even when other flags would satisfy it | false |
 | `--no-mcp` | Run without MCP servers — verify every fact over the web (WebFetch/WebSearch against the `rules/web-access.md` allowlist) instead of calling MCP. Threaded into `intake-manifest.json` as `pipeline_flags.no_mcp`; each phase follows its **No-MCP mode** fallback. | false (MCP is the default) |

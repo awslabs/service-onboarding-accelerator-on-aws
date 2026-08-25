@@ -44,6 +44,12 @@ input:
   # Explicit path to framework file (optional — auto-detected from folder if null)
   framework_file: null
 
+  # Free-text notes describing a CUSTOM framework's structure (optional): how
+  # control / sub-control IDs are formatted, which column holds the control text,
+  # how requirements are grouped, which controls matter most. Read by the Map
+  # phase as advisory guidance. Equivalent to the --framework-specification flag.
+  framework_specification: null
+
   # Bootstrap behavior when ./input/ does not exist in the user's cwd.
   # In interactive mode the intake skill prompts for these. For file-driven
   # runs (--from-intake=...), set them here to skip the prompt.

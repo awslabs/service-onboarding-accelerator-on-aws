@@ -160,6 +160,7 @@ The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverag
 | `./input-folder` | Folder with input files (`.md`, `.json`, `.xlsx`, `.pdf`, `.docx`) | None |
 | `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | `ccmv4` |
 | `--framework-file=<path>` | Explicit path to framework file | Auto-detect |
+| `--framework-specification="<text>"` | Free-text notes on a custom framework's structure (control/sub-control ID format, columns, grouping); with a custom framework, intake also offers to ask | None |
 | `--include-unverified` | Include unverified findings in generation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
 | `--clean` | Delete existing state before run | false |
