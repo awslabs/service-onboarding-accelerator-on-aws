@@ -6,6 +6,12 @@ toolTypes: ["write"]
 
 # Block direct writes to pipeline state and controls
 
+Before any downstream phase write, run
+`python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`.
+Exit code 2 means STOP: a matching AWS Threat Model export is required.
+For intake-manifest writes, validate the export with `--service` and
+`--threat-model-file` before writing, and revalidate with `--manifest` afterward.
+
 You are about to write to a file. If this write targets the pipeline state
 or controls directories, confirm: are you executing through the power's
 defined sub-skills (`sa-intake`, `sa-assess`, `sa-research-*`,

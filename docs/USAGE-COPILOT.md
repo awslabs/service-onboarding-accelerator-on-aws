@@ -96,15 +96,17 @@ Copilot auto-discovers the plugin — no install step required. It reads:
 For running the plugin, open a **separate folder** — not the plugin repo:
 
 1. Create a new folder: `mkdir ~/my-service-approval`
-2. Optionally add custom input files:
+2. Add the required matching AWS Threat Model JSON export and optional framework:
    ```bash
    mkdir ~/my-service-approval/input
-   cp /path/to/threat-model.xlsx ~/my-service-approval/input/
+   cp /path/to/service-aws-threat-model.json ~/my-service-approval/input/
    cp /path/to/ccmv4-framework.json ~/my-service-approval/input/
    ```
 3. Open this folder in VS Code: **File** → **Open Folder** → select `~/my-service-approval/`
 
-If you don't add input files, the plugin uses built-in defaults (CCMv4 + MITRE ATT&CK).
+The pipeline stops before assessment/research without a valid matching AWS
+Threat Model export. You may instead pass `--threat-model-file=<path>`.
+This requirement also applies to saved intake, resume, and `--no-mcp`.
 
 > **Note:** The agent and MCP configs live in the plugin repo. If running from a
 > different folder, copy `.vscode/mcp.json` and `.github/` from the plugin repo
@@ -124,9 +126,9 @@ Type in Copilot Chat:
 @service-approval ./input --service=s3
 ```
 
-Or without input files:
+Or select the required export explicitly:
 ```
-@service-approval --service=bedrock-agentcore
+@service-approval --service=bedrock-agentcore --threat-model-file="/path/to/agentcore-aws-threat-model.json"
 ```
 
 With additional flags:

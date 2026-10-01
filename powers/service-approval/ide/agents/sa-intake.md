@@ -13,6 +13,24 @@ You are running in Kiro IDE / Kiro CLI 2.0. Treat this as a chat pane: you
 do NOT have an `AskUserQuestion`-style blocking primitive. You MUST
 enforce turn-taking yourself by following the hard rules below.
 
+## Mandatory AWS Threat Model prerequisite
+
+Every service requires a matching AWS Threat Model JSON export. Read the
+canonical gate in `skills/intake/SKILL.md` and run
+`python3 tools/validate/validate_threat_model_input.py --service "<service>" --threat-model-file "<path>"`
+before completing intake. Use the installed plugin's absolute script path when
+outside the repository. `--from-intake` skips questions, never this gate.
+`--no-mcp`, cached state, and a MITRE-only framework choice do not waive it.
+A framework or mitigation report alone is insufficient. On failure, STOP.
+
+Accept an explicit `--threat-model-file` / YAML `input.threat_model_file`, or
+discover exactly one matching export using `--input-folder`. If no file is
+supplied/found, ask for its path after Step 1 and wait for the reply.
+Record its validated absolute path in `inputs.threat_model_file`,
+`inputs.input_files` (type `threat_model`), and set
+`inputs.has_custom_threat_model: true`. After writing the manifest, run the
+validator with `--manifest "<manifest-path>"` and STOP on nonzero exit.
+
 ## Hard rules — read before every prompt
 
 1. **STOP and WAIT after every question.** End your turn with the literal
@@ -88,10 +106,10 @@ enforce turn-taking yourself by following the hard rules below.
 
 ---
 
-## Step 0 — Input folder bootstrap (only if `./input/` is missing)
+## Step 0 — Input folder and export location
 
-Use the bootstrap flow in `skills/intake/SKILL.md` section
-"0. Input Folder Bootstrap" — but the hard rules above still apply:
+Use the input-location flow in `skills/intake/SKILL.md` section
+"0. Input folder and export location" — but the hard rules above still apply:
 stop and ask, never infer. If `./input/` already exists, skip Step 0.
 
 ## Step 1 — Service name (required)
@@ -157,7 +175,8 @@ Render this summary verbatim, substituting collected values:
 ├─────────────────────────────────────────────────────────────┤
 │  Service:          {service_name}                           │
 │  Framework:        {framework_type or "MITRE-only"}         │
-│  Threat model:     MITRE ATT&CK (always-on)                 │
+│  AWS Threat Model: {validated_export_path}                 │
+│  ATT&CK analysis:  always-on enrichment                    │
 └─────────────────────────────────────────────────────────────┘
 ```
 

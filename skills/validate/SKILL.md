@@ -28,6 +28,10 @@ source. `sar-facts.json` / `checkpoint-results.json` remain the authoritative
 
 ## Prerequisites
 
+- [ ] You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+  before verification or reusing cached state. Stop on nonzero exit; the matching
+  AWS Threat Model export remains mandatory in every mode.
+
 - [ ] Confirm research.json exists (schema validation runs automatically via PostToolUse hook).
   Stop if `.service-approval/<slug>/02-research/research.json` is missing.
 

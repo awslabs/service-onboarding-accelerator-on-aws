@@ -33,7 +33,7 @@ that identifies it and tells agents when to activate it.
 are invoked from this one.
 
 Agents should:
-1. Read the user's request for an AWS service name and optional input folder.
+1. Read the user's request for an AWS service name and a required matching AWS Threat Model JSON export (input folder or `--threat-model-file`).
 2. Activate the `service-approval` skill.
 3. Follow the pipeline steps in the skill body.
 4. Write all state to `.service-approval/<service-slug>/` (per-service, per-phase layout).
@@ -59,6 +59,16 @@ atomically promotes the staging directory to `<slug>/`.
 See [`README.md`](README.md) for per-phase artifact counts and the full flag reference.
 
 ## Hard rules (enforced at Stop hook time)
+
+0. A matching AWS Threat Model JSON export is mandatory for every service.
+   Run `tools/validate/validate_threat_model_input.py` before assessment/research
+   and again on resume. Missing, malformed, or wrong-service input halts the
+   pipeline; no flag or saved state bypasses it. Record the validated absolute
+   source path in `inputs.threat_model_file` in the intake manifest.
+   Real AWS Threat Model exports are local runtime inputs: NEVER commit or
+   upload them to the repository, including renamed copies or model-derived
+   runtime state. Prefer an external path via `--threat-model-file`; use only
+   synthetic, hand-authored model fixtures in repository tests.
 
 1. Never write a one-shot generator script that hardcodes state or controls. Run every
    phase through its `SKILL.md`.

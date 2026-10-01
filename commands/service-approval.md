@@ -1,6 +1,6 @@
 ---
 description: Run the AWS service-approval pipeline — generates security controls for a specified AWS service
-argument-hint: "[./input-folder] [--service=<name>] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--include-unverified] [--dry-run] [--clean] [--from-intake=<file>] [--interactive]"
+argument-hint: "[./input-folder] [--service=<name>] [--threat-model-file=<path>] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--include-unverified] [--dry-run] [--clean] [--from-intake=<file>] [--interactive]"
 ---
 
 # Service Approval — Orchestrator
@@ -15,10 +15,12 @@ Expect arguments in `$ARGUMENTS`. Extract:
 - AWS service name — required unless an input folder is provided with a `sar-slugs.json`-resolvable service, or `--from-intake=<file>` points at an intake that names one
   - From `--service=<name>` flag, or
   - Inferred from `./input/` folder contents
-- Input folder — optional path to customer docs (.md, .json, .xlsx, .pdf, .docx); defaults to `./input/`
-  - If `./input/` is missing, the Intake skill creates it and offers to seed it with the bundled
-    CCMv4 framework xlsx and/or auto-download the latest CCMv4 from CSA. See
-    `skills/intake/SKILL.md` "Step 0" for the full bootstrap flow.
+- AWS Threat Model — REQUIRED matching JSON export, supplied via
+  `--threat-model-file=<path>` or discovered in the input folder (`./input/` by default).
+  Missing/invalid input stops the pipeline before any assessment or research.
+  Follow the mandatory local gate in `skills/intake/SKILL.md`; no flags waive it.
+- Input folder — required unless an explicit export path is provided; may also
+  contain optional framework and supporting documents.
 - Framework — optional `--framework=<ccmv4|nist|cis|iso>`; auto-detected from input if absent
 - Framework file — optional `--framework-file=<path>`
 - Intake controls — `--from-intake=<file>`, `--interactive`

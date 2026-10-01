@@ -15,12 +15,13 @@ enrichment from multiple threat model formats:
 - **STRIDE** (md, docx) — maps customer STRIDE categories to techniques
 - **Custom threat catalogs** (xlsx, json, md) — any structured threat list with IDs and categories
 
-When no customer threat model file is provided, the step uses the MITRE ATT&CK Cloud
-matrix (via the `mitre-attack` MCP or the bundled `data/attack-cloud-matrix.json` snapshot)
-to derive applicable techniques from the service's API surface.
-
-Uses the service's API surface, capabilities, and (optionally) customer-provided threat model to
-produce a prioritized list of applicable threat techniques.
+Every pipeline run requires the matching AWS Threat Model export selected by
+`inputs.threat_model_file` in intake. You MUST run
+`python3 tools/validate/validate_threat_model_input.py --slug "<slug>"` before
+analysis and STOP on failure. Read that selected file even when it is outside the
+input folder. Additional MITRE ATT&CK, STRIDE, or custom documents enrich it;
+none replaces the required export. Use the service API surface and capabilities
+to supplement the exported threats with MITRE ATT&CK Cloud analysis.
 
 **Input:** SAR facts, customer threat model (from input folder, if available), reference data
 **Output:** `.service-approval/<slug>/02-research/research-attack-surface.json`
@@ -33,7 +34,8 @@ analysis for every service.
 
 ## Threat Model Detection
 
-Scan the input folder for threat model files. Detection rules:
+Read the selected AWS Threat Model first, then scan the input folder for optional
+supplementary threat documents. Detection rules:
 
 | File Pattern | Threat Model Type | Processing |
 |---|---|---|
@@ -42,7 +44,7 @@ Scan the input folder for threat model files. Detection rules:
 | `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
 | `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
 | Mitigation report with STRIDE keywords | STRIDE (implicit) | Extract from mitigation context |
-| **No threat model files found** | **MITRE ATT&CK (default)** | **Use MITRE MCP or bundled `data/attack-cloud-matrix.json` — derive techniques from service API surface** |
+| **Required AWS Threat Model missing/invalid** | **Prerequisite failure** | **STOP; request the matching AWS Threat Model JSON export** |
 
 **AWS Threat Model detector (must run BEFORE the MITRE default):** for every `.json`
 file in the input folder, peek at its top-level keys. If the file has both a
@@ -54,14 +56,14 @@ detector, the file falls through to the MITRE default branch and the
 threat list is silently dropped. Reference detector at
 `tools/validate/threat_model_parse.py::is_threat_model_threats_shape`.
 
-If multiple threat model files are found, merge them — MITRE ATT&CK provides technique IDs,
-STRIDE provides category alignment, custom catalogs provide organization-specific threats.
+Merge optional MITRE, STRIDE, and custom catalogs as supplementary context.
+Skip other AWS Threat Model exports, including alternate versions of the selected
+service's model; only `inputs.threat_model_file` supplies the authoritative graph.
 
-**Default behavior (no customer files):** When no customer threat model file is detected,
-this step ALWAYS runs using the MITRE ATT&CK Cloud matrix as the source. The service's
-API surface (from SAR facts or `--service` flag) is analyzed against the full ATT&CK
-Cloud technique set to identify applicable threats. This is the baseline — customer
-files only enrich it.
+**MITRE enrichment always runs after the required export is ingested.** The
+MITRE MCP or bundled cloud matrix supplements the service model; absence of
+additional STRIDE/MITRE documents is acceptable, absence of the required export
+is not. Do not merge another service's export into the selected service model.
 
 Record the detected threat model in the output:
 ```json
@@ -165,14 +167,14 @@ Build `customer_stride_profile`:
 }
 ```
 
-**If no customer threat model exists**, leave `customer_stride_profile` empty `{}`.
+**If no supplementary STRIDE content exists**, leave `customer_stride_profile` empty `{}`.
 The auto-derivation in Step 2 still runs.
 
 ---
 
 ## Step 2: Auto-Derive Attack Surface from Service API
 
-This step always runs, regardless of whether a customer threat model exists.
+This enrichment step always runs after the mandatory AWS Threat Model input gate passes.
 
 ### 2.1 Load reference data
 

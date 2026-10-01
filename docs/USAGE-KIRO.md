@@ -60,14 +60,16 @@ Open a **new folder** in Kiro for your service approval work — not the plugin 
 1. **File** → **Open Folder**
 2. Create or select an empty folder (e.g., `~/my-service-approval/`)
 
-Optionally add custom input files:
+Add the required matching AWS Threat Model JSON export and optional framework:
 ```bash
 mkdir ~/my-service-approval/input
-cp /path/to/threat-model.xlsx ~/my-service-approval/input/
+cp /path/to/service-aws-threat-model.json ~/my-service-approval/input/
 cp /path/to/ccmv4-framework.json ~/my-service-approval/input/
 ```
 
-If you don't add input files, the plugin uses built-in defaults (CCMv4 + MITRE ATT&CK).
+The pipeline stops before assessment/research without a valid matching AWS
+Threat Model export. You may instead pass `--threat-model-file=<path>`.
+This requirement also applies to saved intake, resume, and `--no-mcp`.
 
 ## Step 4: Start the plugin
 

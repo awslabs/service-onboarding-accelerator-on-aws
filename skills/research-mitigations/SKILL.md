@@ -25,17 +25,24 @@ Per-service phase directory (`.service-approval/<slug>/02-research/`) is created
 ## Inputs
 
 Parse arguments:
-- `./input-folder` (optional) — read all `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files
+- `inputs.threat_model_file` — required, validated AWS Threat Model JSON export from intake
+- `./input-folder` — optional additional `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files
 - `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`, `lambda`, `s3`)
 
-If no input folder is provided, skip mitigation extraction (MCP-only mode — mitigations
-will be empty). If no --service is provided, ask the user.
+You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+before extraction. On failure, STOP; do not emit an empty mitigation inventory.
+Parse `inputs.threat_model_file` even when it is outside the input folder, exactly
+once. Other files supplement it; an entity-nested report does not replace it.
 
 ---
 
 ## Step 1: Parse Input Files
 
-For each file in the input folder:
+Parse the export selected by `inputs.threat_model_file` first. Then parse optional
+supporting files in the input folder, without processing the selected file twice.
+Skip every other AWS Threat Model export, including older versions and models
+for other services: only the selected export supplies the citation index and
+authoritative model mitigations.
 
 ### JSON files (Mitigation Report)
 
@@ -111,7 +118,7 @@ for every control family downstream: a control anchored to an AWS Threat Model
 implementation cites that implementation's `alias` and links straight to its
 public doc URL.
 
-When the input is AWS Threat Model-shaped, persist the normalized index so downstream
+Persist the required export's normalized index so downstream
 citation lookups and the citation validator resolve against one source of truth:
 
 ```python
@@ -128,9 +135,8 @@ with open(".service-approval/<slug>/02-research/threat-model-index.json", "w") a
 `threat-model-index.json` (schema: `schemas/threat-model-index.schema.json`) holds the
 normalized `mitigations[]` (alias + statement + cited REFERENCE links) and
 `implementations[]` (behavior, mechanism, governed actions/keys, and the
-REFERENCE `href`s). Write it whenever the input is Shape B; skip it otherwise
-(no AWS Threat Model → no index, and citation resolution only requires it when a
-`type: "threat_model"` citation is present). The recommender and the authoring /
+REFERENCE `href`s). Writing it is mandatory for every pipeline run.
+The recommender and the authoring /
 detective / proactive skills read this file first when deciding each control's
 citation.
 

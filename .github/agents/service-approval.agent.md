@@ -32,7 +32,9 @@ Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layou
 
 Ask the user for these if not provided:
 - `--service=<name>` (required unless an input folder or `--from-intake` is provided)
-- Optional: `./input-folder` with customer docs (.md, .json, .xlsx, .pdf, .docx)
+- Required: matching AWS Threat Model JSON export in `./input-folder`, or
+  `--threat-model-file=<path>`. Run the mandatory input gate from the orchestrator
+  before assessment/research; missing or invalid input stops the run in all modes.
 - Optional: `--framework=<ccmv4|nist|cis|iso>`, `--framework-file=<path>`
 - Optional: `--from-intake=<file>`, `--interactive` (Intake controls)
 - Optional: `--include-unverified`, `--dry-run`, `--clean`, `--no-mcp` (run without MCP; verify over the web)

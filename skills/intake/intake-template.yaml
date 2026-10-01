@@ -19,7 +19,7 @@
 # Or pass an explicit path:
 #   service-approval --from-intake=path/to/my-service.yaml
 #
-# Only `service.name` is required. Everything else has sensible defaults.
+# `service.name` and a matching AWS Threat Model JSON export are required.
 # ─────────────────────────────────────────────────────────────────────────────
 
 service:
@@ -28,12 +28,14 @@ service:
   name: ""
 
 input:
-  # Path to folder containing input files (.md, .json, .xlsx, .pdf, .docx)
-  # Set to null for MCP-only mode (pipeline researches everything from scratch)
-  folder: null
+  # Input paths are relative to the working directory, not this YAML's directory.
+  # Folder containing the required export and optional supporting files.
+  folder: "./input"
 
-  # What types of input are you providing?
-  threat_model: false       # Custom threat model in the input folder?
+  # Explicit export path; null discovers one matching export in folder.
+  # Missing, invalid, wrong-service, or ambiguous exports halt the pipeline.
+  threat_model_file: null
+  threat_model: true        # Informational; the actual file is always validated.
   mitigation_report: false  # Existing mitigation report?
 
   # Control framework to map against
@@ -50,15 +52,6 @@ input:
   # phase as advisory guidance. Equivalent to the --framework-specification flag.
   framework_specification: null
 
-  # Bootstrap behavior when ./input/ does not exist in the user's cwd.
-  # In interactive mode the intake skill prompts for these. For file-driven
-  # runs (--from-intake=...), set them here to skip the prompt.
-  bootstrap:
-    # Copy the bundled CCMv4 framework xlsx from the plugin's input/ into ./input/
-    seed_from_plugin: false
-    # Try downloading the latest CCMv4 from CSA (falls back to opening browser
-    # if CSA returns a login wall instead of an xlsx)
-    auto_download_ccmv4: false
 
 options:
   # Include MITRE ATT&CK threat mapping (adds ~15 min)

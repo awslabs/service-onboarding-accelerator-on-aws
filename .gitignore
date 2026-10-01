@@ -65,6 +65,8 @@ service-approval-intake.yaml
 # Real threat-model files are supplied at runtime, not stored in the repo.
 # Both the current and the legacy filenames are ignored so neither gets
 # committed by accident.
+input/*.json
+!input/sar-slugs.json
 input/*threat-model*.json
 input/*canopy*.json
 input/dsql.json
