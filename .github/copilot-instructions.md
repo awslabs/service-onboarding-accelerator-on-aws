@@ -15,6 +15,10 @@ Flags can also be expressed in natural language:
 Read the skill at `skills/service-approval/SKILL.md` and follow it step by step.
 Run the pipeline: Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize.
 It recommends controls; you deploy them yourself.
+Every run requires a matching AWS Threat Model JSON export, supplied in `./input/`
+or via `--threat-model-file=<path>`. Run the orchestrator's mandatory local
+preflight before MCP/assessment/research and stop on failure. MITRE data, flags,
+and cached output cannot substitute for the export.
 All state is written to `.service-approval/<service-slug>/` (per-service layout) in the current working directory.
 
 ## MCP servers

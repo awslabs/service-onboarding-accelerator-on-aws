@@ -20,6 +20,7 @@ def _threat_model() -> dict:
     """A minimal AWS Threat Model-shaped export (top-level mitigations[], entities[] with
     no nested mitigations so is_threat_model_shape() detects it)."""
     return {
+        "metadata": {"name": "bedrock-agentcore"},
         "entities": [{"id": "e1", "entityType": "AWS::BedrockAgentCore::Runtime"}],
         "mitigations": [
             {
@@ -34,7 +35,8 @@ def _threat_model() -> dict:
             }
         ],
         "threats": [
-            {"alias": "Threat.AGENTCORE.AgentRuntime.1", "requestParameters": []}
+            {"id": "t1", "alias": "Threat.AGENTCORE.AgentRuntime.1",
+             "threatAction": "can read runtime data", "requestParameters": []}
         ],
         "implementations": [
             {
@@ -155,7 +157,8 @@ def test_check_service_locates_threat_model_via_manifest(tmp_path: Path, monkeyp
     inp.mkdir()
     (inp / "agentcore-threat-model.json").write_text(json.dumps(_threat_model()))
     (root / "00-intake" / "intake-manifest.json").write_text(json.dumps(
-        {"inputs": {"input_folder": "input"}}
+        {"service": {"name": "bedrock-agentcore"},
+         "inputs": {"threat_model_file": "input/agentcore-threat-model.json"}}
     ))
     # A fabricated alias in the mapping must be caught end-to-end.
     (root / "04-map" / "mapping-results.json").write_text(json.dumps(
@@ -168,10 +171,10 @@ def test_check_service_locates_threat_model_via_manifest(tmp_path: Path, monkeyp
     assert any("does not exist" in e for e in errors), errors
 
 
-def test_check_service_no_threat_model_is_noop(tmp_path: Path) -> None:
+def test_check_service_no_threat_model_fails(tmp_path: Path) -> None:
     root = tmp_path / ".service-approval" / "svc"
     (root / "04-map").mkdir(parents=True)
-    assert vcf.check_service(root) == []
+    assert any("AWS Threat Model" in error for error in vcf.check_service(root))
 
 
 # --- Field-name reconcile: map citations use source + mitigation_alias --------
@@ -266,7 +269,8 @@ def test_check_service_reads_fw_mapped(tmp_path: Path, monkeypatch) -> None:
     inp.mkdir()
     (inp / "c.json").write_text(json.dumps(_threat_model()))
     (root / "00-intake" / "intake-manifest.json").write_text(json.dumps(
-        {"inputs": {"input_folder": "input"}}
+        {"service": {"name": "bedrock-agentcore"},
+         "inputs": {"threat_model_file": "input/c.json"}}
     ))
     (root / "04-map" / "map-framework-mapped.json").write_text(json.dumps(
         _fw_mapped("MAPPED", {"source": "threat_model",
@@ -287,7 +291,8 @@ def _write_run(tmp_path: Path, fw_mapped: dict) -> Path:
     inp.mkdir()
     (inp / "c.json").write_text(json.dumps(_threat_model()))
     (root / "00-intake" / "intake-manifest.json").write_text(json.dumps(
-        {"inputs": {"input_folder": "input"}}
+        {"service": {"name": "bedrock-agentcore"},
+         "inputs": {"threat_model_file": "input/c.json"}}
     ))
     (root / "04-map" / "map-framework-mapped.json").write_text(json.dumps(fw_mapped))
     return root

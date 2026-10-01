@@ -72,6 +72,9 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 
 ## Prerequisites
 
+You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+before mapping or reusing cached inputs. Stop on nonzero exit.
+
 ```python
 from tools.paths import phase_dir, service_root
 # slug derived by Phase 0 (Assess) Step 0b — read it from the resolved staging promotion
@@ -176,9 +179,9 @@ This script:
 4. Writes `applicability-matrix.json` (every N/A cites its rule + evidence),
    consumed by map-framework-mapping
 
-The AWS Threat Model JSON path is the same file provided as input to the pipeline (in the
-`input/` folder). If no AWS Threat Model JSON is available, skip this step — the mapping
-skill will assume all objectives are applicable (backward-compatible behavior).
+The AWS Threat Model JSON path is `inputs.threat_model_file` from intake.
+If that export is missing or invalid, STOP and re-run the input prerequisite;
+do not skip the applicability screen or assume an export-free run.
 
 ### Step 3: Framework mapping (after 1+2+2b complete)
 

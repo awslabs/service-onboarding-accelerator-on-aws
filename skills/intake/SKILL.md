@@ -5,13 +5,58 @@ description: >
   Produces intake-manifest.json consumed by all downstream phases.
   Supports file-based input (intake YAML) for repeatable, batch-friendly execution.
 disable-model-invocation: false
-argument-hint: "[--service=<name>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]"
+argument-hint: "[--service=<name>] [--threat-model-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]"
 ---
 
 # Service Approval — Intake
 
 Collect and validate inputs before the pipeline begins. This phase runs before Phase 0
 (Assess) and produces a manifest that configures the downstream pipeline.
+
+## Required AWS Threat Model input — all intake modes
+
+Real AWS Threat Model exports MUST remain local runtime inputs. NEVER commit or
+upload them to the repository, copy them into tracked directories, or bundle them
+with the plugin. Prefer an external `--threat-model-file` path and read it in
+place. Keep model-derived runtime state under the ignored `.service-approval/`
+tree. Repository tests may contain synthetic fixtures only.
+
+You MUST obtain a matching AWS Threat Model JSON export before completing intake.
+This applies to interactive, CLI, `--from-intake`, auto-discovered YAML, and resumed
+runs for every service. Only local input collection may proceed before this gate;
+do not invoke MCP or dispatch Assess/Research until it passes.
+
+Resolve `--threat-model-file` (or YAML `input.threat_model_file`) first; otherwise
+discover the export in the supplied input folder (YAML `input.folder`, default
+`./input/`). Run the installed plugin's `tools/validate/validate_threat_model_input.py`:
+
+```bash
+python3 tools/validate/validate_threat_model_input.py \
+  --service "<service>" --input-folder "<input-folder>"
+```
+
+Add `--threat-model-file "<path>"` for an explicit selection. Use an absolute
+script path when the plugin is installed outside the working directory. Relative
+input paths are resolved against the user's working directory in every mode,
+including YAML intake; the YAML file's directory is not the path base.
+
+The validator checks readable JSON, service identity in `metadata.name` /
+`metadata.identifiers`, and non-empty top-level `entities`, `mitigations`, and
+`threats` arrays with required record fields. Implementations are optional.
+It does not establish authenticity or verify the model's AWS capability claims;
+those claims still pass through Research/Validate.
+
+On nonzero exit, STOP and request a valid matching export; non-interactive runs
+must report the failure and stop. Never offer a skip/MCP-only/MITRE-only input
+fallback or fabricate an export. Multiple matching exports require an explicit
+selection. Framework and mitigation-report files alone do not satisfy the gate.
+No flag, saved boolean (`input.threat_model: true`), or prior output bypasses it.
+
+On success, persist the returned absolute path as `inputs.threat_model_file`,
+set `inputs.has_custom_threat_model: true`, and include the selected path in
+`inputs.input_files` with `type: "threat_model"`. Revalidate the written manifest
+with `--manifest "<manifest-path>"` before handing it to Assess. All downstream
+consumers MUST read this selected export, not rediscover the first JSON file.
 
 ---
 
@@ -116,8 +161,8 @@ passed), render a digestible summary and prompt:
 [U]se as-is   [E]dit a field   (default: U)
 ```
 
-- **Use as-is** (default): proceed with the loaded values, write the manifest,
-  continue to Phase 0.
+- **Use as-is** (default): revalidate the recorded AWS Threat Model file using the
+  mandatory gate above, write and validate the manifest, then continue to Phase 0.
 - **Edit a field**: walk the user through the intake fields one at a time with
   current values pre-filled. The user accepts each (Enter) or overrides. After
   edits, write the updated YAML back to `./service-approval-intake.yaml` and
@@ -225,9 +270,9 @@ they never saw.
 
 ### Question order (both branches)
 
-1. Step 0 — Input folder bootstrap (only if `./input/` missing)
+1. Step 0 — Input folder and export location
 2. Step 1 — Service name
-3. Step 2 — Input type
+3. Step 2 — Required AWS Threat Model and optional supporting inputs
 4. Step 3 — Additional options
 5. Final summary (always — never skipped)
 
@@ -237,161 +282,16 @@ they never saw.
 
 Present this form when running interactively. Fields marked **(required)** must be answered.
 
-### 0. Input Folder Bootstrap (when `./input/` is missing)
+### 0. Input folder and export location
 
-Before asking the service question, check whether `./input/` exists in the user's
-current working directory:
+Use the explicitly supplied folder or `./input/`. If it is missing and no
+`--threat-model-file` was supplied, STOP and ask the user to provide the AWS
+Threat Model JSON export for their service. Do not create an empty folder and
+continue, seed a framework as a substitute, or download/fabricate a model.
 
-```bash
-test -d ./input && echo "PRESENT" || echo "MISSING"
-```
-
-**If PRESENT:** skip this step entirely and go to Step 1.
-
-**If MISSING:** create the folder and present the seed menu below. Do NOT silently
-fall back to MCP-only mode — let the user decide.
-
-```bash
-mkdir -p ./input
-```
-
-```
-No ./input/ folder was found in this directory. I just created an empty one.
-You can populate it with customer documents (.md, .json, .xlsx, .pdf, .docx) for
-mitigation reports, threat models, and control frameworks — or run without inputs.
-
-How would you like to seed it?
-  [1] Skip — run in MCP-only mode (research everything from scratch)
-  [2] Leave empty — I'll add files myself before continuing
-  [3] Seed bundled CCMv4 framework (recommended)
-  [4] Auto-download latest CCMv4 from CSA
-  [5] Both — copy bundled CCMv4 AND try CSA download
-
-Choice [1-5]:
-```
-
-If the run is non-interactive (CLI flags or `--from-intake=<file>`), read the answer
-from `input.bootstrap.{seed_from_plugin, auto_download_ccmv4}` in the intake YAML.
-Defaults: both `false` → equivalent to choice [1] (skip).
-
-#### Locate the plugin's bundled input/
-
-The plugin is symlinked or copied into client-specific paths. Walk up from a known
-anchor to find the plugin root (the directory containing `manifest.yaml`):
-
-```bash
-# Try environment variables first (Claude Code sets CLAUDE_PLUGIN_ROOT)
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
-
-# Fall back: walk up from the skill file's known location
-if [ -z "$PLUGIN_ROOT" ]; then
-  for dir in \
-    "$(pwd)" \
-    "$HOME/.claude/plugins/service-approval" \
-    "$HOME/.gemini/extensions/service-approval" \
-    "$HOME/.kiro/powers/service-approval"; do
-    if [ -f "$dir/manifest.yaml" ] && [ -d "$dir/input" ]; then
-      PLUGIN_ROOT="$dir"
-      break
-    fi
-  done
-fi
-
-# Last resort: search common parent paths for manifest.yaml + input/
-if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(find "$HOME" -maxdepth 6 -name manifest.yaml -path '*service-onboarding*' -print -quit 2>/dev/null | xargs -I{} dirname {})"
-fi
-
-echo "$PLUGIN_ROOT"
-```
-
-If `PLUGIN_ROOT` cannot be located, warn the user, disable choices [3] and [5],
-and offer [1], [2], or [4] only.
-
-#### Choice [3] — Seed bundled CCMv4
-
-```bash
-cp "$PLUGIN_ROOT/input/CCMv4-sample.xlsx" ./input/
-```
-
-Print: `Copied CCMv4-sample.xlsx → ./input/`. Set `inputs.input_folder = "./input"`
-and `inputs.framework_type = "ccmv4"` in the manifest.
-
-The user supplies their own mitigation report (if any) by dropping it into
-`./input/` themselves.
-
-#### Choice [4] — Auto-download CCMv4 from CSA
-
-Try a direct download first. The CSA download URL may serve HTML (login wall) instead
-of an xlsx, so verify the response shape before trusting it.
-
-```bash
-CSA_URL="https://cloudsecurityalliance.org/download/artifacts/cloud-controls-matrix-v4-1"
-TMP=$(mktemp -t ccmv4.XXXXXX)
-
-# Follow redirects, fail on HTTP error, time out at 30s
-if curl -sSfL --max-time 30 -A "service-approval/1.0" -o "$TMP" "$CSA_URL"; then
-  CT=$(file -b --mime-type "$TMP")
-  case "$CT" in
-    application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|\
-    application/zip|\
-    application/octet-stream)
-      mv "$TMP" ./input/CCMv4-CSA-latest.xlsx
-      echo "Downloaded CCMv4 from CSA → ./input/CCMv4-CSA-latest.xlsx"
-      ;;
-    *)
-      rm -f "$TMP"
-      echo "CSA returned $CT (likely a login/marketing page). Falling back to manual download."
-      OPEN_BROWSER=1
-      ;;
-  esac
-else
-  rm -f "$TMP"
-  echo "CSA download failed. Falling back to manual download."
-  OPEN_BROWSER=1
-fi
-
-if [ "${OPEN_BROWSER:-0}" = "1" ]; then
-  echo ""
-  echo "Manual CCMv4 download:"
-  echo "  1. Visit: $CSA_URL"
-  echo "  2. Sign in to your CSA account (free)"
-  echo "  3. Save the .xlsx file into ./input/"
-  echo ""
-
-  # Best-effort browser launch
-  if command -v open >/dev/null 2>&1; then
-    open "$CSA_URL" 2>/dev/null || true
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$CSA_URL" 2>/dev/null || true
-  elif command -v start >/dev/null 2>&1; then
-    start "$CSA_URL" 2>/dev/null || true
-  fi
-
-  read -r -p "Press Enter once the file is in ./input/ (or Ctrl-C to abort): " _
-fi
-```
-
-#### Choice [5] — Both
-
-Run choice [3] first, then choice [4]. If both succeed, the user has two CCMv4 files
-in `./input/`. The Map phase auto-detects framework files by filename pattern (any
-xlsx with `CCMv4`/`ccm`/`CSA` in the name) — having both is harmless, but if both
-files are present, prefer the CSA download (it's likely newer). Tell the user:
-
-```
-You have two CCMv4 files in ./input/:
-  - CCMv4-sample.xlsx (bundled snapshot)
-  - CCMv4-CSA-latest.xlsx (just downloaded)
-
-The Map phase will use CCMv4-CSA-latest.xlsx (newer). Delete the other file if
-you want to silence this notice.
-```
-
-#### After bootstrap
-
-Continue to Step 1 with `inputs.input_folder = "./input"`. The rest of the intake
-form runs normally; `framework_type` defaults to `ccmv4` if a CCMv4 file is present.
+An explicit export path can be outside the input folder. When supplied, continue
+to collect the service name, then validate the file with the mandatory gate.
+In non-interactive mode, missing input is an error that halts the run.
 
 ---
 
@@ -406,17 +306,18 @@ Examples: s3, lambda, bedrock-agentcore-control, kms, ecs, dynamodb
 - If the user provides a friendly name (e.g., "Amazon S3"), normalize to the service ID (`s3`)
 - Validate the service exists by checking `data/sar-slugs.json` for a matching entry
 
-### 2. Input Type (optional)
+### 2. AWS Threat Model (required) and supporting inputs
 
 ```
-Are you providing any of the following? (select all that apply)
-  [ ] Custom threat model (.md, .json, .pdf, .docx)
-  [ ] Custom control framework (.xlsx, .json — CCMv4 only)
-  [ ] Existing mitigation report (.md, .json)
-  [ ] None — use MCP-only mode (research everything from scratch)
+Provide the path to the AWS Threat Model JSON export for this service.
+The pipeline cannot continue without it.
+
+You may also provide a control framework or an existing mitigation report.
 ```
 
-- If custom inputs are provided, record the input folder path
+- If the path was supplied by flag/YAML or exactly one matching export was
+  discovered, run the mandatory gate without asking for the same path again.
+- Record the input folder and the validated absolute `inputs.threat_model_file`.
 - If a custom control framework is provided, detect the framework type:
   - Filename contains "CCMv4" or "ccm" → `ccmv4`
   - Any other framework filename (NIST, CIS, ISO) → warn and ignore;
@@ -496,8 +397,9 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "candidate_slug": "{lowercase, hyphenated service name from user input}"
   },
   "inputs": {
-    "input_folder": "{path or null}",
-    "has_custom_threat_model": true|false,
+    "input_folder": "{path or null when an explicit export outside a folder is supplied}",
+    "has_custom_threat_model": true,
+    "threat_model_file": "{validated absolute path to the AWS Threat Model JSON export}",
     "has_custom_framework": true|false,
     "framework_type": "ccmv4 | null",
     "framework_file": "{path or null}",
@@ -552,7 +454,7 @@ Proceed? (Y/n)
 | Condition | Action |
 |-----------|--------|
 | Service not found in `sar-slugs.json` | Warn user, attempt SAR page lookup via MCP. If found, continue. If not, halt. |
-| `./input/` folder missing | Run Step 0 bootstrap (create empty + offer seed menu). Never silently skip. |
+| `./input/` folder missing | Accept an explicit external export path, or stop and request the required AWS Threat Model. No empty-input fallback. |
 | Plugin root cannot be located for seeding | Warn, disable choices [3] and [5], keep [1]/[2]/[4] available |
 | CSA auto-download returns HTML / non-xlsx | Delete partial file, fall back to opening browser + printing URL, wait for user to drop file |
 | Input folder path invalid | Ask user to correct the path |

@@ -1257,7 +1257,12 @@ def validate_state_file(file_path: str) -> list[str]:
     state_dir = _phase_dir_of(file_path)
 
     # Dispatch by filename
-    if basename == "sar-facts.json":
+    if basename == "intake-manifest.json":
+        from validate_threat_model_input import check_manifest
+        from pathlib import Path
+        errors.extend(check_manifest(data, Path(file_path)))
+
+    elif basename == "sar-facts.json":
         errors.extend(check_sar_facts(data))
 
     elif basename == "checkpoint-results.json":

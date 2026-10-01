@@ -310,40 +310,20 @@ def check(
 
 
 def find_threat_model_file(service_root: Path) -> Path | None:
-    """Locate the AWS Threat Model export for a run via the intake manifest's input folder.
-
-    Reads 00-intake/intake-manifest.json → inputs.input_folder, scans it for a
-    .json that `is_threat_model_shape`/`is_threat_model_threats_shape` recognizes. Returns
-    None when no input folder is recorded or no threat-model-shaped file is found.
-    """
-    manifest = _load_json(service_root / "00-intake" / "intake-manifest.json")
-    if not isinstance(manifest, dict):
-        return None
-    folder = (manifest.get("inputs") or {}).get("input_folder")
-    if not folder:
-        return None
-    fpath = Path(folder)
-    if not fpath.is_absolute():
-        # input_folder is recorded relative to the run's working dir.
-        fpath = Path(os.getcwd()) / fpath
-    if not fpath.is_dir():
-        return None
-    for jf in sorted(fpath.glob("*.json")):
-        data = _load_json(jf)
-        if isinstance(data, dict) and (is_threat_model_shape(data) or is_threat_model_threats_shape(data)):
-            return jf
-    return None
+    """Return the validated source selected by intake, never a folder fallback."""
+    from validate_threat_model_input import load_run_export
+    return load_run_export(service_root)[0]
 
 
 def check_service(service_root: Path) -> list[str]:
-    """Run the factual check for a service root. No threat_model file / no threat_model
-    citations → no errors (the check is a no-op for non-AWS Threat Model runs)."""
-    threat_model_path = find_threat_model_file(service_root)
-    if threat_model_path is None:
-        return []
+    """Run the factual check, failing closed when the required export is absent."""
+    from validate_threat_model_input import load_run_export
+    threat_model_path, errors = load_run_export(service_root)
+    if errors:
+        return errors
     threat_model = _load_json(threat_model_path)
     if not isinstance(threat_model, dict):
-        return []
+        return ["AWS Threat Model export became unreadable after input validation."]
     plan = _load_json(service_root / "05-recommended-guidance" / "preventive-plan.json")
     mapping = _load_json(service_root / "04-map" / "mapping-results.json")
     fw_mapped = _load_json(service_root / "04-map" / "map-framework-mapped.json")

@@ -41,6 +41,10 @@ This Power drives a pipeline that generates AWS security controls for any AWS se
 
 ## Prerequisites
 
+0. **Matching AWS Threat Model JSON export** — mandatory for every service.
+   Supply it in the input folder or via `--threat-model-file=<path>`. Run the
+   canonical intake preflight before external work; stop on failure. This also
+   applies to saved intake, resumed runs, and `--no-mcp`.
 1. **Python 3.9+**: `python3 --version`
 2. **MCP servers** registered in `mcp.json` (auto-loaded by this Power):
    - `aws-documentation` (HTTP)
@@ -61,7 +65,8 @@ Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `service` | AWS service ID (e.g., `s3`, `kms`, `bedrock-agentcore-control`) | Asked during Intake if not supplied as a flag |
-| input folder | Customer docs (.md, .json, .xlsx, .pdf, .docx) | No (Intake creates `./input/` if missing) |
+| input folder | Required AWS Threat Model JSON and optional supporting files | Required unless `--threat-model-file` is supplied |
+| `threat-model-file` | Explicit matching AWS Threat Model JSON export | Optional selection; a matching export is always required |
 | `framework` | `ccmv4` for both Kiro Power and Claude Code (interactive intake is CCMv4-only). Multi-framework parsing remains available via the `--framework=<type>` CLI flag for advanced operators. | Asked during Intake if not supplied as a flag. **Not auto-detected silently.** |
 | `dry-run` | Lint artifacts only | Optional flag |
 

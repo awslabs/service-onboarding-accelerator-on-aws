@@ -205,7 +205,7 @@ def _load_json(path: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("threat_model_json", nargs="?", help="Path to AWS Threat Model threat model JSON")
-    parser.add_argument("--slug", help="Service slug (looks in .service-approval/<slug>/input/)")
+    parser.add_argument("--slug", help="Service slug (reads the export selected in its intake manifest)")
     parser.add_argument("--output", "-o", help="Output path (default: stdout JSON)")
     args = parser.parse_args()
 
@@ -215,12 +215,11 @@ def main() -> None:
         except paths.PathResolutionError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(2)
-        input_dir = svc_root / "input"
-        candidates = [p for p in input_dir.glob("*.json")] if input_dir.exists() else []
-        if not candidates:
-            print(f"SKIP: no JSON files in {input_dir}", file=sys.stderr)
-            sys.exit(0)
-        threat_model_path = candidates[0]
+        from tools.validate.validate_threat_model_input import load_run_export
+        threat_model_path, errors = load_run_export(svc_root)
+        if errors:
+            print("AWS THREAT MODEL REQUIRED: " + "; ".join(errors), file=sys.stderr)
+            sys.exit(2)
         output_path: Path | None = svc_root / "04-map" / "threat-model-trace.json"
     elif args.threat_model_json:
         threat_model_path = Path(args.threat_model_json)

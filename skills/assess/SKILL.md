@@ -43,6 +43,13 @@ If no `--service` and no input folder, ask the user for a service name.
 
 ## Prerequisites
 
+Before any SAR/MCP lookup or staging promotion, you MUST run
+`python3 tools/validate/validate_threat_model_input.py --manifest "<intake-manifest-path>"`.
+For a resumed canonical run, use `--slug "<slug>"`. Use the installed plugin's
+absolute script path outside the repository. On nonzero exit, STOP and request
+the matching AWS Threat Model export; no cached assessment or flag bypasses it.
+If invoked directly without intake, complete Intake first.
+
 Per-service slug and phase directories are created after slug derivation in Step 0b.
 No hardcoded prerequisites — paths are derived dynamically.
 

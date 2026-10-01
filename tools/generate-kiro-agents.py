@@ -56,6 +56,13 @@ def render_ide_md(spec: dict) -> str:
 # per kiro.dev/docs/cli/hooks — hooks are defined inside agent configs, not as
 # standalone files.
 CLI_AGENT_HOOKS = {
+    "PreToolUse": [
+        {
+            "matcher": "fs_write",
+            "command": 'python3 "${workspaceRoot}/tools/validate/hook_pre_tool_use.py"',
+            "timeout_ms": 30000,
+        }
+    ],
     "PostToolUse": [
         {
             "matcher": "fs_write",
@@ -141,6 +148,12 @@ toolTypes: ["write"]
 ---
 
 # Block direct writes to pipeline state and controls
+
+Before any downstream phase write, run
+`python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`.
+Exit code 2 means STOP: a matching AWS Threat Model export is required.
+For intake-manifest writes, validate the export with `--service` and
+`--threat-model-file` before writing, and revalidate with `--manifest` afterward.
 
 You are about to write to a file. If this write targets the pipeline state
 or controls directories, confirm: are you executing through the power's

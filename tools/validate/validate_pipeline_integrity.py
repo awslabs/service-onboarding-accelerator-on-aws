@@ -9,6 +9,8 @@ artifacts instead of running real MCP-driven research/validation/generation.
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
+    P0 — missing, invalid, or wrong-service AWS Threat Model source input;
+         saved state and finalized markers do not replace the required export
     P1 — pipeline.log / mcp-calls.log missing or too few external lookups
          (MCP calls in the default mode, or `web:<source>:fetch|search`
          events in no-MCP mode — both count toward the same floor;
@@ -1171,7 +1173,10 @@ def validate_pipeline(root: Path) -> list[str]:
         return []
 
     # Validate each service
+    from validate_threat_model_input import check_run
     for service_root in service_dirs:
+        errors.extend(f"P0 FAIL: {error}" for error in check_run(service_root))
+
         # Check MCP log at service root
         errors.extend(check_mcp_log(service_root))
 

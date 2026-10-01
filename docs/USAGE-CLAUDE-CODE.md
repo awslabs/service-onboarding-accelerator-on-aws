@@ -76,14 +76,16 @@ mkdir ~/my-service-approval
 cd ~/my-service-approval
 ```
 
-Optionally add custom input files (threat models, framework spreadsheets):
+Add the required matching AWS Threat Model JSON export and optional framework:
 ```bash
 mkdir input
-cp /path/to/threat-model.xlsx ./input/
+cp /path/to/service-aws-threat-model.json ./input/
 cp /path/to/ccmv4-framework.json ./input/
 ```
 
-If you don't add input files, the plugin uses built-in defaults (CCMv4 + MITRE ATT&CK).
+The pipeline stops before assessment/research without a valid matching AWS
+Threat Model export. You may instead pass `--threat-model-file=<path>`.
+This requirement also applies to saved intake, resume, and `--no-mcp`.
 
 ## Step 4: Start Claude Code
 

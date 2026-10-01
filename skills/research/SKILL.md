@@ -33,6 +33,11 @@ sub-skills in parallel (all 4 if ATT&CK enrichment is enabled) and calls the mer
 
 ## Prerequisites
 
+You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+before research, including before reusing cached research. Stop on nonzero exit.
+Read the required export from intake's `inputs.threat_model_file`; an optional
+supporting-input folder is not a substitute. If there is no intake, run Intake first.
+
 ```bash
 from tools.paths import phase_dir, mcp_log
 research_dir = phase_dir(slug, "research")  # .service-approval/<slug>/02-research/

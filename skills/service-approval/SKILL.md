@@ -2,7 +2,7 @@
 name: service-approval-v3
 description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]'
+argument-hint: '[./input-folder] [--service=<name>] [--threat-model-file=<path>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]'
 ---
 
 # Service Approval — Orchestrator v3
@@ -20,7 +20,8 @@ does not deploy, test, or attest against a live account.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `./input-folder` | Path to folder with input files (.md, .json, .xlsx, .pdf, .docx) | None (MCP-only mode) |
+| `./input-folder` | Folder containing the required AWS Threat Model JSON export and optional supporting documents | `./input/` |
+| `--threat-model-file=<path>` | Explicit AWS Threat Model JSON export for the requested service; required when discovery is ambiguous | Auto-detect one matching export in the input folder |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`) | Required if no folder |
 | `--include-unverified` | Allow unverified items in generation | false |
 | `--questions=<file>` | Path to SITCO Bar Questions file (.docx or .txt) — passed to Phase 0 | None |
@@ -150,9 +151,51 @@ continue to work; new tooling should read `pipeline.log`.
 
 ## Prerequisites
 
+### Mandatory AWS Threat Model gate — before external work
+
+An AWS Threat Model JSON export for the requested service is REQUIRED for every
+run, across all clients and both sequential and parallel modes. This requirement
+applies to any service, including DSQL; there is no service allowlist.
+
+You MUST resolve the service and input paths through Intake, then run this local
+preflight BEFORE MCP pre-flight/install, Assess, research, or any downstream
+dispatch. Use the installed plugin's absolute script path when running outside
+the repository:
+
+```bash
+python3 tools/validate/validate_threat_model_input.py \
+  --service "<service>" --input-folder "<input-folder>"
+```
+
+Pass `--threat-model-file "<path>"` when explicitly supplied (including
+`input.threat_model_file` from intake YAML). An explicit selection MUST NOT fall
+back to another file. Record the successful absolute file path as
+`inputs.threat_model_file` in the intake manifest.
+
+After Intake writes its staging manifest, you MUST run:
+
+```bash
+python3 tools/validate/validate_threat_model_input.py \
+  --manifest ".service-approval/_staging/<ts>/00-intake/intake-manifest.json"
+```
+
+Before EACH subsequent phase or resumed dispatch, revalidate the canonical run:
+
+```bash
+python3 tools/validate/validate_threat_model_input.py --slug "<slug>"
+```
+
+**On any nonzero exit, STOP and show the prerequisite failure.** Ask for the
+matching export and rerun the check after it is supplied. Do not proceed with
+an empty mitigation inventory, synthesized threat model, MITRE-only fallback,
+framework spreadsheet, or a generated `threat-model-index.json` as a substitute.
+`--no-mcp`, `--include-unverified`, `--dry-run`, `--clean`, saved intake, cached
+assessment, and finalized output do not waive this requirement. Run the input
+check before applying `--clean` so missing input does not discard existing work.
+
 ### MCP Pre-flight Check
 
-Before doing anything else, verify all required MCP servers are available. Run this check
+After the AWS Threat Model gate passes, verify all required MCP servers are available. Run this check
 automatically — do not ask the user. Install any that are missing.
 
 Required MCPs (all from https://github.com/awslabs/mcp):
@@ -329,7 +372,8 @@ Run each phase in order. Pass all relevant flags through.
 
 ### Intake (Precursor — Mandatory)
 Follow ALL instructions in `skills/intake/SKILL.md` exactly.
-Pass: `--service`, `--from-intake` if provided, `--interactive` if provided,
+Pass: input folder, `--service`, `--threat-model-file` if provided,
+`--from-intake` if provided, `--interactive` if provided,
 `--no-mcp` if provided, and any of `--framework`, `--framework-file` the user
 supplied at the orchestrator level (Intake uses them to pre-fill its form /
 intake manifest).
@@ -390,10 +434,9 @@ Follow ALL instructions in `skills/research-attack-surface/SKILL.md`.
 Pass: `--service`.
 Wait for `.service-approval/<slug>/02-research/research-attack-surface.json`.
 **Always runs.** MITRE ATT&CK threat analysis is mandatory for every service onboarding.
-If customer threat model files exist in the input folder (MITRE, STRIDE, custom), they
-enrich the analysis. If no customer files exist, the step uses the MITRE ATT&CK Cloud
-matrix (via MCP or bundled snapshot) to derive applicable techniques from the service's
-API surface.
+Read the required export selected by `inputs.threat_model_file`. MITRE ATT&CK
+Cloud data and additional customer documents enrich that export; they never
+replace it. Missing or invalid source input halts the pipeline.
 
 **Step 1e — Merge:**
 Run the merge step from `skills/research/SKILL.md` → "Merge Step" section.
@@ -473,7 +516,8 @@ short-circuit (see "Discovery Rules" in `skills/intake/SKILL.md`):
 - Otherwise the skill runs the full interactive form and offers to save.
 
 Dispatch Intake as a foreground subagent with the full text of
-`skills/intake/SKILL.md`, plus `--service`, `--from-intake`, `--interactive`, and
+`skills/intake/SKILL.md`, plus input folder, `--service`, `--threat-model-file`,
+`--from-intake`, `--interactive`, and
 any pre-Intake CLI flags the user passed (`--framework`, `--framework-file`).
 Wait for `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` (Intake's pre-promotion landing zone).
 
@@ -511,7 +555,7 @@ Agent 4: research-attack-surface (background, mandatory)
   Prompt: Full text of skills/research-attack-surface/SKILL.md + --service flag
   Output: research-attack-surface.json
   Note: Always dispatched — MITRE ATT&CK analysis is mandatory for every service.
-  Uses customer threat model files if present, otherwise derives from MITRE ATT&CK Cloud matrix.
+  Reads inputs.threat_model_file; MITRE ATT&CK Cloud matrix supplements the required export.
   If it fails, halt the pipeline — attack surface analysis is required.
 ```
 

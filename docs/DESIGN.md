@@ -11,6 +11,18 @@ was justified.
 
 ## Mapping accuracy: a deterministic, citation-gated layer
 
+Every onboarding run requires a matching AWS Threat Model JSON export.
+`tools/validate/validate_threat_model_input.py` validates the file locally before
+assessment/research and reopens it on resume. Service matching uses export
+metadata, not filenames or cross-service operations. Intake records the selected
+absolute path in `inputs.threat_model_file`; downstream consumers use that path.
+Missing, malformed, wrong-service, or ambiguous input halts the run. MITRE
+analysis and optional reports supplement the required export, never replace it.
+
+The gate is shared by intake-manifest validation, pre-write/post-write hooks,
+phase completion checks, and pipeline integrity (P0). Source structure/identity
+validation does not authenticate the export or verify its AWS capability claims.
+
 The framework-mapping phase constrains what each control may claim, so a control
 is only mapped to an objective it genuinely satisfies — and every confident
 mapping shows its evidence. The controls that drive it:

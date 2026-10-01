@@ -136,15 +136,15 @@ def main():
         sys.exit(0)
 
     tool_name = hook_input.get("tool_name", "")
-    if tool_name not in ("Write", "Edit"):
+    if tool_name not in ("Write", "Edit", "fs_write"):
         sys.exit(0)
 
     tool_input = hook_input.get("tool_input", {})
-    file_path = tool_input.get("file_path", "")
+    file_path = tool_input.get("file_path") or tool_input.get("path", "")
     if not file_path:
         sys.exit(0)
 
-    norm = file_path.replace("\\", "/")
+    norm = os.path.abspath(file_path).replace("\\", "/")
 
     # Dispatch based on path pattern
     # New layout: .service-approval/<slug>/05-recommended-guidance/ → controls validator
@@ -154,6 +154,13 @@ def main():
     # grace period, hard-fail to force the user to migrate.
     rel = _rel_under_service_approval(norm)
     if rel is not None:
+        from validate_threat_model_input import check_artifact_prerequisite
+        prerequisite_errors = check_artifact_prerequisite(file_path)
+        if prerequisite_errors:
+            print("AWS THREAT MODEL REQUIRED — pipeline blocked.", file=sys.stderr)
+            for error in prerequisite_errors:
+                print(f"  {error}", file=sys.stderr)
+            sys.exit(2)
         marker = _emit_legacy_migration_warning(norm, file_path)
         if marker is not None and _legacy_marker_grace_exhausted(marker):
             # Grace exhausted — reject the write.

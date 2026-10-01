@@ -37,6 +37,12 @@ orchestrator; do not deviate from the steps it prescribes.
 
 ## Precursor — Intake
 
+Before external work, Intake MUST validate a matching AWS Threat Model JSON
+export with `tools/validate/validate_threat_model_input.py`. Record the selected
+absolute path as `inputs.threat_model_file`. Revalidate with `--manifest` before
+Assess, and with `--slug` before every later/resumed phase. Nonzero exit halts the
+pipeline in every mode; MITRE defaults, flags, and cached state cannot replace it.
+
 **Sub-skill:** `skills/intake/SKILL.md`
 **Agent:** `sa-intake`
 **Inputs:** `--service`, `--from-intake=<file>`, `--interactive`, plus any
