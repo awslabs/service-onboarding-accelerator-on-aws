@@ -34,13 +34,14 @@ else
 fi
 
 # 3. Write .claude/settings.json — render the MCP allowlist from the
-# manifest's keys instead of hardcoding it. The allowlist must include
+# manifest's non-optional entries instead of hardcoding it. The allowlist must include
 # every entry generated above (or Claude Code blocks the server even
 # when its config exists).
 ENABLED_SERVERS=$(python3 - "$REPO_DIR" <<'PY'
 import sys, yaml, json
 manifest = yaml.safe_load(open(f"{sys.argv[1]}/manifest.yaml"))
-servers = list(manifest.get("mcp_servers", {}).keys())
+servers = [name for name, config in manifest.get("mcp_servers", {}).items()
+           if not config.get("optional", False)]
 print(json.dumps(servers))
 PY
 )
@@ -92,7 +93,7 @@ echo ""
 echo "Checking prerequisites..."
 
 if command -v uv >/dev/null 2>&1; then
-  echo "  ✓ uv found (required for aws-documentation + mitre-attack MCP servers)"
+  echo "  ✓ uv found (required for aws-documentation; also used by optional mitre-attack)"
 else
   echo "  ⚠ uv not found — install: curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi

@@ -12,7 +12,7 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
 ## Prerequisites
 
 1. Kiro IDE or Kiro CLI 2.0 installed. Kiro IDE: https://kiro.dev. CLI: `curl -fsSL https://cli.kiro.dev/install | bash`.
-2. **`uv` on PATH** (required for `uvx`-backed MCP servers: `aws-documentation`, `mitre-attack`):
+2. **`uv` on PATH** (required for `aws-documentation`; also used by optional `mitre-attack`):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    uv --version   # verify
@@ -103,12 +103,13 @@ In Kiro Chat, ask:
 list my MCP servers and tools
 ```
 
-Expect these servers: `aws-documentation`, `awsknowledge`, `mitre-attack`.
+Expect the required servers: `aws-documentation` and `awsknowledge`.
+`mitre-attack` appears only if you opt in; see [MCP configuration](MCP.md).
 
 If servers show "connection failed":
 - `aws-documentation` — missing `uv`. Run `curl -LsSf https://astral.sh/uv/install.sh | sh`, then reload Kiro.
 - `awsknowledge` — requires network access to `https://knowledge-mcp.global.api.aws`.
-- `mitre-attack` — requires `uvx` and network access; ATT&CK research uses the bundled snapshot if the server is unavailable.
+- Optional `mitre-attack` — when enabled, requires `uvx` and network access. Its absence or failure does not block research; use the bundled snapshot.
 
 ### 4. Power activates on keywords
 
@@ -185,7 +186,7 @@ rm -rf .kiro/
 ### `Failed to connect to MCP server "<deprecated-server>": Connection closed`
 
 **Cause**: a deprecated MCP server is NOT in this plugin's config. Left over from a prior Kiro install in `~/.kiro/settings/mcp.json` (user-level) or somewhere else.
-**Fix**: edit `~/.kiro/settings/mcp.json` and remove the stale entry. The service-approval Power uses `aws-documentation`, `awsknowledge`, and `mitre-attack`.
+**Fix**: edit `~/.kiro/settings/mcp.json` and remove the stale entry. The service-approval Power requires `aws-documentation` and `awsknowledge`; `mitre-attack` is optional.
 
 ### Agent reports "(No tools available)" for all MCPs
 

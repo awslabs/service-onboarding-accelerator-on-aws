@@ -143,7 +143,7 @@ With additional flags:
 On first run, Copilot may prompt you to approve MCP server connections:
 - `aws-documentation` — AWS docs lookup
 - `awsknowledge` — AWS knowledge base
-- `mitre-attack` — MITRE ATT&CK techniques
+- Optional `mitre-attack` — appears only if you [enable it](MCP.md); otherwise the bundled ATT&CK snapshot is used.
 
 Click **Allow** for each. These are read-only research tools.
 

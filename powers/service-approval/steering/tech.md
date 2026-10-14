@@ -13,13 +13,14 @@ alwaysApply: true
 
 ## MCP servers
 
-All registered in `mcp.json`. Auto-loaded when the Power activates:
+Required servers are registered in `mcp.json`. The optional server is configured
+only if the user enables it (see `docs/MCP.md`).
 
 | Server | Transport | Purpose |
 |--------|-----------|---------|
 | `aws-documentation` | stdio | Service docs, feature references, IAM key semantics |
 | `awsknowledge` | HTTP | SAR (Service Authorization Reference) queries, condition keys |
-| `mitre-attack` | stdio | ATT&CK technique and tactic lookups, with a bundled snapshot fallback |
+| `mitre-attack` (optional) | stdio | User-enabled ATT&CK lookups; default uses the bundled snapshot |
 
 P1 enforces a minimum count (≥10) of MCP calls per pipeline run; the strict expectation that every capability claim, API parameter, and condition key is MCP-verified lives in `service-approval-enforcement.md`.
 

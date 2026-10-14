@@ -58,8 +58,8 @@ Registered via `.vscode/mcp.json` (workspace-scoped):
 
 - `aws-documentation` — service docs, feature references
 - `awsknowledge` — SAR queries, condition keys
-- `mitre-attack` — MITRE ATT&CK technique/tactic lookups (falls back to the bundled
-  `data/attack-cloud-matrix.json` snapshot when unavailable)
+- Optional `mitre-attack` — user-enabled ATT&CK lookups. The default uses
+  `data/attack-cloud-matrix.json`. See `docs/MCP.md` for opt-in configuration.
 
 The pipeline can also run with no MCP servers at all, using web access instead —
 see the "Running without MCP" section of `docs/USAGE-COPILOT.md`.
@@ -81,11 +81,6 @@ Create `.vscode/mcp.json` if missing:
     "awsknowledge": {
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
-    },
-    "mitre-attack": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/stoyky/mitre-attack-mcp@9ebd694bfc9869e81d5d1a3d3e7964e31a1e9087", "mitre-attack-mcp"]
     }
   }
 }

@@ -144,6 +144,12 @@ guides:
 
 ---
 
+## MCP configuration
+
+`awsknowledge` and `aws-documentation` are required in the default MCP mode.
+`mitre-attack` is optional and disabled by default; ATT&CK mapping uses the bundled
+snapshot unless you enable it. See [MCP configuration](docs/MCP.md).
+
 ## How to run
 
 The pipeline retrieves the latest matching model from the public

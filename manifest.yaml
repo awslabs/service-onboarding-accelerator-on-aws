@@ -122,12 +122,12 @@ mcp_servers:
   awsknowledge:
     type: http
     url: https://knowledge-mcp.global.api.aws
-  # MITRE ATT&CK knowledge base MCP — used by research-attack-surface for
+  # Optional, user-enabled MITRE ATT&CK MCP — used by research-attack-surface for
   # technique/tactic lookups. Source: https://github.com/stoyky/mitre-attack-mcp
   # Falls back to data/attack-cloud-matrix.json (bundled snapshot) when MCP
-  # is unavailable, so research-attack-surface continues to work even if the
-  # server fails to spawn.
+  # is disabled or unavailable. Default client configs omit optional servers.
   mitre-attack:
+    optional: true
     type: stdio
     command: uvx
     args:

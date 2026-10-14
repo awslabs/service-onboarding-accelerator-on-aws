@@ -61,7 +61,7 @@ The Stop hook runs `validate_pipeline_integrity.py` and blocks violations.
 Registered via `.vscode/mcp.json`:
 - `aws-documentation` (stdio, via `uvx`)
 - `awsknowledge` (HTTP)
-- `mitre-attack` (stdio, via `uvx`; falls back to bundled `data/attack-cloud-matrix.json`)
+- Optional `mitre-attack` (not registered by default; use bundled `data/attack-cloud-matrix.json` unless the user enables it). See `docs/MCP.md`.
 
 The pipeline can also run without any MCP servers — pass `--no-mcp` and facts are
 verified over the web instead. See the "Running without MCP" section of

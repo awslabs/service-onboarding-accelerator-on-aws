@@ -44,6 +44,8 @@ def render_mcp_claude(mcp: dict) -> dict:
     """Claude Code .mcp.json format. Script paths are repo-root-relative."""
     out = {}
     for name, cfg in mcp.items():
+        if cfg.get("optional", False):
+            continue
         if cfg["type"] == "http":
             out[name] = {"type": "http", "url": cfg["url"]}
         elif cfg["type"] == "stdio":
@@ -70,6 +72,8 @@ def render_mcp_kiro(mcp: dict) -> dict:
     KIRO_PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     out = {}
     for name, cfg in mcp.items():
+        if cfg.get("optional", False):
+            continue
         if "kiro" in cfg.get("skip_clients", []):
             continue
         if cfg["type"] == "http":
@@ -90,6 +94,8 @@ def render_mcp_vscode(mcp: dict) -> dict:
     """VS Code .vscode/mcp.json uses `servers` (not mcpServers)."""
     out = {}
     for name, cfg in mcp.items():
+        if cfg.get("optional", False):
+            continue
         if cfg["type"] == "http":
             out[name] = {"type": "http", "url": cfg["url"]}
         elif cfg["type"] == "stdio":
@@ -239,10 +245,31 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--check", action="store_true", help="Dry-run; exit 2 on drift")
     p.add_argument("--client", choices=list(SYNCERS.keys()), help="Sync one client only")
+    p.add_argument(
+        "--optional-mcp-config", metavar="SERVER",
+        help="Print an optional server config for the selected client; write no files",
+    )
     args = p.parse_args()
+    if args.optional_mcp_config and (not args.client or args.check):
+        p.error("--optional-mcp-config requires --client and cannot be used with --check")
 
     with MANIFEST_PATH.open() as f:
         manifest = yaml.safe_load(f)
+
+    if args.optional_mcp_config:
+        server = args.optional_mcp_config
+        config = manifest["mcp_servers"].get(server)
+        if not config or not config.get("optional", False):
+            p.error(f"{server!r} is not an optional MCP server in manifest.yaml")
+        renderers = {
+            "claude-code": render_mcp_claude,
+            "kiro": render_mcp_kiro,
+            "copilot": render_mcp_vscode,
+        }
+        # Explicit opt-in only affects printed output, never the default configs.
+        selected = {server: {**config, "optional": False}}
+        print(json.dumps(renderers[args.client](selected), indent=2))
+        return 0
 
     clients = [args.client] if args.client else list(SYNCERS.keys())
     any_drift = False

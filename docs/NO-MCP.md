@@ -12,7 +12,7 @@ snapshots.
 ## What it is
 
 In the default path, phases call the `awsknowledge` / `aws-documentation` MCP
-servers (plus `mitre-attack`) to look up AWS documentation, the
+servers (plus `mitre-attack` only when the user enables it) to look up AWS documentation, the
 Service Authorization Reference (SAR), API shapes, and threat data. No-MCP mode
 replaces those MCP calls with web access — `WebSearch` and `WebFetch` — while
 preserving the guarantee that **facts and citations come only from

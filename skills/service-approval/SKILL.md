@@ -206,6 +206,10 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 | `awsknowledge` | HTTP | `https://knowledge-mcp.global.api.aws` |
 | `aws-documentation` | stdio | `uvx awslabs.aws-documentation-mcp-server@1.1.28` |
 
+`mitre-attack` is optional and omitted from default client configs. Do not install
+or require it during preflight. Without user opt-in, use the bundled ATT&CK
+snapshot. See [MCP configuration](../../docs/MCP.md).
+
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
 - `Agent` tool in tool list → Claude Code
 - `KIRO_AGENT` env var set → Kiro

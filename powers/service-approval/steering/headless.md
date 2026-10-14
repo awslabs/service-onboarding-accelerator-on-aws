@@ -31,7 +31,7 @@ service-approval:
     - export KIRO_API_KEY=$KIRO_API_KEY_SECRET
     - kiro-cli
         --no-interactive
-        --trust-tools="aws-documentation,awsknowledge,mitre-attack"
+        --trust-tools="aws-documentation,awsknowledge"
         "run service approval for ${AWS_SERVICE} using ./input"
   artifacts:
     paths:
@@ -53,7 +53,7 @@ service-approval:
 for interactive approval. List ALL servers the pipeline uses:
 
 ```
---trust-tools="aws-documentation,awsknowledge,mitre-attack"
+--trust-tools="aws-documentation,awsknowledge"
 ```
 
 `--trust-all-tools` is also valid but wider than needed. Prefer the explicit list.
