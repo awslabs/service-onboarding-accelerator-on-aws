@@ -31,7 +31,7 @@ framework mappings, and traceability. This skill bridges the gap between capabil
 When a mapping row needs an external fact or citation, consult sources in this
 fixed order and record the **highest-priority** source that supported the row:
 
-1. **AWS Threat Model** — the customer-provided mitigation/threat export, when present
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake
    (authoritative intent + top citation).
 2. **AWS Control Catalog API** — the control→objective authority.
 3. **Service-specific AWS documentation** — the target service's own pages only;

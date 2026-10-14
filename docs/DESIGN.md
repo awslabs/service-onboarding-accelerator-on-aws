@@ -11,17 +11,17 @@ was justified.
 
 ## Mapping accuracy: a deterministic, citation-gated layer
 
-Every onboarding run requires a matching AWS Threat Model JSON export.
-`tools/validate/validate_threat_model_input.py` validates the file locally before
-assessment/research and reopens it on resume. Service matching uses export
-metadata, not filenames or cross-service operations. Intake records the selected
-absolute path in `inputs.threat_model_file`; downstream consumers use that path.
-Missing, malformed, wrong-service, or ambiguous input halts the run. MITRE
-analysis and optional reports supplement the required export, never replace it.
+Every onboarding run requires a matching published AWS Threat Model. Intake
+resolves current `main`, follows AWS's release manifest, verifies artifact hashes,
+and saves a pinned snapshot with provenance. Service discovery uses the live
+manifest and model metadata. Missing services or retrieval errors halt the run.
+At entry/resume, `validate_threat_model_input.py --refresh` checks upstream again;
+a changed model requires fresh Intake and regeneration of downstream output.
 
-The gate is shared by intake-manifest validation, pre-write/post-write hooks,
-phase completion checks, and pipeline integrity (P0). Source structure/identity
-validation does not authenticate the export or verify its AWS capability claims.
+The shared manifest, pre-write/post-write, phase, and integrity gates check the
+saved source and its SHA-256 locally. Readable report citations use verified
+headings at the fetched commit. Model claims still pass through Research/Validate.
+See [THREAT-MODELS.md](THREAT-MODELS.md).
 
 The framework-mapping phase constrains what each control may claim, so a control
 is only mapped to an objective it genuinely satisfies — and every confident
@@ -184,7 +184,7 @@ fixed priority order and cites the highest-priority source that supports the
 claim — the same order everywhere facts are pulled (research, validation,
 mapping, and preventive recommendation):
 
-1. **AWS Threat Model** — the customer-provided mitigation/threat export, when present. It
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake. It
    is the authoritative source of *what* matters for the service (control intent)
    and the top citation.
 2. **AWS Control Catalog API** — the control→objective authority for controls the

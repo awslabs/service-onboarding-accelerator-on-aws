@@ -775,6 +775,20 @@ _MECH_GOVERNS = {
 }
 
 
+def attach_threat_model_links(controls: list[dict], model: dict, source: dict) -> None:
+    """Derive readable links from verified aliases, never an agent-supplied URL."""
+    from tools.validate.threat_model_source import citation_url
+    valid_aliases = {row.get("alias") for row in model.get("mitigations", [])}
+    for ctrl in controls:
+        # Only aliases actually attached to this control get readable links.
+        ctrl["threat_model_urls"] = {
+            alias: url for alias in sorted(valid_aliases.intersection(
+                set(ctrl.get("mitigation_aliases") or []) | {ctrl.get("mitigation_alias")}
+            ))
+            if (url := citation_url(source, alias))
+        }
+
+
 def _citation_cell(cm: dict, ctrl: dict) -> str:
     """Render the citation cell for a mapped-control row in framework-mapping.md.
 
@@ -789,7 +803,8 @@ def _citation_cell(cm: dict, ctrl: dict) -> str:
         bits.append(req)
     alias = cit.get("mitigation_alias") or ctrl.get("mitigation_alias")
     if alias:
-        bits.append(f"`{alias}`")
+        url = (ctrl.get("threat_model_urls") or {}).get(alias)
+        bits.append(f"[{alias}]({url})" if url else f"`{alias}`")
     source = (cit.get("source") or ctrl.get("trace_source") or "").strip()
     if source:
         bits.append(f"({source})")
@@ -909,7 +924,9 @@ def _catalog_citation_lines(
             if by_id.get(mid):
                 statement = by_id[mid]
                 break
-    cite = f"- **AWS Threat Model mitigation:** `{alias}`"
+    url = (ctrl.get("threat_model_urls") or {}).get(alias)
+    label = f"[{alias}]({url})" if url else f"`{alias}`"
+    cite = f"- **AWS Threat Model mitigation:** {label}"
     if uuid:
         cite += f" (UUID `{uuid}`)"
     out.append(cite)
@@ -1373,7 +1390,7 @@ def detect_single_service() -> str | None:
 
         candidates = [
             d.name for d in root.iterdir()
-            if d.is_dir() and d.name not in ("_staging", "plans")
+            if d.is_dir() and not d.name.startswith("_") and d.name != "plans"
         ]
 
         if len(candidates) == 1:
@@ -1419,7 +1436,7 @@ def main() -> int:
                 root = paths.repo_root() / ".service-approval"
                 candidates = [
                     d.name for d in root.iterdir()
-                    if d.is_dir() and d.name not in ("_staging", "plans")
+                    if d.is_dir() and not d.name.startswith("_") and d.name != "plans"
                 ]
                 if candidates:
                     for c in sorted(candidates):
@@ -1471,6 +1488,12 @@ def main() -> int:
     fw_mapped = load_json(map_dir / "map-framework-mapped.json")
     validated = load_json(validate_dir / "validated.json")
 
+    from tools.validate.validate_threat_model_input import load_run_export
+    model_path, errors = load_run_export(service_root)
+    if errors:
+        print("AWS THREAT MODEL REQUIRED: " + "; ".join(errors), file=sys.stderr)
+        return 2
+    intake = load_json(service_root / "00-intake" / "intake-manifest.json")
     controls = cg["controls"]
 
     # Phase 0: Semantic de-duplication. Collapse controls that share a canonical
@@ -1482,6 +1505,7 @@ def main() -> int:
     pre_dedup_count = len(controls)
     controls, id_remap = dedup_controls(controls)
     remap_framework_mapping(fw_mapped, id_remap)
+    attach_threat_model_links(controls, load_json(model_path), intake["inputs"]["threat_model_source"])
     collapsed = pre_dedup_count - len(controls)
     print(
         f"  {pre_dedup_count} controls -> {len(controls)} distinct "

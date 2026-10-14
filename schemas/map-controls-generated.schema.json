@@ -167,6 +167,7 @@
           "items": {"type": "string"},
           "description": "Optional — MITRE ATT&CK technique IDs (e.g. T1078) the control addresses. iter-13 addition when a threat model is provided."
         },
+        "threat_model_urls": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Published readable report links by source alias, derived during assembly."},
         "mitigation_alias": {
           "type": "string",
           "description": "Optional — the primary AWS Threat Model mitigation alias (e.g. Mitigation.LAMBDA.Function.1) the control derives from. Threaded deterministically from the AWS Threat Model source so the final mapping can cite it."

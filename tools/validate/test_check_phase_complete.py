@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from threat_model_test_support import source_receipt
 
 # Allow importing the module under test
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,7 +43,7 @@ def fake_repo(tmp_path, monkeypatch):
     intake.mkdir()
     (intake / "intake-manifest.json").write_text(json.dumps({
         "service": {"name": "lambda"},
-        "inputs": {"threat_model_file": str(source)},
+        "inputs": {"threat_model_file": str(source), "threat_model_source": source_receipt(source, "lambda")},
     }))
 
     # Re-anchor repo_root to tmp_path

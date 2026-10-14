@@ -55,7 +55,7 @@
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "alias": {"type": "string", "minLength": 1},
-        "behavior": {"type": "string", "enum": ["PREVENTIVE", "PROACTIVE", "DETECTIVE"]},
+        "behavior": {"type": "string", "enum": ["PREVENTIVE", "PROACTIVE", "DETECTIVE", "DIRECTIVE"]},
         "implementation_type": {"type": "string"},
         "mechanism": {"type": "string", "minLength": 1},
         "actions": {"type": "array", "items": {"type": "string"}},

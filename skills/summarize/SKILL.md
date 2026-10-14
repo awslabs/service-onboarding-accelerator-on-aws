@@ -230,3 +230,14 @@ Framework: {name} — {mapped} / {total} objectives covered
 Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)
 Total control artifacts: N
 ```
+
+
+## Published threat-model provenance
+
+Read `inputs.threat_model_source` from Intake. Include the published readable
+`report_url`, fetched commit, and retrieval date in the summary's source details.
+Use the index's `threat_model_url` or assembled controls' `threat_model_urls` when
+showing mitigation/implementation aliases. These links target verified headings
+at the fetched commit, so upstream changes do not move the evidence. Preserve AWS
+documentation and reference-policy citations alongside them; the readable model
+link does not replace capability or policy-feasibility verification.

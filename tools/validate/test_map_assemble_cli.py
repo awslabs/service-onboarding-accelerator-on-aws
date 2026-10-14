@@ -347,3 +347,27 @@ def test_catalog_cites_threat_model_and_labels_gap(tmp_path) -> None:
     assert "**AWS Threat Model mitigation:** `Mitigation.LAMBDA.Function.3` (UUID `uuid-1`)" in md
     assert "Require a customer-managed KMS key on function creation." in md
     assert "assessment gap (no AWS Threat Model mitigation; recommended control)" in md
+
+
+def test_readable_threat_model_links_in_both_reports(tmp_path):
+    from threat_model_test_support import source_receipt
+    m = _load_module()
+    path = tmp_path / "model.json"
+    path.write_text("{}")
+    provenance = source_receipt(path)
+    alias = "Mitigation.DSQL.Cluster.4"
+    provenance["report_aliases"] = [alias]
+    control = {"mitigation_alias": alias, "trace_source": "threat_model"}
+    m.attach_threat_model_links([control], {"mitigations": [{"alias": alias}]}, provenance)
+    link = f"[{alias}]({provenance['report_url']}#mitigationdsqlcluster4)"
+    assert link in m._citation_cell({}, control)
+    assert any(link in line for line in m._catalog_citation_lines(control, {}, {}))
+    assert "https://" not in m._citation_cell({"citation": {"mitigation_alias": "Invented"}}, control)
+
+
+def test_service_autodetection_ignores_downloaded_sources(tmp_path, monkeypatch):
+    m = _load_module()
+    for name in ("_sources", "_staging", "plans", "dsql"):
+        (tmp_path / ".service-approval" / name).mkdir(parents=True)
+    monkeypatch.setattr(m.paths, "repo_root", lambda: tmp_path)
+    assert m.detect_single_service() == "dsql"

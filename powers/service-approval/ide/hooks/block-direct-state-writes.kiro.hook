@@ -8,9 +8,10 @@ toolTypes: ["write"]
 
 Before any downstream phase write, run
 `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`.
-Exit code 2 means STOP: a matching AWS Threat Model export is required.
-For intake-manifest writes, validate the export with `--service` and
-`--threat-model-file` before writing, and revalidate with `--manifest` afterward.
+Exit code 2 means STOP: a published AWS Threat Model snapshot is required.
+Before intake-manifest writes, fetch using `fetch_threat_model.py --service <service>`,
+merge its inputs fragment, then validate with `--manifest`. At entry/resume,
+add `--refresh`; changed models require a fresh Intake and regeneration.
 
 You are about to write to a file. If this write targets the pipeline state
 or controls directories, confirm: are you executing through the power's

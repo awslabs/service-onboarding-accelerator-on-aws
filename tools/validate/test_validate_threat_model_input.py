@@ -15,6 +15,8 @@ from validate_threat_model_input import (
     validate_export,
 )
 
+from threat_model_test_support import source_receipt
+
 TOOLS = Path(__file__).resolve().parent
 
 
@@ -53,6 +55,7 @@ def setup_run(tmp_path, service="dsql", staging=False):
         "inputs": {
             "threat_model_file": str(source.relative_to(tmp_path)),
             "has_custom_threat_model": True,
+            "threat_model_source": source_receipt(source, service),
         },
     })
     return source, run, manifest
@@ -175,7 +178,8 @@ def test_resume_reopens_file_and_does_not_discover_replacement(tmp_path):
 def test_legacy_manifest_requires_explicit_recorded_export(tmp_path):
     source, run, manifest = setup_run(tmp_path)
     data = json.loads(manifest.read_text())
-    data["inputs"] = {"input_files": [{"path": str(source), "type": "threat_model"}]}
+    data["inputs"] = {"input_files": [{"path": str(source), "type": "threat_model"}],
+                      "threat_model_source": source_receipt(source)}
     assert check_manifest(data, manifest) == []
     data["inputs"]["input_files"].append({"path": str(source), "type": "threat_model"})
     assert check_manifest(data, manifest)

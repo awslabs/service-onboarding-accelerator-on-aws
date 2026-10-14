@@ -127,7 +127,9 @@ sys.path.insert(0, "tools/validate")
 from threat_model_parse import build_threat_model_index
 
 data = json.load(open("<threat-model-file>"))
-index = build_threat_model_index(data, service="<service-name>")
+manifest = json.load(open(".service-approval/<slug>/00-intake/intake-manifest.json"))
+index = build_threat_model_index(data, service="<service-name>",
+                                 source=manifest["inputs"]["threat_model_source"])
 with open(".service-approval/<slug>/02-research/threat-model-index.json", "w") as f:
     json.dump(index, f, indent=2)
 ```
@@ -135,10 +137,19 @@ with open(".service-approval/<slug>/02-research/threat-model-index.json", "w") a
 `threat-model-index.json` (schema: `schemas/threat-model-index.schema.json`) holds the
 normalized `mitigations[]` (alias + statement + cited REFERENCE links) and
 `implementations[]` (behavior, mechanism, governed actions/keys, and the
-REFERENCE `href`s). Writing it is mandatory for every pipeline run.
+REFERENCE `href`s), plus `threat_model_url` links to verified readable report
+headings at the fetched commit. Preserve these links as a separate provenance
+field; they do not replace capability-documentation `reference_links` or the
+existing `_metadata.citation.url` verification rules. Writing the index is mandatory
+for every pipeline run.
 The recommender and the authoring /
 detective / proactive skills read this file first when deciding each control's
 citation.
+
+Published `DIRECTIVE` implementations are process/configuration guidance. Preserve
+these rows, their `guidance` prose, and readable links in the index. Do not treat a
+DIRECTIVE row as evidence that an automated preventive/proactive/detective control
+exists; normal capability verification and behavior matching still apply.
 
 ### Markdown files (Mitigation Report)
 

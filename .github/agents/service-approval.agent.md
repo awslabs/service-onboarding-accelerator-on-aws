@@ -32,9 +32,9 @@ Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layou
 
 Ask the user for these if not provided:
 - `--service=<name>` (required unless an input folder or `--from-intake` is provided)
-- Required: matching AWS Threat Model JSON export in `./input-folder`, or
-  `--threat-model-file=<path>`. Run the mandatory input gate from the orchestrator
-  before assessment/research; missing or invalid input stops the run in all modes.
+- Required: a published AWS Threat Model, fetched automatically by Intake.
+  Do not ask for a local model file. Missing services or retrieval failures stop
+  the pipeline; follow the canonical entry/resume gate in the orchestrator.
 - Optional: `--framework=<ccmv4|nist|cis|iso>`, `--framework-file=<path>`
 - Optional: `--from-intake=<file>`, `--interactive` (Intake controls)
 - Optional: `--include-unverified`, `--dry-run`, `--clean`, `--no-mcp` (run without MCP; verify over the web)

@@ -154,9 +154,14 @@ def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
         "governed_resource_properties": [],
         "governed_attributes": [],
         "policy_type": "",
+        "guidance": "",
     }
     if not isinstance(guide, dict):
         return parsed
+
+    guidance = guide.get("guidance")
+    if isinstance(guidance, dict):
+        parsed["guidance"] = str(guidance.get("description", "") or "")
 
     auth = guide.get("authorization_policy")
     if isinstance(auth, dict):
@@ -219,7 +224,7 @@ def parse_threat_model_implementations(data: dict[str, Any]) -> list[dict[str, A
 
     Each output entry carries:
       - id / alias: the source `id` (UUID) and `alias`
-      - behavior: PREVENTIVE | PROACTIVE | DETECTIVE
+      - behavior: PREVENTIVE | PROACTIVE | DETECTIVE | DIRECTIVE
       - implementation_type: the raw `implementationType`
       - mechanism: mapped to the pipeline vocab (SCP / RCP / Resource Policy /
         Declarative Policy / CFN Hook / Config Rule / CloudTrail)
@@ -363,7 +368,7 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
     return out
 
 
-def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[str, Any]:
+def build_threat_model_index(data: dict[str, Any], service: str = "", source: dict | None = None) -> dict[str, Any]:
     """Assemble the persisted threat-model-index.json payload from an AWS Threat Model doc.
 
     Shape validated by schemas/threat-model-index.schema.json. The `mitigations[]` are
@@ -371,7 +376,7 @@ def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[st
     `implementations[]` are the typed control examples. This is the single source
     of truth a downstream `type: "threat_model"` citation resolves its alias against.
     """
-    return {
+    index = {
         "_metadata": {
             "service": service or (data.get("metadata") or {}).get("name") or "unknown",
             "source": "threat_model",
@@ -380,6 +385,15 @@ def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[st
         "mitigations": parse_threat_model_mitigations(data),
         "implementations": parse_threat_model_implementations(data),
     }
+    if source:
+        from threat_model_source import citation_url
+        index["_metadata"]["threat_model_source"] = source
+        for section in ("mitigations", "implementations"):
+            for row in index[section]:
+                url = citation_url(source, row.get("alias", ""))
+                if url:
+                    row["threat_model_url"] = url
+    return index
 
 
 def threat_model_index_aliases(index: dict[str, Any]) -> set[str]:

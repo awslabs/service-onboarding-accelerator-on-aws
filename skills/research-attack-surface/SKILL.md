@@ -44,7 +44,7 @@ supplementary threat documents. Detection rules:
 | `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
 | `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
 | Mitigation report with STRIDE keywords | STRIDE (implicit) | Extract from mitigation context |
-| **Required AWS Threat Model missing/invalid** | **Prerequisite failure** | **STOP; request the matching AWS Threat Model JSON export** |
+| **Required AWS Threat Model missing/invalid** | **Prerequisite failure** | **STOP; return to Intake for published model retrieval** |
 
 **AWS Threat Model detector (must run BEFORE the MITRE default):** for every `.json`
 file in the input folder, peek at its top-level keys. If the file has both a

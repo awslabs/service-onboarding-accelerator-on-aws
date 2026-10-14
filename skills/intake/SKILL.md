@@ -5,7 +5,7 @@ description: >
   Produces intake-manifest.json consumed by all downstream phases.
   Supports file-based input (intake YAML) for repeatable, batch-friendly execution.
 disable-model-invocation: false
-argument-hint: "[--service=<name>] [--threat-model-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]"
+argument-hint: "[--service=<name>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]"
 ---
 
 # Service Approval — Intake
@@ -13,50 +13,57 @@ argument-hint: "[--service=<name>] [--threat-model-file=<path>] [--framework-spe
 Collect and validate inputs before the pipeline begins. This phase runs before Phase 0
 (Assess) and produces a manifest that configures the downstream pipeline.
 
-## Required AWS Threat Model input — all intake modes
+## Published AWS Threat Model prerequisite — all intake modes
 
-Real AWS Threat Model exports MUST remain local runtime inputs. NEVER commit or
-upload them to the repository, copy them into tracked directories, or bundle them
-with the plugin. Prefer an external `--threat-model-file` path and read it in
-place. Keep model-derived runtime state under the ignored `.service-approval/`
-tree. Repository tests may contain synthetic fixtures only.
+You MUST retrieve the latest matching model from the public
+[Threat Models for AWS Services](https://github.com/aws/threat-models-for-aws-services)
+release before completing intake. This applies to interactive, CLI, YAML, and
+resumed runs. Do not dispatch Assess/Research or perform MCP preflight until the
+gate passes. Service availability comes from the live release manifest, never a
+bundled service list or `data/sar-slugs.json`.
 
-You MUST obtain a matching AWS Threat Model JSON export before completing intake.
-This applies to interactive, CLI, `--from-intake`, auto-discovered YAML, and resumed
-runs for every service. Only local input collection may proceed before this gate;
-do not invoke MCP or dispatch Assess/Research until it passes.
-
-Resolve `--threat-model-file` (or YAML `input.threat_model_file`) first; otherwise
-discover the export in the supplied input folder (YAML `input.folder`, default
-`./input/`). Run the installed plugin's `tools/validate/validate_threat_model_input.py`:
+After collecting the requested service, run the installed plugin's helper
+(use its absolute script path when installed outside the working directory):
 
 ```bash
-python3 tools/validate/validate_threat_model_input.py \
-  --service "<service>" --input-folder "<input-folder>"
+python3 tools/validate/fetch_threat_model.py --service "<service>" \
+  --output ".service-approval/_sources/selected-inputs.json"
 ```
 
-Add `--threat-model-file "<path>"` for an explicit selection. Use an absolute
-script path when the plugin is installed outside the working directory. Relative
-input paths are resolved against the user's working directory in every mode,
-including YAML intake; the YAML file's directory is not the path base.
+The helper resolves current `main`, follows the release manifest's data/report
+paths at that commit, verifies SHA-256 hashes, validates service metadata and the
+consumed JSON shape, and checks readable report headings. It emits an **inputs
+fragment**, not an intake manifest. Merge its `threat_model_file`,
+`threat_model_source`, and `has_custom_threat_model` fields into intake's `inputs`
+without changing them. Add the downloaded absolute path to `inputs.input_files`
+as `type: "threat_model"`. The legacy `has_custom_threat_model` field means a
+model is present; the source is now AWS's public release.
 
-The validator checks readable JSON, service identity in `metadata.name` /
-`metadata.identifiers`, and non-empty top-level `entities`, `mitigations`, and
-`threats` arrays with required record fields. Implementations are optional.
-It does not establish authenticity or verify the model's AWS capability claims;
-those claims still pass through Research/Validate.
+The snapshot lives under ignored `.service-approval/_sources/<commit>/`, outside
+the staging directory so promotion to the canonical slug does not break its
+absolute path. Do not commit downloaded models or derived runtime state; use
+synthetic fixtures in tests. Optional supporting files still come from the input
+folder. A missing input folder is acceptable when no supporting file was requested.
 
-On nonzero exit, STOP and request a valid matching export; non-interactive runs
-must report the failure and stop. Never offer a skip/MCP-only/MITRE-only input
-fallback or fabricate an export. Multiple matching exports require an explicit
-selection. Framework and mitigation-report files alone do not satisfy the gate.
-No flag, saved boolean (`input.threat_model: true`), or prior output bypasses it.
+On ANY retrieval, hash, identity, format, or availability error, STOP and show the
+error. Do not fall back to local files, stale snapshots, MITRE-only input, or a
+fabricated model. `--threat-model-file` and YAML `input.threat_model_file` are no
+longer supported as input overrides: report that the model must be fetched from
+AWS and stop if one was explicitly supplied. Files in the input folder cannot
+authorize an unsupported service. Model capability claims still require the
+normal Research/Validate verification.
 
-On success, persist the returned absolute path as `inputs.threat_model_file`,
-set `inputs.has_custom_threat_model: true`, and include the selected path in
-`inputs.input_files` with `type: "threat_model"`. Revalidate the written manifest
-with `--manifest "<manifest-path>"` before handing it to Assess. All downstream
-consumers MUST read this selected export, not rediscover the first JSON file.
+Validate the completed staging manifest before handing it to Assess:
+
+```bash
+python3 tools/validate/validate_threat_model_input.py --manifest "<manifest-path>"
+```
+
+For an existing runtime manifest, run the same command with `--refresh` before
+resuming. It checks current upstream availability without overwriting the saved
+snapshot. A changed model blocks resume: start from intake and regenerate all
+downstream phases. Retrieval failure also blocks resume. Never replace the
+snapshot beneath existing outputs. See [source lifecycle](../../docs/THREAT-MODELS.md).
 
 ---
 
@@ -161,7 +168,7 @@ passed), render a digestible summary and prompt:
 [U]se as-is   [E]dit a field   (default: U)
 ```
 
-- **Use as-is** (default): revalidate the recorded AWS Threat Model file using the
+- **Use as-is** (default): fetch the latest published AWS Threat Model using the
   mandatory gate above, write and validate the manifest, then continue to Phase 0.
 - **Edit a field**: walk the user through the intake fields one at a time with
   current values pre-filled. The user accepts each (Enter) or overrides. After
@@ -270,9 +277,9 @@ they never saw.
 
 ### Question order (both branches)
 
-1. Step 0 — Input folder and export location
+1. Step 0 — Optional supporting input folder
 2. Step 1 — Service name
-3. Step 2 — Required AWS Threat Model and optional supporting inputs
+3. Step 2 — Published AWS Threat Model and optional supporting inputs
 4. Step 3 — Additional options
 5. Final summary (always — never skipped)
 
@@ -282,16 +289,11 @@ they never saw.
 
 Present this form when running interactively. Fields marked **(required)** must be answered.
 
-### 0. Input folder and export location
+### 0. Optional supporting input folder
 
-Use the explicitly supplied folder or `./input/`. If it is missing and no
-`--threat-model-file` was supplied, STOP and ask the user to provide the AWS
-Threat Model JSON export for their service. Do not create an empty folder and
-continue, seed a framework as a substitute, or download/fabricate a model.
-
-An explicit export path can be outside the input folder. When supplied, continue
-to collect the service name, then validate the file with the mandatory gate.
-In non-interactive mode, missing input is an error that halts the run.
+Use the explicitly supplied folder or `./input/` for optional supporting documents.
+A missing default folder is acceptable. Do not request or create a local threat
+model: intake retrieves it from the published AWS release after the service is known.
 
 ---
 
@@ -303,27 +305,16 @@ Examples: s3, lambda, bedrock-agentcore-control, kms, ecs, dynamodb
 ```
 
 - Accept any valid AWS service identifier (lowercase, hyphenated)
-- If the user provides a friendly name (e.g., "Amazon S3"), normalize to the service ID (`s3`)
-- Validate the service exists by checking `data/sar-slugs.json` for a matching entry
+- Pass friendly names or service identifiers to the fetch helper; it matches model metadata.
+- Use the returned namespace. Do not reject a newly published service because it is absent from the bundled SAR slug map; Assess discovers SAR after this gate.
 
-### 2. AWS Threat Model (required) and supporting inputs
+### 2. Published AWS Threat Model and supporting inputs
 
-```
-Provide the path to the AWS Threat Model JSON export for this service.
-The pipeline cannot continue without it.
-
-You may also provide a control framework or an existing mitigation report.
-```
-
-- If the path was supplied by flag/YAML or exactly one matching export was
-  discovered, run the mandatory gate without asking for the same path again.
-- Record the input folder and the validated absolute `inputs.threat_model_file`.
-- If a custom control framework is provided, detect the framework type:
-  - Filename contains "CCMv4" or "ccm" → `ccmv4`
-  - Any other framework filename (NIST, CIS, ISO) → warn and ignore;
-    those frameworks are out of scope for the current pipeline.
-- If no framework file is provided, leave `framework_type` unset
-  (the user's intake reply determines whether CCMv4 is included).
+Run the mandatory retrieval gate above without asking the user for a model file.
+Show the resolved namespace and published source link. Record the returned inputs
+fragment and optional supporting folder. If a custom framework is provided,
+detect CCMv4 as before; other frameworks remain out of scope. Leave the framework
+type unset when none was supplied.
 
 ### 3. Elaborate on your control framework (optional — only when a custom framework is provided)
 
@@ -397,9 +388,10 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "candidate_slug": "{lowercase, hyphenated service name from user input}"
   },
   "inputs": {
-    "input_folder": "{path or null when an explicit export outside a folder is supplied}",
+    "input_folder": "{optional supporting folder or null}",
     "has_custom_threat_model": true,
-    "threat_model_file": "{validated absolute path to the AWS Threat Model JSON export}",
+    "threat_model_file": "{downloaded absolute snapshot path}",
+    "threat_model_source": {"...": "copy the helper output object verbatim"},
     "has_custom_framework": true|false,
     "framework_type": "ccmv4 | null",
     "framework_file": "{path or null}",
@@ -453,8 +445,8 @@ Proceed? (Y/n)
 
 | Condition | Action |
 |-----------|--------|
-| Service not found in `sar-slugs.json` | Warn user, attempt SAR page lookup via MCP. If found, continue. If not, halt. |
-| `./input/` folder missing | Accept an explicit external export path, or stop and request the required AWS Threat Model. No empty-input fallback. |
+| Service absent from published manifest | Stop. Local exports and flags cannot bypass availability. |
+| `./input/` folder missing | Continue with published model retrieval; supporting inputs are optional. |
 | Plugin root cannot be located for seeding | Warn, disable choices [3] and [5], keep [1]/[2]/[4] available |
 | CSA auto-download returns HTML / non-xlsx | Delete partial file, fall back to opening browser + printing URL, wait for user to drop file |
 | Input folder path invalid | Ask user to correct the path |

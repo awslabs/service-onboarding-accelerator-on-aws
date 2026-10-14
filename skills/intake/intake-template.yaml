@@ -19,7 +19,7 @@
 # Or pass an explicit path:
 #   service-approval --from-intake=path/to/my-service.yaml
 #
-# `service.name` and a matching AWS Threat Model JSON export are required.
+# `service.name` is required. A matching model is fetched from the latest AWS release.
 # ─────────────────────────────────────────────────────────────────────────────
 
 service:
@@ -29,13 +29,11 @@ service:
 
 input:
   # Input paths are relative to the working directory, not this YAML's directory.
-  # Folder containing the required export and optional supporting files.
+  # Optional supporting documents; the model is downloaded automatically.
   folder: "./input"
 
-  # Explicit export path; null discovers one matching export in folder.
-  # Missing, invalid, wrong-service, or ambiguous exports halt the pipeline.
-  threat_model_file: null
-  threat_model: true        # Informational; the actual file is always validated.
+  # No threat_model_file override: AWS must publish a matching model.
+  # Network access to the public AWS threat-model repository is required.
   mitigation_report: false  # Existing mitigation report?
 
   # Control framework to map against
@@ -63,7 +61,7 @@ options:
   # Include unverified findings in generation (not recommended)
   include_unverified: false
 
-  # Delete existing .service-approval/ state before run
+  # Clear only the selected service's phase output after successful retrieval
   clean: false
 
   # Run without MCP servers — verify every fact over the web (WebFetch/WebSearch

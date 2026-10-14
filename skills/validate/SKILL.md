@@ -15,7 +15,7 @@ Produce `.service-approval/<slug>/03-validate/validated.json`.
 When confirming a claim or attaching a citation, consult sources in this fixed
 order and cite the **highest-priority** source that supports the claim:
 
-1. **AWS Threat Model** — the customer-provided mitigation/threat export, when present
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake
    (authoritative intent + top citation).
 2. **AWS Control Catalog API** — the control→objective authority.
 3. **Service-specific AWS documentation** — the target service's own pages only;
@@ -223,7 +223,7 @@ For each technique in `attack_surface.applicable_techniques[]`:
    ```bash
    python3 -c "
    import json
-   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; use custom if --threat-model-file provided
+   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; additional customer mappings may supplement it
    xw_map = {m['attack_technique_id']: m for m in xw['mappings']}
    # Check each technique's framework mappings
    "

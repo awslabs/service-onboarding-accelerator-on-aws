@@ -185,3 +185,18 @@ the same minimum-call floor that MCP calls satisfy in the default mode. A
 refused call is logged as `web:blocked:reject` — verdict `reject`, not
 `fetch`/`search` — so it does **not** inflate the P1 floor; it only records that
 a call was refused. Skip logging and the run fails P1.
+
+## Published threat-model prerequisite (all modes)
+
+Intake's `tools/validate/fetch_threat_model.py` is allowed to read the fixed AWS
+repository through `api.github.com/repos/aws/threat-models-for-aws-services/` and
+`raw.githubusercontent.com/aws/threat-models-for-aws-services/` in both modes.
+It follows the release manifest at a pinned commit and checks artifact hashes.
+This is source retrieval, separate from capability verification and the P1 call
+floor. Missing services or retrieval failures have no offline fallback.
+
+Readable model provenance links may point to
+`github.com/aws/threat-models-for-aws-services/blob/<commit>/...#<alias-anchor>`.
+Keep them in `threat_model_url` / `threat_model_urls` alongside existing AWS doc
+citations. They do not broaden the existing `_metadata.citation.url` allowlist or
+replace reference-policy anchors. See `docs/THREAT-MODELS.md`.
