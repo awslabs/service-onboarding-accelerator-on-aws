@@ -12,7 +12,7 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
 ## Prerequisites
 
 1. Kiro IDE or Kiro CLI 2.0 installed. Kiro IDE: https://kiro.dev. CLI: `curl -fsSL https://cli.kiro.dev/install | bash`.
-2. **`uv` on PATH** (required for `uvx`-backed MCP servers: `aws-documentation`, `iam`):
+2. **`uv` on PATH** (required for `uvx`-backed MCP servers: `aws-documentation`, `mitre-attack`):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    uv --version   # verify
@@ -31,23 +31,11 @@ Step-by-step guide to install, verify, and troubleshoot the Power in both Kiro I
    ```
 
    Then fully quit Kiro (Cmd+Q) and reopen.
-3. **AWS profile `delegated-admin`** configured in `~/.aws/credentials` (needed for `kb-search` and `iam` MCPs, plus optional Tier 2 policy validation).
-4. Python 3.9+ with `mcp>=1.0.0` and `boto3>=1.35.0`:
+3. **AWS CLI profile** (optional) — needed only for Tier 2 policy validation with Access Analyzer. The bundled research MCP servers do not require AWS credentials.
+4. Python 3.9+ with the repository's tooling dependencies:
    ```bash
-   pip3 install -r tools/kb-search-mcp/requirements.txt
+   pip3 install -r requirements.txt
    ```
-
-### Kiro-specific prerequisites (first-time users)
-
-Kiro's security model requires approving env-var template variables before expansion. The `kb-search` MCP server uses `${workspaceRoot}` in its command path. Until you approve it, the server will fail with `Connection closed`.
-
-**Approve `${workspaceRoot}` once:**
-- Open Kiro Settings
-- Navigate to **MCP → Approved Environment Variables**
-- Add `workspaceRoot`
-- Save and reload Kiro
-
-Or when Kiro shows the security warning toast, click **Approve**.
 
 ### Clean up any stale user-level MCP config
 
@@ -115,12 +103,12 @@ In Kiro Chat, ask:
 list my MCP servers and tools
 ```
 
-Expect these servers: `aws-documentation`, `awsknowledge`, `kb-search`, `iam`.
+Expect these servers: `aws-documentation`, `awsknowledge`, `mitre-attack`.
 
 If servers show "connection failed":
 - `aws-documentation` — missing `uv`. Run `curl -LsSf https://astral.sh/uv/install.sh | sh`, then reload Kiro.
-- `kb-search` — requires `AWS_PROFILE=delegated-admin` valid AWS creds.
-- `iam` — requires `awslabs.iam-mcp-server` binary on PATH.
+- `awsknowledge` — requires network access to `https://knowledge-mcp.global.api.aws`.
+- `mitre-attack` — requires `uvx` and network access; ATT&CK research uses the bundled snapshot if the server is unavailable.
 
 ### 4. Power activates on keywords
 
@@ -197,12 +185,7 @@ rm -rf .kiro/
 ### `Failed to connect to MCP server "<deprecated-server>": Connection closed`
 
 **Cause**: a deprecated MCP server is NOT in this plugin's config. Left over from a prior Kiro install in `~/.kiro/settings/mcp.json` (user-level) or somewhere else.
-**Fix**: edit `~/.kiro/settings/mcp.json` and remove the stale entry. The service-approval Power uses `aws-documentation` and `awsknowledge` instead.
-
-### `Security Warning: MCP configuration contains environment variables that have not been approved: workspaceRoot`
-
-**Cause**: Kiro's security gate requires you to whitelist template variables before expansion. `${workspaceRoot}` is used by the `kb-search` MCP server for the local Python script path.
-**Fix**: accept the Kiro security prompt when it appears. If the prompt doesn't appear, go to Kiro Settings → MCP → Approved Environment Variables and add `workspaceRoot`.
+**Fix**: edit `~/.kiro/settings/mcp.json` and remove the stale entry. The service-approval Power uses `aws-documentation`, `awsknowledge`, and `mitre-attack`.
 
 ### Agent reports "(No tools available)" for all MCPs
 

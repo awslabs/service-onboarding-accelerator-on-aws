@@ -92,15 +92,15 @@ echo ""
 echo "Checking prerequisites..."
 
 if command -v uv >/dev/null 2>&1; then
-  echo "  ✓ uv found (required for aws-documentation + iam MCP servers)"
+  echo "  ✓ uv found (required for aws-documentation + mitre-attack MCP servers)"
 else
   echo "  ⚠ uv not found — install: curl -LsSf https://astral.sh/uv/install.sh | sh"
 fi
 
 if command -v python3 >/dev/null 2>&1; then
-  echo "  ✓ python3 found (required for kb-search MCP + validators)"
+  echo "  ✓ python3 found (required for pipeline tooling + validators)"
 else
-  echo "  ⚠ python3 not found — kb-search and pipeline validation won't work"
+  echo "  ⚠ python3 not found — pipeline tooling and validation won't work"
 fi
 
 echo ""

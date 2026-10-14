@@ -8,7 +8,7 @@ alwaysApply: true
 
 ## Runtime
 
-- **Python 3.9+** for validators, hooks, and the KB search MCP server
+- **Python 3.9+** for validators, hooks, and pipeline tooling
 - **AWS CLI** optional — required only for Tier 2 policy validation (Access Analyzer)
 
 ## MCP servers
@@ -17,9 +17,9 @@ All registered in `mcp.json`. Auto-loaded when the Power activates:
 
 | Server | Transport | Purpose |
 |--------|-----------|---------|
-| `aws-documentation` | HTTP | Service docs, feature references, IAM key semantics |
+| `aws-documentation` | stdio | Service docs, feature references, IAM key semantics |
 | `awsknowledge` | HTTP | SAR (Service Authorization Reference) queries, condition keys |
-| `kb-search` | stdio | Amazon Bedrock Knowledge Base — optional, for organization-specific mitigations |
+| `mitre-attack` | stdio | ATT&CK technique and tactic lookups, with a bundled snapshot fallback |
 
 P1 enforces a minimum count (≥10) of MCP calls per pipeline run; the strict expectation that every capability claim, API parameter, and condition key is MCP-verified lives in `service-approval-enforcement.md`.
 

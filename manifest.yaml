@@ -122,30 +122,6 @@ mcp_servers:
   awsknowledge:
     type: http
     url: https://knowledge-mcp.global.api.aws
-  kb-search:
-    type: stdio
-    command: python3
-    script: tools/kb-search-mcp/server.py
-    env:
-      AWS_PROFILE: claude-code
-      AWS_REGION: us-east-1
-    optional: true
-    # Kiro requires users to approve the ${workspaceRoot} template variable
-    # before spawn, and the approval UI is buried. Until Kiro makes this
-    # smoother, auto-registering kb-search causes "Connection closed" errors
-    # on every fresh install. Exclude it from the Kiro Power config so it
-    # doesn't break the Power out-of-the-box. Still ships to Claude Code,
-    # and VS Code (which don't have the approval gate).
-    skip_clients: [kiro]
-  iam:
-    type: stdio
-    command: uvx
-    args: ["awslabs.iam-mcp-server@1.0.23"]
-    env:
-      AWS_PROFILE: claude-code
-      AWS_REGION: us-east-1
-      FASTMCP_LOG_LEVEL: ERROR
-    optional: true
   # MITRE ATT&CK knowledge base MCP — used by research-attack-surface for
   # technique/tactic lookups. Source: https://github.com/stoyky/mitre-attack-mcp
   # Falls back to data/attack-cloud-matrix.json (bundled snapshot) when MCP

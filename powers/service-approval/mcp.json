@@ -15,18 +15,6 @@
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
     },
-    "iam": {
-      "command": "uvx",
-      "args": [
-        "awslabs.iam-mcp-server@1.0.23"
-      ],
-      "env": {
-        "AWS_PROFILE": "claude-code",
-        "AWS_REGION": "us-east-1",
-        "FASTMCP_LOG_LEVEL": "ERROR",
-        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    },
     "mitre-attack": {
       "command": "uvx",
       "args": [

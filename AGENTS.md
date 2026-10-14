@@ -107,7 +107,6 @@ on `docs.aws.amazon.com`. See [How no-MCP mode works](docs/NO-MCP.md) and
 | `.agents/skills/` | Symlink to `skills/` (cross-tool compatibility alias) |
 | `schemas/` | 11 JSON Schemas for pipeline state files |
 | `tools/validate/` | Python validators + hooks (runs at PostToolUse + Stop) |
-| `tools/kb-search-mcp/` | Bedrock KB search MCP server |
 | `data/` | SAR slug map, launch-type constraints, KMS consumer specs |
 | `rules/` | Safety rules applied across all phases |
 | `.claude-plugin/` | Claude Code plugin manifest |

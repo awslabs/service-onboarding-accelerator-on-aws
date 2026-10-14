@@ -125,7 +125,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`mitre-attack`, `awsknowledge`, `kb-search`, etc.). When the bundled-snapshot fallback is used (per the fallback rule above), no MCP event is emitted — that is correct, but the agent should log a `skill:research-attack-surface:retry` event noting the fallback so the audit trail explains the gap.
+Substitute `<server>` with the MCP server name (`mitre-attack`, `awsknowledge`, `aws-documentation`). When the bundled-snapshot fallback is used (per the fallback rule above), no MCP event is emitted — that is correct, but the agent should log a `skill:research-attack-surface:retry` event noting the fallback so the audit trail explains the gap.
 
 ## No-MCP mode
 

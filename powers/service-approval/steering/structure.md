@@ -13,8 +13,7 @@ alwaysApply: true
 ├── skills/                           (canonical)
 │   └── <one SKILL.md per skills/<slug>/>
 ├── tools/                            (canonical)
-│   ├── validate/                     Python validators + hooks
-│   └── kb-search-mcp/                Bedrock KB MCP server
+│   └── validate/                     Python validators + hooks
 ├── schemas/                          (canonical)
 │   └── <one *.schema.json per state file>
 ├── data/                             (canonical)

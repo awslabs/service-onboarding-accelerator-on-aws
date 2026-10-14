@@ -60,7 +60,6 @@ Registered via `.vscode/mcp.json` (workspace-scoped):
 - `awsknowledge` — SAR queries, condition keys
 - `mitre-attack` — MITRE ATT&CK technique/tactic lookups (falls back to the bundled
   `data/attack-cloud-matrix.json` snapshot when unavailable)
-- `kb-search`, `iam` — optional, used only when configured
 
 The pipeline can also run with no MCP servers at all, using web access instead —
 see the "Running without MCP" section of `docs/USAGE-COPILOT.md`.

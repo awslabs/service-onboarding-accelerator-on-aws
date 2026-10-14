@@ -27,7 +27,6 @@ Registered via `.vscode/mcp.json`. Confirm these are reachable before starting t
 - `aws-documentation` (stdio, via `uvx`)
 - `awsknowledge` (HTTP)
 - `mitre-attack` (stdio, via `uvx`; falls back to bundled `data/attack-cloud-matrix.json`)
-- `kb-search`, `iam` — optional, used only when configured
 
 The pipeline can also run without any MCP servers — pass `--no-mcp` and facts are
 verified over the web instead. See the "Running without MCP" section of

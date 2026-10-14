@@ -70,7 +70,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, etc.).
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`).
 
 ## No-MCP mode
 
@@ -279,7 +279,7 @@ Spawn 5 agents in parallel:
 Each research agent MUST:
 1. Execute ALL mandatory reads for its domain (from CLAUDE.md)
 2. Execute ALL mandatory searches (substituting `{service}`)
-3. Query relevant Knowledge Bases using `mcp__kb-search__search_*` tools
+3. Verify domain-specific findings against public AWS documentation using `awsknowledge` or `aws-documentation` (use the documented web fallback in No-MCP mode)
 4. Include the SAR facts for IAM/LOGGING/DATA domains
 5. Write findings to `.service-approval/<slug>/01-assess/domains/{DOMAIN}-research.md`
 6. Include source URLs for every finding

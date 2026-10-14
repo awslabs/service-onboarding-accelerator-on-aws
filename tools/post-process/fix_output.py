@@ -3,7 +3,7 @@
 Post-process assessment output files.
 
 Applies deterministic fixes that are too important to leave to prompt compliance:
-1. Sanitize leaked pipeline terminology (37 pairs)
+1. Sanitize leaked pipeline terminology
 2. Remove meta-commentary lines (18 markers)
 3. Strip leaked S3 bucket ARNs
 4. Normalize answer direction prefixes (8 mappings + stuttered dedup)
@@ -31,22 +31,10 @@ _TERMINOLOGY_PAIRS = [
     # MCP tool name sanitization (longest first)
     ("gateway_aws-documentation-mcp___read_documentation", "AWS Documentation"),
     ("gateway_aws-documentation-mcp___search_documentation", "AWS Documentation Search"),
-    ("gateway_iam-policy-mcp___read_iam_policy", "IAM Policy Reference"),
     ("mcp__aws-documentation__read_documentation", "AWS Documentation"),
     ("mcp__aws-documentation__search_documentation", "AWS Documentation Search"),
-    ("mcp__kb-search__search_security_accelerators_kb", "Security Accelerator KB"),
-    ("mcp__kb-search__search_customer_requirements_kb", "Customer Requirements KB"),
-    ("mcp__kb-search__search_compliance_frameworks_kb", "Compliance Frameworks KB"),
-    ("mcp__kb-search__search_threat_models_kb", "Threat Models KB"),
-    ("mcp__kb-search__search_iam_personas_kb", "IAM Personas KB"),
     ("gateway_aws-documentation-mcp", "AWS Documentation"),
     ("aws-documentation-mcp", "AWS Documentation"),
-    ("iam-policy-mcp", "IAM Policy Reference"),
-    ("search_security_accelerators_kb", "Security Accelerator KB"),
-    ("search_customer_requirements_kb", "Customer Requirements KB"),
-    ("search_compliance_frameworks_kb", "Compliance Frameworks KB"),
-    ("search_threat_models_kb", "Threat Models KB"),
-    ("search_iam_personas_kb", "IAM Personas KB"),
     ("Gateway MCP", "AWS Documentation"),
     ("AWS Documentation MCP", "AWS Documentation"),
     # Reference documentation variants (longest first)

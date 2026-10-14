@@ -145,8 +145,7 @@ On first run, Copilot may prompt you to approve MCP server connections:
 - `awsknowledge` — AWS knowledge base
 - `mitre-attack` — MITRE ATT&CK techniques
 
-Click **Allow** for each. These are read-only research tools. Two additional
-servers (`kb-search`, `iam`) are optional and used only when configured.
+Click **Allow** for each. These are read-only research tools.
 
 > **Running without MCP:** the pipeline can also run with no MCP servers at all,
 > using web access instead. See [Running without MCP](#running-without-mcp) below.

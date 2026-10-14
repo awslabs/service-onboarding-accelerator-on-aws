@@ -96,7 +96,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `mitre-attack`). Validate is the MCP-verification skill — expect 30+ canonical events per run.
 
 ## No-MCP mode
 
@@ -459,7 +459,6 @@ Before writing validated.json, sanitize ALL string values (including metadata fi
 MCP tool identifiers with user-facing names per CLAUDE.md terminology rules:
 - `mcp__awsknowledge__aws___*` → "AWS Documentation"
 - `mcp__aws-documentation__*` → "AWS Documentation"
-- `mcp__kb-search__search_*_kb` → "{KB Name} KB"
 - `gateway_aws-documentation-mcp___*` → "AWS Documentation"
 This applies to `verification_source`, `mcp_sources_used`, and any other string field.
 

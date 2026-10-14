@@ -46,8 +46,7 @@ mcp_log(slug).touch()  # .service-approval/<slug>/mcp-calls.log
 ```
 
 **MCP refresh decision (REQUIRED — ask the user when a prior research.json exists)**:
-research-capabilities and research-api-surface call `awsknowledge` / `kb-search` /
-`aws-documentation` MCPs for every capability and API parameter. If a prior `research.json`
+research-capabilities and research-api-surface call `awsknowledge` / `aws-documentation` MCPs for every capability and API parameter. If a prior `research.json`
 exists, ask the user before re-running:
 
 ```bash

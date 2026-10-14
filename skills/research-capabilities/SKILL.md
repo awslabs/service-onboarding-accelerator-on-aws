@@ -101,7 +101,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description of query>"
 ```
 
-Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail. The legacy `[Step N] [Capabilities] ...` summary line is optional and may be appended to `mcp-calls.log` for human-readable narrative — it does NOT replace the canonical event.
+Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail. The legacy `[Step N] [Capabilities] ...` summary line is optional and may be appended to `mcp-calls.log` for human-readable narrative — it does NOT replace the canonical event.
 
 ## No-MCP mode
 
