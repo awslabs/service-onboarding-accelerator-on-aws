@@ -188,6 +188,8 @@ integrity_checks:
     title: Citation coverage (detective/proactive/responsive artifacts carry a resolvable citation)
   - id: P13
     title: Config-supportability (no Config rule emitted for a resource type AWS Config does not support)
+  - id: P14
+    title: Source mitigation accounting and complete disclosure (source defects remain advisory; generated identity pairs must be factual)
 
 # ---------------------------------------------------------------------------
 # Test policy — what the sync tool's --check mode verifies.

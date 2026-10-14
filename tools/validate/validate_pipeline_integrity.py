@@ -9,6 +9,8 @@ artifacts instead of running real MCP-driven research/validation/generation.
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
+    P14 — source mitigation accounting/disclosure missing or stale, or generated
+          identities inconsistent; disclosed source defects remain advisory
     P0 — missing, invalid, or wrong-service AWS Threat Model source input;
          saved state and finalized markers do not replace the required export
     P1 — pipeline.log / mcp-calls.log missing or too few external lookups
@@ -1213,6 +1215,9 @@ def validate_pipeline(root: Path) -> list[str]:
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
+
+        from threat_model_integrity import check_reporting
+        errors.extend(f"P14 FAIL: {error}" for error in check_reporting(service_root))
 
         # P11: no emitted artifact may carry per-item confidence scoring.
         errors.extend(check_no_confidence_scoring(service_root))

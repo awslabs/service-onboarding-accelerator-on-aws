@@ -11,7 +11,8 @@ Before any downstream phase write, run
 Exit code 2 means STOP: a published AWS Threat Model snapshot is required.
 Before intake-manifest writes, fetch using `fetch_threat_model.py --service <service>`,
 merge its inputs fragment, then validate with `--manifest`. At entry/resume,
-add `--refresh`; changed models require a fresh Intake and regeneration.
+validate the same snapshot offline. Only new runs fetch latest. Source defects
+are advisory and must be disclosed by audit_threat_model.py.
 
 You are about to write to a file. If this write targets the pipeline state
 or controls directories, confirm: are you executing through the power's

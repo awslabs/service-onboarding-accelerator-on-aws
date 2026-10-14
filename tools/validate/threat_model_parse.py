@@ -354,6 +354,7 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
         out.append(
             {
                 "id": mit.get("id", ""),
+                "source_uuid": mit.get("id", ""),
                 "alias": mit.get("alias", ""),
                 "statement": mit.get("statement", ""),
                 "mitigation_goal": mit.get("statement", ""),  # AWS Threat Model folds goal into statement

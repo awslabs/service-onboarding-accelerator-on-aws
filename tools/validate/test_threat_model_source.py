@@ -72,7 +72,7 @@ def test_missing_service_blocks_even_with_local_export_or_cached_snapshot(monkey
 
 
 @pytest.mark.parametrize("failure", ["offline", "403 rate limit", "404", "timeout"])
-def test_retrieval_failure_never_uses_saved_snapshot(monkeypatch, tmp_path, failure):
+def test_resume_does_not_contact_upstream_but_new_run_requires_retrieval(monkeypatch, tmp_path, failure):
     _, run, manifest = setup_run(tmp_path)
     original = manifest.read_bytes()
 
@@ -80,12 +80,13 @@ def test_retrieval_failure_never_uses_saved_snapshot(monkeypatch, tmp_path, fail
         raise source.SourceError(failure)
 
     monkeypatch.setattr(source, "download", unavailable)
+    assert source.refresh_manifest(json.loads(original), manifest) == json.loads(original)["inputs"]["threat_model_source"]
     with pytest.raises(source.SourceError, match=failure):
-        source.refresh_manifest(json.loads(original), manifest)
+        source.save_latest("dsql", tmp_path)
     assert manifest.read_bytes() == original
 
 
-@pytest.mark.parametrize("mutation", ["bad-json", "hash", "wrong-service", "empty-threats", "bad-report"])
+@pytest.mark.parametrize("mutation", ["bad-json", "hash", "wrong-service", "empty-threats"])
 def test_bad_published_content_stops_without_writing(monkeypatch, tmp_path, mutation):
     payloads, manifest, _ = release(monkeypatch)
     entry = manifest["services"][0]
@@ -139,7 +140,7 @@ def test_missing_provenance_and_tampered_snapshot_block_hooks(tmp_path):
     assert any("SHA-256 mismatch" in error for error in check_run(run))
 
 
-def test_refresh_unchanged_passes_but_update_or_removal_blocks(monkeypatch, tmp_path):
+def test_resume_keeps_original_snapshot_despite_update_or_removal(monkeypatch, tmp_path):
     release(monkeypatch)
     inputs = source.save_latest("future-service", tmp_path)
     run = tmp_path / ".service-approval/future-service/00-intake"
@@ -150,18 +151,16 @@ def test_refresh_unchanged_passes_but_update_or_removal_blocks(monkeypatch, tmp_
     saved = manifest.read_bytes()
     # Unrelated commit advancement is fine when the model is byte-identical.
     release(monkeypatch, commit="d" * 40)
-    assert source.refresh_manifest(data, manifest)["commit"] == "d" * 40
+    assert source.refresh_manifest(data, manifest)["commit"] == COMMIT
     payloads, index, _ = release(monkeypatch)
     entry = index["services"][0]
     url = source.artifact_url(COMMIT, entry["data"]["path"], raw=True)
     payloads[url] += b"\n"
     entry["data"]["sha256"] = hashlib.sha256(payloads[url]).hexdigest()
     payloads[source.artifact_url(COMMIT, "manifest.json", raw=True)] = json.dumps(index).encode()
-    with pytest.raises(source.SourceError, match="changed since this run"):
-        source.refresh_manifest(data, manifest)
+    assert source.refresh_manifest(data, manifest)["commit"] == COMMIT
     release(monkeypatch, names=())
-    with pytest.raises(source.SourceError, match="No published"):
-        source.refresh_manifest(data, manifest)
+    assert source.refresh_manifest(data, manifest)["commit"] == COMMIT
     assert manifest.read_bytes() == saved
 
 
@@ -190,13 +189,13 @@ def test_fetch_cli_failure_does_not_emit_inputs(monkeypatch, tmp_path, capsys):
     assert "AWS THREAT MODEL REQUIRED" in out.err
 
 
-def test_refresh_cli_checks_network(monkeypatch, tmp_path, capsys):
+def test_refresh_cli_compatibility_flag_is_offline(monkeypatch, tmp_path, capsys):
     import validate_threat_model_input
     release(monkeypatch, names=())
     _, run, manifest = setup_run(tmp_path)
     monkeypatch.setattr("sys.argv", ["validator", "--manifest", str(manifest), "--refresh"])
-    assert validate_threat_model_input.main() == 2
-    assert "No published" in capsys.readouterr().err
+    assert validate_threat_model_input.main() == 0
+    assert "verified" in capsys.readouterr().out
 
 
 def test_directive_implementations_remain_guidance_and_validate_in_index():

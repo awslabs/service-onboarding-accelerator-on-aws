@@ -21,6 +21,8 @@ P5 — framework coverage below 15% with no per-objective rationale
 P7 — phase-output completeness: every phase dir on disk must contain
      its declared outputs (mapping-results.json, controls-catalog.md,
      framework-mapping.md, etc.) at min-size thresholds
+P14 — threat-model integrity accounting/disclosure is missing or stale, or
+      generated alias/UUID pairs are inconsistent. Source defects remain advisory.
 
 Cultural rules (no one-shot generator scripts, etc.) live in
 `steering/service-approval-enforcement.md`, not in this hook's list.

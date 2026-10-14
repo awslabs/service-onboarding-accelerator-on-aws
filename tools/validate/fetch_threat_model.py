@@ -17,6 +17,8 @@ def main():
         parser.error("--output must be under the workspace's ignored .service-approval directory")
     try:
         inputs = save_latest(args.service, Path.cwd())
+        for item in inputs["threat_model_source"].get("findings", []):
+            print(f"WARNING [{item['check']}] {item['record']}: {item['detail']} {item.get('target', '')}", file=sys.stderr)
         result = json.dumps(inputs, indent=2) + "\n"
         if args.output:
             atomic_write(args.output, result.encode())

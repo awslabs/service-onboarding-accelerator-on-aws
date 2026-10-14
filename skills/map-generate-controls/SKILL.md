@@ -574,7 +574,8 @@ if uncovered:
     # MUST generate controls for each — see guidance below
 ```
 
-**For each uncovered mitigation, generate controls using this guidance:**
+**For each uncovered mitigation, generate feasible controls using this guidance
+or record the explicit source-specific disposition described below:**
 
 - **Availability mitigations** (multi-AZ, redundancy): CloudFormation Guard rule + Config rule
   checking subnet AZ diversity. Distinct from "has VPC subnets."
@@ -585,7 +586,21 @@ if uncovered:
 - **Data lifecycle mitigations** (retention, deletion): Config rules checking resource config.
 - **Any other**: Read `mitigation_goal` and `request_parameters[]` to determine domain, then generate.
 
-**Re-run the check after generating gap-filling controls. Zero uncovered mitigations required.**
+**Re-run accounting after gap filling. Every source mitigation needs controls or
+an explicit disposition; do not invent automated controls to reach zero gaps.**
+
+For manual guidance, not-applicable decisions, or unresolved coverage, write
+`mitigation_dispositions[]` in `map-controls-generated.json`. Each entry requires
+`mitigation_id` (internal M-* ID), `mitigation_alias`, `mitigation_uuid` (source),
+`status` (`manual_guidance`, `not_applicable`, or `unresolved`), and a specific
+`rationale`. `manual_guidance` also requires concrete `guidance`. The source pair
+must match the saved model. Unresolved entries remain visible gaps.
+
+Keep the resolver's `mitigation_references[{alias,uuid}]` as canonical provenance.
+Legacy alias/UUID arrays must have matching positions; primary UUID must belong
+to primary alias. Preserve repair metadata. Assembly repairs unique known pairs
+and records what changed; ambiguous source identities are reported, not guessed.
+Run `python3 tools/validate/audit_threat_model.py --slug <slug>` after writing outputs.
 
 ---
 

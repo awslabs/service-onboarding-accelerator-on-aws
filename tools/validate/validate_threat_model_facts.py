@@ -265,6 +265,11 @@ def check(
         # decides whether that is itself a problem; here we stay quiet.
         return errors
 
+    from threat_model_integrity import identity_errors, disposition_errors
+    for document in (plan, mapping, fw_mapped):
+        if isinstance(document, dict):
+            errors.extend(identity_errors(document, threat_model))
+            errors.extend(disposition_errors(document.get("mitigation_dispositions", []), threat_model))
     aliases = threat_model_alias_set(threat_model)
     items = _threat_model_cited_items(plan, mapping, fw_mapped)
 
@@ -324,10 +329,17 @@ def check_service(service_root: Path) -> list[str]:
     threat_model = _load_json(threat_model_path)
     if not isinstance(threat_model, dict):
         return ["AWS Threat Model export became unreadable after input validation."]
+    from threat_model_integrity import identity_errors, disposition_errors
+    generated = _load_json(service_root / "04-map" / "map-controls-generated.json")
+    pair_errors = identity_errors(generated, threat_model)
+    if generated:
+        validated = _load_json(service_root / "03-validate" / "validated.json")
+        pair_errors.extend(disposition_errors(generated.get("mitigation_dispositions", []), threat_model,
+                                              validated.get("existing_mitigations", []) if validated else None))
     plan = _load_json(service_root / "05-recommended-guidance" / "preventive-plan.json")
     mapping = _load_json(service_root / "04-map" / "mapping-results.json")
     fw_mapped = _load_json(service_root / "04-map" / "map-framework-mapped.json")
-    return check(threat_model, plan if isinstance(plan, dict) else None,
+    return pair_errors + check(threat_model, plan if isinstance(plan, dict) else None,
                  mapping if isinstance(mapping, dict) else None,
                  fw_mapped if isinstance(fw_mapped, dict) else None)
 

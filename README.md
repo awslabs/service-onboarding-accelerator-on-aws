@@ -155,15 +155,20 @@ snapshot unless you enable it. See [MCP configuration](docs/MCP.md).
 The pipeline retrieves the latest matching model from the public
 [AWS Threat Models repository](https://github.com/aws/threat-models-for-aws-services).
 You do not need a local JSON export. Optional frameworks and supporting documents
-can still go in `./input/`; the folder itself is optional.
+can still go in `./input/`; the folder itself is optional. User-added input content
+is ignored recursively, except the two shipped examples. Custom `inputs/`,
+`input-*/`, `input_*/`, and `runs/` folders are also ignored; use external paths for
+arbitrarily named folders. Do not overwrite shipped samples with customer data.
 
 Services and artifact paths are discovered through AWS's release manifest. Newly
 published services and model updates need no tooling change. If AWS has not
 published a matching model, the pipeline stops. Retrieval failures also stop the
 run; local files, cached models, and flags cannot bypass the requirement.
 
-Intake records a hash-verified snapshot and its commit. Resume checks the latest
-release again; a changed model requires regeneration from Intake. Downloaded
+Intake records a hash-verified snapshot and its commit. Every phase and resume
+uses that same snapshot offline. Only an explicit new run fetches latest. Source
+link and readable-report defects are reported as advisories without stopping a
+run that has usable JSON. Downloaded
 models and derived state stay under ignored `.service-approval/` paths and must
 not be committed. Tests use synthetic fixtures. See [retrieval, migration, and
 citation details](docs/THREAT-MODELS.md).
@@ -292,7 +297,7 @@ ATT&CK threat mapping.
 ## Validation
 
 The **published AWS Threat Model gate** retrieves current upstream data before
-assessment/research and checks availability again on resume. Intake records
+assessment/research for new runs and rechecks the original snapshot locally on resume. Intake records
 `inputs.threat_model_file` and `inputs.threat_model_source`. Pre-write hooks,
 phase preconditions, and pipeline integrity enforce the model's shape, service
 identity, published provenance, and snapshot hash. AWS capability claims still

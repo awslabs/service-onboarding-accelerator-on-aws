@@ -390,3 +390,14 @@ Research (mitigations) complete:
   Framework file:          {path or "none"}
   Output: .service-approval/<slug>/02-research/research-mitigations.json
 ```
+
+
+## Source mitigation accounting
+
+Preserve every source mitigation's `alias` and `source_uuid` (the original UUID)
+when assigning internal `M-*` IDs. Internal IDs are separate from source UUIDs.
+Never silently drop source records or replace a source alias with an inferred one.
+After writing this phase's outputs, run
+`python3 tools/validate/audit_threat_model.py --slug <slug>`. It records source
+defects and missing source mitigations as advisories, preserving usable results.
+A missing MITRE technique alone is not a defect.

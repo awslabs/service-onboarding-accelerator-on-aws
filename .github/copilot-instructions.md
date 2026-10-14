@@ -18,8 +18,8 @@ It recommends controls; you deploy them yourself.
 Every run requires a published AWS Threat Model retrieved from the latest release.
 Run the canonical Intake fetch gate before MCP/assessment/research. Missing
 services or retrieval failures stop the run; local files cannot substitute.
-Resume checks the latest release with `--refresh`; changed models require a fresh
-Intake and regeneration. See `docs/THREAT-MODELS.md`.
+Resume checks the original snapshot offline; only a new run fetches latest.
+Source defects are advisory and must appear in the integrity reports. See `docs/THREAT-MODELS.md`.
 All state is written to `.service-approval/<service-slug>/` (per-service layout) in the current working directory.
 
 ## MCP servers

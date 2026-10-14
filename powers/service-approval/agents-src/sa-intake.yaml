@@ -26,8 +26,9 @@ body: |
   `inputs.input_files` entry (type `threat_model`), and
   `inputs.has_custom_threat_model: true`. Validate the manifest with
   `validate_threat_model_input.py --manifest "<manifest-path>"`.
-  At entry/resume with saved state, add `--refresh`; a changed model requires
-  regeneration from Intake. Never silently replace an existing run's model.
+  On resume, validate the same snapshot offline; do not fetch or replace intake.
+  Upstream changes do not affect this run. Only a new run fetches the latest model.
+  Source-link/report defects are advisory and must be surfaced by audit_threat_model.py.
 
   ## Hard rules — read before every prompt
 

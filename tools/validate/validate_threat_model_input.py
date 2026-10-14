@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Require a readable AWS Threat Model export for the requested service.
 
-Hooks validate a pinned published snapshot locally. At pipeline entry/resume,
---refresh also checks the current AWS release; no local export bypasses intake.
+Hooks and resume validate the same pinned published snapshot locally.
+Only a new intake fetches the current AWS release; no local export bypasses intake.
 It validates the input contract, not the truth of the model's AWS claims.
 """
 from __future__ import annotations
@@ -231,7 +231,7 @@ def main() -> int:
     parser.add_argument("--service", help="Requested service identifier or full name")
     parser.add_argument("--input-folder")
     parser.add_argument("--threat-model-file")
-    parser.add_argument("--refresh", action="store_true", help="Check latest upstream availability before starting/resuming a saved run")
+    parser.add_argument("--refresh", action="store_true", help="Deprecated compatibility alias for offline snapshot revalidation; never fetches upstream")
     args = parser.parse_args()
     if args.refresh and not (args.manifest or args.slug):
         parser.error("--refresh requires --manifest or --slug")

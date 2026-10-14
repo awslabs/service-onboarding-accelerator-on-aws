@@ -43,7 +43,7 @@ This Power drives a pipeline that generates AWS security controls for any AWS se
 
 0. **Published AWS Threat Model and GitHub access** — Intake fetches the latest
    matching release automatically. Missing services and retrieval failures stop
-   the run. Follow the canonical Intake gate, including `--refresh` on resume.
+   the run. Follow the canonical Intake gate, using the saved snapshot offline on resume.
    Local exports and flags cannot bypass it. See `docs/THREAT-MODELS.md`.
 1. **Python 3.9+**: `python3 --version`
 2. **MCP servers** registered in `mcp.json` (auto-loaded by this Power):

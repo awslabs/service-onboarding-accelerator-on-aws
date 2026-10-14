@@ -152,47 +152,59 @@ continue to work; new tooling should read `pipeline.log`.
 
 ### Mandatory published AWS Threat Model gate
 
-Before MCP preflight, assessment, research, or any downstream dispatch, you MUST
-follow Intake's **Published AWS Threat Model prerequisite**. Resolve the requested
-service, then run:
+Before MCP preflight or downstream work, distinguish a **new run** from a
+**resume**. If this service has saved runtime intake and no explicit fresh-run
+request (`--clean`), reuse that run and its manifest. Do not fetch, run fresh
+Intake, replace the manifest, or rerun completed phases merely because the chat
+resumed. Ambiguous service/run selection must be resolved before dispatch.
+
+For a NEW run only, follow Intake's prerequisite and run:
 
 ```bash
 python3 tools/validate/fetch_threat_model.py --service "<service>" \
   --output ".service-approval/_sources/selected-inputs.json"
 ```
 
-Pass the returned inputs fragment to Intake. Intake MUST copy its snapshot path
-and complete source provenance into the staging manifest and validate it with
-`validate_threat_model_input.py --manifest "<manifest-path>"`. Fetch once per new
-run; do not fetch separately in parallel sub-skills. The helper reads current
-`main` and manifest-referenced artifacts at that commit, with SHA-256 checks.
-Availability is discovered live; there is no hardcoded list of supported services.
+Copy the returned inputs fragment into Intake, retaining all source provenance.
+The helper resolves current `main`, follows the release manifest, verifies the
+JSON hash/identity/shape, and saves a unique snapshot. Fetch once per new run;
+parallel sub-skills MUST NOT fetch independently. Unpublished services, failed
+JSON retrieval, malformed JSON, wrong-service data, or a JSON hash mismatch stop
+new intake. Local exports, flags, and MITRE data cannot substitute for a model.
+Readable-report failures and dangling source references are ADVISORY: surface the
+helper's findings and continue with the valid JSON. Never fabricate missing links.
 
-At EVERY entry that resumes saved state (including finalized or cached runs), you MUST check current upstream availability before any dispatch:
-
-```bash
-python3 tools/validate/validate_threat_model_input.py --slug "<slug>" --refresh
-```
-
-If the model has changed, STOP and start a fresh run from Intake; regenerate all
-downstream phases. Never swap new model bytes into an existing run. Between phases
-of one active run, validate the immutable snapshot locally:
+Validate the staging manifest with `validate_threat_model_input.py --manifest
+"<manifest-path>"`. During every later phase and on resume, validate ONLY the saved
+snapshot, without contacting GitHub:
 
 ```bash
 python3 tools/validate/validate_threat_model_input.py --slug "<slug>"
 ```
 
-**On any nonzero exit, STOP and show the prerequisite failure.** Missing service,
-network errors, rate limits, invalid JSON, hash mismatches, and wrong-service data
-must never fall back to local exports, stale snapshots, fabricated models, or
-MITRE-only input. Explicit `--threat-model-file` / YAML `input.threat_model_file`
-overrides are no longer supported; explain the migration and stop. Input-folder
-JSON files are supplemental only. `--no-mcp`, `--include-unverified`, `--dry-run`,
-`--clean`, saved intake, and finalized output cannot waive the gate.
+Upstream edits, removal, or outages do not affect an existing run. Missing or
+modified local snapshot bytes remain a hard stop: restore the exact pinned bytes
+or explicitly start a new run. Never replace a snapshot beneath prior outputs.
+The deprecated `--refresh` validator flag is an offline compatibility alias.
 
-Run retrieval before `--clean`; clean only the target service's old phase output,
-preserving `.service-approval/_sources/` and other services. The downloaded source
-path survives staging promotion. See [THREAT-MODELS.md](../../docs/THREAT-MODELS.md).
+After Research, Validate, Map, and after writing the final summary, run:
+
+```bash
+python3 tools/validate/audit_threat_model.py --slug "<slug>"
+```
+
+This recomputes source-to-stage mitigation accounting, writes the integrity JSON
+and companion report, and inserts deterministic disclosure into the control
+catalog, framework mapping, and summary when those files exist. Warnings do not
+stop the run. P14 rejects stale or omitted disclosure, not the existence of
+findings. Use documented manual-guidance/not-applicable/unresolved dispositions
+rather than inventing controls just to fill coverage. Keep alias/UUID pairs exact.
+
+Explicit `--threat-model-file` / YAML input overrides remain unsupported. Input
+folders contain optional supporting documents, not the authoritative model.
+For `--clean`, fetch first, then clear only the selected service's phase tree at
+Assess Step 0b. Preserve snapshots, new staging intake, and other services.
+See [THREAT-MODELS.md](../../docs/THREAT-MODELS.md).
 
 ### MCP Pre-flight Check
 
@@ -335,11 +347,11 @@ Continuing with degraded MCP coverage — some steps may fall back to web search
   new staging intake, `plans/`, and every other service. Never use a wildcard
   deletion of `.service-approval/` because it would delete the validated snapshot.
 
-- [ ] For an existing run being resumed, perform the mandatory `--refresh` check
+- [ ] For an existing run being resumed, perform the mandatory offline snapshot check
   before using cached output. For an explicitly fresh run (`--clean`), fetch a new
   inputs fragment and regenerate all phases; do not refresh the discarded run.
   Without `--clean`, preserve existing phase state and do not silently replace its
-  intake or model. A changed model requires a fresh run from Intake.
+  intake or model. Only an explicit new run adopts upstream changes.
 
 - [ ] Phase 0 Intake + Assess will create the service-specific directories automatically.
   No pre-creation needed. The canonical slug is derived after SAR facts are loaded.
@@ -387,7 +399,8 @@ exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0
 Step 0b after slug derivation). From that manifest, resolve the effective
 `--service`, `--framework`, `--framework-file`, and input folder.
 
-**Intake always runs.** The intake skill itself decides whether to prompt
+**Intake runs for new runs.** A resume reuses the saved runtime manifest. For a new
+run, the intake skill decides whether to prompt
 interactively or short-circuit:
 
 - If `./service-approval-intake.yaml` exists in the user's CWD and
@@ -995,3 +1008,8 @@ Report: .service-approval/<slug>/06-summarize/SUMMARY-REPORT.md
 Controls: .service-approval/<slug>/05-recommended-guidance/
 Summary of findings: see report (no verdict issued)
 ```
+
+Generated alias/UUID mismatches and invalid dispositions remain authoring errors:
+repair them against the unambiguous snapshot before final disclosure. P14 rejects
+those errors even when listed, while source defects and honest unresolved
+coverage remain advisory.

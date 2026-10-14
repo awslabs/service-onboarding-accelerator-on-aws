@@ -211,6 +211,20 @@ def main():
         )
         sys.exit(2)
 
+    # Recompute source accounting after successful source/state/report writes.
+    # Advisory findings never reject a write; invalid snapshot/reporting errors do.
+    from pathlib import Path
+    target = Path(norm)
+    for root in target.parents:
+        if root.parent.name == ".service-approval" and not root.name.startswith("_"):
+            from threat_model_integrity import write_audit
+            try:
+                write_audit(root)
+            except (OSError, ValueError) as exc:
+                print(f"Threat-model integrity reporting failed: {exc}", file=sys.stderr)
+                sys.exit(2)
+            break
+
     log_hook_fire(
         "post-tool-use",
         "pass",

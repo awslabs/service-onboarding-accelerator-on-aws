@@ -178,6 +178,23 @@ def dedup_controls(controls: list[dict]) -> tuple[list[dict], dict[str, str]]:
     for key in order:
         group = sorted(groups[key], key=lambda c: c["id"])
         survivor = group[0]
+        from tools.validate.threat_model_integrity import control_aliases
+        all_aliases = sorted({a for c in group for a in control_aliases(c)})
+        if all_aliases:
+            survivor["mitigation_aliases"] = all_aliases
+        refs = {(r["alias"], r["uuid"]) for c in group for r in c.get("mitigation_references", [])}
+        if refs:
+            survivor["mitigation_references"] = [{"alias": a, "uuid": u} for a, u in sorted(refs)]
+            pairs = dict(refs)
+            if len(pairs) == len(refs) and set(all_aliases) <= pairs.keys():
+                survivor["mitigation_uuids"] = [pairs[a] for a in all_aliases]
+                primary = survivor.get("mitigation_alias") or all_aliases[0]
+                survivor["mitigation_alias"] = primary
+                if primary in pairs:
+                    survivor["mitigation_uuid"] = pairs[primary]
+        repairs = {r["id"]: r for c in group for r in c.get("threat_model_repairs", [])}
+        if repairs:
+            survivor["threat_model_repairs"] = sorted(repairs.values(), key=lambda r: r["id"])
         for dup in group[1:]:
             for field in _DEDUP_UNION_FIELDS:
                 merged = list(survivor.get(field, []))
@@ -778,8 +795,13 @@ _MECH_GOVERNS = {
 def attach_threat_model_links(controls: list[dict], model: dict, source: dict) -> None:
     """Derive readable links from verified aliases, never an agent-supplied URL."""
     from tools.validate.threat_model_source import citation_url
+    from tools.validate.threat_model_integrity import source_findings, control_aliases
+    findings = source_findings(model, source)
     valid_aliases = {row.get("alias") for row in model.get("mitigations", [])}
     for ctrl in controls:
+        related = set(control_aliases(ctrl))
+        ctrl["threat_model_warnings"] = [f"{f['id']}: {f['check']}" for f in findings
+                                         if related & set(f["mitigation_aliases"])]
         # Only aliases actually attached to this control get readable links.
         ctrl["threat_model_urls"] = {
             alias: url for alias in sorted(valid_aliases.intersection(
@@ -808,6 +830,8 @@ def _citation_cell(cm: dict, ctrl: dict) -> str:
     source = (cit.get("source") or ctrl.get("trace_source") or "").strip()
     if source:
         bits.append(f"({source})")
+    if ctrl.get("threat_model_warnings"):
+        bits.append("⚠ " + "; ".join(ctrl["threat_model_warnings"]))
     return " ".join(bits) if bits else "—"
 
 
@@ -930,6 +954,8 @@ def _catalog_citation_lines(
     if uuid:
         cite += f" (UUID `{uuid}`)"
     out.append(cite)
+    if ctrl.get("threat_model_warnings"):
+        out.append("- **Source advisory:** ⚠ " + "; ".join(ctrl["threat_model_warnings"]))
     if statement:
         out.append(f"- **AWS Threat Model statement:** {statement}")
     return out
@@ -1495,6 +1521,22 @@ def main() -> int:
         return 2
     intake = load_json(service_root / "00-intake" / "intake-manifest.json")
     controls = cg["controls"]
+    model = load_json(model_path)
+    from tools.validate.threat_model_integrity import repair_control_identity, repair_citations, disposition_errors, write_audit
+    repairs = []
+    for control in controls:
+        repairs.extend(repair_control_identity(control, model, stage="04-map/map-controls-generated.json"))
+    repairs.extend(repair_citations(cg, model, stage="04-map/map-controls-generated.json"))
+    repairs.extend(repair_citations(fw_mapped, model, stage="04-map/map-framework-mapped.json"))
+    invalid_dispositions = disposition_errors(cg.get("mitigation_dispositions", []), model, validated.get("existing_mitigations", []))
+    if invalid_dispositions:
+        print("\n".join(invalid_dispositions), file=sys.stderr)
+        return 2
+    if repairs:
+        recorded = {r["id"]: r for r in cg.get("_metadata", {}).get("threat_model_repairs", [])}
+        recorded.update({r["id"]: r for r in repairs})
+        cg.setdefault("_metadata", {})["threat_model_repairs"] = sorted(recorded.values(), key=lambda r: r["id"])
+    write_json(map_dir / "map-controls-generated.json", cg)
 
     # Phase 0: Semantic de-duplication. Collapse controls that share a canonical
     # identity (name + scope + category + mechanism + resource_types + actions +
@@ -1505,6 +1547,11 @@ def main() -> int:
     pre_dedup_count = len(controls)
     controls, id_remap = dedup_controls(controls)
     remap_framework_mapping(fw_mapped, id_remap)
+    write_json(map_dir / "map-framework-mapped.json", fw_mapped)
+    for control in controls:
+        extra = repair_control_identity(control, model, stage="04-map/deduplication")
+        if extra:
+            control.setdefault("threat_model_repairs", []).extend(extra)
     attach_threat_model_links(controls, load_json(model_path), intake["inputs"]["threat_model_source"])
     collapsed = pre_dedup_count - len(controls)
     print(
@@ -1549,6 +1596,11 @@ def main() -> int:
     print(f"  Coverage: FULL={full}, PARTIAL={partial}, NONE={none_}")
     print()
 
+    dispositions = {d.get("mitigation_id"): d for d in cg.get("mitigation_dispositions", [])}
+    for entry in threat_mitigation_map:
+        if entry["mitigation_id"] in dispositions:
+            entry["disposition"] = dispositions[entry["mitigation_id"]]
+
     # Phase 2b: Build ATT&CK coverage summary (mandatory)
     print("Phase 2b: Building ATT&CK coverage summary...")
     attack_coverage = build_attack_coverage(validated, controls)
@@ -1585,6 +1637,7 @@ def main() -> int:
         service, attack_coverage,
     )
     mapping_results_path = map_dir / "mapping-results.json"
+    mapping_results.setdefault("_metadata", {})["threat_model_repairs"] = cg.get("_metadata", {}).get("threat_model_repairs", [])
     write_json(mapping_results_path, mapping_results)
     print()
 
@@ -1605,6 +1658,8 @@ def main() -> int:
         framework, service, fw_mapping_path,
     )
     print()
+
+    write_audit(service_root)
 
     # Phase 7: Validate
     print("Phase 7: Validating outputs...")

@@ -68,7 +68,7 @@ cp /path/to/ccmv4-framework.json ~/my-service-approval/input/
 
 Intake retrieves the latest matching model from the public AWS Threat Models
 repository. Missing services and retrieval failures stop the pipeline; local
-exports cannot bypass it. Resume checks upstream again. See
+exports cannot bypass it. Resume uses the same saved snapshot offline. See
 [Threat Models](THREAT-MODELS.md) for provenance, citations, and migration.
 
 ## Step 4: Start the plugin

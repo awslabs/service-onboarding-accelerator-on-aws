@@ -45,7 +45,7 @@ If no `--service` and no input folder, ask the user for a service name.
 
 Before any SAR/MCP lookup or staging promotion, you MUST run
 `python3 tools/validate/validate_threat_model_input.py --manifest "<intake-manifest-path>"`.
-For a resumed canonical run, use `--slug "<slug>" --refresh`. Use the installed plugin's
+For a resumed canonical run, use `--slug "<slug>"`. Use the installed plugin's
 absolute script path outside the repository. On nonzero exit, STOP and request
 published model retrieval through Intake; no local export, cached assessment, or flag bypasses it.
 If invoked directly without intake, complete Intake first.

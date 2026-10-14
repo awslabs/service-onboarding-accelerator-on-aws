@@ -64,9 +64,10 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
    Run `tools/validate/fetch_threat_model.py --service <name>` before assessment
    or research, and record its `threat_model_file` and `threat_model_source`
    inputs fragment in the intake manifest. On every entry/resume with saved state,
-   run `validate_threat_model_input.py --slug <slug> --refresh`. Missing services,
-   retrieval failures, or changed models halt the run; changed models require
-   regeneration from Intake. No local export or flag bypasses this requirement.
+   run `validate_threat_model_input.py --slug <slug>` offline using the original
+   snapshot. Only new intake fetches latest. A missing/modified local snapshot
+   halts resume; upstream changes do not. Source-link and readable-report defects
+   are advisory and must be disclosed by `audit_threat_model.py` (P14). No local export or flag bypasses this requirement.
    Between phases, hooks verify the immutable snapshot and provenance locally.
    Downloaded models and derived runtime state remain under ignored
    `.service-approval/`; NEVER commit them. Tests use only synthetic fixtures.

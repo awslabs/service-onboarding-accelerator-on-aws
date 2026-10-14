@@ -241,3 +241,25 @@ showing mitigation/implementation aliases. These links target verified headings
 at the fetched commit, so upstream changes do not move the evidence. Preserve AWS
 documentation and reference-policy citations alongside them; the readable model
 link does not replace capability or policy-feasibility verification.
+
+
+## Mandatory integrity disclosure
+
+After writing `SUMMARY-REPORT.md`, run:
+
+```bash
+python3 tools/validate/audit_threat_model.py --slug <slug>
+```
+
+This inserts a deterministic integrity section after the title and updates the
+companion control/framework reports. Preserve the generated block and links.
+The integrity JSON and Markdown files at the service root account for every
+original source mitigation and list source defects, processing gaps, and recorded
+ID repairs. Findings are advisory. No acceptance flag is required, and their
+presence must not be described as a failed source prerequisite. P14 blocks only
+missing/stale/edited disclosure, not a nonzero finding count.
+
+Generated alias/UUID mismatches and invalid dispositions remain authoring errors:
+repair them against the unambiguous snapshot before final disclosure. P14 rejects
+those errors even when listed, while source defects and honest unresolved
+coverage remain advisory.

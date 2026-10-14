@@ -106,10 +106,14 @@ def report_anchor(alias: str) -> str:
 
 
 def citation_url(source: dict | None, alias: str) -> str:
-    """Return a pinned readable link only for a heading verified in the report."""
-    if not isinstance(source, dict) or alias not in source.get("report_aliases", []):
+    """Link verified headings; fall back to report/JSON for known source aliases."""
+    if not isinstance(source, dict):
         return ""
-    return source.get("report_url", "") + "#" + report_anchor(alias)
+    if alias in source.get("report_aliases", []):
+        return source.get("report_url", "") + "#" + report_anchor(alias)
+    if alias in source.get("model_aliases", []):
+        return (source.get("report_url") if source.get("report_status", "verified") == "verified" else "") or source.get("data_url", "")
+    return ""
 
 
 def fetch_latest(service: str) -> tuple[bytes, dict]:
@@ -137,7 +141,6 @@ def fetch_latest(service: str) -> tuple[bytes, dict]:
             raise SourceError("AWS release manifest has an invalid or duplicate service namespace")
         seen.add(namespace)
         artifact_ref(entry.get("data"), ".json")
-        artifact_ref(entry.get("report"), ".md")
 
     from validate_threat_model_input import validate_export
     exact = [entry for entry in entries if identity(entry["namespace"]) == identity(service)]
@@ -162,11 +165,16 @@ def fetch_latest(service: str) -> tuple[bytes, dict]:
     if len(matches) != 1:
         raise SourceError(f"Ambiguous service name {service!r}; use an exact published namespace: " + ", ".join(item[0]["namespace"] for item in matches))
     entry, content, model = matches[0]
-    report_ref = artifact_ref(entry["report"], ".md")
+    # Readable evidence is supplementary: bad/missing reports must not discard
+    # a usable, hash-verified JSON model. Never fetch an unsafe manifest path.
+    report_ref = None
+    report = ""
+    report_status, report_error = "verified", ""
     try:
+        report_ref = artifact_ref(entry.get("report"), ".md")
         report = verified_download(commit, report_ref).decode("utf-8")
-    except UnicodeError as exc:
-        raise SourceError("Published readable report is not UTF-8") from exc
+    except (SourceError, UnicodeError) as exc:
+        report_status, report_error = "unavailable", str(exc)
     headings = set(re.findall(r"^#{1,6}\s+(.+?)\s*#*\s*$", report, re.MULTILINE))
     aliases = sorted({row["alias"] for section in ("mitigations", "threats", "implementations")
                       for row in model.get(section, []) if isinstance(row, dict)
@@ -179,9 +187,14 @@ def fetch_latest(service: str) -> tuple[bytes, dict]:
         "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
         "data": artifact_ref(entry["data"], ".json"), "report": report_ref,
         "data_url": artifact_url(commit, entry["data"]["path"]),
-        "report_url": artifact_url(commit, report_ref["path"]),
+        "report_url": artifact_url(commit, report_ref["path"]) if report_ref else "",
+        "report_status": report_status, "report_error": report_error,
         "report_aliases": aliases,
+        "model_aliases": sorted({row["alias"] for section in ("mitigations", "threats", "implementations")
+                                 for row in model.get(section, []) if isinstance(row.get("alias"), str)}),
     }
+    from threat_model_integrity import source_findings
+    source["findings"] = source_findings(model, source)
     return content, source
 
 
@@ -198,10 +211,12 @@ def atomic_write(path: Path, content: bytes) -> None:
 
 def save_latest(service: str, workspace: Path) -> dict:
     content, source = fetch_latest(service)
-    path = (
-        workspace / ".service-approval" / "_sources"
-        / source["commit"] / (source["namespace"] + ".json")
-    ).resolve()
+    # Each new run owns its snapshot, even when two runs fetch the same commit.
+    # A later fetch must never replace bytes read by an active run.
+    parent = (workspace / ".service-approval" / "_sources" / source["commit"]).resolve()
+    parent.mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(prefix=source["namespace"] + "-", dir=parent))
+    path = directory / (source["namespace"] + ".json")
     atomic_write(path, content)
     return {"threat_model_file": str(path), "threat_model_source": source,
             "has_custom_threat_model": True}
@@ -228,8 +243,17 @@ def check_source(source: object, path: Path) -> list[str]:
         if not isinstance(aliases, list) or any(not isinstance(alias, str) for alias in aliases):
             raise SourceError("Threat model source requires verified report_aliases[]")
         data_ref = artifact_ref(source.get("data"), ".json")
-        report_ref = artifact_ref(source.get("report"), ".md")
-        for key, ref in (("data_url", data_ref), ("report_url", report_ref)):
+        status = source.get("report_status", "verified")
+        if status not in ("verified", "unavailable"):
+            raise SourceError("Invalid readable report status")
+        refs = [("data_url", data_ref)]
+        if source.get("report") is not None:
+            refs.append(("report_url", artifact_ref(source["report"], ".md")))
+        elif status != "unavailable" or source.get("report_url"):
+            raise SourceError("Missing readable report provenance")
+        if status == "unavailable" and (aliases or not source.get("report_error")):
+            raise SourceError("Unavailable readable report requires an advisory reason and no verified anchors")
+        for key, ref in refs:
             if source.get(key) != artifact_url(commit, ref["path"]):
                 raise SourceError(f"Threat model source {key} does not match its pinned artifact")
         if hashlib.sha256(path.read_bytes()).hexdigest() != data_ref["sha256"]:
@@ -240,21 +264,13 @@ def check_source(source: object, path: Path) -> list[str]:
 
 
 def refresh_manifest(manifest: dict, manifest_path: Path) -> dict:
-    """Recheck live availability on resume without mixing new inputs with old output."""
+    """Compatibility entry point: resume revalidates the saved snapshot, offline.
+
+    Only fetch_latest/save_latest begin a new run. An upstream update, removal,
+    or outage must not invalidate an existing run's original source version.
+    """
     from validate_threat_model_input import select_manifest_export
     _, errors = select_manifest_export(manifest, manifest_path)
     if errors:
         raise SourceError("; ".join(errors))
-    service = manifest["service"]
-    _, latest = fetch_latest(service["name"] if isinstance(service, dict) else service)
-    old = manifest["inputs"]["threat_model_source"]
-    if (
-        latest["namespace"] != old.get("namespace")
-        or latest["data"]["sha256"] != old["data"]["sha256"]
-    ):
-        raise SourceError(
-            "Published AWS Threat Model changed since this run. Start a fresh run "
-            "from intake and regenerate downstream phases; existing outputs cannot "
-            "resume against a different model."
-        )
-    return latest
+    return manifest["inputs"]["threat_model_source"]

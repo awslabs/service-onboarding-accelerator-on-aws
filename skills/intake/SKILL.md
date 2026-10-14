@@ -15,10 +15,11 @@ Collect and validate inputs before the pipeline begins. This phase runs before P
 
 ## Published AWS Threat Model prerequisite — all intake modes
 
-You MUST retrieve the latest matching model from the public
+For a NEW run, you MUST retrieve the latest matching model from the public
 [Threat Models for AWS Services](https://github.com/aws/threat-models-for-aws-services)
-release before completing intake. This applies to interactive, CLI, YAML, and
-resumed runs. Do not dispatch Assess/Research or perform MCP preflight until the
+release before completing intake. This applies to interactive, CLI, and YAML
+new runs. A resumed run reuses its existing runtime manifest and snapshot; do not
+fetch or replace it. Do not dispatch Assess/Research or perform MCP preflight until the
 gate passes. Service availability comes from the live release manifest, never a
 bundled service list or `data/sar-slugs.json`.
 
@@ -39,14 +40,17 @@ without changing them. Add the downloaded absolute path to `inputs.input_files`
 as `type: "threat_model"`. The legacy `has_custom_threat_model` field means a
 model is present; the source is now AWS's public release.
 
-The snapshot lives under ignored `.service-approval/_sources/<commit>/`, outside
+The snapshot lives in its own unique directory under ignored
+`.service-approval/_sources/<commit>/`, outside
 the staging directory so promotion to the canonical slug does not break its
 absolute path. Do not commit downloaded models or derived runtime state; use
 synthetic fixtures in tests. Optional supporting files still come from the input
 folder. A missing input folder is acceptable when no supporting file was requested.
 
-On ANY retrieval, hash, identity, format, or availability error, STOP and show the
-error. Do not fall back to local files, stale snapshots, MITRE-only input, or a
+On JSON model retrieval, hash, identity, format, or service availability errors,
+STOP. Readable-report and internal-reference defects are advisory: surface the
+helper warnings, continue with usable JSON, and preserve the findings in the
+source provenance. No acceptance flag or confirmation is required. Do not fall back to local files, stale snapshots, MITRE-only input, or a
 fabricated model. `--threat-model-file` and YAML `input.threat_model_file` are no
 longer supported as input overrides: report that the model must be fetched from
 AWS and stop if one was explicitly supplied. Files in the input folder cannot
@@ -59,11 +63,11 @@ Validate the completed staging manifest before handing it to Assess:
 python3 tools/validate/validate_threat_model_input.py --manifest "<manifest-path>"
 ```
 
-For an existing runtime manifest, run the same command with `--refresh` before
-resuming. It checks current upstream availability without overwriting the saved
-snapshot. A changed model blocks resume: start from intake and regenerate all
-downstream phases. Retrieval failure also blocks resume. Never replace the
-snapshot beneath existing outputs. See [source lifecycle](../../docs/THREAT-MODELS.md).
+For an existing runtime manifest, run the same local validation command before
+resuming. It rechecks the original snapshot hash and never reads upstream.
+Upstream changes or outages do not affect the run. Missing or altered local bytes
+halt the run; restore the exact original snapshot or explicitly start a new run.
+See [source lifecycle](../../docs/THREAT-MODELS.md).
 
 ---
 
@@ -292,7 +296,14 @@ Present this form when running interactively. Fields marked **(required)** must 
 ### 0. Optional supporting input folder
 
 Use the explicitly supplied folder or `./input/` for optional supporting documents.
-A missing default folder is acceptable. Do not request or create a local threat
+A missing default folder is acceptable. If an explicitly supplied supporting folder
+or file does not exist, report that input error rather than silently ignoring it.
+Keep user documents in the ignored `input/`, `inputs/`, `input-*/`, `input_*/`, or
+`runs/` workspace conventions, or use a path outside the repository. Only the
+shipped `input/CCMv4-sample.xlsx` and `input/sar-slugs.json` belong in Git; do not
+overwrite those examples with customer content or force-add runtime inputs.
+Relative input paths resolve from the working directory, not the YAML location.
+Do not request or create a local threat
 model: intake retrieves it from the published AWS release after the service is known.
 
 ---

@@ -119,10 +119,12 @@ def build_alias_index(threat_model: dict[str, Any]) -> dict[str, dict]:
     control-threading step needs. Mitigations without an alias are skipped
     from this index (they are still present in the by-UUID index).
     """
+    from tools.validate.threat_model_integrity import unique_mitigations
+    unique = unique_mitigations(threat_model)
     by_alias: dict[str, dict] = {}
     for uuid, rec in build_trace_index(threat_model).items():
         alias = rec.get("alias")
-        if alias:
+        if alias in unique:
             by_alias[alias] = {"mitigation_uuid": uuid, **rec}
     return by_alias
 
@@ -153,35 +155,26 @@ def thread_onto_control(control: dict[str, Any], alias_index: dict[str, dict]) -
             aliases.append(val)
 
     mitre: set[str] = set()
-    uuids: list[str] = []
-    resolved_aliases: list[str] = []
-    statement_by_alias: dict[str, str] = {}
     for alias in aliases:
         rec = alias_index.get(alias)
         if not rec:
             continue
-        resolved_aliases.append(alias)
-        if rec.get("mitigation_uuid"):
-            uuids.append(rec["mitigation_uuid"])
         mitre.update(rec.get("mitre_techniques", []))
-        if rec.get("statement"):
-            statement_by_alias[alias] = rec["statement"]
 
-    if resolved_aliases:
-        control["mitigation_alias"] = resolved_aliases[0]
-        control["mitigation_aliases"] = sorted(set(resolved_aliases))
-        control["mitigation_uuids"] = sorted(set(uuids))
-        if uuids:
-            control["mitigation_uuid"] = sorted(set(uuids))[0]
+    if aliases:
+        # A real source reference never becomes an assessment gap merely because
+        # its target is missing/ambiguous. The audit reports that distinction.
+        from tools.validate.threat_model_integrity import repair_control_identity
+        model = {"mitigations": [{"alias": alias, "id": rec["mitigation_uuid"],
+                                  "statement": rec.get("statement", "")}
+                                 for alias, rec in alias_index.items()]}
+        repairs = repair_control_identity(control, model, stage="04-map/trace")
+        if repairs:
+            previous = {r["id"]: r for r in control.get("threat_model_repairs", [])}
+            previous.update({r["id"]: r for r in repairs})
+            control["threat_model_repairs"] = sorted(previous.values(), key=lambda r: r["id"])
         control["mitre_techniques"] = sorted(mitre)
-        # Verbatim AWS Threat Model statement of the primary mitigation, so a downstream
-        # citation can quote it and be provenance-checked against the export.
-        primary_stmt = statement_by_alias.get(control["mitigation_alias"], "")
-        if primary_stmt:
-            control["mitigation_statement"] = primary_stmt
-        control["trace_source"] = "threat_model"
     else:
-        # Synthetic / no-AWS Threat Model control: empty traceability, explicit marker.
         control.setdefault("mitre_techniques", [])
         control["trace_source"] = "assessment_gap"
 

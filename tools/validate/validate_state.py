@@ -843,6 +843,8 @@ def check_controls_generated(data: dict, state_dir: str) -> list[str]:
         for c in controls:
             if isinstance(c, dict):
                 covered.update(c.get("mitigation_ids", []))
+        from threat_model_integrity import valid_disposition
+        covered.update(d.get("mitigation_id") for d in data.get("mitigation_dispositions", []) if valid_disposition(d))
         uncovered = all_mit_ids - covered
         if uncovered:
             errors.append(
@@ -1112,10 +1114,11 @@ def check_mapping_results(data: dict) -> list[str]:
         errors.append(f"CHECK-S13 bidirectional: {bidir_mismatches} pairs mismatch")
 
     # Mitigation completeness
+    from threat_model_integrity import valid_disposition
     none_mits = [
         t.get("mitigation_id", f"tmm[{i}]")
         for i, t in enumerate(tmm)
-        if t.get("coverage") == "NONE"
+        if t.get("coverage") == "NONE" and not valid_disposition(t.get("disposition"))
     ]
     if none_mits:
         errors.append(f"CHECK-S13 {len(none_mits)} mitigations have NONE coverage: {none_mits}")

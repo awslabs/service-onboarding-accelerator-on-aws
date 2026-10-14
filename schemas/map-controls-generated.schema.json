@@ -33,6 +33,7 @@
         "total_controls": {"type": "integer", "minimum": 0}
       }
     },
+    "mitigation_dispositions": {"type": "array", "items": {"type": "object", "required": ["mitigation_alias", "mitigation_uuid", "mitigation_id", "status", "rationale"], "properties": {"mitigation_alias": {"type": "string", "minLength": 1}, "mitigation_uuid": {"type": "string", "minLength": 1}, "mitigation_id": {"type": "string", "pattern": "^M-.+"}, "status": {"enum": ["manual_guidance", "not_applicable", "unresolved"]}, "rationale": {"type": "string", "minLength": 1}, "guidance": {"type": "string"}}, "allOf": [{"if": {"properties": {"status": {"const": "manual_guidance"}}}, "then": {"required": ["guidance"], "properties": {"guidance": {"type": "string", "minLength": 1}}}}]}},
     "coverage_gaps": {
       "type": "array",
       "items": {"type": "object"},
@@ -168,6 +169,9 @@
           "description": "Optional — MITRE ATT&CK technique IDs (e.g. T1078) the control addresses. iter-13 addition when a threat model is provided."
         },
         "threat_model_urls": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Published readable report links by source alias, derived during assembly."},
+        "mitigation_references": {"type": "array", "items": {"type": "object", "required": ["alias", "uuid"], "properties": {"alias": {"type": "string"}, "uuid": {"type": "string"}}, "additionalProperties": false}},
+        "threat_model_repairs": {"type": "array", "items": {"type": "object"}},
+        "threat_model_warnings": {"type": "array", "items": {"type": "string"}},
         "mitigation_alias": {
           "type": "string",
           "description": "Optional — the primary AWS Threat Model mitigation alias (e.g. Mitigation.LAMBDA.Function.1) the control derives from. Threaded deterministically from the AWS Threat Model source so the final mapping can cite it."

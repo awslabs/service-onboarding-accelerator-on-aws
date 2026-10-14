@@ -105,7 +105,7 @@ For running the plugin, open a **separate folder** — not the plugin repo:
 
 Intake retrieves the latest matching model from the public AWS Threat Models
 repository. Missing services and retrieval failures stop the pipeline; local
-exports cannot bypass it. Resume checks upstream again. See
+exports cannot bypass it. Resume uses the same saved snapshot offline. See
 [Threat Models](THREAT-MODELS.md) for provenance, citations, and migration.
 
 > **Note:** The agent and MCP configs live in the plugin repo. If running from a

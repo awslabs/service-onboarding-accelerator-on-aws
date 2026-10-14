@@ -15,8 +15,9 @@ Every onboarding run requires a matching published AWS Threat Model. Intake
 resolves current `main`, follows AWS's release manifest, verifies artifact hashes,
 and saves a pinned snapshot with provenance. Service discovery uses the live
 manifest and model metadata. Missing services or retrieval errors halt the run.
-At entry/resume, `validate_threat_model_input.py --refresh` checks upstream again;
-a changed model requires fresh Intake and regeneration of downstream output.
+At entry/resume, `validate_threat_model_input.py` checks the original snapshot
+offline. Only a new run fetches upstream. Source defects are advisory and disclosed
+through deterministic source accounting and report blocks (P14).
 
 The shared manifest, pre-write/post-write, phase, and integrity gates check the
 saved source and its SHA-256 locally. Readable report citations use verified

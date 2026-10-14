@@ -41,7 +41,8 @@ Before MCP/assessment/research, Intake MUST retrieve the latest published model
 with `tools/validate/fetch_threat_model.py --service <name>` and record the returned
 `inputs.threat_model_file` and `inputs.threat_model_source`. Validate with
 `--manifest` before Assess and `--slug` between phases. At every entry that resumes
-saved state, add `--refresh`; changed models require fresh Intake and regeneration.
+saved state, validate the saved snapshot offline. Only new runs fetch latest;
+upstream changes do not affect resume. Source defects are advisory and disclosed.
 Missing services, retrieval errors, local exports, flags, and cached state cannot
 bypass the published-model gate. Follow the canonical orchestrator's lifecycle.
 

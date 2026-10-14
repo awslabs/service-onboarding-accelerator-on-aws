@@ -16,7 +16,7 @@ If the user provided any of these in their invocation message, don't re-ask.
 Follow the skill file step by step. Write all output to `.service-approval/` in the workspace root.
 Run the mandatory published-model fetch gate before assessment or research.
 Do not ask for a local export. Missing services and retrieval errors halt the run;
-resume checks current upstream availability with `--refresh`. No flags bypass it.
+resume validates the same saved snapshot offline. No flags bypass it.
 
 ## Output
 Report back to the user with:
