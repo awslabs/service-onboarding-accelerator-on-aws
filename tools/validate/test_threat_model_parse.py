@@ -147,3 +147,17 @@ def test_semantic_entity_label_is_not_invented_as_cfn_type():
         entity['entityType'] = 'RESOURCE'
         entity.pop('resource_type', None)
     assert all(m['resource_type'] == '' for m in parse_threat_model_mitigations(data))
+
+
+def test_index_builder_supports_documented_package_import():
+    import os
+    import subprocess
+    import sys
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "from tools.validate.threat_model_parse import build_threat_model_index; "
+         "assert build_threat_model_index({}, source={'data_url': 'synthetic'})['mitigations'] == []"],
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "PYTHONPATH": ""}, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr

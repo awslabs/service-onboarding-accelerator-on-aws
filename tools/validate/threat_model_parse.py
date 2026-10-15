@@ -394,7 +394,10 @@ def build_threat_model_index(data: dict[str, Any], service: str = "", source: di
         "implementations": parse_threat_model_implementations(data),
     }
     if source:
-        from threat_model_source import citation_url
+        if __package__:
+            from .threat_model_source import citation_url
+        else:
+            from threat_model_source import citation_url
         index["_metadata"]["threat_model_source"] = source
         for section in ("mitigations", "implementations"):
             for row in index[section]:

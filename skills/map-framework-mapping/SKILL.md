@@ -119,6 +119,13 @@ but they do not override the mechanism-class gate — where they disagree, the K
 allow/deny wins. Use the tags to build candidates fast, then confirm against the
 allow/deny classes.
 
+An empty or incorrect classification is a tooling-vocabulary gap, not evidence
+that a control has no framework match. You MUST report that gap for correction
+and re-review the control against the objective text. Do not disguise a known
+classifier omission as a `no_framework_match` exception. Likewise, membership
+in an allowed class only permits a candidate mapping: the rationale must still
+show how this particular control satisfies the objective at the claimed level.
+
 **The `security_rationale` field is your SECONDARY context.** It explains why this control exists
 and what security goal it achieves. Use it to write the mapping rationale — but do NOT use it
 to override the eligibility constraint from `mitigation_intent`.

@@ -17,7 +17,7 @@
       "match_mechanisms": []
     },
     "at_rest_encryption": {
-      "description": "Encryption-at-rest controls using a KMS/customer-managed key.",
+      "description": "Encryption-at-rest controls using service-side KMS keys or client-side attribute encryption.",
       "match_keywords": [
         "at rest",
         "at-rest",
@@ -25,7 +25,10 @@
         "cmk",
         "customer-managed key",
         "customer managed key",
-        "encryption at rest"
+        "encryption at rest",
+        "client-side encryption",
+        "attribute encryption",
+        "database encryption sdk"
       ],
       "match_mechanisms": [
         "KMS Key Policy"
@@ -58,7 +61,10 @@
         "public access",
         "permission boundary",
         "trust policy",
-        "iam"
+        "iam",
+        "resource-based policies",
+        "resource policies",
+        "service control policies"
       ],
       "match_mechanisms": [
         "SCP",
@@ -151,7 +157,12 @@
         "unauthorized change",
         "change restoration"
       ],
-      "match_mechanisms": []
+      "match_mechanisms": [
+        "CloudFormation Guard",
+        "CFN Guard",
+        "CloudFormation Hook",
+        "CFN Hook"
+      ]
     },
     "vulnerability_management": {
       "description": "Vulnerability scanning, patching, malware, CVE, Inspector pairing.",
@@ -174,6 +185,38 @@
         "signature verification",
         "trusted publisher",
         "artifact integrity"
+      ],
+      "match_mechanisms": []
+    },
+    "capacity_monitoring": {
+      "description": "Controls measuring resource capacity or consumption for capacity planning; does not imply failover or disaster recovery.",
+      "match_keywords": [
+        "capacity monitoring",
+        "capacity planning",
+        "table size",
+        "item count",
+        "tablesizebytes",
+        "itemcount"
+      ],
+      "match_mechanisms": []
+    },
+    "secrets_management": {
+      "description": "Controls that keep application secrets in a managed secrets store instead of plaintext application configuration.",
+      "match_keywords": [
+        "secrets management",
+        "secrets manager",
+        "secrets lambda extension"
+      ],
+      "match_mechanisms": []
+    },
+    "system_event_logging": {
+      "description": "Controls defining application/system log collection. Does not imply identity/access audit records or security alerting.",
+      "match_keywords": [
+        "system log",
+        "application log",
+        "runtime log",
+        "build log",
+        "loggingconfig"
       ],
       "match_mechanisms": []
     }
@@ -1365,11 +1408,12 @@
         {
           "objective_id": "DSP-17",
           "title": "Sensitive Data Protection",
-          "intent": "Requires protecting sensitive data; encryption and access controls protect sensitive data held by the resource.",
+          "intent": "Requires protecting sensitive data; encryption, access controls, and managed secret retrieval protect data held or used by the resource.",
           "mappable": "mappable",
           "allow_mechanisms": [
             "at_rest_encryption",
-            "access_control"
+            "access_control",
+            "secrets_management"
           ],
           "deny_mechanisms": []
         },
@@ -1993,10 +2037,11 @@
         {
           "objective_id": "IVS-02",
           "title": "Capacity and Resource Planning",
-          "intent": "Requires capacity and resource planning; multi-AZ/resilient placement controls support capacity and availability planning.",
+          "intent": "Requires capacity and resource planning; resource-consumption measurements support planning, while resilient placement supports availability.",
           "mappable": "mappable",
           "allow_mechanisms": [
-            "resilience"
+            "resilience",
+            "capacity_monitoring"
           ],
           "deny_mechanisms": []
         },
@@ -2187,10 +2232,11 @@
         {
           "objective_id": "LOG-07",
           "title": "Logging Scope",
-          "intent": "Requires a defined logging scope; controls enabling activity/access logging for the resource set the logging scope.",
+          "intent": "Requires a defined logging scope; controls specifying activity, access, application, or system log collection contribute to that scope. This does not by itself meet audit-record content or security-alerting objectives.",
           "mappable": "mappable",
           "allow_mechanisms": [
-            "access_event_logging"
+            "access_event_logging",
+            "system_event_logging"
           ],
           "deny_mechanisms": [
             "misconfig_detection"
@@ -2960,6 +3006,9 @@
     "change_control": "Partial Coverage",
     "vulnerability_management": "Partial Coverage",
     "tagging_classification": "Supportive",
-    "supply_chain": "Partial Coverage"
+    "supply_chain": "Partial Coverage",
+    "capacity_monitoring": "Partial Coverage",
+    "secrets_management": "Partial Coverage",
+    "system_event_logging": "Partial Coverage"
   }
 }
