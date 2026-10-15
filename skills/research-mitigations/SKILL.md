@@ -60,8 +60,10 @@ Each top-level mitigation carries `alias`, `statement`,
 and `mappings[]` (entries `{type, id}` where `type` is one of `ENTITY`,
 `THREAT`, `MITIGATION_GOAL`, `IMPLEMENTATION`). Recover `resource_type` for a
 mitigation by following its `mappings[type=="ENTITY"].id` to the matching
-`entities[].id` and using the entity's `entityType` (or
-`AWS::<Service>::<entityType>` when an explicit CFN type is not present).
+`entities[].id`. Published models put CloudFormation types in
+`identifiers.cfnResourceTypes[]`; preserve all types and all linked entities.
+Legacy `resource_type` / `entityType` values are usable only when they are
+explicit `AWS::...` types. Never construct a CFN type from a semantic label.
 
 ```python
 import json
@@ -73,20 +75,10 @@ entities = data.get("entities") or []
 shape_b = bool(top_level_mits) and not any("mitigations" in e for e in entities)
 
 if shape_b:
-    # Build entity-id -> entity lookup for resource_type recovery
-    entity_by_id = {e.get("id"): e for e in entities}
-    for mit in top_level_mits:
-        # Recover resource_type via the ENTITY mapping
-        entity_id = next(
-            (m["id"] for m in mit.get("mappings", []) if m.get("type") == "ENTITY"),
-            None,
-        )
-        ent = entity_by_id.get(entity_id, {}) if entity_id else {}
-        resource_type = ent.get("resource_type") or ent.get("entityType") or ""
-        # Carry alias, statement, configurationRequestParameters[]:
-        #   request_parameters can be flattened from
-        #   mit["configurationRequestParameters"][i]["paths"][j]["path"]
-        # Preserve alias and full statement; do NOT summarize or truncate.
+    from tools.validate.threat_model_parse import parse_threat_model_mitigations
+    normalized = parse_threat_model_mitigations(data)
+    # Preserve alias, source_uuid, statement, resource_types, and full
+    # configuration_request_parameters when assigning internal M-* IDs.
 else:
     # Shape A — walk entity-nested mitigations
     for entity in entities:
@@ -269,8 +261,9 @@ flatten every `configurationRequestParameters[].paths[].path` into it.
 
 ## Step 3: Build Initial Asset Inventory
 
-From the mitigations, derive an initial asset list. Each unique `resource_type` becomes
-an asset entry:
+From the mitigations, derive an initial asset list. Each unique type in
+`resource_types[]` (or legacy `resource_type`) becomes an asset entry. Missing
+CFN identifiers require discovery in research; do not fabricate asset types.
 
 ```json
 {

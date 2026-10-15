@@ -248,6 +248,17 @@ def remap_framework_mapping(fw_mapped: dict, id_remap: dict[str, str]) -> None:
                 remapped.append(new_id)
         qgr["orphaned_controls"] = remapped
 
+    # A duplicate can collapse into a mapped survivor. Its no-match review is
+    # then obsolete; otherwise keep one review for the surviving control.
+    from tools.validate.framework_review import referenced_controls
+    referenced = referenced_controls(fw_mapped.get("framework_mapping", []))
+    reviews = {}
+    for review in fw_mapped.get("unmapped_control_reviews", []):
+        cid = id_remap.get(review["control_id"], review["control_id"])
+        if cid not in referenced:
+            reviews.setdefault(cid, {**review, "control_id": cid})
+    fw_mapped["unmapped_control_reviews"] = list(reviews.values())
+
 
 # ---------------------------------------------------------------------------
 # Phase 1: Build Reverse Index (controls -> framework objectives)
@@ -690,6 +701,7 @@ def assemble_mapping_results(
         "controls": controls,
         "threat_mitigation_map": threat_mitigation_map,
         "framework_mapping": fw_mapped["framework_mapping"],
+        "unmapped_control_reviews": fw_mapped.get("unmapped_control_reviews", []),
         "framework_coverage_summary": build_framework_coverage_summary(fw_mapped),
         "coverage_gaps": coverage_gaps,
         "control_summary": build_control_summary(controls),
@@ -1332,6 +1344,18 @@ def write_framework_mapping(
             lines.append(f"| {o['control_id']} | {o['name']} | {source} |")
         lines.append("")
 
+    reviews = fw_mapped.get("unmapped_control_reviews", [])
+    if reviews:
+        lines += ["## Controls outside the selected framework", "",
+                  "These controls remain in the catalog. Each was reviewed against the selected "
+                  "framework and has no supported objective mapping; they do not increase framework coverage.", "",
+                  "| Control | Objectives reviewed | Reason |", "|---|---|---|"]
+        from tools.validate.threat_model_integrity import _cell
+        for review in reviews:
+            lines.append("| " + " | ".join(_cell(v) for v in (
+                review["control_id"], ", ".join(review["reviewed_objective_ids"]), review["rationale"])) + " |")
+        lines.append("")
+
     # NOTE: the customer-facing report intentionally omits a "Coverage Gaps"
     # section and a "Mitigation Traceability" table. The underlying data still
     # lives in mapping-results.json (`coverage_gaps`, `threat_mitigation_map`)
@@ -1514,6 +1538,12 @@ def main() -> int:
     fw_mapped = load_json(map_dir / "map-framework-mapped.json")
     validated = load_json(validate_dir / "validated.json")
 
+    from tools.validate.framework_review import document_review_errors
+    review_failures = document_review_errors(fw_mapped, cg.get("controls", []))
+    if review_failures:
+        print("\n".join(review_failures), file=sys.stderr)
+        return 2
+
     from tools.validate.validate_threat_model_input import load_run_export
     model_path, errors = load_run_export(service_root)
     if errors:
@@ -1537,6 +1567,11 @@ def main() -> int:
         recorded.update({r["id"]: r for r in repairs})
         cg.setdefault("_metadata", {})["threat_model_repairs"] = sorted(recorded.values(), key=lambda r: r["id"])
     write_json(map_dir / "map-controls-generated.json", cg)
+    write_json(map_dir / "map-framework-mapped.json", fw_mapped)
+    # Keep the mapper's original inventory/reviews coherent for replay. Only the
+    # assembled result uses survivor IDs after deduplication.
+    import copy
+    fw_mapped = copy.deepcopy(fw_mapped)
 
     # Phase 0: Semantic de-duplication. Collapse controls that share a canonical
     # identity (name + scope + category + mechanism + resource_types + actions +
@@ -1547,7 +1582,6 @@ def main() -> int:
     pre_dedup_count = len(controls)
     controls, id_remap = dedup_controls(controls)
     remap_framework_mapping(fw_mapped, id_remap)
-    write_json(map_dir / "map-framework-mapped.json", fw_mapped)
     for control in controls:
         extra = repair_control_identity(control, model, stage="04-map/deduplication")
         if extra:

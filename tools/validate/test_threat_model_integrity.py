@@ -233,14 +233,43 @@ def test_findings_and_repairs_cannot_be_hidden_or_stale(tmp_path):
     audit = write_audit(root)
     assert audit['findings'] and audit['repairs']
     assert not check_reporting(root)
-    original = (root / '06-summarize/SUMMARY-REPORT.md').read_text()
+    original = (root / '04-map/framework-mapping.md').read_text()
     write_audit(root)
-    assert original == (root / '06-summarize/SUMMARY-REPORT.md').read_text()
-    (root / '06-summarize/SUMMARY-REPORT.md').write_text('# Report\nNo issues.')
+    assert original == (root / '04-map/framework-mapping.md').read_text()
+    (root / '04-map/framework-mapping.md').write_text('# Report\nNo issues.')
     assert check_reporting(root)
     write_audit(root)
     write(state, {'controls':controls(model())})
     assert any('stale' in error for error in check_reporting(root))
+
+
+def test_audit_migrates_banners_to_one_framework_appendix(tmp_path):
+    from threat_model_integrity import BEGIN, END, report_block
+    root, _ = run(tmp_path)
+    write(root / '04-map/map-controls-generated.json', {'controls': controls(model())})
+    for name in ('04-map/controls-catalog.md', '04-map/framework-mapping.md', '06-summarize/SUMMARY-REPORT.md'):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'# Report\n\n{BEGIN}\nOld banner\n{END}\n\nBody\n\n## Citations not found in AWS Threat Models\n\nCitation review.\n')
+    audit = write_audit(root)
+    framework = (root / '04-map/framework-mapping.md').read_text()
+    assert framework.rstrip().endswith(report_block(audit))
+    assert framework.index('Citation review.') < framework.index(BEGIN)
+    for name in ('04-map/controls-catalog.md', '06-summarize/SUMMARY-REPORT.md'):
+        assert BEGIN not in (root / name).read_text()
+    assert not check_reporting(root)
+
+
+def test_ordering_correct_pairs_is_not_an_identity_repair():
+    data = model()
+    c = controls(data)[0]
+    pairs = [{'alias': m['alias'], 'uuid': m['id']} for m in reversed(data['mitigations'])]
+    c['mitigation_aliases'] = [p['alias'] for p in pairs]
+    c['mitigation_uuids'] = [p['uuid'] for p in pairs]
+    c['mitigation_references'] = pairs
+    assert not identity_errors(c, data)
+    assert repair_control_identity(c, data) == []
+    assert not identity_errors(c, data)
 
 
 def test_input_ignore_rules_keep_only_shipped_defaults(tmp_path):
@@ -282,7 +311,7 @@ def test_complete_map_assembly_repairs_and_discloses(tmp_path, monkeypatch):
     write(manifest_path, manifest)
     cs = controls(data)
     for i, c in enumerate(cs):
-        c.update(name=f'Control {i}',scope='RES',category='PRV',mechanism='SCP',
+        c.update(name='Same synthetic control',scope='RES',category='PRV',mechanism='SCP',
                  description='Synthetic control.',security_rationale='Synthetic rationale.',
                  actions=[],parameters_controlled=[],resource_types=['AWS::Lambda::Function'])
     cs[0]['mitigation_uuid'] = 'wrong'
@@ -303,6 +332,9 @@ def test_complete_map_assembly_repairs_and_discloses(tmp_path, monkeypatch):
     monkeypatch.setattr(sys, 'argv', ['map-assemble', '--slug', 'lambda'])
     assert module.main() == 0
     out = json.loads((root / '04-map/mapping-results.json').read_text())
+    assert len(out['controls']) == 1
+    intermediate = json.loads((root / '04-map/map-framework-mapped.json').read_text())
+    assert {c['control_id'] for row in intermediate['framework_mapping'] for c in row['controls']} == {c['id'] for c in cs}
     assert not identity_errors(out, data)
     assert not identity_errors(json.loads((root / '04-map/map-framework-mapped.json').read_text()), data)
     assert not check_reporting(root)

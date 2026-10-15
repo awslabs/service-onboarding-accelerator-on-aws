@@ -982,18 +982,10 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
                 f"CHECK-S12 Rule6: {f.get('objective_id')} has {full_count} Full Coverage controls (max 5)"
             )
 
-    # Rule 7: Orphaned controls
+    # Rule 7: a genuinely unmatched control needs an explicit framework review.
     if cg:
-        all_mapped = set()
-        for f in fm:
-            for c in f.get("controls", []):
-                cid = c.get("control_id")
-                if cid:
-                    all_mapped.add(cid)
-        all_ctrl_ids = {c["id"] for c in cg.get("controls", []) if c.get("id")}
-        orphans = all_ctrl_ids - all_mapped
-        if orphans:
-            errors.append(f"CHECK-S12 Rule7: {len(orphans)} orphaned controls: {sorted(orphans)}")
+        from framework_review import document_review_errors
+        errors.extend(f"CHECK-S12 {e}" for e in document_review_errors(data, cg.get("controls", [])))
 
     # Coverage summary consistency
     fcs = data.get("framework_coverage_summary", {})
@@ -1071,18 +1063,9 @@ def check_mapping_results(data: dict) -> list[str]:
     if missing_rationale > 0:
         errors.append(f"CHECK-S13 Rule5: {missing_rationale} mappings missing rationale")
 
-    # Rule 7: Orphans
-    all_mapped_ids = set()
-    for f in fm:
-        for c in f.get("controls", []):
-            cid = c.get("control_id")
-            if cid:
-                all_mapped_ids.add(cid)
-    all_ctrl_ids = {c.get("id", "") for c in controls}
-    orphans = all_ctrl_ids - all_mapped_ids
-    if orphans:
-        # Warning not error — some controls may be compensating
-        pass
+    # The assembled artifact follows the same contract as the mapper.
+    from framework_review import document_review_errors
+    errors.extend(f"CHECK-S13 {e}" for e in document_review_errors(data, controls))
 
     # Bidirectional consistency: fm→controls and controls→fm must agree
     fm_obj_to_ctrls: dict[str, set[str]] = {}

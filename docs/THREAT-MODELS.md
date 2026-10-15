@@ -67,7 +67,8 @@ The source alias, original UUID, and internal `M-*` ID are distinct identities.
 Normalized research rows retain `alias` and `source_uuid`; controls use canonical
 `mitigation_references[{alias,uuid}]` plus compatible legacy fields. Primary alias
 and UUID must match; alias and UUID arrays must correspond position by position.
-Assembly repairs unique known pairs and records repairs. It preserves references
+Assembly repairs unique known pairs and records repairs; ordering already-correct
+pairs is ordinary normalization and is not reported as a defect. It preserves references
 through deduplication and does not guess ambiguous source identities.
 
 Each original source mitigation is accounted for through Research, Validate, and
@@ -84,12 +85,24 @@ python3 tools/validate/audit_threat_model.py --slug <slug>
 ```
 
 This writes `threat-model-integrity.json` and `threat-model-integrity.md` at the
-service root and inserts deterministic disclosure into existing summary, control
-catalog, and framework-mapping reports. Hooks also recompute it after validated
+service root and adds a concise appendix at the end of `framework-mapping.md`,
+after the citation/review sections. Summary and control catalog have no integrity
+banner. The appendix separates source-reference defects from processing findings;
+the linked detailed audit retains affected controls and correction history.
+Hooks also recompute it after validated
 writes. P14 checks the actual snapshot and current state, requiring complete,
 current disclosure. Findings themselves are not failures; stale or omitted
 reporting fails the check. Reports distinguish source-author defects from
 processing gaps and show affected control IDs and recorded repairs.
+
+Source mitigation coverage and framework mapping are different checks. Every
+source mitigation must be accounted for, but a useful control need not match an
+objective in the selected framework. Rule 7 requires a genuine mapping or an
+explicit `unmapped_control_reviews` entry with the control ID, `no_framework_match`
+status, specific rationale, and closest `reviewed_objective_ids`. Reviewed
+unmatched controls remain in the catalog and are disclosed near the bottom of
+the framework mapping without increasing coverage. Unexplained omissions fail
+merge, state validation, and the final integrity gate.
 
 ## Optional supporting inputs
 

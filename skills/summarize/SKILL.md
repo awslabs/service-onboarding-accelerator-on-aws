@@ -251,11 +251,16 @@ After writing `SUMMARY-REPORT.md`, run:
 python3 tools/validate/audit_threat_model.py --slug <slug>
 ```
 
-This inserts a deterministic integrity section after the title and updates the
-companion control/framework reports. Preserve the generated block and links.
+This updates a concise source/processing-check appendix at the end of
+`04-map/framework-mapping.md`, below the citation/review sections, and removes
+obsolete integrity banners from the summary and control catalog. You MUST keep
+this information in that appendix instead of copying it above the report body.
+Preserve the generated appendix and its link to the detailed audit.
 The integrity JSON and Markdown files at the service root account for every
 original source mitigation and list source defects, processing gaps, and recorded
-ID repairs. Findings are advisory. No acceptance flag is required, and their
+ID repairs. Source-reference findings, pipeline-processing findings, and completed
+corrections are distinct; corrections to generated output are not upstream defects.
+Findings are advisory. No acceptance flag is required, and their
 presence must not be described as a failed source prerequisite. P14 blocks only
 missing/stale/edited disclosure, not a nonzero finding count.
 

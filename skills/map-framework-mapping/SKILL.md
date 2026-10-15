@@ -544,6 +544,14 @@ After building the initial mapping, check for controls not mapped to any objecti
    class satisfies. A leftover AWS Threat Model orphan is a signal to re-check Step 6 — it must not be
    silently dropped or pushed to the non-AWS Threat Model "Suggestions for Review" section (that
    section is `trace_source != "threat_model"` controls only).
+6. You MUST record each genuinely unmatched control in `unmapped_control_reviews[]`:
+   `control_id`, `status: "no_framework_match"`, a control-specific `rationale`,
+   and non-empty `reviewed_objective_ids` naming the closest objectives reviewed.
+   Explain why the mechanism does not satisfy those objectives. A valid threat-model
+   mitigation need not fit the customer's selected framework; retain the control
+   without claiming framework coverage. Do not invent a mapping to clear Rule 7.
+   Unexplained omissions, duplicate reviews, and reviews for unknown or already
+   referenced controls fail validation.
 
 ---
 
@@ -598,6 +606,14 @@ orphans), verifies every parsed objective appears exactly once, and writes
 `map-framework-mapped.json`. The cross-domain gates run here, not in the
 per-domain subagents (a single subagent cannot see another domain's controls).
 The merged file is byte-shape identical to the single-pass output below.
+
+The merge writes diagnostic output and exits nonzero when a quality gate fails.
+If Rule 7 fails, you MUST complete the review above, repair genuine mappings in
+the domain partials, and write the remaining reviews as a JSON array to
+`04-map/unmapped-control-reviews.json`. Re-run the merge (it reads that file
+automatically), then `validate_state.py` on `map-framework-mapped.json`.
+Do not proceed to assembly until both pass. Single-pass mapping includes the
+same array directly as `unmapped_control_reviews` in its output.
 
 **Single-pass (non-CCMv4):** write
 `.service-approval/<slug>/04-map/map-framework-mapped.json` directly, in this exact

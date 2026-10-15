@@ -51,9 +51,19 @@ def is_threat_model_threats_shape(data: dict[str, Any]) -> bool:
     )
 
 
-def _entity_resource_type(entity: dict[str, Any]) -> str:
-    """Recover a resource_type string from an AWS Threat Model entity entry."""
-    return entity.get("resource_type") or entity.get("entityType") or ""
+def _entity_resource_types(entity: dict[str, Any]) -> list[str]:
+    """Read published CFN identifiers, preserving multiple types and legacy input."""
+    identifiers = entity.get("identifiers")
+    if isinstance(identifiers, dict):
+        types = identifiers.get("cfnResourceTypes")
+        if isinstance(types, list):
+            found = _dedup(t for t in types if isinstance(t, str) and t.startswith("AWS::"))
+            if found:
+                return found
+    legacy = entity.get("resource_type") or entity.get("entityType")
+    # Published entityType can be a semantic label ("RESOURCE"). Never invent
+    # a CFN type from that label.
+    return [legacy] if isinstance(legacy, str) and legacy.startswith("AWS::") else []
 
 
 # ---------------------------------------------------------------------------
@@ -328,17 +338,13 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
         if not isinstance(mit, dict):
             continue
 
-        # Recover the linked entity (and thus resource_type) via the ENTITY mapping
-        entity_id = next(
-            (
-                m.get("id")
-                for m in (mit.get("mappings") or [])
-                if isinstance(m, dict) and m.get("type") == "ENTITY"
-            ),
-            None,
+        # A mitigation may govern several entities or several CFN types.
+        resource_types = _dedup(
+            resource_type
+            for link in (mit.get("mappings") or [])
+            if isinstance(link, dict) and link.get("type") == "ENTITY"
+            for resource_type in _entity_resource_types(entities_by_id.get(link.get("id"), {}))
         )
-        ent = entities_by_id.get(entity_id, {}) if entity_id else {}
-        resource_type = _entity_resource_type(ent)
 
         # Flatten configurationRequestParameters[].paths[].path -> request_parameters[]
         cfg_params = mit.get("configurationRequestParameters") or []
@@ -360,7 +366,8 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
                 "mitigation_goal": mit.get("statement", ""),  # AWS Threat Model folds goal into statement
                 "request_parameters": flat_paths,
                 "configuration_request_parameters": cfg_params,
-                "resource_type": resource_type,
+                "resource_type": resource_types[0] if resource_types else "",
+                "resource_types": resource_types,
                 "scoping_context": _collect_scoping_context(context),
                 "reference_links": _collect_reference_links(context),
             }

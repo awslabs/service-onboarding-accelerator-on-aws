@@ -117,11 +117,18 @@ def repair_control_identity(control, model, *, stage="map"):
         expected["mitigation_uuid"] = index[primary]["id"]
         expected["mitigation_statement"] = index[primary].get("statement", "")
     repairs = []
+    had_identity_error = bool(identity_errors(control, model))
     for key, value in expected.items():
         if key in control and control[key] != value:
-            repairs.append(finding("identity_repaired", primary,
-                f"Corrected {key} from {json.dumps(control[key], sort_keys=True)} to {json.dumps(value, sort_keys=True)}.",
-                stage=stage, owner="Service Approval", aliases=known, controls=[control.get("id", "")], repaired=True))
+            # Stable ordering of already-correct pairs is formatting, not a repair.
+            order_only = (not had_identity_error and isinstance(value, list)
+                          and isinstance(control[key], list)
+                          and sorted(json.dumps(v, sort_keys=True) for v in control[key])
+                          == sorted(json.dumps(v, sort_keys=True) for v in value))
+            if not order_only:
+                repairs.append(finding("identity_repaired", primary,
+                    f"Corrected {key} from {json.dumps(control[key], sort_keys=True)} to {json.dumps(value, sort_keys=True)}.",
+                    stage=stage, owner="Service Approval", aliases=known, controls=[control.get("id", "")], repaired=True))
         control[key] = value
     if primary not in index:
         # Ambiguous source identities must not retain a misleading prior UUID.
@@ -285,13 +292,20 @@ def render_details(audit):
 def report_block(audit):
     statuses = Counter(m["status"] for m in audit["mitigations"])
     counts = ", ".join(f"{count} {status.replace('_', ' ')}" for status, count in sorted(statuses.items()))
-    lines = [BEGIN, "", "## AWS Threat Model integrity", "",
-             f"Checked source commit `{audit['source_commit']}`: **{len(audit['findings'])} findings; {len(audit['repairs'])} recorded repairs**.",
-             f"Source mitigation accounting: {counts or 'none'}. This check does not verify every AWS capability claim.",
-             "[Finding details and mitigation accounting](../threat-model-integrity.md).", ""]
-    for f in audit["findings"] + audit["repairs"]:
-        lines.append(f"- **{_cell(f['id'])} — {_cell(f['record'])}:** {_cell(f['detail'])} "
-                     f"Target: {_cell(f.get('target') or '—')}. Controls: {_cell(', '.join(f['affected_controls']) or '—')}.")
+    source_count = sum(f["owner"] == "AWS Threat Model author" for f in audit["findings"])
+    processing_count = len(audit["findings"]) - source_count
+    lines = [BEGIN, "", "## Threat model source and processing checks", "",
+             "These checks verify source references, mitigation identity pairs, and whether each source "
+             "mitigation is accounted for throughout this run. They do not establish framework compliance "
+             "or verify every AWS capability claim.", "",
+             f"Source version: [`{audit['source_commit'][:12]}`]({audit['source_url']}).",
+             f"Source-reference findings: **{source_count}**. Pipeline-processing findings: **{processing_count}**.",
+             f"Source mitigation accounting: {counts or 'none'}.", ""]
+    if audit["repairs"]:
+        lines += [f"The tool recorded {len(audit['repairs'])} corrections to generated references. "
+                  "These records describe changes to pipeline output; they are not AWS Threat Model defects.", ""]
+    lines += ["[Detailed findings, affected controls, correction history, and mitigation accounting]"
+              "(../threat-model-integrity.md)."]
     lines += ["", END]
     return "\n".join(lines)
 
@@ -310,8 +324,11 @@ def write_audit(root, *, update_reports=True):
             text = path.read_text(encoding="utf-8")
             pattern = re.escape(BEGIN) + r".*?" + re.escape(END)
             text = re.sub(pattern, "", text, flags=re.DOTALL).lstrip("\n")
-            title, sep, rest = text.partition("\n")
-            atomic_write(path, (title + "\n\n" + block + "\n\n" + rest.lstrip("\n")).encode())
+            # One customer-facing appendix, after the citation/review sections.
+            # Also migrate away from the old banner in catalog and summary.
+            if name == "04-map/framework-mapping.md":
+                text = text.rstrip() + "\n\n" + block + "\n"
+            atomic_write(path, text.encode())
     return audit
 
 
@@ -329,8 +346,12 @@ def check_reporting(root):
         if (root / "threat-model-integrity.md").read_text() != render_details(expected):
             errors.append("Threat-model integrity details are missing or stale.")
         for path in present:
-            if report_block(expected) not in path.read_text():
-                errors.append(f"{path.name} omits or changes threat-model integrity findings; run audit_threat_model.py.")
+            text = path.read_text()
+            if path.name == "framework-mapping.md":
+                if text.count(BEGIN) != 1 or not text.rstrip().endswith(report_block(expected)):
+                    errors.append(f"{path.name} omits or changes the source/processing appendix; run audit_threat_model.py.")
+            elif BEGIN in text:
+                errors.append(f"{path.name} has an obsolete integrity banner; run audit_threat_model.py.")
         return errors
     except (OSError, ValueError) as exc:
         return [f"Threat-model integrity reporting incomplete: {exc}"]

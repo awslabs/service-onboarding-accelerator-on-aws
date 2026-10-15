@@ -182,7 +182,7 @@ def test_rule7_orphan_detection():
     mappings = [_entry("IAM-01", "I", controls=[_ctrl("CTRL-ACC-PRV-001")])]
     all_ids = {"CTRL-ACC-PRV-001", "CTRL-ACC-DET-099"}
     results, _ = mdm.run_quality_gates(mappings, all_ids)
-    assert results["rule_7_orphan_review"] == "PASS"  # rule 7 status stays PASS
+    assert results["rule_7_orphan_review"] == "FAIL"
     assert results["orphaned_controls"] == ["CTRL-ACC-DET-099"]
 
 
