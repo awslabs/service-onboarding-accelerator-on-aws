@@ -887,6 +887,8 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
     # All three map-* files are in the same phase (04-map/), so we can use direct join
     cg = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
     fw = _load_json(os.path.join(state_dir, "map-framework-parsed.json"))
+    if not isinstance(cg, dict) or not isinstance(cg.get("controls"), list):
+        errors.append("CHECK-S12 Rule7: map-controls-generated.json inventory is required for control review.")
 
     # All objectives present
     if fw:
@@ -1236,6 +1238,18 @@ def validate_state_file(file_path: str) -> list[str]:
         return [f"JSON syntax error: {e}"]
     except OSError as e:
         return [f"File read error: {e}"]
+
+    if basename == "unmapped-control-reviews.json":
+        # This mapper input is intentionally a bare array. Validate it against
+        # the current inventory instead of applying the generic object rule.
+        state_dir = _phase_dir_of(file_path)
+        mapped = _load_json(os.path.join(state_dir, "map-framework-mapped.json"))
+        generated = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
+        if not isinstance(mapped, dict) or not isinstance(generated, dict):
+            return ["Rule7: mapper output and control inventory are required to validate reviews."]
+        from framework_review import document_review_errors
+        return document_review_errors(
+            {**mapped, "unmapped_control_reviews": data}, generated.get("controls", []))
 
     if not isinstance(data, dict):
         return [f"Expected JSON object, got {type(data).__name__}"]

@@ -5,7 +5,7 @@ import json
 import pytest
 
 from framework_review import document_review_errors
-from validate_state import check_framework_mapped, check_mapping_results
+from validate_state import check_framework_mapped, check_mapping_results, validate_state_file
 from validate_pipeline_integrity import check_mapping_state
 from test_merge_domain_mappings import mdm
 from test_threat_model_integrity import script
@@ -74,3 +74,18 @@ def test_dedup_removes_obsolete_review_when_survivor_has_mapping():
     data['framework_mapping'][0].update(status='MAPPED', controls=[{'control_id': survivor}])
     assembly.remap_framework_mapping(data, {CID: survivor})
     assert data['unmapped_control_reviews'] == []
+
+
+def test_review_sidecar_array_validates_with_real_inventory(tmp_path):
+    data = document()
+    (tmp_path / 'map-controls-generated.json').write_text(json.dumps({'controls': data['controls']}))
+    (tmp_path / 'map-framework-mapped.json').write_text(json.dumps(data))
+    path = tmp_path / 'unmapped-control-reviews.json'
+    path.write_text(json.dumps([review()]))
+    assert not validate_state_file(str(path))
+    path.write_text('[]')
+    assert any('Rule7' in e for e in validate_state_file(str(path)))
+
+
+def test_missing_control_inventory_cannot_skip_rule7(tmp_path):
+    assert any('Rule7' in e for e in check_framework_mapped(document(), str(tmp_path)))

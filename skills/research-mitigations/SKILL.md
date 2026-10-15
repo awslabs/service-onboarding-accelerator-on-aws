@@ -264,6 +264,9 @@ flatten every `configurationRequestParameters[].paths[].path` into it.
 From the mitigations, derive an initial asset list. Each unique type in
 `resource_types[]` (or legacy `resource_type`) becomes an asset entry. Missing
 CFN identifiers require discovery in research; do not fabricate asset types.
+Treat source identifiers as inventory candidates. Research/Validate MUST verify
+actual CloudFormation and AWS Config support via MCP before claiming that those
+services can deploy or monitor the resource type.
 
 ```json
 {
