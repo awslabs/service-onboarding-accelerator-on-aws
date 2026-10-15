@@ -144,6 +144,52 @@ def _collect_scoping_context(context_entries: list[Any]) -> list[str]:
     return out
 
 
+def _normalize_guide(value: Any) -> Any:
+    """Normalize known published structural keys, retaining opaque policy keys."""
+    keys = {
+        "authorizationPolicy": "authorization_policy",
+        "roleTrustPolicy": "role_trust_policy",
+        "governedIamPermissions": "governed_iam_permissions",
+        "governedResourceType": "governed_resource_type",
+        "conditionKeys": "condition_keys",
+        "configRule": "config_rule",
+        "ruleType": "rule_type",
+        "governedApiOperations": "governed_api_operations",
+        "cloudtrailEvent": "cloudtrail_event",
+        "monitoredOperations": "monitored_operations",
+        "requestParameters": "request_parameters",
+        "responseParameters": "response_parameters",
+        "cloudformationHook": "cloudformation_hook",
+        "governedResourceProperties": "governed_resource_properties",
+        "resourceType": "resource_type",
+        "declarativePolicy": "declarative_policy",
+        "policyType": "policy_type",
+        "governedAttributes": "governed_attributes",
+    }
+    if isinstance(value, dict):
+        return {keys.get(k, k): _normalize_guide(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_guide(v) for v in value]
+    return value
+
+
+def _permission_values(values: list[Any], field: str) -> list[str]:
+    result = []
+    for value in values or []:
+        if isinstance(value, str):
+            result.append(value)
+        elif isinstance(value, dict):
+            if isinstance(value.get(field), str):
+                result.append(value[field])
+            result.extend(_permission_values(value.get("alternatives", []), field))
+    return _dedup(result)
+
+
+def _guide_operations(values: list[Any]) -> list[dict[str, Any]]:
+    return [({"operation": op} if isinstance(op, str) else op)
+            for op in values or [] if isinstance(op, (str, dict))]
+
+
 def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
     """Normalize a typed `implementationGuide` into a flat, uniform shape.
 
@@ -168,14 +214,20 @@ def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
     }
     if not isinstance(guide, dict):
         return parsed
+    guide = _normalize_guide(guide)
 
     guidance = guide.get("guidance")
     if isinstance(guidance, dict):
         parsed["guidance"] = str(guidance.get("description", "") or "")
 
-    auth = guide.get("authorization_policy")
+    auth = guide.get("authorization_policy") or guide.get("role_trust_policy")
     if isinstance(auth, dict):
-        perms = [p for p in auth.get("governed_iam_permissions", []) if isinstance(p, dict)]
+        perms = [
+            {**p, "actions": _permission_values(p.get("actions", []), "action"),
+             "resources": _permission_values(p.get("resources", []), "resource"),
+             "condition_keys": _permission_values(p.get("condition_keys", []), "key")}
+            for p in auth.get("governed_iam_permissions", []) if isinstance(p, dict)
+        ]
         parsed["authorization_policy"] = perms
         parsed["governed_resource_type"] = str(auth.get("governed_resource_type", "") or "")
         actions, resources, condition_keys = [], [], []
@@ -192,15 +244,13 @@ def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
     config_rule = guide.get("config_rule")
     if isinstance(config_rule, dict):
         parsed["config_rule_type"] = str(config_rule.get("rule_type", "") or "")
-        parsed["governed_api_operations"] = [
-            op for op in config_rule.get("governed_api_operations", []) if isinstance(op, dict)
-        ]
+        parsed["governed_api_operations"] = _guide_operations(
+            config_rule.get("governed_api_operations", []))
 
     cloudtrail = guide.get("cloudtrail_event")
     if isinstance(cloudtrail, dict):
-        parsed["monitored_operations"] = [
-            op for op in cloudtrail.get("monitored_operations", []) if isinstance(op, dict)
-        ]
+        parsed["monitored_operations"] = _guide_operations(
+            cloudtrail.get("monitored_operations", []))
 
     hook = guide.get("cloudformation_hook")
     if isinstance(hook, dict):

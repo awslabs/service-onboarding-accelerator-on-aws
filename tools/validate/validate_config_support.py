@@ -37,6 +37,11 @@ import os
 import sys
 from pathlib import Path
 
+try:
+    from .artifact_rules import iter_rules, resource_types
+except ImportError:
+    from artifact_rules import iter_rules, resource_types
+
 _DATA_FILE = (
     Path(__file__).resolve().parents[2] / "data" / "config-supported-resource-types.json"
 )
@@ -71,15 +76,9 @@ def _iter_config_rules(artifact: dict):
     carry a `resource_type`. Entries without one (periodic API-state rules) are
     skipped — there is no recorded CI type to gate.
     """
-    rules = artifact.get("rules")
-    if not isinstance(rules, list):
-        return
-    for rule in rules:
-        if not isinstance(rule, dict):
-            continue
-        rt = rule.get("resource_type")
-        if isinstance(rt, str) and rt.strip():
-            yield rule.get("rule_name", "<unnamed>"), rt.strip()
+    for name, rule in iter_rules(artifact):
+        for resource_type in resource_types(rule):
+            yield name, resource_type
 
 
 def check_artifact(file_path: str, supported: set[str] | None = None) -> list[dict]:

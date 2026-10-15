@@ -18,6 +18,11 @@ import os
 import re
 import sys
 
+try:
+    from .artifact_rules import iter_rules, resource_types
+except ImportError:
+    from artifact_rules import iter_rules, resource_types
+
 # ================================================================
 # Global AWS condition keys — always valid, not service-specific
 # ================================================================
@@ -215,25 +220,37 @@ def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[st
     expected_source = f"aws.{expected_service}"
     expected_event_source = f"{expected_service}.amazonaws.com"
 
-    rules = data.get("rules", [])
-    if not isinstance(rules, list):
-        return errors
-
-    for i, rule in enumerate(rules):
-        if not isinstance(rule, dict):
-            continue
-        rule_name = rule.get("rule_name", f"rule[{i}]")
-        pattern = rule.get("event_pattern", {})
+    for rule_name, rule in iter_rules(data):
+        pattern = rule.get("EventPattern", rule.get("event_pattern", {}))
         if not isinstance(pattern, dict):
             continue
+        allowed_sources = {expected_source}
+        allowed_event_sources = {expected_event_source}
+        if rule.get("cross_service") is True:
+            # Dependencies may legitimately emit events for a different AWS
+            # service. Require explicit API prefixes; the flag alone must not
+            # disable validation of the emitted source/eventSource pair.
+            operations = rule.get("monitored_parameters", {})
+            prefixes = {
+                op.split(":", 1)[0] for op in operations
+                if isinstance(op, str) and re.fullmatch(r"[a-z0-9-]+:[A-Za-z0-9]+", op)
+            } if isinstance(operations, dict) else set()
+            if not prefixes:
+                errors.append(
+                    f"CHECK-1 service_prefix: {rule_name} is cross-service but "
+                    "does not declare service:Operation keys in monitored_parameters"
+                )
+                continue
+            allowed_sources = {f"aws.{prefix}" for prefix in prefixes}
+            allowed_event_sources = {f"{prefix}.amazonaws.com" for prefix in prefixes}
 
         # Check source field
         sources = pattern.get("source", [])
         for src in sources:
-            if src != expected_source:
+            if src not in allowed_sources:
                 errors.append(
                     f"CHECK-1 service_prefix: {rule_name} has source "
-                    f"'{src}', expected '{expected_source}'"
+                    f"'{src}', expected one of {sorted(allowed_sources)}"
                 )
 
         # Check eventSource in detail
@@ -241,10 +258,10 @@ def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[st
         if isinstance(detail, dict):
             event_sources = detail.get("eventSource", [])
             for es in event_sources:
-                if es != expected_event_source:
+                if es not in allowed_event_sources:
                     errors.append(
                         f"CHECK-1 service_prefix: {rule_name} has eventSource "
-                        f"'{es}', expected '{expected_event_source}'"
+                        f"'{es}', expected one of {sorted(allowed_event_sources)}"
                     )
 
     return errors
@@ -443,20 +460,8 @@ def check_resource_types(file_path: str, data: dict, validated: dict) -> list[st
     if not valid_types:
         return errors
 
-    for key, rule in data.items():
-        if key == "_metadata":
-            continue
-        if not isinstance(rule, dict):
-            continue
-        rt = rule.get("resource_type")
-        if rt and rt not in valid_types:
-            errors.append(
-                f"CHECK-4 resource_type: rule '{key}' has resource_type "
-                f"'{rt}' not found in validated.json assets"
-            )
-        # Also check resource_types (plural)
-        rts = rule.get("resource_types", [])
-        for t in rts:
+    for key, rule in iter_rules(data):
+        for t in resource_types(rule):
             if t not in valid_types:
                 errors.append(
                     f"CHECK-4 resource_type: rule '{key}' has resource_type "
@@ -1402,7 +1407,7 @@ def _categorize_file(file_path: str) -> str:
             return "lambda_handler"
         if "eventbridge" in os.path.basename(norm).lower():
             return "eventbridge"
-        if "config-rules" in os.path.basename(norm).lower():
+        if os.path.basename(norm).lower() in {"config-rules.json", "config-org-rules.json"}:
             return "config_rules"
         return "detective"
     if _in("responsive"):

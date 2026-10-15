@@ -18,6 +18,11 @@ import os
 import re
 import sys
 
+try:
+    from .artifact_rules import iter_rules, resource_types
+except ImportError:
+    from artifact_rules import iter_rules, resource_types
+
 
 # ================================================================
 # Helpers
@@ -344,13 +349,9 @@ def check_resource_type_consistency(controls_dir: str, validated: dict) -> list[
         if not data or not isinstance(data, dict):
             continue
 
-        if "config-rules" in basename:
-            for key, rule in data.items():
-                if key == "_metadata" or not isinstance(rule, dict):
-                    continue
-                rt = rule.get("resource_type", "")
-                if rt:
-                    config_types.add(rt)
+        if basename in {"config-rules.json", "config-org-rules.json"}:
+            for _, rule in iter_rules(data):
+                config_types.update(resource_types(rule))
 
     # Check Config types against validated assets
     invalid_config = config_types - valid_types
@@ -496,14 +497,12 @@ def check_lambda_handler_completeness(controls_dir: str) -> list[str]:
     custom_rules: list[str] = []
     for fpath in _walk_json_files(detective_dir):
         basename = os.path.basename(fpath).lower()
-        if "config-rules" not in basename:
+        if basename not in {"config-rules.json", "config-org-rules.json"}:
             continue
         data = _load_json(fpath)
         if not data or not isinstance(data, dict):
             continue
-        for key, rule in data.items():
-            if key == "_metadata" or not isinstance(rule, dict):
-                continue
+        for key, rule in iter_rules(data):
             if rule.get("source_type") == "CUSTOM_LAMBDA":
                 rule_name = rule.get("rule_name", key)
                 custom_rules.append(rule_name)
