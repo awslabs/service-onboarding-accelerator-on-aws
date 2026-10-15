@@ -17,6 +17,7 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlparse
 
 try:
     from .artifact_rules import iter_rules, resource_types
@@ -388,6 +389,35 @@ def _normalize_service_identifier(value: str) -> str:
 # Check 3: Condition keys valid
 # ================================================================
 
+def _verified_cross_service_keys(file_path: str, validated: dict) -> set[str]:
+    """Use documented caller-context keys only in explicitly verified policy types."""
+    name = os.path.basename(file_path).lower()
+    if "scp" in name:
+        policy_types = {"service control policies", "scp"}
+    elif "rcp" in name:
+        policy_types = {"resource control policies", "rcp"}
+    elif any(part in name for part in ("iam-policy", "iam-policies", "permission-boundary")):
+        policy_types = {"identity-based policies", "identity policies", "iam"}
+    else:
+        policy_types = {"resource-based policies"}
+    result = set()
+    iam = validated.get("capabilities", {}).get("iam", {})
+    for item in iam.get("cross_service_condition_keys", []):
+        if not isinstance(item, dict) or item.get("verified") is not True:
+            continue
+        documented = any(
+            isinstance(item.get(field), str)
+            and urlparse(item[field]).hostname in {"docs.aws.amazon.com", "aws.amazon.com"}
+            for field in ("doc_url", "source_url")
+        )
+        usable = {s.lower() for s in item.get("usable_in", []) if isinstance(s, str)}
+        prohibited = {s.lower() for s in item.get("not_usable_in", []) if isinstance(s, str)}
+        key = item.get("key")
+        if documented and isinstance(key, str) and policy_types & usable and not policy_types & prohibited:
+            result.add(key)
+    return result
+
+
 def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[str]:
     """Verify condition keys in IAM policies match validated.json."""
     errors = []
@@ -397,7 +427,8 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
         if key:
             service_keys.add(key)
 
-    if not service_keys:
+    service_keys.update(_verified_cross_service_keys(file_path, validated))
+    if not service_keys and not validated.get("capabilities", {}).get("iam", {}).get("cross_service_condition_keys"):
         return errors
 
     # KMS key policies may reference KMS service-owned condition keys
@@ -905,7 +936,7 @@ def check_sar_condition_keys_14a(
         return errors
     if not isinstance(data, dict):
         return errors
-    service_keys = _build_sar_key_allowlist(validated)
+    service_keys = _build_sar_key_allowlist(validated) | _verified_cross_service_keys(file_path, validated)
     global_keys_ci = {k.lower() for k in _GLOBAL_CONDITION_KEYS}
     is_kms_key_policy = "kms-key-policy" in os.path.basename(file_path).lower()
 

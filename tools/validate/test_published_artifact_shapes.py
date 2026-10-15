@@ -8,6 +8,7 @@ from threat_model_parse import parse_threat_model_implementations
 from validate_config_support import check_artifact
 from validate_controls import check_resource_types, check_service_prefix
 from validate_controls import _categorize_file
+from validate_controls import check_condition_keys, check_sar_condition_keys_14a
 from validate_cross import check_lambda_handler_completeness, check_resource_type_consistency
 from validate_threat_model_facts import mitigation_operations
 
@@ -97,3 +98,24 @@ def test_published_implementation_guides_preserve_operations_and_policy_details(
     assert mitigation_operations(model, "Implementation.EXAMPLE.1") == {"getthing"}
     assert mitigation_operations(model, "Implementation.EXAMPLE.2") == {"updatething"}
     assert model == original
+
+
+@pytest.mark.parametrize("check", [check_condition_keys, check_sar_condition_keys_14a])
+def test_cross_service_keys_require_verification_and_supported_policy_type(check):
+    key = {"key": "example:SourceOriginArn", "verified": True,
+           "doc_url": "https://docs.aws.amazon.com/example/latest/guide/caller-context.html",
+           "usable_in": ["identity-based policies", "service control policies"],
+           "not_usable_in": ["resource-based policies"]}
+    validated = {"capabilities": {"iam": {"cross_service_condition_keys": [key]}}}
+    data = {"Statement": [{"Sid": "CallerContext", "Effect": "Deny",
+                          "Action": "dependency:Read", "Resource": "*",
+                          "Condition": {"ArnNotEquals": {
+                              "example:SourceOriginArn": "arn:aws:example:region:account:origin/test"}}}]}
+    for filename in ("scp-policy.json", "iam-policy.json", "permission-boundary.json"):
+        assert check(f"/run/preventive/{filename}", data, validated) == []
+    assert check("/run/preventive/resource-policy.json", data, validated)
+    key["verified"] = False
+    assert check("/run/preventive/scp-policy.json", data, validated)
+    key["verified"] = True
+    key["doc_url"] = "https://untrusted.example/claim"
+    assert check("/run/preventive/scp-policy.json", data, validated)
