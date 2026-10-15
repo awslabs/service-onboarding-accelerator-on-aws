@@ -427,7 +427,9 @@ def build_attack_coverage(validated: dict, controls: list[dict]) -> dict:
     # technique_id -> [control ids]
     tech_to_ctrls: dict[str, list[str]] = {}
     for ctrl in controls:
-        for tid in ctrl.get("attack_techniques", []):
+        # Keep research associations and authoritative source-derived links.
+        # The source parser/trace stage stores the latter in mitre_techniques.
+        for tid in sorted(set(ctrl.get("attack_techniques", [])) | set(ctrl.get("mitre_techniques", []))):
             tech_to_ctrls.setdefault(tid, []).append(ctrl["id"])
 
     covered = [t for t in techniques if t["technique_id"] in tech_to_ctrls]
@@ -1434,7 +1436,7 @@ def validate(
 def detect_single_service() -> str | None:
     """Auto-detect service slug if exactly one exists under .service-approval/."""
     try:
-        root = paths.repo_root() / ".service-approval"
+        root = paths.workspace_root() / ".service-approval"
         if not root.exists():
             return None
 
@@ -1483,7 +1485,7 @@ def main() -> int:
             print("", file=sys.stderr)
             print("Detected services:", file=sys.stderr)
             try:
-                root = paths.repo_root() / ".service-approval"
+                root = paths.workspace_root() / ".service-approval"
                 candidates = [
                     d.name for d in root.iterdir()
                     if d.is_dir() and not d.name.startswith("_") and d.name != "plans"

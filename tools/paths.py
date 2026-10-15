@@ -11,14 +11,14 @@ Phase names map to numbers:
   intake → 00, assess → 01, research → 02, validate → 03,
   map → 04, recommended-guidance → 05, summarize → 06
 
-All paths are relative to repo_root(). Skills, validators, and scripts
-MUST use these helpers instead of hardcoding paths.
+Runtime paths are relative to workspace_root(); bundled assets stay under
+repo_root(). Skills, validators, and scripts MUST keep these roots separate.
 
 Security: service_root() and phase_dir() re-validate the slug against the
 canonical regex (defense in depth — Phase 0's slug.derive_canonical_slug
 already validates, but a downstream caller could pass an attacker-controlled
 slug from intake-manifest.json or a stale env var) and assert the resolved
-path stays under repo_root() / .service-approval / .
+path stays under workspace_root() / .service-approval / .
 """
 from __future__ import annotations
 
@@ -72,6 +72,27 @@ def repo_root() -> Path:
     )
 
 
+def workspace_root() -> Path:
+    """Return the caller's runtime workspace, independently of plugin installation.
+
+    The normal entry point is the user's current working directory. Commands
+    run from within an existing output tree resolve back to its owning workspace.
+    An explicit absolute workspace supports callers that must change directory.
+    Never infer a workspace from unrelated state in an ancestor/home directory.
+    """
+    explicit = os.environ.get("SERVICE_APPROVAL_WORKSPACE")
+    if explicit:
+        root = Path(explicit).expanduser()
+        if not root.is_absolute() or not root.is_dir():
+            raise PathResolutionError("SERVICE_APPROVAL_WORKSPACE must be an existing absolute directory")
+        return root.resolve()
+    cwd = Path.cwd().resolve()
+    for parent in (cwd, *cwd.parents):
+        if parent.name == ".service-approval":
+            return parent.parent
+    return cwd
+
+
 def _validate_slug(slug: str) -> None:
     """Validate slug against canonical pattern.
 
@@ -89,12 +110,12 @@ def _validate_slug(slug: str) -> None:
 
 
 def _assert_under_service_approval(resolved: Path) -> None:
-    """Assert that the resolved path stays under repo_root() / .service-approval / .
+    """Assert that the resolved path stays under workspace_root() / .service-approval / .
 
     Defense in depth — even if slug validation regressed, this catches any
     path that escapes the .service-approval/ jail.
     """
-    sa_root = (repo_root() / ".service-approval").resolve()
+    sa_root = (workspace_root() / ".service-approval").resolve()
     try:
         resolved.relative_to(sa_root)
     except ValueError as e:
@@ -117,7 +138,7 @@ def service_root(slug: str) -> Path:
         PathResolutionError: If slug is invalid or resolves outside .service-approval/.
     """
     _validate_slug(slug)
-    candidate = (repo_root() / ".service-approval" / slug).resolve()
+    candidate = (workspace_root() / ".service-approval" / slug).resolve()
     _assert_under_service_approval(candidate)
     return candidate
 
@@ -245,7 +266,7 @@ def staging_dir(ts: str) -> Path:
             f"Invalid timestamp format: {ts!r}. "
             "Expected YYYY-MM-DDTHH-MM-SSZ (e.g., '2026-05-13T11-30-00Z')."
         )
-    candidate = (repo_root() / ".service-approval" / "_staging" / ts).resolve()
+    candidate = (workspace_root() / ".service-approval" / "_staging" / ts).resolve()
     _assert_under_service_approval(candidate)
     return candidate
 
@@ -262,4 +283,4 @@ def legacy_state_dir() -> Path:
     Returns:
         Path to .service-approval/state/
     """
-    return repo_root() / ".service-approval" / "state"
+    return workspace_root() / ".service-approval" / "state"

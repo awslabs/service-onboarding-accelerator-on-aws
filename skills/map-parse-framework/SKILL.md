@@ -10,10 +10,10 @@ argument-hint: '[--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>]'
 Parse a customer-provided control framework file into a normalized array of framework objectives.
 This is the smallest, most deterministic sub-skill in the map pipeline.
 
-> **Scope note (as of 2026-05-16):** the `intake` skill narrows interactive
-> runs to CCMv4-only. Multi-framework parsing (NIST 800-53 / CIS / ISO 27001)
-> remains available behind the `--framework=<type>` CLI flag for advanced
-> operators who bypass intake. See `skills/intake/SKILL.md` for the rationale.
+An explicit customer framework file takes precedence over the default framework.
+All frameworks use normal Intake and the mandatory published threat-model gate.
+Custom frameworks use the anchoring path below; weak anchors remain uncertain
+and must not be presented as verified framework coverage.
 
 **Input:** Framework file (xlsx/json/md) or built-in CCMv4 reference
 **Output:** `.service-approval/<slug>/04-map/map-framework-parsed.json`

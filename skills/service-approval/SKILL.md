@@ -16,6 +16,17 @@ The pipeline produces recommended security controls (preventive, detective,
 proactive, and responsive guidance) that the customer applies themselves. It
 does not deploy, test, or attest against a live account.
 
+## Installed plugin and working directory
+
+The caller's initial working directory owns all `.service-approval/` state.
+The plugin installation owns bundled code, schemas, skills, and reference data.
+Keep the working directory at the user's workspace when running packaged tools;
+invoke scripts by absolute path under the plugin root and use that root on
+`PYTHONPATH` for module commands. Do not change into the installation to make a
+relative command work. If a helper must change directory, carry the original
+absolute workspace in `SERVICE_APPROVAL_WORKSPACE`. `tools.paths.workspace_root`
+resolves runtime output; `tools.paths.repo_root` continues to resolve assets.
+
 ## Flags
 
 | Flag | Description | Default |
@@ -194,8 +205,9 @@ python3 tools/validate/audit_threat_model.py --slug "<slug>"
 ```
 
 This recomputes source-to-stage mitigation accounting, writes the integrity JSON
-and companion report, and inserts deterministic disclosure into the control
-catalog, framework mapping, and summary when those files exist. Warnings do not
+and companion report, and inserts a concise source/processing appendix at the
+end of framework mapping. It removes obsolete banners from the catalog and
+summary. Warnings do not
 stop the run. P14 rejects stale or omitted disclosure, not the existence of
 findings. Use documented manual-guidance/not-applicable/unresolved dispositions
 rather than inventing controls just to fill coverage. Keep alias/UUID pairs exact.

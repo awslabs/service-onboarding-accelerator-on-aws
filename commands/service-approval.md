@@ -39,6 +39,15 @@ Intake always runs. Its prompt behavior depends on what it finds:
 
 ## Execute
 
+The plugin code is installed at `${CLAUDE_PLUGIN_ROOT}`. The runtime workspace
+is the user's current working directory when this command starts. Keep that
+directory as the working directory for packaged scripts; use absolute script
+paths under the plugin root instead of changing into the installation.
+For `python3 -m tools...` calls, add the plugin root to `PYTHONPATH`. Read bundled
+skills/data from the plugin root and write runtime state only to the user's
+workspace. When a helper must run from a temporary directory, pass the original
+absolute workspace through `SERVICE_APPROVAL_WORKSPACE`.
+
 1. Read `skills/service-approval/SKILL.md` in full. Do NOT write a one-shot generator script. Follow every step.
 2. Run every sub-skill through its own SKILL.md:
    - Intake (precursor): `skills/intake/` — writes `_staging/<ts>/00-intake/intake-manifest.json`, promoted to `<slug>/00-intake/intake-manifest.json` after slug derivation in Phase 0
@@ -53,7 +62,7 @@ Intake always runs. Its prompt behavior depends on what it finds:
 
 ## Output
 
-- `.service-approval/<service-slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 coverage matrix
+- `.service-approval/<service-slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report + the supplied framework's coverage
 - `.service-approval/<service-slug>/05-recommended-guidance/` — all generated artifacts
 - `.service-approval/<service-slug>/` — pipeline state files (per-phase subdirectories)
 

@@ -323,9 +323,12 @@ Examples: s3, lambda, bedrock-agentcore-control, kms, ecs, dynamodb
 
 Run the mandatory retrieval gate above without asking the user for a model file.
 Show the resolved namespace and published source link. Record the returned inputs
-fragment and optional supporting folder. If a custom framework is provided,
-detect CCMv4 as before; other frameworks remain out of scope. Leave the framework
-type unset when none was supplied.
+fragment and optional supporting folder. An explicit `--framework-file` is the
+authoritative customer framework. Detect its identity from the file and record
+`framework_type: custom` when it is not a recognized built-in framework. Preserve
+the customer's IDs and wording; do not substitute CCMv4 for a supplied custom
+file. Map uses the existing custom-framework parsing/anchoring path and reports
+uncertain matches. Leave the framework type unset when none was supplied.
 
 ### 3. Elaborate on your control framework (optional — only when a custom framework is provided)
 
@@ -404,7 +407,7 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "threat_model_file": "{downloaded absolute snapshot path}",
     "threat_model_source": {"...": "copy the helper output object verbatim"},
     "has_custom_framework": true|false,
-    "framework_type": "ccmv4 | null",
+    "framework_type": "ccmv4 | nist | cis | iso | custom | null",
     "framework_file": "{path or null}",
     "framework_specification": "{customer's free-text description of their control format/structure, or null}",
     "has_mitigation_report": true|false,

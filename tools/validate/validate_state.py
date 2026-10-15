@@ -1028,10 +1028,14 @@ def check_mapping_results(data: dict) -> list[str]:
     controls = data.get("controls", []) if isinstance(data.get("controls"), list) else []
     fm = data.get("framework_mapping", []) if isinstance(data.get("framework_mapping"), list) else []
 
-    # Framework mapping completeness threshold — CCMv4 has 197 objectives;
-    # anything much below that suggests the assembler dropped entries.
-    if len(fm) < 150:
-        errors.append(f"CHECK-S13 framework_mapping: only {len(fm)} entries — expected ~197+")
+    # Completeness belongs to the supplied framework, not a fixed CCMv4 size.
+    framework = data.get("framework") if isinstance(data.get("framework"), dict) else {}
+    expected_total = framework.get("total_objectives")
+    if expected_total is not None and len(fm) != expected_total:
+        errors.append(f"CHECK-S13 framework_mapping: {len(fm)} entries — expected {expected_total} from the supplied framework")
+    objective_ids = [row.get("objective_id") for row in fm]
+    if len(objective_ids) != len(set(objective_ids)):
+        errors.append("CHECK-S13 framework_mapping: duplicate objective IDs")
 
     # Quality gates re-check on assembled data
     # Rule 1: Coverage-level consistency (accepts both new and legacy values)

@@ -76,6 +76,13 @@ mkdir ~/my-service-approval
 cd ~/my-service-approval
 ```
 
+Runtime helpers resolve `.service-approval/` under this working directory.
+Bundled scripts, schemas, and reference data remain in the plugin installation.
+Invoke installed scripts by their absolute paths while keeping this working
+directory; do not change into the plugin cache to run them. Helpers invoked from
+temporary directories can retain the original absolute working directory with
+`SERVICE_APPROVAL_WORKSPACE`.
+
 Optionally add a framework or supporting documents:
 ```bash
 mkdir input
@@ -108,6 +115,15 @@ Use the slash command:
 With custom input files:
 ```
 /service-approval ./input --service=lambda
+```
+
+To select a specific custom framework, use `--framework-file`. Intake preserves
+the supplied framework's name, IDs, and wording. Non-CCMv4 files use the existing
+custom anchoring path; weak matches remain uncertain. CCMv4-specific checks do
+not constitute native validation of another framework.
+
+```
+/service-approval ./input --service=lambda --framework-file=./input/customer-framework.xlsx
 ```
 
 With additional flags:

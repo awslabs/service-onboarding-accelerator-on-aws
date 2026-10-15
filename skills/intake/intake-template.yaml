@@ -37,8 +37,8 @@ input:
   mitigation_report: false  # Existing mitigation report?
 
   # Control framework to map against
-  # Options: ccmv4 | nist | cis | iso
-  # If a framework file is in the input folder, this is auto-detected
+  # Options: ccmv4 | nist | cis | iso | custom
+  # An explicit framework_file is authoritative; preserve its identity and IDs.
   framework: "ccmv4"
 
   # Explicit path to framework file (optional — auto-detected from folder if null)

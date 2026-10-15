@@ -369,5 +369,5 @@ def test_service_autodetection_ignores_downloaded_sources(tmp_path, monkeypatch)
     m = _load_module()
     for name in ("_sources", "_staging", "plans", "dsql"):
         (tmp_path / ".service-approval" / name).mkdir(parents=True)
-    monkeypatch.setattr(m.paths, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(m.paths, "workspace_root", lambda: tmp_path)
     assert m.detect_single_service() == "dsql"
