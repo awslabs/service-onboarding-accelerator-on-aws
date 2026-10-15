@@ -840,6 +840,9 @@ _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
 # config-rule-lambdas/).
 _REACTIVE_DETECTIVE_BASENAMES = (
     "config-rules.json",
+    "config-org-rules.json",
+    "config-conformance-pack.yaml",
+    "cloudtrail-org-config.json",
     "access-analyzer.json",
     "eventbridge-rules.json",
     "cloudwatch-alarms.json",
@@ -1247,7 +1250,9 @@ def check_posture_mechanism_consistency_15(
             f"preventative-proactive→proactive/** or "
             f"detective/compensating-controls-documentation.json; "
             f"reactive-detective→detective/config-rule-lambdas/** or one of "
-            f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
+            f"detective/{{config-rules,config-org-rules,cloudtrail-org-config,"
+            f"access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json or "
+            f"detective/config-conformance-pack.yaml; "
             f"reactive-corrective→responsive/**."
         )
     return errors
