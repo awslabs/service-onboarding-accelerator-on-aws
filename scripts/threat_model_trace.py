@@ -9,7 +9,9 @@ chain entirely inside the golden-source file — no external lookup:
 
     mitigation.mappings[type=="THREAT"].id
         -> threats[].id
-            -> threat.mappings[type=="FRAMEWORK", frameworkName=="MITRE ATT&CK"].id
+            -> threat.mappings[type=="FRAMEWORK", framework.name=="MITRE ATT&CK"].id
+
+Legacy exports use frameworkName instead of framework.name; both are supported.
 
 This module builds, per mitigation UUID, the traceability record
 {alias, statement, mitre_techniques[], threat_aliases[]} and threads the
@@ -57,7 +59,11 @@ def _threat_mitre_ids(threat: dict[str, Any]) -> list[str]:
     for m in threat.get("mappings", []) or []:
         if not isinstance(m, dict):
             continue
-        if m.get("type") == "FRAMEWORK" and m.get("frameworkName") == _MITRE_FRAMEWORK_NAME:
+        framework = m.get("framework")
+        name = framework.get("name") if isinstance(framework, dict) else None
+        if not isinstance(name, str) or not name:
+            name = m.get("frameworkName")
+        if m.get("type") == "FRAMEWORK" and name == _MITRE_FRAMEWORK_NAME:
             tid = m.get("id")
             if isinstance(tid, str) and tid:
                 ids.append(tid)

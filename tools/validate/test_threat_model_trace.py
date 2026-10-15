@@ -59,6 +59,50 @@ def test_alias_index_keys_by_alias_and_carries_uuid() -> None:
     assert rec["mitre_techniques"] == ["T1530", "T1537"]
 
 
+def test_published_nested_framework_name_resolves_source_techniques() -> None:
+    data = _fixture()
+    for threat in data["threats"]:
+        for mapping in threat.get("mappings", []):
+            if mapping.get("type") == "FRAMEWORK":
+                mapping["framework"] = {
+                    "name": mapping.pop("frameworkName"), "version": "18.1"
+                }
+    index = ct.build_trace_index(data)
+    assert index["bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]["mitre_techniques"] == [
+        "T1530", "T1537"
+    ]
+    control = {"mitigation_alias": "Mitigation.LAMBDA.CapacityProvider.1"}
+    ct.thread_controls([control], data)
+    assert control["mitre_techniques"] == ["T1530", "T1537"]
+
+
+def test_source_ids_are_preserved_independently_of_bundled_attack_version() -> None:
+    threat = {"mappings": [
+        {"type": "FRAMEWORK", "id": "T1213.006",
+         "framework": {"name": "MITRE ATT&CK", "version": "18.1"}},
+    ]}
+    assert ct._threat_mitre_ids(threat) == ["T1213.006"]
+
+
+def test_canonical_framework_name_wins_and_other_frameworks_are_not_mitre() -> None:
+    threat = {"mappings": [
+        {"type": "FRAMEWORK", "id": "AC-2",
+         "framework": {"name": "NIST"}, "frameworkName": "MITRE ATT&CK"},
+        {"type": "THREAT", "id": "T1530", "framework": {"name": "MITRE ATT&CK"}},
+        {"type": "FRAMEWORK", "id": "T1537", "frameworkName": "MITRE ATT&CK"},
+    ]}
+    assert ct._threat_mitre_ids(threat) == ["T1537"]
+
+
+def test_malformed_optional_framework_object_does_not_crash_legacy_reader() -> None:
+    threat = {"mappings": [
+        {"type": "FRAMEWORK", "id": "T1530", "framework": "invalid",
+         "frameworkName": "MITRE ATT&CK"},
+        {"type": "FRAMEWORK", "id": "not-a-technique", "framework": []},
+    ]}
+    assert ct._threat_mitre_ids(threat) == ["T1530"]
+
+
 def test_thread_onto_threat_model_control() -> None:
     """A control stamped with a real AWS Threat Model alias gains alias/uuid/MITRE and
     trace_source 'threat_model'."""

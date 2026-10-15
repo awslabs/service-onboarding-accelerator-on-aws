@@ -650,7 +650,7 @@ mitigation and MITRE technique behind every mapped row.
 
 **Resolver:** `scripts/threat_model_trace.py` walks the golden-source chain
 `mitigation.mappings[type=="THREAT"].id → threats[].id → threat.mappings[type=="FRAMEWORK",
-frameworkName=="MITRE ATT&CK"].id` to build, per mitigation, `{alias, statement,
+framework.name=="MITRE ATT&CK"].id` (also accepting legacy `frameworkName`) to build, per mitigation, `{alias, statement,
 mitre_techniques[], threat_aliases[]}`.
 
 **Algorithm:**
