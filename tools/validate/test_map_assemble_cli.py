@@ -283,9 +283,8 @@ def test_control_source_ref_variants() -> None:
     assert "pending" in m.control_source_ref({})
 
 
-def test_main_mapping_cites_only_threat_model_controls(tmp_path) -> None:
-    """A non-AWS Threat Model control mapped to an objective is filtered out of the main
-    per-objective table (main = AWS Threat Model-only)."""
+def test_mapping_keeps_model_evidence_primary_and_supplemental_support_visible(tmp_path) -> None:
+    """Supplemental rows retain their objective linkage in a separately labelled table."""
     m = _load_module()
     fw = _fw_mapped_fixture()
     # Add a non-AWS Threat Model control row to the mapped IAM-01 objective.
@@ -300,9 +299,42 @@ def test_main_mapping_cites_only_threat_model_controls(tmp_path) -> None:
          "scope": "ACC", "trace_source": "assessment_gap"},
     ]
     md = _render_framework_mapping(m, tmp_path, fw, controls)
-    # Under IAM-01 the AWS Threat Model control renders; the non-AWS Threat Model one does not.
-    assert "CTRL-ACC-PRV-001" in md
-    assert "CTRL-ACC-PRO-026" not in md
+    primary = md.index("**AWS Threat Model-backed controls**")
+    secondary = md.index("**Supplemental controls")
+    assert primary < md.index("CTRL-ACC-PRV-001", primary) < secondary
+    assert md.index("CTRL-ACC-PRO-026", secondary) > secondary
+
+
+def test_supplemental_only_objective_renders_control_and_documentation(tmp_path) -> None:
+    m = _load_module()
+    fw = _fw_mapped_fixture()
+    fw["framework_mapping"][0]["controls"][0]["citation"] = {
+        "source": "assessment_gap", "objective_requirement": "collect audit evidence",
+        "reference_url": "https://docs.aws.amazon.com/example/audit.html",
+    }
+    controls = [{"id": "CTRL-ACC-PRV-001", "name": "Audit prerequisite",
+                 "category": "PRV", "scope": "ACC", "trace_source": "assessment_gap"}]
+    md = _render_framework_mapping(m, tmp_path, fw, controls)
+    assert "**AWS Threat Model-backed controls**" not in md
+    assert "**Supplemental controls" in md
+    assert "| CTRL-ACC-PRV-001 |" in md
+    assert "https://docs.aws.amazon.com/example/audit.html" in md
+
+
+def test_citation_renders_exact_identity_and_supplemental_mechanism():
+    m = _load_module()
+    cm = {"citation": {"source": "threat_model", "mitigation_alias": "Mitigation.X.2",
+                       "supplemental_mechanism": True, "evidence_note": "Intent from model; mechanism from docs.",
+                       "reference_url": "https://docs.aws.amazon.com/example/"}}
+    ctrl = {"mitigation_alias": "Mitigation.X.1", "mitigation_uuid": "wrong-primary-uuid",
+            "mitigation_references": [{"alias": "Mitigation.X.2", "uuid": "correct-uuid"}],
+            "threat_model_urls": {"Mitigation.X.2": "https://github.com/example/model#x2"}}
+    cell = m._citation_cell(cm, ctrl)
+    assert "correct-uuid" in cell and "wrong-primary-uuid" not in cell
+    assert "https://github.com/example/model#x2" in cell
+    assert "Supplemental mechanism" in cell
+    assert "https://docs.aws.amazon.com/example/" in cell
+    assert "Intent from model; mechanism from docs." in cell
 
 
 def test_identify_coverage_gaps_keeps_control_orphan_alias() -> None:

@@ -843,9 +843,23 @@ def _citation_cell(cm: dict, ctrl: dict) -> str:
     if alias:
         url = (ctrl.get("threat_model_urls") or {}).get(alias)
         bits.append(f"[{alias}]({url})" if url else f"`{alias}`")
+        uuid = cit.get("mitigation_uuid")
+        if not uuid:
+            uuid = next((r.get("uuid") for r in ctrl.get("mitigation_references", [])
+                         if r.get("alias") == alias), None)
+        if not uuid and alias == ctrl.get("mitigation_alias"):
+            uuid = ctrl.get("mitigation_uuid")
+        if uuid:
+            bits.append(f"(UUID `{uuid}`)")
     source = (cit.get("source") or ctrl.get("trace_source") or "").strip()
     if source:
         bits.append(f"({source})")
+    if cit.get("supplemental_mechanism"):
+        bits.append("**Supplemental mechanism**")
+    if cit.get("reference_url"):
+        bits.append(f"[AWS documentation]({cit['reference_url']})")
+    if cit.get("evidence_note"):
+        bits.append(str(cit["evidence_note"]))
     if ctrl.get("threat_model_warnings"):
         bits.append("⚠ " + "; ".join(ctrl["threat_model_warnings"]))
     return " ".join(bits) if bits else "—"
@@ -1261,22 +1275,30 @@ def write_framework_mapping(
             if status == "MAPPED":
                 lines.append(f"**{oid}: {title}** — Coverage: {obj.get('coverage', '')}\n")
                 lines.append("")
-                # The main mapping cites only AWS Threat Model-sourced controls. Controls
-                # not backed by an AWS Threat Model mitigation (assessment-gap / compensating)
-                # are surfaced in the "Suggestions for Review" section instead, so
-                # they are filtered out of the per-objective tables here.
+                # Keep AWS Threat Model evidence primary. Supplemental support
+                # must remain visible and traceable without looking model-backed.
                 threat_model_rows = [
                     cm for cm in obj.get("controls", [])
                     if ctrl_index.get(cm["control_id"], {}).get("trace_source") == "threat_model"
                 ]
-                if threat_model_rows:
+                supplemental_rows = [
+                    cm for cm in obj.get("controls", [])
+                    if ctrl_index.get(cm["control_id"], {}).get("trace_source") != "threat_model"
+                ]
+                for label, rows in (
+                    ("AWS Threat Model-backed controls", threat_model_rows),
+                    ("Supplemental controls — not sourced from AWS Threat Models", supplemental_rows),
+                ):
+                    if not rows:
+                        continue
+                    lines.append(f"**{label}**\n")
                     lines.append(
                         "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Source | MITRE |"
                     )
                     lines.append(
                         "|------------|-------|----------|-------|----------------|-----------|--------|-------|"
                     )
-                    for cm in threat_model_rows:
+                    for cm in rows:
                         cid = cm["control_id"]
                         ctrl = ctrl_index.get(cid, {})
                         cat = CATEGORY_LABELS.get(
@@ -1324,9 +1346,9 @@ def write_framework_mapping(
             f"(missing={sorted(missing)[:10]}, extra={sorted(extra)[:10]})"
         )
 
-    # Controls not sourced from an AWS Threat Model mitigation. The main mapping above cites
-    # only AWS Threat Model-sourced controls; these are the assessment-gap / compensating
-    # controls the accelerator suggests. Each carries a specific AWS-documentation
+    # Additional index of controls not sourced from an AWS Threat Model mitigation.
+    # Per-objective supplemental mappings above preserve their distinct attribution.
+    # Each carries a specific AWS-documentation
     # Source reference so a reviewer can confirm it independently.
     suggested = coverage_gaps.get("uncited_controls") or coverage_gaps.get(
         "control_orphan", []
@@ -1335,8 +1357,9 @@ def write_framework_mapping(
         lines.append("## Controls Not Sourced from AWS Threat Model (Suggestions for Review)\n")
         lines.append("")
         lines.append(
-            "These controls are not backed by an AWS Threat Model mitigation, so they are "
-            "not cited in the main mapping above. They are suggested for review — "
+            "These controls are not backed by an AWS Threat Model mitigation. Any framework "
+            "support they provide is labelled supplemental in the objective tables above. "
+            "They are suggested for review — "
             "confirm each against the cited AWS documentation source before "
             "adopting it."
         )
