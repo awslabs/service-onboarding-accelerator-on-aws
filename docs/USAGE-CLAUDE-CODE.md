@@ -118,9 +118,11 @@ With custom input files:
 ```
 
 To select a specific custom framework, use `--framework-file`. Intake preserves
-the supplied framework's name, IDs, and wording. Non-CCMv4 files use the existing
-custom anchoring path; weak matches remain uncertain. CCMv4-specific checks do
-not constitute native validation of another framework.
+the supplied framework's name, IDs, and wording. Custom objectives are evaluated
+directly against controls, primarily using citations to the pinned AWS Threat
+Model. CCM wording similarity only suggests optional guidance; low similarity
+does not force uncertain mappings. CCMv4-specific checks do not constitute
+native validation of another framework.
 
 ```
 /service-approval ./input --service=lambda --framework-file=./input/customer-framework.xlsx

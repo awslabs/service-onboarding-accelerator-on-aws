@@ -887,6 +887,11 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
     # All three map-* files are in the same phase (04-map/), so we can use direct join
     cg = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
     fw = _load_json(os.path.join(state_dir, "map-framework-parsed.json"))
+    guidance_lookup = _load_json(os.path.join(state_dir, "custom_to_ccmv4_anchor.json"))
+    if isinstance(guidance_lookup, dict) and guidance_lookup.get("purpose") == "advisory_guidance_lookup":
+        from framework_review import DIRECT_EVIDENCE_METHOD
+        if data.get("_metadata", {}).get("framework_mapping_method") != DIRECT_EVIDENCE_METHOD:
+            errors.append("CHECK-S12: custom mapping must declare framework_mapping_method=direct_objective_evidence.")
     if not isinstance(cg, dict) or not isinstance(cg.get("controls"), list):
         errors.append("CHECK-S12 Rule7: map-controls-generated.json inventory is required for control review.")
 

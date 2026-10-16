@@ -12,8 +12,8 @@ This is the smallest, most deterministic sub-skill in the map pipeline.
 
 An explicit customer framework file takes precedence over the default framework.
 All frameworks use normal Intake and the mandatory published threat-model gate.
-Custom frameworks use the anchoring path below; weak anchors remain uncertain
-and must not be presented as verified framework coverage.
+Custom frameworks are evaluated directly against source-backed controls.
+The optional CCM guidance lookup below does not determine mapping status.
 
 **Input:** Framework file (xlsx/json/md) or built-in CCMv4 reference
 **Output:** `.service-approval/<slug>/04-map/map-framework-parsed.json`
@@ -222,14 +222,13 @@ Write `.service-approval/<slug>/04-map/map-framework-parsed.json`:
 
 ---
 
-## Step 5: Anchor a non-CCMv4 framework to CCMv4 (custom-control support)
+## Step 5: Find optional CCMv4 guidance for a custom framework
 
 The per-domain mapping guidance (allow/deny classes, coverage ceilings,
 applicability) lives in `data/domain-mapping-guidance/ccmv4.json` and is keyed by
-CCMv4 objective ids. A custom / non-CCMv4 framework has no such file, so without
-help its objectives get no guidance. Instead of falling back to an unconstrained
-pass, **anchor each custom objective to its nearest CCMv4 objective(s) by
-description** so the CCMv4 guidance can be reused.
+CCMv4 objective ids. For a custom framework, find potentially useful guidance by
+description, while retaining the customer's original requirements. AWS Threat
+Models remain the primary control evidence; CCM similarity is only a lookup aid.
 
 Run this only when the active framework is NOT CCMv4 (the script no-ops for
 CCMv4 and skips cleanly if the parsed file is absent):
@@ -241,15 +240,15 @@ python3 scripts/anchor-custom-framework.py --slug <slug>
 It writes `.service-approval/<slug>/04-map/custom_to_ccmv4_anchor.json` mapping
 each custom objective id to `{ccmv4_ids[], anchor_score, status}` via a
 deterministic TF-IDF cosine over each objective's title+specification against
-every CCMv4 objective's title+intent — no LLM, so it is reproducible. An
+every CCMv4 objective's title+intent — no LLM, so it is reproducible. A lookup
 objective whose best match scores at or above the threshold (default 0.7) is
 `anchored`; below it is `uncertain`.
 
-The per-domain mapper (map-framework-mapping) reads this file: for an `anchored`
-custom objective it reasons with the anchored CCMv4 objective's guidance and
-records the anchor in the citation (`anchored_to: CCMv4 <id>`); for an
-`uncertain` anchor it maps the objective `UNCERTAIN` and flags it for review
-rather than force-fitting weak guidance.
+The legacy `anchored` / `uncertain` labels in this file describe the guidance
+lookup only. The mapper MUST evaluate each custom objective directly against
+the control mechanism and its pinned AWS Threat Model citation. A weak lookup
+does not force `UNCERTAIN` or `N/A`, and a strong lookup does not justify `MAPPED`.
+Use borrowed guidance only when its meaning and scope fit the original objective.
 
 ---
 

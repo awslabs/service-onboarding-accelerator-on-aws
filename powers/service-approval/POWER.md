@@ -1,7 +1,7 @@
 ---
 name: service-approval
 displayName: AWS Service Security Controls Generator
-description: Generate AWS security controls for any AWS service. Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) mapped to a supplied control framework, with CCMv4 guidance and custom-framework anchoring.
+description: Generate AWS security controls for any AWS service. Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) mapped to a supplied control framework, with CCMv4 guidance and direct custom-framework mapping backed by AWS Threat Model evidence.
 keywords:
 - aws
 - security

@@ -14,7 +14,7 @@ description: >
   Generate AWS security controls for any AWS service. Runs a pipeline
   (Intake, Assess, Research, Validate, Map, Recommended Guidance,
   Summarize) mapped to a supplied control framework, with CCMv4 guidance
-  and custom-framework anchoring.
+  and direct custom-framework mapping backed by AWS Threat Model evidence.
 
 author:
   name: Service Onboarding on AWS Team

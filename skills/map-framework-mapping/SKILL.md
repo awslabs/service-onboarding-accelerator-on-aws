@@ -39,16 +39,48 @@ each objective actually means and which mechanisms legitimately satisfy it. The
   framework):** fall back to the **single-pass** behavior — map all objectives in
   one pass using Phases 0–4 below. NIST 800-53 / CIS / ISO have no guidance file
   yet, so they take this path; advanced-operator `--framework` flags keep working.
-  **If a `custom_to_ccmv4_anchor.json` is present** (written by map-parse-framework
-  Step 5 for a custom framework), reason with the anchored CCMv4 objective's
-  guidance: for a custom objective with `status:"anchored"`, look up its
-  `ccmv4_ids[]` in `data/domain-mapping-guidance/ccmv4.json` and apply that
-  objective's allow/deny classes and coverage ceilings, and record the anchor in
-  the citation (`"anchored_to": "CCMv4 <id>"`, plus the `anchor_score`). For a
-  custom objective with `status:"uncertain"` (best anchor below threshold), map it
-  `UNCERTAIN` with a `review_reason` naming the weak anchor — never force-fit weak
-  guidance. When several `ccmv4_ids` are returned, prefer the first (best-scoring)
-  and only borrow a second's guidance when both clearly apply.
+  **Map directly to the supplied objective's full requirement.** The pinned AWS
+  Threat Model is the primary evidence for the generated control; the customer's
+  framework defines the requirement being evaluated. Set
+  `_metadata.framework_mapping_method: "direct_objective_evidence"` in the output.
+  If `custom_to_ccmv4_anchor.json` is present, use it solely to find optional CCMv4
+  guidance. Its scores measure wording similarity, not confidence in a mapping.
+  Neither a low score nor missing CCM guidance makes a custom objective
+  `UNCERTAIN`; neither a high score nor a suggested CCM ID proves coverage.
+  Borrow guidance only after checking that the original custom requirement has
+  the same intent and scope. Never substitute CCM wording, applicability, or
+  coverage decisions for the customer's requirement.
+
+### Direct custom-framework evidence contract
+
+For every custom objective, you MUST make an independent applicability and
+evidence decision using its full specification:
+
+- **MAPPED:** identify the exact sub-requirement supported, the control's actual
+  mechanism, and the limits of that support. For an AWS Threat Model-sourced
+  control, cite its real mitigation alias and matching UUID from the pinned
+  model, retain the readable source link when available, and copy quoted statements
+  verbatim. Missing readable links remain disclosed source advisories.
+  The citation source MUST remain `threat_model`; a CCM match is not evidence.
+- **N/A:** explain why the requirement is outside the assessed service's control
+  scope. Organizational governance is not automatically covered by a technical
+  configuration. Missing evidence for an applicable requirement is not N/A.
+- **UNCERTAIN:** describe the specific missing or conflicting evidence for the
+  objective-to-control relationship. A weak CCM score alone is not a reason.
+
+AWS documentation verifies implementation feasibility and service behavior.
+Controls absent from AWS Threat Models may supplement the primary mapping only
+with explicit `assessment_gap` or `aws_doc` attribution and a verified AWS
+documentation `reference_url` in their mapping citation. Keep them visibly
+separate from AWS Threat Model-backed recommendations; never invent a model
+citation for them. Do not force every model mitigation into this framework:
+retain genuinely unmatched controls with the existing Rule 7 review.
+
+Use the existing coverage levels honestly: a technical prerequisite supporting
+an enterprise process is usually Supportive, not Full Coverage. Preserve the
+citation-as-gate and source-facts/identity checks below. Run an independent
+semantic review of MAPPED, N/A and UNCERTAIN decisions before assembly; numerical
+CCM similarity and CCM-only validator skips are not evidence of accuracy.
 
 Pick the path by checking for the guidance file:
 

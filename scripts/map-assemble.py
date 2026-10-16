@@ -708,6 +708,8 @@ def assemble_mapping_results(
         "coverage_gaps": coverage_gaps,
         "control_summary": build_control_summary(controls),
         "_metadata": {
+            **({"framework_mapping_method": fw_mapped["_metadata"]["framework_mapping_method"]}
+               if fw_mapped.get("_metadata", {}).get("framework_mapping_method") else {}),
             "phase": "04-map",
             "assembled_by": "map-assemble",
             "attack_coverage": attack_coverage,

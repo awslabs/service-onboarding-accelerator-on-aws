@@ -199,7 +199,8 @@ run service approval for lambda
 
 The default framework is **CCMv4** (with always-on MITRE ATT&CK threat mapping).
 NIST 800-53, CIS Benchmarks, and ISO 27001 are available with `--framework=<type>`;
-a custom framework file is anchored to CCMv4 guidance automatically. If a framework
+a custom framework is mapped directly to source-backed controls, using AWS Threat
+Models as the primary evidence and CCMv4 guidance as an optional aid. If a framework
 file is present in your input folder it is auto-detected; otherwise the intake step
 asks (or you pass `--framework=`).
 

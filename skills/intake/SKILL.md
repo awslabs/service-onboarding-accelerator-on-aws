@@ -327,8 +327,9 @@ fragment and optional supporting folder. An explicit `--framework-file` is the
 authoritative customer framework. Detect its identity from the file and record
 `framework_type: custom` when it is not a recognized built-in framework. Preserve
 the customer's IDs and wording; do not substitute CCMv4 for a supplied custom
-file. Map uses the existing custom-framework parsing/anchoring path and reports
-uncertain matches. Leave the framework type unset when none was supplied.
+file. Map evaluates custom objectives directly against AWS Threat Model-backed
+controls; optional CCM guidance matches do not determine coverage or uncertainty.
+Leave the framework type unset when none was supplied.
 
 ### 3. Elaborate on your control framework (optional — only when a custom framework is provided)
 

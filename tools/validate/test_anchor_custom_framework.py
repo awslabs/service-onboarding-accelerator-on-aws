@@ -3,8 +3,8 @@ of a custom / non-CCMv4 framework's objectives to CCMv4.
 
 A custom objective is anchored to its nearest CCMv4 objective(s) by DESCRIPTION
 (TF-IDF cosine over title+intent text), so a non-CCMv4 framework can reuse the
-CCMv4 per-domain guidance. An objective that anchors weakly (below threshold) is
-marked 'uncertain' rather than force-fit — the mapper then maps it UNCERTAIN.
+CCMv4 per-domain guidance. An objective that matches weakly is marked 'uncertain'
+in this advisory lookup; the objective-to-control decision is independent.
 """
 from __future__ import annotations
 
@@ -113,6 +113,9 @@ def test_build_result_summary_counts():
     assert result["summary"]["total"] == 2
     assert result["summary"]["anchored"] + result["summary"]["uncertain"] == 2
     assert result["framework"] == "CRI Profile"
+    assert result["purpose"] == "advisory_guidance_lookup"
+    assert result["mapping_status_authority"] is False
+    assert result["primary_control_evidence"] == "aws_threat_model"
 
 
 def _default_threshold() -> float:
