@@ -101,12 +101,17 @@ def test_published_implementation_guides_preserve_operations_and_policy_details(
 
 
 @pytest.mark.parametrize("check", [check_condition_keys, check_sar_condition_keys_14a])
-def test_cross_service_keys_require_verification_and_supported_policy_type(check):
+@pytest.mark.parametrize("shape", ["cross_service", "context_only"])
+def test_cross_service_keys_require_verification_and_supported_policy_type(check, shape):
     key = {"key": "example:SourceOriginArn", "verified": True,
            "doc_url": "https://docs.aws.amazon.com/example/latest/guide/caller-context.html",
            "usable_in": ["identity-based policies", "service control policies"],
            "not_usable_in": ["resource-based policies"]}
-    validated = {"capabilities": {"iam": {"cross_service_condition_keys": [key]}}}
+    if shape == "context_only":
+        key["policy_types"] = ["identity-based", "SCP"]
+        key["not_supported_in"] = key.pop("not_usable_in")
+        key.pop("usable_in")
+    validated = {"capabilities": {"iam": {shape + "_condition_keys": [key]}}}
     data = {"Statement": [{"Sid": "CallerContext", "Effect": "Deny",
                           "Action": "dependency:Read", "Resource": "*",
                           "Condition": {"ArnNotEquals": {
@@ -119,3 +124,15 @@ def test_cross_service_keys_require_verification_and_supported_policy_type(check
     key["verified"] = True
     key["doc_url"] = "https://untrusted.example/claim"
     assert check("/run/preventive/scp-policy.json", data, validated)
+
+
+@pytest.mark.parametrize("check", [check_condition_keys, check_sar_condition_keys_14a])
+@pytest.mark.parametrize("key", ["aws:VpceOrgID", "aws:VpceAccount", "aws:VpceOrgPaths"])
+def test_known_endpoint_organization_key_is_not_rejected_by_name(check, key):
+    validated = {"capabilities": {"iam": {"condition_keys": [{"key": "example:Setting"}]}}}
+    data = {"Statement": [{"Sid": "NetworkPerimeter", "Effect": "Deny",
+                          "Action": "example:Read", "Resource": "*",
+                          "Condition": {"StringNotEqualsIfExists": {key: "synthetic-policy-value"}}}]}
+    assert not check("/run/preventive/resource-policy.json", data, validated)
+    data["Statement"][0]["Condition"] = {"StringNotEquals": {"aws:InventedEndpointKey": "x"}}
+    assert check("/run/preventive/resource-policy.json", data, validated)

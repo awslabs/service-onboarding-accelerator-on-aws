@@ -25,7 +25,8 @@ except ImportError:
     from artifact_rules import iter_rules, resource_types
 
 # ================================================================
-# Global AWS condition keys — always valid, not service-specific
+# Known AWS global condition-key names. Availability must still be verified
+# for the target service and request context during Validate/generation review.
 # ================================================================
 
 _GLOBAL_CONDITION_KEYS = {
@@ -62,6 +63,11 @@ _GLOBAL_CONDITION_KEYS = {
     "aws:SourceOrgPaths",
     "aws:SourceVpc",
     "aws:SourceVpce",
+    # IAM global condition context keys: VPC endpoint owner's organization.
+    # https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html
+    "aws:VpceOrgID",
+    "aws:VpceAccount",
+    "aws:VpceOrgPaths",
     "aws:TagKeys",
     "aws:TokenIssueTime",
     "aws:UserAgent",
@@ -402,16 +408,31 @@ def _verified_cross_service_keys(file_path: str, validated: dict) -> set[str]:
         policy_types = {"resource-based policies"}
     result = set()
     iam = validated.get("capabilities", {}).get("iam", {})
-    for item in iam.get("cross_service_condition_keys", []):
+    records = [
+        item for field in ("cross_service_condition_keys", "context_only_condition_keys")
+        for item in (iam.get(field) or []) if isinstance(item, dict)
+    ]
+    aliases = {
+        "identity-based": "identity-based policies",
+        "resource-based": "resource-based policies",
+    }
+    for item in records:
         if not isinstance(item, dict) or item.get("verified") is not True:
             continue
-        documented = any(
-            isinstance(item.get(field), str)
-            and urlparse(item[field]).hostname in {"docs.aws.amazon.com", "aws.amazon.com"}
-            for field in ("doc_url", "source_url")
-        )
-        usable = {s.lower() for s in item.get("usable_in", []) if isinstance(s, str)}
-        prohibited = {s.lower() for s in item.get("not_usable_in", []) if isinstance(s, str)}
+        try:
+            documented = any(
+                isinstance(item.get(field), str)
+                and urlparse(item[field]).hostname in {"docs.aws.amazon.com", "aws.amazon.com"}
+                for field in ("doc_url", "source_url")
+            )
+        except ValueError:
+            documented = False
+        usable = {aliases.get(s.lower(), s.lower())
+                  for s in item.get("usable_in", item.get("policy_types", []))
+                  if isinstance(s, str)}
+        prohibited = {aliases.get(s.lower(), s.lower())
+                      for s in item.get("not_usable_in", item.get("not_supported_in", []))
+                      if isinstance(s, str)}
         key = item.get("key")
         if documented and isinstance(key, str) and policy_types & usable and not policy_types & prohibited:
             result.add(key)
@@ -428,7 +449,10 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
             service_keys.add(key)
 
     service_keys.update(_verified_cross_service_keys(file_path, validated))
-    if not service_keys and not validated.get("capabilities", {}).get("iam", {}).get("cross_service_condition_keys"):
+    if not service_keys and not any(
+        validated.get("capabilities", {}).get("iam", {}).get(field)
+        for field in ("cross_service_condition_keys", "context_only_condition_keys")
+    ):
         return errors
 
     # KMS key policies may reference KMS service-owned condition keys

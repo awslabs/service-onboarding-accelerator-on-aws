@@ -11,6 +11,7 @@ action matching, mechanism classification, and the no-actions edge case.
 from __future__ import annotations
 
 import sys
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -152,14 +153,15 @@ def test_find_enforcing_keys_empty_when_no_targets():
     assert find_enforcing_keys(set(), VALIDATED["capabilities"]["iam"]["condition_keys"]) == []
 
 
-def test_vpce_policy_on_request_body_param_is_not_preventable():
+@pytest.mark.parametrize("mechanism", ["VPCE Policy", "VPC Endpoint Policy"])
+def test_vpce_policy_on_request_body_param_is_not_preventable(mechanism):
     """A VPCE-policy control whose parameters_controlled[] names a request-body
     field cannot enforce it (the endpoint policy can't see the request body) —
     route to detective even if a condition key exists for the action."""
     control = {
         "id": "CTRL-RES-PRV-002",
         "category": "PRV",
-        "mechanism": "VPCE Policy",
+        "mechanism": mechanism,
         "actions": ["lambda:CreateFunction"],  # a gating key DOES exist for this
         "parameters_controlled": ["$.lambda/CreateFunction.VpcConfig.SubnetIds"],
         "condition_keys": [],
@@ -170,13 +172,14 @@ def test_vpce_policy_on_request_body_param_is_not_preventable():
     assert "VPCE policy gates endpoint use" in r["reason"]
 
 
-def test_vpce_policy_at_endpoint_scope_still_assessed_normally():
+@pytest.mark.parametrize("mechanism", ["VPCE Policy", "VPC Endpoint Policy"])
+def test_vpce_policy_at_endpoint_scope_still_assessed_normally(mechanism):
     """A VPCE-policy control at endpoint scope (root path only) is NOT auto-routed;
     it falls through to the normal condition-key assessment."""
     control = {
         "id": "CTRL-RES-PRV-009",
         "category": "PRV",
-        "mechanism": "VPCE Policy",
+        "mechanism": mechanism,
         "actions": ["lambda:CreateFunction"],
         "parameters_controlled": ["$."],  # endpoint-level concern
         "condition_keys": [],
@@ -184,6 +187,22 @@ def test_vpce_policy_at_endpoint_scope_still_assessed_normally():
     r = assess_control(control, VALIDATED)
     # Not short-circuited by the VPCE guard — normal assessment applies.
     assert r["verdict"] == "FEASIBLE"
+
+
+@pytest.mark.parametrize("mechanism", ["VPCE Policy", "VPC Endpoint Policy"])
+def test_endpoint_policy_configuration_is_not_a_consumer_request_constraint(mechanism):
+    control = {
+        "id": "CTRL-RES-PRV-001", "category": "PRV", "mechanism": mechanism,
+        "actions": ["example:Read", "ec2:ModifyVpcEndpoint"],
+        "condition_keys": ["aws:PrincipalOrgID"],
+        "parameters_controlled": ["$.PolicyDocument", "$.VpcEndpointId"],
+    }
+    assert assess_control(control, VALIDATED)["verdict"] == "FEASIBLE"
+    control["parameters_controlled"].append("$.EncryptionKeyArn")
+    assert assess_control(control, VALIDATED)["verdict"] == "NOT_PREVENTABLE"
+    control["parameters_controlled"] = ["$.PolicyDocument"]
+    control["actions"] = ["ec2:ModifyVpcEndpoint"]
+    assert assess_control(control, VALIDATED)["verdict"] == "NOT_PREVENTABLE"
 
 
 def test_is_request_time_mechanism():
