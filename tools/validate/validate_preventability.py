@@ -65,6 +65,7 @@ REQUEST_TIME_MECHANISMS = {
     "resource policy",
     "resource-based policy",
     "vpce policy",
+    "vpc endpoint policy",
     "kms key policy",
 }
 
@@ -156,10 +157,21 @@ def _controls_request_body_param(control: dict) -> bool:
     as a request-body parameter.
     """
     params = control.get("parameters_controlled") or []
+    # The mapper also records the endpoint policy's own authoring inputs.
+    # These are configuration/provenance, not fields inspected on consumer
+    # calls through that endpoint. Do not confuse that with a policy claiming
+    # to prevent changes to its own configuration.
+    endpoint_management = {"CreateVpcEndpoint", "ModifyVpcEndpoint", "DeleteVpcEndpoints"}
+    consumer_calls = any(
+        normalize_action(a) not in endpoint_management
+        for a in control.get("actions", []) if isinstance(a, str)
+    )
     for p in params:
         if not isinstance(p, str):
             continue
         body = p[2:] if p.startswith("$.") else p.lstrip("$")
+        if consumer_calls and body in {"PolicyDocument", "VpcEndpointId"}:
+            continue
         # A named field after stripping the `$.` root → request-body parameter.
         if body and body not in (".", ""):
             return True
@@ -233,7 +245,7 @@ def assess_control(control: dict, validated: dict) -> dict:
     # So a VPCE-policy control whose parameters_controlled[] names a request-body
     # field is not preventable by that mechanism — route to detective regardless
     # of whether a condition key happens to exist for the action.
-    if "vpce" in mechanism.lower() and _controls_request_body_param(control):
+    if mechanism.lower() in {"vpce policy", "vpc endpoint policy"} and _controls_request_body_param(control):
         return {
             "id": control.get("id"),
             "mechanism": mechanism,

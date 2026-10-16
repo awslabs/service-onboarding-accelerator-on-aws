@@ -15,7 +15,7 @@ Produce `.service-approval/<slug>/03-validate/validated.json`.
 When confirming a claim or attaching a citation, consult sources in this fixed
 order and cite the **highest-priority** source that supports the claim:
 
-1. **AWS Threat Model** — the customer-provided mitigation/threat export, when present
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake
    (authoritative intent + top citation).
 2. **AWS Control Catalog API** — the control→objective authority.
 3. **Service-specific AWS documentation** — the target service's own pages only;
@@ -96,7 +96,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `mitre-attack`). Validate is the MCP-verification skill — expect 30+ canonical events per run.
 
 ## No-MCP mode
 
@@ -223,7 +223,7 @@ For each technique in `attack_surface.applicable_techniques[]`:
    ```bash
    python3 -c "
    import json
-   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; use custom if --threat-model-file provided
+   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; additional customer mappings may supplement it
    xw_map = {m['attack_technique_id']: m for m in xw['mappings']}
    # Check each technique's framework mappings
    "
@@ -459,7 +459,6 @@ Before writing validated.json, sanitize ALL string values (including metadata fi
 MCP tool identifiers with user-facing names per CLAUDE.md terminology rules:
 - `mcp__awsknowledge__aws___*` → "AWS Documentation"
 - `mcp__aws-documentation__*` → "AWS Documentation"
-- `mcp__kb-search__search_*_kb` → "{KB Name} KB"
 - `gateway_aws-documentation-mcp___*` → "AWS Documentation"
 This applies to `verification_source`, `mcp_sources_used`, and any other string field.
 
@@ -489,3 +488,14 @@ Validation complete (v3):
   - UNVERIFIED items:            N
   Output: .service-approval/<slug>/03-validate/validated.json
 ```
+
+
+## Source mitigation accounting
+
+Preserve every source mitigation's `alias` and `source_uuid` (the original UUID)
+when assigning internal `M-*` IDs. Internal IDs are separate from source UUIDs.
+Never silently drop source records or replace a source alias with an inferred one.
+After writing this phase's outputs, run
+`python3 tools/validate/audit_threat_model.py --slug <slug>`. It records source
+defects and missing source mitigations as advisories, preserving usable results.
+A missing MITRE technique alone is not a defect.

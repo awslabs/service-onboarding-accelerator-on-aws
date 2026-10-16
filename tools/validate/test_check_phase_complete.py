@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from threat_model_test_support import source_receipt
 
 # Allow importing the module under test
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +29,7 @@ from validate_pipeline_integrity import PHASE_REQUIRED_OUTPUTS  # type: ignore
 def fake_repo(tmp_path, monkeypatch):
     """Create a tmp repo with manifest.yaml + .service-approval/<slug>/ tree.
 
-    monkeypatches paths.repo_root() to return this tmp path so service_root()
+    monkeypatches paths.workspace_root() to return this tmp path so service_root()
     resolves correctly.
     """
     (tmp_path / "manifest.yaml").write_text("name: test\n")
@@ -42,12 +43,12 @@ def fake_repo(tmp_path, monkeypatch):
     intake.mkdir()
     (intake / "intake-manifest.json").write_text(json.dumps({
         "service": {"name": "lambda"},
-        "inputs": {"threat_model_file": str(source)},
+        "inputs": {"threat_model_file": str(source), "threat_model_source": source_receipt(source, "lambda")},
     }))
 
-    # Re-anchor repo_root to tmp_path
+    # Re-anchor runtime output, keeping bundled assets in the plugin.
     import paths  # type: ignore
-    monkeypatch.setattr(paths, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(paths, "workspace_root", lambda: tmp_path)
     return tmp_path
 
 

@@ -22,7 +22,50 @@ from tools.paths import (
     repo_root,
     service_root,
     staging_dir,
+    workspace_root,
 )
+
+
+def test_external_workspace_keeps_runtime_separate_from_plugin_assets(tmp_path, monkeypatch):
+    installed_root = repo_root()
+    monkeypatch.delenv("SERVICE_APPROVAL_WORKSPACE", raising=False)
+    monkeypatch.chdir(tmp_path)
+    assert workspace_root() == tmp_path.resolve()
+    assert service_root("lambda") == tmp_path / ".service-approval/lambda"
+    assert staging_dir("2026-10-15T00-00-00Z") == tmp_path / ".service-approval/_staging/2026-10-15T00-00-00Z"
+    assert repo_root() == installed_root
+    assert (repo_root() / "data/reference-repos/index.yaml").is_file()
+
+
+def test_runtime_subdirectory_resolves_to_same_workspace(tmp_path, monkeypatch):
+    folder = tmp_path / ".service-approval/lambda/04-map/_domains"
+    folder.mkdir(parents=True)
+    monkeypatch.delenv("SERVICE_APPROVAL_WORKSPACE", raising=False)
+    monkeypatch.chdir(folder)
+    assert workspace_root() == tmp_path
+    assert phase_dir("lambda", "map") == tmp_path / ".service-approval/lambda/04-map"
+
+
+def test_unrelated_ancestor_state_does_not_capture_a_new_workspace(tmp_path, monkeypatch):
+    (tmp_path / ".service-approval").mkdir()
+    customer = tmp_path / "new-customer"
+    customer.mkdir()
+    monkeypatch.delenv("SERVICE_APPROVAL_WORKSPACE", raising=False)
+    monkeypatch.chdir(customer)
+    assert workspace_root() == customer
+
+
+def test_explicit_workspace_for_temporary_helpers(tmp_path, monkeypatch):
+    customer = tmp_path / "customer"
+    customer.mkdir()
+    helper = tmp_path / "helper"
+    helper.mkdir()
+    monkeypatch.chdir(helper)
+    monkeypatch.setenv("SERVICE_APPROVAL_WORKSPACE", str(customer))
+    assert service_root("lambda") == customer / ".service-approval/lambda"
+    monkeypatch.setenv("SERVICE_APPROVAL_WORKSPACE", "../customer")
+    with pytest.raises(PathResolutionError):
+        workspace_root()
 
 
 class TestRepoRoot:

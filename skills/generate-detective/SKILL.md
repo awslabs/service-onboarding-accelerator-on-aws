@@ -200,7 +200,9 @@ artifact implements. For Python, use comment block at top.
 **CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
 directory family:
 - `reactive-detective` → `detective/config-rule-lambdas/**`, `detective/config-rules.json`,
-  or `detective/access-analyzer.json`
+  `detective/config-org-rules.json`, `detective/config-conformance-pack.yaml`,
+  `detective/cloudtrail-org-config.json`, `detective/access-analyzer.json`,
+  `detective/eventbridge-rules.json`, or `detective/cloudwatch-alarms.json`
 - `reactive-corrective` → `responsive/**` (reference JSON pointing at a pre-authored
   AWS SSM Automation runbook; we do not author remediation code)
 

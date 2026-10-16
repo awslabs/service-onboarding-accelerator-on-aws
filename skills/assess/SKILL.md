@@ -47,7 +47,7 @@ Before any SAR/MCP lookup or staging promotion, you MUST run
 `python3 tools/validate/validate_threat_model_input.py --manifest "<intake-manifest-path>"`.
 For a resumed canonical run, use `--slug "<slug>"`. Use the installed plugin's
 absolute script path outside the repository. On nonzero exit, STOP and request
-the matching AWS Threat Model export; no cached assessment or flag bypasses it.
+published model retrieval through Intake; no local export, cached assessment, or flag bypasses it.
 If invoked directly without intake, complete Intake first.
 
 Per-service slug and phase directories are created after slug derivation in Step 0b.
@@ -70,7 +70,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, etc.).
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`).
 
 ## No-MCP mode
 
@@ -219,6 +219,12 @@ The Service Authorization Reference page is the definitive source for IAM action
    service_dir = service_root(slug)  # .service-approval/<slug>/
    assess_dir = phase_dir(slug, "assess")  # .service-approval/<slug>/01-assess/
    
+   # Only after successful published-model retrieval and slug resolution.
+   # This preserves _sources/, the new staging intake, and other services.
+   import shutil
+   if intake_manifest.get("pipeline_flags", {}).get("clean") and service_dir.exists():
+       shutil.rmtree(service_dir)
+
    # Create directory structure
    assess_dir.mkdir(parents=True, exist_ok=True)
    (assess_dir / "domains").mkdir(exist_ok=True)
@@ -273,7 +279,7 @@ Spawn 5 agents in parallel:
 Each research agent MUST:
 1. Execute ALL mandatory reads for its domain (from CLAUDE.md)
 2. Execute ALL mandatory searches (substituting `{service}`)
-3. Query relevant Knowledge Bases using `mcp__kb-search__search_*` tools
+3. Verify domain-specific findings against public AWS documentation using `awsknowledge` or `aws-documentation` (use the documented web fallback in No-MCP mode)
 4. Include the SAR facts for IAM/LOGGING/DATA domains
 5. Write findings to `.service-approval/<slug>/01-assess/domains/{DOMAIN}-research.md`
 6. Include source URLs for every finding

@@ -91,7 +91,7 @@ def _slug_and_phase_from_path(file_path: str) -> tuple[str | None, str | None]:
     if len(parts) != 2:
         return None, None
     rest = parts[1].split("/")
-    if not rest or rest[0] in ("_staging", "plans") or rest[0].startswith("."):
+    if not rest or rest[0] == "plans" or rest[0].startswith((".", "_")):
         return None, None
     slug = rest[0]
     phase = rest[1] if len(rest) >= 2 and _PHASE_DIR_RE.match(rest[1]) else None

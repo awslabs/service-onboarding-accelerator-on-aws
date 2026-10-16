@@ -2,18 +2,24 @@
 
 These rules apply across all clients and all agents.
 
-## Mandatory source input
-- Real AWS Threat Model exports and model-derived runtime state must NEVER be
-  committed or uploaded to the repository, including renamed copies. Read
-  external export files in place; keep runtime state in ignored directories.
-  Use only synthetic fixtures in repository tests.
-- A matching AWS Threat Model JSON export is required for every service.
-- Run `tools/validate/validate_threat_model_input.py` before assessment/research
-  and before every resumed phase. Nonzero exit halts the pipeline.
-- Record the validated absolute source path in intake's `inputs.threat_model_file`.
-  Use that selected export downstream; do not silently substitute another file.
-- Flags, saved intake, existing artifacts, MITRE defaults, and mitigation reports
-  do not waive the requirement. Never fabricate the missing model.
+## Mandatory published source
+- Intake MUST fetch the latest matching model with
+  `tools/validate/fetch_threat_model.py --service <name>`. Follow the public AWS
+  release manifest; never maintain a hardcoded supported-service list.
+- Persist the returned `inputs.threat_model_file` and `inputs.threat_model_source`.
+  Hooks and per-phase checks validate source identity, provenance, and SHA-256.
+- At every entry/resume with saved state, run
+  `validate_threat_model_input.py --slug <slug>` before dispatch. Resume is offline
+  and uses the same snapshot. Only explicit new intake adopts upstream changes.
+- For new intake, missing services, failed JSON downloads, rate limits, invalid
+  models, and JSON hash mismatches stop the pipeline. Missing/altered local
+  snapshots stop resume. Readable-report failures and broken source relationships
+  are advisory; preserve them in the integrity report and customer-facing output. Local exports, stale snapshots, flags, saved
+  intake, MITRE defaults, and mitigation reports cannot waive this requirement.
+- Downloaded models and derived runtime state MUST remain under ignored
+  `.service-approval/` paths. NEVER commit them; tests use synthetic fixtures only.
+- Readable model links supplement existing AWS documentation and policy-reference
+  citations; they do not replace capability verification or reference anchoring.
 
 ## Deployment & Teardown (customer responsibility)
 - This pipeline produces recommended security controls; it does not deploy, test, or
@@ -40,3 +46,11 @@ These rules apply across all clients and all agents.
 - All API parameters, condition keys, and Config rule names must be sourced from MCP — never
   from model training data.
 - Log every MCP call to `.service-approval/<slug>/mcp-calls.log`.
+
+- P14 recomputes source mitigation accounting and verifies exact disclosure of
+  findings/repairs in reports. Findings do not fail P14; missing/stale disclosure does.
+
+Generated alias/UUID mismatches and invalid dispositions remain authoring errors:
+repair them against the unambiguous snapshot before final disclosure. P14 rejects
+those errors even when listed, while source defects and honest unresolved
+coverage remain advisory.

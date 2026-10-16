@@ -9,6 +9,8 @@ artifacts instead of running real MCP-driven research/validation/generation.
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
+    P14 — source mitigation accounting/disclosure missing or stale, or generated
+          identities inconsistent; disclosed source defects remain advisory
     P0 — missing, invalid, or wrong-service AWS Threat Model source input;
          saved state and finalized markers do not replace the required export
     P1 — pipeline.log / mcp-calls.log missing or too few external lookups
@@ -928,6 +930,17 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
     return errors
 
 
+def check_mapping_state(map_dir: Path) -> list[str]:
+    """Replay state gates so a failed mapper cannot be hidden by final reports."""
+    from validate_state import validate_state_file
+    errors = []
+    for name in ("map-framework-mapped.json", "mapping-results.json"):
+        path = map_dir / name
+        if path.exists():
+            errors.extend(f"P5 FAIL: {e}" for e in validate_state_file(str(path)))
+    return errors
+
+
 # ----------------------------------------------------------------------
 # P7: per-phase output completeness
 # ----------------------------------------------------------------------
@@ -1213,6 +1226,10 @@ def validate_pipeline(root: Path) -> list[str]:
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
+            errors.extend(check_mapping_state(map_dir))
+
+        from threat_model_integrity import check_reporting
+        errors.extend(f"P14 FAIL: {error}" for error in check_reporting(service_root))
 
         # P11: no emitted artifact may carry per-item confidence scoring.
         errors.extend(check_no_confidence_scoring(service_root))

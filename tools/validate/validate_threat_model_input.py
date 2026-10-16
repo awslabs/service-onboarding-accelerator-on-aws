@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Require a readable AWS Threat Model export for the requested service.
 
-This preflight is local and read-only. Run it before assessment (including on
-resume); MCP, MITRE data, saved state and mitigation reports cannot replace it.
+Hooks and resume validate the same pinned published snapshot locally.
+Only a new intake fetches the current AWS release; no local export bypasses intake.
 It validates the input contract, not the truth of the model's AWS claims.
 """
 from __future__ import annotations
@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from threat_model_parse import is_threat_model_shape, is_threat_model_threats_shape
+from threat_model_source import model_identities, check_source, refresh_manifest, SourceError
 
 
 def _text(value: object) -> bool:
@@ -42,16 +43,9 @@ def validate_export(data: object, service: str) -> list[str]:
     ):
         errors.append("AWS Threat Model export requires metadata.name.")
     else:
-        identifiers = metadata.get("identifiers")
-        identities = [metadata["name"]]
-        if isinstance(identifiers, dict):
-            identities.extend(
-                identifiers[key] for key in ("iam", "fullName", "shortName")
-                if _text(identifiers.get(key))
-            )
         if not _text(service) or not _identity(service):
             errors.append("A requested service name is required.")
-        elif _identity(service) not in {_identity(name) for name in identities}:
+        elif _identity(service) not in model_identities(data):
             errors.append(
                 f"AWS Threat Model is for {metadata['name']!r}, not requested "
                 f"service {service!r}. Supply a matching export."
@@ -185,11 +179,14 @@ def select_manifest_export(
     if not _text(selected):
         return None, [
             "AWS Threat Model required: record the selected export in "
-            "inputs.threat_model_file. Re-run intake with a matching JSON export."
+            "inputs.threat_model_file. Re-run intake to fetch the latest published model."
         ]
-    return select_export(
+    path, errors = select_export(
         name, threat_model_file=selected, base_dir=workspace_for_manifest(manifest_path)
     )
+    if not errors:
+        errors = check_source(inputs.get("threat_model_source"), path)
+    return (None, errors) if errors else (path, [])
 
 
 def check_manifest(data: object, manifest_path: Path) -> list[str]:
@@ -234,7 +231,10 @@ def main() -> int:
     parser.add_argument("--service", help="Requested service identifier or full name")
     parser.add_argument("--input-folder")
     parser.add_argument("--threat-model-file")
+    parser.add_argument("--refresh", action="store_true", help="Deprecated compatibility alias for offline snapshot revalidation; never fetches upstream")
     args = parser.parse_args()
+    if args.refresh and not (args.manifest or args.slug):
+        parser.error("--refresh requires --manifest or --slug")
     selected = None
     if args.manifest or args.slug:
         if args.service or args.input_folder or args.threat_model_file:
@@ -246,6 +246,7 @@ def main() -> int:
             run = (root / args.slug).resolve()
             if not run.is_relative_to(root):
                 parser.error("service path escapes .service-approval")
+            args.manifest = run / "00-intake" / "intake-manifest.json"
             errors = check_run(run)
         else:
             data, errors = _read_json(args.manifest)
@@ -255,12 +256,23 @@ def main() -> int:
         selected, errors = select_export(
             args.service, args.input_folder, args.threat_model_file
         )
+    if not errors and args.refresh:
+        data, errors = _read_json(args.manifest)
+        if not errors:
+            try:
+                refresh_manifest(data, args.manifest)
+            except SourceError as exc:
+                errors = [str(exc)]
     if errors:
         print("AWS THREAT MODEL REQUIRED — pipeline cannot start or resume.", file=sys.stderr)
         for error in errors:
             print(f"  {error}", file=sys.stderr)
         return 2
-    print(f"OK: AWS Threat Model prerequisite verified{': ' + str(selected) if selected else '.'}")
+    if selected:
+        print(f"OK: local export structure verified: {selected}. "
+              "Pipeline intake must still fetch a published model and record its provenance.")
+    else:
+        print("OK: published AWS Threat Model prerequisite verified.")
     return 0
 
 

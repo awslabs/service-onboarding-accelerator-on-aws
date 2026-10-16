@@ -13,7 +13,8 @@ version: 1.3.0
 description: >
   Generate AWS security controls for any AWS service. Runs a pipeline
   (Intake, Assess, Research, Validate, Map, Recommended Guidance,
-  Summarize) mapped to CCMv4 (other frameworks deferred).
+  Summarize) mapped to a supplied control framework, with CCMv4 guidance
+  and direct custom-framework mapping backed by AWS Threat Model evidence.
 
 author:
   name: Service Onboarding on AWS Team
@@ -122,36 +123,12 @@ mcp_servers:
   awsknowledge:
     type: http
     url: https://knowledge-mcp.global.api.aws
-  kb-search:
-    type: stdio
-    command: python3
-    script: tools/kb-search-mcp/server.py
-    env:
-      AWS_PROFILE: claude-code
-      AWS_REGION: us-east-1
-    optional: true
-    # Kiro requires users to approve the ${workspaceRoot} template variable
-    # before spawn, and the approval UI is buried. Until Kiro makes this
-    # smoother, auto-registering kb-search causes "Connection closed" errors
-    # on every fresh install. Exclude it from the Kiro Power config so it
-    # doesn't break the Power out-of-the-box. Still ships to Claude Code,
-    # and VS Code (which don't have the approval gate).
-    skip_clients: [kiro]
-  iam:
-    type: stdio
-    command: uvx
-    args: ["awslabs.iam-mcp-server@1.0.23"]
-    env:
-      AWS_PROFILE: claude-code
-      AWS_REGION: us-east-1
-      FASTMCP_LOG_LEVEL: ERROR
-    optional: true
-  # MITRE ATT&CK knowledge base MCP — used by research-attack-surface for
+  # Optional, user-enabled MITRE ATT&CK MCP — used by research-attack-surface for
   # technique/tactic lookups. Source: https://github.com/stoyky/mitre-attack-mcp
   # Falls back to data/attack-cloud-matrix.json (bundled snapshot) when MCP
-  # is unavailable, so research-attack-surface continues to work even if the
-  # server fails to spawn.
+  # is disabled or unavailable. Default client configs omit optional servers.
   mitre-attack:
+    optional: true
     type: stdio
     command: uvx
     args:
@@ -212,6 +189,8 @@ integrity_checks:
     title: Citation coverage (detective/proactive/responsive artifacts carry a resolvable citation)
   - id: P13
     title: Config-supportability (no Config rule emitted for a resource type AWS Config does not support)
+  - id: P14
+    title: Source mitigation accounting and complete disclosure (source defects remain advisory; generated identity pairs must be factual)
 
 # ---------------------------------------------------------------------------
 # Test policy — what the sync tool's --check mode verifies.

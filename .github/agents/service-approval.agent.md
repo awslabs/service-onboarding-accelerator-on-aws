@@ -32,9 +32,9 @@ Output goes to `.service-approval/<service-slug>/` (per-service, per-phase layou
 
 Ask the user for these if not provided:
 - `--service=<name>` (required unless an input folder or `--from-intake` is provided)
-- Required: matching AWS Threat Model JSON export in `./input-folder`, or
-  `--threat-model-file=<path>`. Run the mandatory input gate from the orchestrator
-  before assessment/research; missing or invalid input stops the run in all modes.
+- Required: a published AWS Threat Model, fetched automatically by Intake.
+  Do not ask for a local model file. Missing services or retrieval failures stop
+  the pipeline; follow the canonical entry/resume gate in the orchestrator.
 - Optional: `--framework=<ccmv4|nist|cis|iso>`, `--framework-file=<path>`
 - Optional: `--from-intake=<file>`, `--interactive` (Intake controls)
 - Optional: `--include-unverified`, `--dry-run`, `--clean`, `--no-mcp` (run without MCP; verify over the web)
@@ -61,8 +61,7 @@ The Stop hook runs `validate_pipeline_integrity.py` and blocks violations.
 Registered via `.vscode/mcp.json`:
 - `aws-documentation` (stdio, via `uvx`)
 - `awsknowledge` (HTTP)
-- `mitre-attack` (stdio, via `uvx`; falls back to bundled `data/attack-cloud-matrix.json`)
-- `kb-search`, `iam` — optional, used only when configured
+- Optional `mitre-attack` (not registered by default; use bundled `data/attack-cloud-matrix.json` unless the user enables it). See `docs/MCP.md`.
 
 The pipeline can also run without any MCP servers — pass `--no-mcp` and facts are
 verified over the web instead. See the "Running without MCP" section of

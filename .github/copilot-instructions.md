@@ -15,18 +15,18 @@ Flags can also be expressed in natural language:
 Read the skill at `skills/service-approval/SKILL.md` and follow it step by step.
 Run the pipeline: Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize.
 It recommends controls; you deploy them yourself.
-Every run requires a matching AWS Threat Model JSON export, supplied in `./input/`
-or via `--threat-model-file=<path>`. Run the orchestrator's mandatory local
-preflight before MCP/assessment/research and stop on failure. MITRE data, flags,
-and cached output cannot substitute for the export.
+Every run requires a published AWS Threat Model retrieved from the latest release.
+Run the canonical Intake fetch gate before MCP/assessment/research. Missing
+services or retrieval failures stop the run; local files cannot substitute.
+Resume checks the original snapshot offline; only a new run fetches latest.
+Source defects are advisory and must appear in the integrity reports. See `docs/THREAT-MODELS.md`.
 All state is written to `.service-approval/<service-slug>/` (per-service layout) in the current working directory.
 
 ## MCP servers
 Registered via `.vscode/mcp.json`. Confirm these are reachable before starting the skill:
 - `aws-documentation` (stdio, via `uvx`)
 - `awsknowledge` (HTTP)
-- `mitre-attack` (stdio, via `uvx`; falls back to bundled `data/attack-cloud-matrix.json`)
-- `kb-search`, `iam` — optional, used only when configured
+- Optional `mitre-attack` (not registered by default; use bundled `data/attack-cloud-matrix.json` unless the user enables it). See `docs/MCP.md`.
 
 The pipeline can also run without any MCP servers — pass `--no-mcp` and facts are
 verified over the web instead. See the "Running without MCP" section of

@@ -226,14 +226,35 @@ def _md_control_prose_lines(md_text: str):
     per-control claims and legitimately use words like "cannot"/"only".
     """
     current: str | None = None
+    table_headers = None
+    prose_headers = {"title", "name", "description", "rationale", "security rationale",
+                     "implementation", "governs", "control name", "full control name",
+                     "how it mitigates"}
     for raw in md_text.splitlines():
         stripped = raw.strip()
+        if not stripped.startswith("|"):
+            table_headers = None
         if stripped.startswith("#"):
             m = _CTRL_ID_RE.search(stripped)
             if m:
                 current = m.group(0)
             continue
         ids_in_line = _CTRL_ID_RE.findall(raw)
+        if stripped.startswith("|"):
+            cells = [c.strip() for c in re.split(r"(?<!\\)\|", stripped.strip("|"))]
+            if not ids_in_line:
+                if not all(re.fullmatch(r":?-+:?", c) for c in cells):
+                    table_headers = [c.strip("* ").lower() for c in cells]
+                continue
+            if table_headers is not None:
+                # Source cells quote requirements and scope limitations, not
+                # claims authored for this control. Lint the same prose fields
+                # as JSON, retaining checks for real render-time overclaims.
+                prose = [cell for header, cell in zip(table_headers, cells)
+                         if header in prose_headers]
+                if prose:
+                    yield ids_in_line[0], " ".join(prose)
+                continue
         if ids_in_line:
             yield ids_in_line[0], raw
         elif _CATALOG_PROSE_BULLET_RE.match(raw) and current:

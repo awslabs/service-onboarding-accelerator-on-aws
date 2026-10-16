@@ -2,7 +2,7 @@
 name: service-approval-v3
 description: Orchestrate the service-approval agents (Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize) to generate AWS security controls for any AWS service
 disable-model-invocation: false
-argument-hint: '[./input-folder] [--service=<name>] [--threat-model-file=<path>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]'
+argument-hint: '[./input-folder] [--service=<name>] [--questions=<file>] [--include-unverified] [--clean] [--framework=<ccmv4|nist|cis|iso>] [--framework-file=<path>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]'
 ---
 
 # Service Approval — Orchestrator v3
@@ -16,16 +16,26 @@ The pipeline produces recommended security controls (preventive, detective,
 proactive, and responsive guidance) that the customer applies themselves. It
 does not deploy, test, or attest against a live account.
 
+## Installed plugin and working directory
+
+The caller's initial working directory owns all `.service-approval/` state.
+The plugin installation owns bundled code, schemas, skills, and reference data.
+Keep the working directory at the user's workspace when running packaged tools;
+invoke scripts by absolute path under the plugin root and use that root on
+`PYTHONPATH` for module commands. Do not change into the installation to make a
+relative command work. If a helper must change directory, carry the original
+absolute workspace in `SERVICE_APPROVAL_WORKSPACE`. `tools.paths.workspace_root`
+resolves runtime output; `tools.paths.repo_root` continues to resolve assets.
+
 ## Flags
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `./input-folder` | Folder containing the required AWS Threat Model JSON export and optional supporting documents | `./input/` |
-| `--threat-model-file=<path>` | Explicit AWS Threat Model JSON export for the requested service; required when discovery is ambiguous | Auto-detect one matching export in the input folder |
+| `./input-folder` | Optional supporting documents and control framework | `./input/` |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`) | Required if no folder |
 | `--include-unverified` | Allow unverified items in generation | false |
 | `--questions=<file>` | Path to SITCO Bar Questions file (.docx or .txt) — passed to Phase 0 | None |
-| `--clean` | Delete existing .service-approval/ state before run | false |
+| `--clean` | Clear the selected service’s phase output after retrieval and slug resolution; preserve source snapshots | false |
 | `--framework=<type>` | Control framework type (ccmv4, nist, cis, iso) — passed to Map phase | auto-detect |
 | `--framework-file=<path>` | Explicit path to framework file — passed to Map phase | auto-detect from input folder |
 | `--framework-specification="<text>"` | Free-text description of a custom framework's structure (control/sub-control ID format, column layout, grouping) — recorded as `inputs.framework_specification` and read by the Map phase | None (only relevant with a custom framework) |
@@ -151,47 +161,62 @@ continue to work; new tooling should read `pipeline.log`.
 
 ## Prerequisites
 
-### Mandatory AWS Threat Model gate — before external work
+### Mandatory published AWS Threat Model gate
 
-An AWS Threat Model JSON export for the requested service is REQUIRED for every
-run, across all clients and both sequential and parallel modes. This requirement
-applies to any service, including DSQL; there is no service allowlist.
+Before MCP preflight or downstream work, distinguish a **new run** from a
+**resume**. If this service has saved runtime intake and no explicit fresh-run
+request (`--clean`), reuse that run and its manifest. Do not fetch, run fresh
+Intake, replace the manifest, or rerun completed phases merely because the chat
+resumed. Ambiguous service/run selection must be resolved before dispatch.
 
-You MUST resolve the service and input paths through Intake, then run this local
-preflight BEFORE MCP pre-flight/install, Assess, research, or any downstream
-dispatch. Use the installed plugin's absolute script path when running outside
-the repository:
-
-```bash
-python3 tools/validate/validate_threat_model_input.py \
-  --service "<service>" --input-folder "<input-folder>"
-```
-
-Pass `--threat-model-file "<path>"` when explicitly supplied (including
-`input.threat_model_file` from intake YAML). An explicit selection MUST NOT fall
-back to another file. Record the successful absolute file path as
-`inputs.threat_model_file` in the intake manifest.
-
-After Intake writes its staging manifest, you MUST run:
+For a NEW run only, follow Intake's prerequisite and run:
 
 ```bash
-python3 tools/validate/validate_threat_model_input.py \
-  --manifest ".service-approval/_staging/<ts>/00-intake/intake-manifest.json"
+python3 tools/validate/fetch_threat_model.py --service "<service>" \
+  --output ".service-approval/_sources/selected-inputs.json"
 ```
 
-Before EACH subsequent phase or resumed dispatch, revalidate the canonical run:
+Copy the returned inputs fragment into Intake, retaining all source provenance.
+The helper resolves current `main`, follows the release manifest, verifies the
+JSON hash/identity/shape, and saves a unique snapshot. Fetch once per new run;
+parallel sub-skills MUST NOT fetch independently. Unpublished services, failed
+JSON retrieval, malformed JSON, wrong-service data, or a JSON hash mismatch stop
+new intake. Local exports, flags, and MITRE data cannot substitute for a model.
+Readable-report failures and dangling source references are ADVISORY: surface the
+helper's findings and continue with the valid JSON. Never fabricate missing links.
+
+Validate the staging manifest with `validate_threat_model_input.py --manifest
+"<manifest-path>"`. During every later phase and on resume, validate ONLY the saved
+snapshot, without contacting GitHub:
 
 ```bash
 python3 tools/validate/validate_threat_model_input.py --slug "<slug>"
 ```
 
-**On any nonzero exit, STOP and show the prerequisite failure.** Ask for the
-matching export and rerun the check after it is supplied. Do not proceed with
-an empty mitigation inventory, synthesized threat model, MITRE-only fallback,
-framework spreadsheet, or a generated `threat-model-index.json` as a substitute.
-`--no-mcp`, `--include-unverified`, `--dry-run`, `--clean`, saved intake, cached
-assessment, and finalized output do not waive this requirement. Run the input
-check before applying `--clean` so missing input does not discard existing work.
+Upstream edits, removal, or outages do not affect an existing run. Missing or
+modified local snapshot bytes remain a hard stop: restore the exact pinned bytes
+or explicitly start a new run. Never replace a snapshot beneath prior outputs.
+The deprecated `--refresh` validator flag is an offline compatibility alias.
+
+After Research, Validate, Map, and after writing the final summary, run:
+
+```bash
+python3 tools/validate/audit_threat_model.py --slug "<slug>"
+```
+
+This recomputes source-to-stage mitigation accounting, writes the integrity JSON
+and companion report, and inserts a concise source/processing appendix at the
+end of framework mapping. It removes obsolete banners from the catalog and
+summary. Warnings do not
+stop the run. P14 rejects stale or omitted disclosure, not the existence of
+findings. Use documented manual-guidance/not-applicable/unresolved dispositions
+rather than inventing controls just to fill coverage. Keep alias/UUID pairs exact.
+
+Explicit `--threat-model-file` / YAML input overrides remain unsupported. Input
+folders contain optional supporting documents, not the authoritative model.
+For `--clean`, fetch first, then clear only the selected service's phase tree at
+Assess Step 0b. Preserve snapshots, new staging intake, and other services.
+See [THREAT-MODELS.md](../../docs/THREAT-MODELS.md).
 
 ### MCP Pre-flight Check
 
@@ -204,6 +229,10 @@ Required MCPs (all from https://github.com/awslabs/mcp):
 |------|-----------|-------------------|
 | `awsknowledge` | HTTP | `https://knowledge-mcp.global.api.aws` |
 | `aws-documentation` | stdio | `uvx awslabs.aws-documentation-mcp-server@1.1.28` |
+
+`mitre-attack` is optional and omitted from default client configs. Do not install
+or require it during preflight. Without user opt-in, use the bundled ATT&CK
+snapshot. See [MCP configuration](../../docs/MCP.md).
 
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
 - `Agent` tool in tool list → Claude Code
@@ -324,18 +353,17 @@ See: https://github.com/awslabs/mcp
 Continuing with degraded MCP coverage — some steps may fall back to web search.
 ```
 
-- [ ] If `--clean` was passed:
-  ```bash
-  # Clean all service-specific state trees
-  rm -rf .service-approval/*/
-  # Preserve plans/ directory if it exists
-  mkdir -p .service-approval/plans
-  ```
+- [ ] If `--clean` was passed, retrieve the latest model first and defer removal
+  until Assess Step 0b resolves the canonical slug. Remove only that service's
+  previous phase tree before promoting the new intake. Preserve `_sources/`, the
+  new staging intake, `plans/`, and every other service. Never use a wildcard
+  deletion of `.service-approval/` because it would delete the validated snapshot.
 
-- [ ] Check for stale state — if any `.service-approval/<slug>/` directories exist AND `--clean` was NOT passed:
-  Tell the user: "Existing service state found. Use --clean to start fresh, or I'll
-  run all phases again and overwrite. Proceeding with fresh run."
-  Then continue — NEVER silently read or report from old state files.
+- [ ] For an existing run being resumed, perform the mandatory offline snapshot check
+  before using cached output. For an explicitly fresh run (`--clean`), fetch a new
+  inputs fragment and regenerate all phases; do not refresh the discarded run.
+  Without `--clean`, preserve existing phase state and do not silently replace its
+  intake or model. Only an explicit new run adopts upstream changes.
 
 - [ ] Phase 0 Intake + Assess will create the service-specific directories automatically.
   No pre-creation needed. The canonical slug is derived after SAR facts are loaded.
@@ -372,7 +400,7 @@ Run each phase in order. Pass all relevant flags through.
 
 ### Intake (Precursor — Mandatory)
 Follow ALL instructions in `skills/intake/SKILL.md` exactly.
-Pass: input folder, `--service`, `--threat-model-file` if provided,
+Pass: input folder, `--service`, published-model inputs fragment,
 `--from-intake` if provided, `--interactive` if provided,
 `--no-mcp` if provided, and any of `--framework`, `--framework-file` the user
 supplied at the orchestrator level (Intake uses them to pre-fill its form /
@@ -383,7 +411,8 @@ exists before proceeding (it gets promoted to `<slug>/00-intake/` by Phase 0
 Step 0b after slug derivation). From that manifest, resolve the effective
 `--service`, `--framework`, `--framework-file`, and input folder.
 
-**Intake always runs.** The intake skill itself decides whether to prompt
+**Intake runs for new runs.** A resume reuses the saved runtime manifest. For a new
+run, the intake skill decides whether to prompt
 interactively or short-circuit:
 
 - If `./service-approval-intake.yaml` exists in the user's CWD and
@@ -397,9 +426,9 @@ interactively or short-circuit:
 (`skills/intake/intake-template.yaml`, `skills/intake/defaults.yaml`) are never
 auto-loaded as user intake — they are templates/defaults shared across users.
 
-`--clean` deletes the entire `.service-approval/` tree (all per-slug service
-dirs and any `_staging/` snapshots) but does **not** delete the user's
-`./service-approval-intake.yaml`.
+`--clean` removes only the selected service’s previous phase tree at Assess
+Step 0b, after successful retrieval and slug resolution. It preserves source
+snapshots, the new staging intake, other services, and the user’s intake YAML.
 
 ### Phase 0: Assess (Mandatory)
 Follow ALL instructions in `skills/assess/SKILL.md` exactly.
@@ -516,7 +545,7 @@ short-circuit (see "Discovery Rules" in `skills/intake/SKILL.md`):
 - Otherwise the skill runs the full interactive form and offers to save.
 
 Dispatch Intake as a foreground subagent with the full text of
-`skills/intake/SKILL.md`, plus input folder, `--service`, `--threat-model-file`,
+`skills/intake/SKILL.md`, plus input folder, `--service`, published-model inputs fragment,
 `--from-intake`, `--interactive`, and
 any pre-Intake CLI flags the user passed (`--framework`, `--framework-file`).
 Wait for `.service-approval/_staging/<ts>/00-intake/intake-manifest.json` (Intake's pre-promotion landing zone).
@@ -991,3 +1020,8 @@ Report: .service-approval/<slug>/06-summarize/SUMMARY-REPORT.md
 Controls: .service-approval/<slug>/05-recommended-guidance/
 Summary of findings: see report (no verdict issued)
 ```
+
+Generated alias/UUID mismatches and invalid dispositions remain authoring errors:
+repair them against the unambiguous snapshot before final disclosure. P14 rejects
+those errors even when listed, while source defects and honest unresolved
+coverage remain advisory.

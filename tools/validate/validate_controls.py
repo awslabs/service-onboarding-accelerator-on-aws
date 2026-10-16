@@ -17,9 +17,16 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlparse
+
+try:
+    from .artifact_rules import iter_rules, resource_types
+except ImportError:
+    from artifact_rules import iter_rules, resource_types
 
 # ================================================================
-# Global AWS condition keys — always valid, not service-specific
+# Known AWS global condition-key names. Availability must still be verified
+# for the target service and request context during Validate/generation review.
 # ================================================================
 
 _GLOBAL_CONDITION_KEYS = {
@@ -56,6 +63,11 @@ _GLOBAL_CONDITION_KEYS = {
     "aws:SourceOrgPaths",
     "aws:SourceVpc",
     "aws:SourceVpce",
+    # IAM global condition context keys: VPC endpoint owner's organization.
+    # https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html
+    "aws:VpceOrgID",
+    "aws:VpceAccount",
+    "aws:VpceOrgPaths",
     "aws:TagKeys",
     "aws:TokenIssueTime",
     "aws:UserAgent",
@@ -215,25 +227,37 @@ def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[st
     expected_source = f"aws.{expected_service}"
     expected_event_source = f"{expected_service}.amazonaws.com"
 
-    rules = data.get("rules", [])
-    if not isinstance(rules, list):
-        return errors
-
-    for i, rule in enumerate(rules):
-        if not isinstance(rule, dict):
-            continue
-        rule_name = rule.get("rule_name", f"rule[{i}]")
-        pattern = rule.get("event_pattern", {})
+    for rule_name, rule in iter_rules(data):
+        pattern = rule.get("EventPattern", rule.get("event_pattern", {}))
         if not isinstance(pattern, dict):
             continue
+        allowed_sources = {expected_source}
+        allowed_event_sources = {expected_event_source}
+        if rule.get("cross_service") is True:
+            # Dependencies may legitimately emit events for a different AWS
+            # service. Require explicit API prefixes; the flag alone must not
+            # disable validation of the emitted source/eventSource pair.
+            operations = rule.get("monitored_parameters", {})
+            prefixes = {
+                op.split(":", 1)[0] for op in operations
+                if isinstance(op, str) and re.fullmatch(r"[a-z0-9-]+:[A-Za-z0-9]+", op)
+            } if isinstance(operations, dict) else set()
+            if not prefixes:
+                errors.append(
+                    f"CHECK-1 service_prefix: {rule_name} is cross-service but "
+                    "does not declare service:Operation keys in monitored_parameters"
+                )
+                continue
+            allowed_sources = {f"aws.{prefix}" for prefix in prefixes}
+            allowed_event_sources = {f"{prefix}.amazonaws.com" for prefix in prefixes}
 
         # Check source field
         sources = pattern.get("source", [])
         for src in sources:
-            if src != expected_source:
+            if src not in allowed_sources:
                 errors.append(
                     f"CHECK-1 service_prefix: {rule_name} has source "
-                    f"'{src}', expected '{expected_source}'"
+                    f"'{src}', expected one of {sorted(allowed_sources)}"
                 )
 
         # Check eventSource in detail
@@ -241,10 +265,10 @@ def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[st
         if isinstance(detail, dict):
             event_sources = detail.get("eventSource", [])
             for es in event_sources:
-                if es != expected_event_source:
+                if es not in allowed_event_sources:
                     errors.append(
                         f"CHECK-1 service_prefix: {rule_name} has eventSource "
-                        f"'{es}', expected '{expected_event_source}'"
+                        f"'{es}', expected one of {sorted(allowed_event_sources)}"
                     )
 
     return errors
@@ -371,6 +395,50 @@ def _normalize_service_identifier(value: str) -> str:
 # Check 3: Condition keys valid
 # ================================================================
 
+def _verified_cross_service_keys(file_path: str, validated: dict) -> set[str]:
+    """Use documented caller-context keys only in explicitly verified policy types."""
+    name = os.path.basename(file_path).lower()
+    if "scp" in name:
+        policy_types = {"service control policies", "scp"}
+    elif "rcp" in name:
+        policy_types = {"resource control policies", "rcp"}
+    elif any(part in name for part in ("iam-policy", "iam-policies", "permission-boundary")):
+        policy_types = {"identity-based policies", "identity policies", "iam"}
+    else:
+        policy_types = {"resource-based policies"}
+    result = set()
+    iam = validated.get("capabilities", {}).get("iam", {})
+    records = [
+        item for field in ("cross_service_condition_keys", "context_only_condition_keys")
+        for item in (iam.get(field) or []) if isinstance(item, dict)
+    ]
+    aliases = {
+        "identity-based": "identity-based policies",
+        "resource-based": "resource-based policies",
+    }
+    for item in records:
+        if not isinstance(item, dict) or item.get("verified") is not True:
+            continue
+        try:
+            documented = any(
+                isinstance(item.get(field), str)
+                and urlparse(item[field]).hostname in {"docs.aws.amazon.com", "aws.amazon.com"}
+                for field in ("doc_url", "source_url")
+            )
+        except ValueError:
+            documented = False
+        usable = {aliases.get(s.lower(), s.lower())
+                  for s in item.get("usable_in", item.get("policy_types", []))
+                  if isinstance(s, str)}
+        prohibited = {aliases.get(s.lower(), s.lower())
+                      for s in item.get("not_usable_in", item.get("not_supported_in", []))
+                      if isinstance(s, str)}
+        key = item.get("key")
+        if documented and isinstance(key, str) and policy_types & usable and not policy_types & prohibited:
+            result.add(key)
+    return result
+
+
 def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[str]:
     """Verify condition keys in IAM policies match validated.json."""
     errors = []
@@ -380,7 +448,11 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
         if key:
             service_keys.add(key)
 
-    if not service_keys:
+    service_keys.update(_verified_cross_service_keys(file_path, validated))
+    if not service_keys and not any(
+        validated.get("capabilities", {}).get("iam", {}).get(field)
+        for field in ("cross_service_condition_keys", "context_only_condition_keys")
+    ):
         return errors
 
     # KMS key policies may reference KMS service-owned condition keys
@@ -443,20 +515,8 @@ def check_resource_types(file_path: str, data: dict, validated: dict) -> list[st
     if not valid_types:
         return errors
 
-    for key, rule in data.items():
-        if key == "_metadata":
-            continue
-        if not isinstance(rule, dict):
-            continue
-        rt = rule.get("resource_type")
-        if rt and rt not in valid_types:
-            errors.append(
-                f"CHECK-4 resource_type: rule '{key}' has resource_type "
-                f"'{rt}' not found in validated.json assets"
-            )
-        # Also check resource_types (plural)
-        rts = rule.get("resource_types", [])
-        for t in rts:
+    for key, rule in iter_rules(data):
+        for t in resource_types(rule):
             if t not in valid_types:
                 errors.append(
                     f"CHECK-4 resource_type: rule '{key}' has resource_type "
@@ -840,6 +900,9 @@ _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
 # config-rule-lambdas/).
 _REACTIVE_DETECTIVE_BASENAMES = (
     "config-rules.json",
+    "config-org-rules.json",
+    "config-conformance-pack.yaml",
+    "cloudtrail-org-config.json",
     "access-analyzer.json",
     "eventbridge-rules.json",
     "cloudwatch-alarms.json",
@@ -897,7 +960,7 @@ def check_sar_condition_keys_14a(
         return errors
     if not isinstance(data, dict):
         return errors
-    service_keys = _build_sar_key_allowlist(validated)
+    service_keys = _build_sar_key_allowlist(validated) | _verified_cross_service_keys(file_path, validated)
     global_keys_ci = {k.lower() for k in _GLOBAL_CONDITION_KEYS}
     is_kms_key_policy = "kms-key-policy" in os.path.basename(file_path).lower()
 
@@ -1247,7 +1310,9 @@ def check_posture_mechanism_consistency_15(
             f"preventative-proactive→proactive/** or "
             f"detective/compensating-controls-documentation.json; "
             f"reactive-detective→detective/config-rule-lambdas/** or one of "
-            f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
+            f"detective/{{config-rules,config-org-rules,cloudtrail-org-config,"
+            f"access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json or "
+            f"detective/config-conformance-pack.yaml; "
             f"reactive-corrective→responsive/**."
         )
     return errors
@@ -1397,7 +1462,7 @@ def _categorize_file(file_path: str) -> str:
             return "lambda_handler"
         if "eventbridge" in os.path.basename(norm).lower():
             return "eventbridge"
-        if "config-rules" in os.path.basename(norm).lower():
+        if os.path.basename(norm).lower() in {"config-rules.json", "config-org-rules.json"}:
             return "config_rules"
         return "detective"
     if _in("responsive"):

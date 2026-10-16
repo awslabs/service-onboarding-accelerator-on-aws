@@ -843,6 +843,8 @@ def check_controls_generated(data: dict, state_dir: str) -> list[str]:
         for c in controls:
             if isinstance(c, dict):
                 covered.update(c.get("mitigation_ids", []))
+        from threat_model_integrity import valid_disposition
+        covered.update(d.get("mitigation_id") for d in data.get("mitigation_dispositions", []) if valid_disposition(d))
         uncovered = all_mit_ids - covered
         if uncovered:
             errors.append(
@@ -885,6 +887,13 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
     # All three map-* files are in the same phase (04-map/), so we can use direct join
     cg = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
     fw = _load_json(os.path.join(state_dir, "map-framework-parsed.json"))
+    guidance_lookup = _load_json(os.path.join(state_dir, "custom_to_ccmv4_anchor.json"))
+    if isinstance(guidance_lookup, dict) and guidance_lookup.get("purpose") == "advisory_guidance_lookup":
+        from framework_review import DIRECT_EVIDENCE_METHOD
+        if data.get("_metadata", {}).get("framework_mapping_method") != DIRECT_EVIDENCE_METHOD:
+            errors.append("CHECK-S12: custom mapping must declare framework_mapping_method=direct_objective_evidence.")
+    if not isinstance(cg, dict) or not isinstance(cg.get("controls"), list):
+        errors.append("CHECK-S12 Rule7: map-controls-generated.json inventory is required for control review.")
 
     # All objectives present
     if fw:
@@ -980,18 +989,10 @@ def check_framework_mapped(data: dict, state_dir: str) -> list[str]:
                 f"CHECK-S12 Rule6: {f.get('objective_id')} has {full_count} Full Coverage controls (max 5)"
             )
 
-    # Rule 7: Orphaned controls
+    # Rule 7: a genuinely unmatched control needs an explicit framework review.
     if cg:
-        all_mapped = set()
-        for f in fm:
-            for c in f.get("controls", []):
-                cid = c.get("control_id")
-                if cid:
-                    all_mapped.add(cid)
-        all_ctrl_ids = {c["id"] for c in cg.get("controls", []) if c.get("id")}
-        orphans = all_ctrl_ids - all_mapped
-        if orphans:
-            errors.append(f"CHECK-S12 Rule7: {len(orphans)} orphaned controls: {sorted(orphans)}")
+        from framework_review import document_review_errors
+        errors.extend(f"CHECK-S12 {e}" for e in document_review_errors(data, cg.get("controls", [])))
 
     # Coverage summary consistency
     fcs = data.get("framework_coverage_summary", {})
@@ -1032,10 +1033,14 @@ def check_mapping_results(data: dict) -> list[str]:
     controls = data.get("controls", []) if isinstance(data.get("controls"), list) else []
     fm = data.get("framework_mapping", []) if isinstance(data.get("framework_mapping"), list) else []
 
-    # Framework mapping completeness threshold — CCMv4 has 197 objectives;
-    # anything much below that suggests the assembler dropped entries.
-    if len(fm) < 150:
-        errors.append(f"CHECK-S13 framework_mapping: only {len(fm)} entries — expected ~197+")
+    # Completeness belongs to the supplied framework, not a fixed CCMv4 size.
+    framework = data.get("framework") if isinstance(data.get("framework"), dict) else {}
+    expected_total = framework.get("total_objectives")
+    if expected_total is not None and len(fm) != expected_total:
+        errors.append(f"CHECK-S13 framework_mapping: {len(fm)} entries — expected {expected_total} from the supplied framework")
+    objective_ids = [row.get("objective_id") for row in fm]
+    if len(objective_ids) != len(set(objective_ids)):
+        errors.append("CHECK-S13 framework_mapping: duplicate objective IDs")
 
     # Quality gates re-check on assembled data
     # Rule 1: Coverage-level consistency (accepts both new and legacy values)
@@ -1069,18 +1074,9 @@ def check_mapping_results(data: dict) -> list[str]:
     if missing_rationale > 0:
         errors.append(f"CHECK-S13 Rule5: {missing_rationale} mappings missing rationale")
 
-    # Rule 7: Orphans
-    all_mapped_ids = set()
-    for f in fm:
-        for c in f.get("controls", []):
-            cid = c.get("control_id")
-            if cid:
-                all_mapped_ids.add(cid)
-    all_ctrl_ids = {c.get("id", "") for c in controls}
-    orphans = all_ctrl_ids - all_mapped_ids
-    if orphans:
-        # Warning not error — some controls may be compensating
-        pass
+    # The assembled artifact follows the same contract as the mapper.
+    from framework_review import document_review_errors
+    errors.extend(f"CHECK-S13 {e}" for e in document_review_errors(data, controls))
 
     # Bidirectional consistency: fm→controls and controls→fm must agree
     fm_obj_to_ctrls: dict[str, set[str]] = {}
@@ -1112,10 +1108,11 @@ def check_mapping_results(data: dict) -> list[str]:
         errors.append(f"CHECK-S13 bidirectional: {bidir_mismatches} pairs mismatch")
 
     # Mitigation completeness
+    from threat_model_integrity import valid_disposition
     none_mits = [
         t.get("mitigation_id", f"tmm[{i}]")
         for i, t in enumerate(tmm)
-        if t.get("coverage") == "NONE"
+        if t.get("coverage") == "NONE" and not valid_disposition(t.get("disposition"))
     ]
     if none_mits:
         errors.append(f"CHECK-S13 {len(none_mits)} mitigations have NONE coverage: {none_mits}")
@@ -1250,6 +1247,18 @@ def validate_state_file(file_path: str) -> list[str]:
         return [f"JSON syntax error: {e}"]
     except OSError as e:
         return [f"File read error: {e}"]
+
+    if basename == "unmapped-control-reviews.json":
+        # This mapper input is intentionally a bare array. Validate it against
+        # the current inventory instead of applying the generic object rule.
+        state_dir = _phase_dir_of(file_path)
+        mapped = _load_json(os.path.join(state_dir, "map-framework-mapped.json"))
+        generated = _load_json(os.path.join(state_dir, "map-controls-generated.json"))
+        if not isinstance(mapped, dict) or not isinstance(generated, dict):
+            return ["Rule7: mapper output and control inventory are required to validate reviews."]
+        from framework_review import document_review_errors
+        return document_review_errors(
+            {**mapped, "unmapped_control_reviews": data}, generated.get("controls", []))
 
     if not isinstance(data, dict):
         return [f"Expected JSON object, got {type(data).__name__}"]

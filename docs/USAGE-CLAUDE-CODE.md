@@ -76,16 +76,23 @@ mkdir ~/my-service-approval
 cd ~/my-service-approval
 ```
 
-Add the required matching AWS Threat Model JSON export and optional framework:
+Runtime helpers resolve `.service-approval/` under this working directory.
+Bundled scripts, schemas, and reference data remain in the plugin installation.
+Invoke installed scripts by their absolute paths while keeping this working
+directory; do not change into the plugin cache to run them. Helpers invoked from
+temporary directories can retain the original absolute working directory with
+`SERVICE_APPROVAL_WORKSPACE`.
+
+Optionally add a framework or supporting documents:
 ```bash
 mkdir input
-cp /path/to/service-aws-threat-model.json ./input/
 cp /path/to/ccmv4-framework.json ./input/
 ```
 
-The pipeline stops before assessment/research without a valid matching AWS
-Threat Model export. You may instead pass `--threat-model-file=<path>`.
-This requirement also applies to saved intake, resume, and `--no-mcp`.
+Intake retrieves the latest matching model from the public AWS Threat Models
+repository. Missing services and retrieval failures stop the pipeline; local
+exports cannot bypass it. Resume uses the same saved snapshot offline. See
+[Threat Models](THREAT-MODELS.md) for provenance, citations, and migration.
 
 ## Step 4: Start Claude Code
 
@@ -102,19 +109,30 @@ Or open the folder in VS Code with the Claude Code extension active.
 Use the slash command:
 
 ```
-/service-approval --service=s3
+/service-approval --service=lambda
 ```
 
 With custom input files:
 ```
-/service-approval ./input --service=s3
+/service-approval ./input --service=lambda
+```
+
+To select a specific custom framework, use `--framework-file`. Intake preserves
+the supplied framework's name, IDs, and wording. Custom objectives are evaluated
+directly against controls, primarily using citations to the pinned AWS Threat
+Model. CCM wording similarity only suggests optional guidance; low similarity
+does not force uncertain mappings. CCMv4-specific checks do not constitute
+native validation of another framework.
+
+```
+/service-approval ./input --service=lambda --framework-file=./input/customer-framework.xlsx
 ```
 
 With additional flags:
 ```
 /service-approval ./input --service=bedrock-agentcore --framework=ccmv4
 /service-approval --service=kms --dry-run
-/service-approval ./input --service=s3 --clean
+/service-approval ./input --service=lambda --clean
 ```
 
 ## Step 6: Follow the pipeline

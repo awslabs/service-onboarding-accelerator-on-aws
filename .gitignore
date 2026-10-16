@@ -61,14 +61,17 @@ Thumbs.db
 # Per-user intake config (filled in by the user before each pipeline run;
 # the plugin's intake template lives at skills/intake/intake-template.yaml).
 service-approval-intake.yaml
-# AWS Threat Model data must not be committed (product/provenance policy).
-# Real threat-model files are supplied at runtime, not stored in the repo.
-# Both the current and the legacy filenames are ignored so neither gets
-# committed by accident.
-input/*.json
-!input/sar-slugs.json
-input/*threat-model*.json
-input/*canopy*.json
-input/dsql.json
+# Keep only the shipped default input examples. Every user-added file or
+# directory below input/ is runtime material, regardless of name or format.
+/input/*
+!/input/CCMv4-sample.xlsx
+!/input/sar-slugs.json
+
+# Supported workspace conventions for custom inputs and test-run material.
+/inputs/
+/input-*/
+/input_*/
+/runs/
+# Arbitrarily named input folders should live outside the repository.
 **/*-threat-model.json
 **/*-canopy.json

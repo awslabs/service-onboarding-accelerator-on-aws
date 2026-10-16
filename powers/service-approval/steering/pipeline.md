@@ -37,11 +37,15 @@ orchestrator; do not deviate from the steps it prescribes.
 
 ## Precursor — Intake
 
-Before external work, Intake MUST validate a matching AWS Threat Model JSON
-export with `tools/validate/validate_threat_model_input.py`. Record the selected
-absolute path as `inputs.threat_model_file`. Revalidate with `--manifest` before
-Assess, and with `--slug` before every later/resumed phase. Nonzero exit halts the
-pipeline in every mode; MITRE defaults, flags, and cached state cannot replace it.
+Before MCP/assessment/research, Intake MUST retrieve the latest published model
+with `tools/validate/fetch_threat_model.py --service <name>` and record the returned
+`inputs.threat_model_file` and `inputs.threat_model_source`. Validate with
+`--manifest` before Assess and `--slug` between phases. At every entry that resumes
+saved state, validate the saved snapshot offline. Only new runs fetch latest;
+upstream changes do not affect resume. Source defects are advisory and disclosed.
+Missing services, retrieval errors, local exports, flags, and cached state cannot
+bypass the published-model gate. Follow the canonical orchestrator's lifecycle.
+
 
 **Sub-skill:** `skills/intake/SKILL.md`
 **Agent:** `sa-intake`

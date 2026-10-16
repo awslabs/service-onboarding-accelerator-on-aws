@@ -8,6 +8,7 @@ citations fail.
 from __future__ import annotations
 
 import json
+from threat_model_test_support import source_receipt
 import sys
 from pathlib import Path
 
@@ -158,7 +159,7 @@ def test_check_service_locates_threat_model_via_manifest(tmp_path: Path, monkeyp
     (inp / "agentcore-threat-model.json").write_text(json.dumps(_threat_model()))
     (root / "00-intake" / "intake-manifest.json").write_text(json.dumps(
         {"service": {"name": "bedrock-agentcore"},
-         "inputs": {"threat_model_file": "input/agentcore-threat-model.json"}}
+         "inputs": {"threat_model_file": "input/agentcore-threat-model.json", "threat_model_source": source_receipt(inp / "agentcore-threat-model.json", "bedrock-agentcore")}}
     ))
     # A fabricated alias in the mapping must be caught end-to-end.
     (root / "04-map" / "mapping-results.json").write_text(json.dumps(
@@ -270,7 +271,7 @@ def test_check_service_reads_fw_mapped(tmp_path: Path, monkeypatch) -> None:
     (inp / "c.json").write_text(json.dumps(_threat_model()))
     (root / "00-intake" / "intake-manifest.json").write_text(json.dumps(
         {"service": {"name": "bedrock-agentcore"},
-         "inputs": {"threat_model_file": "input/c.json"}}
+         "inputs": {"threat_model_file": "input/c.json", "threat_model_source": source_receipt(inp / "c.json", "bedrock-agentcore")}}
     ))
     (root / "04-map" / "map-framework-mapped.json").write_text(json.dumps(
         _fw_mapped("MAPPED", {"source": "threat_model",
@@ -292,7 +293,7 @@ def _write_run(tmp_path: Path, fw_mapped: dict) -> Path:
     (inp / "c.json").write_text(json.dumps(_threat_model()))
     (root / "00-intake" / "intake-manifest.json").write_text(json.dumps(
         {"service": {"name": "bedrock-agentcore"},
-         "inputs": {"threat_model_file": "input/c.json"}}
+         "inputs": {"threat_model_file": "input/c.json", "threat_model_source": source_receipt(inp / "c.json", "bedrock-agentcore")}}
     ))
     (root / "04-map" / "map-framework-mapped.json").write_text(json.dumps(fw_mapped))
     return root

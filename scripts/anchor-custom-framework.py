@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Semantically anchor a custom / non-CCMv4 framework's objectives to CCMv4.
+"""Find optional CCMv4 guidance for custom-framework objectives by text similarity.
 
 When the active framework has no `data/domain-mapping-guidance/<fw>.json` of its
 own, the per-domain mapping guidance (allow/deny classes, coverage ceilings,
-applicability) has nothing to key on. Rather than fall back to an unconstrained
-single pass, anchor each custom objective to its nearest CCMv4 objective(s) by
-DESCRIPTION (not by ID) and reuse that CCMv4 objective's guidance.
+applicability) has nothing to key on. Suggest nearby CCMv4 descriptions as
+optional reading; assess the custom objective directly against source-backed
+controls regardless of whether a useful CCMv4 counterpart is found.
 
 The match is deterministic and reproducible — a TF-IDF cosine over the custom
 objective's title+specification text against every CCMv4 objective's title+intent
@@ -26,9 +26,10 @@ Output `custom_to_ccmv4_anchor.json`:
       }
     }
 
-A custom objective whose best match scores below the threshold is marked
-`uncertain` — the mapper maps it UNCERTAIN and flags it for review rather than
-force-fitting the nearest (weak) CCMv4 guidance onto it.
+The legacy `anchored` / `uncertain` labels describe this lookup, not the
+objective-to-control mapping. The mapper evaluates the original requirement
+directly, using AWS Threat Model citations as primary evidence. A weak match
+does not prevent an evidenced mapping; a strong match does not prove one.
 
 Usage:
     python3 scripts/anchor-custom-framework.py --slug <slug> [--threshold 0.7]
@@ -175,6 +176,9 @@ def build_result(parsed: dict, threshold: float) -> dict:
     return {
         "schema_version": "1.0",
         "framework": framework.get("name") or parsed.get("framework_name") or "custom",
+        "purpose": "advisory_guidance_lookup",
+        "mapping_status_authority": False,
+        "primary_control_evidence": "aws_threat_model",
         "threshold": threshold,
         "anchors": anchors,
         "summary": {

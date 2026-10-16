@@ -15,21 +15,21 @@ enforce turn-taking yourself by following the hard rules below.
 
 ## Mandatory AWS Threat Model prerequisite
 
-Every service requires a matching AWS Threat Model JSON export. Read the
-canonical gate in `skills/intake/SKILL.md` and run
-`python3 tools/validate/validate_threat_model_input.py --service "<service>" --threat-model-file "<path>"`
-before completing intake. Use the installed plugin's absolute script path when
-outside the repository. `--from-intake` skips questions, never this gate.
-`--no-mcp`, cached state, and a MITRE-only framework choice do not waive it.
-A framework or mitigation report alone is insufficient. On failure, STOP.
+Every service requires a published AWS Threat Model. Follow the canonical
+gate in `skills/intake/SKILL.md`: run
+`python3 tools/validate/fetch_threat_model.py --service "<service>"`
+and merge the emitted inputs fragment into the intake manifest. Use an absolute
+script path when outside the plugin repository. Do not ask for a local model.
+Missing services, retrieval errors, and invalid models MUST stop intake.
+Explicit local export overrides are no longer supported. No flags bypass this.
 
-Accept an explicit `--threat-model-file` / YAML `input.threat_model_file`, or
-discover exactly one matching export using `--input-folder`. If no file is
-supplied/found, ask for its path after Step 1 and wait for the reply.
-Record its validated absolute path in `inputs.threat_model_file`,
-`inputs.input_files` (type `threat_model`), and set
-`inputs.has_custom_threat_model: true`. After writing the manifest, run the
-validator with `--manifest "<manifest-path>"` and STOP on nonzero exit.
+Record the downloaded `inputs.threat_model_file`, full `threat_model_source`,
+`inputs.input_files` entry (type `threat_model`), and
+`inputs.has_custom_threat_model: true`. Validate the manifest with
+`validate_threat_model_input.py --manifest "<manifest-path>"`.
+On resume, validate the same snapshot offline; do not fetch or replace intake.
+Upstream changes do not affect this run. Only a new run fetches the latest model.
+Source-link/report defects are advisory and must be surfaced by audit_threat_model.py.
 
 ## Hard rules — read before every prompt
 
@@ -106,11 +106,11 @@ validator with `--manifest "<manifest-path>"` and STOP on nonzero exit.
 
 ---
 
-## Step 0 — Input folder and export location
+## Step 0 — Optional supporting input folder
 
 Use the input-location flow in `skills/intake/SKILL.md` section
-"0. Input folder and export location" — but the hard rules above still apply:
-stop and ask, never infer. If `./input/` already exists, skip Step 0.
+"0. Optional supporting input folder". A missing default folder is acceptable;
+the model is fetched automatically after the requested service is known.
 
 ## Step 1 — Service name (required)
 
@@ -123,8 +123,9 @@ Examples: s3, lambda, kms, ecs, dynamodb, bedrock-agentcore-control
 Reply with the service identifier (lowercase, hyphenated).
 ```
 
-End the turn with `>>> WAITING FOR YOUR REPLY`. Validate the reply
-against `data/sar-slugs.json`. If not found, warn and ask again.
+End the turn with `>>> WAITING FOR YOUR REPLY`. After the reply, run the
+published-model fetch gate. Use its namespace; do not reject newly published
+services merely because the bundled SAR slug map lacks an entry.
 
 ## Step 2 — Security framework (required)
 
@@ -175,7 +176,7 @@ Render this summary verbatim, substituting collected values:
 ├─────────────────────────────────────────────────────────────┤
 │  Service:          {service_name}                           │
 │  Framework:        {framework_type or "MITRE-only"}         │
-│  AWS Threat Model: {validated_export_path}                 │
+│  AWS Threat Model: {published_model_url}                 │
 │  ATT&CK analysis:  always-on enrichment                    │
 └─────────────────────────────────────────────────────────────┘
 ```

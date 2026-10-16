@@ -44,7 +44,7 @@ supplementary threat documents. Detection rules:
 | `*STRIDE*`, `*threat*model*` (md/docx) | STRIDE | Extract 6 STRIDE categories |
 | `*threat*catalog*`, `*threat*register*` (xlsx/json) | Custom | Parse ID, name, category, severity columns |
 | Mitigation report with STRIDE keywords | STRIDE (implicit) | Extract from mitigation context |
-| **Required AWS Threat Model missing/invalid** | **Prerequisite failure** | **STOP; request the matching AWS Threat Model JSON export** |
+| **Required AWS Threat Model missing/invalid** | **Prerequisite failure** | **STOP; return to Intake for published model retrieval** |
 
 **AWS Threat Model detector (must run BEFORE the MITRE default):** for every `.json`
 file in the input folder, peek at its top-level keys. If the file has both a
@@ -125,7 +125,7 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`mitre-attack`, `awsknowledge`, `kb-search`, etc.). When the bundled-snapshot fallback is used (per the fallback rule above), no MCP event is emitted — that is correct, but the agent should log a `skill:research-attack-surface:retry` event noting the fallback so the audit trail explains the gap.
+Substitute `<server>` with the MCP server name (`mitre-attack`, `awsknowledge`, `aws-documentation`). When the bundled snapshot is used, emit no MCP event. Log `skill:research-attack-surface:pass` for the normal default (optional server not configured), or `skill:research-attack-surface:retry` if an enabled server failed. Missing optional configuration is not an error.
 
 ## No-MCP mode
 
@@ -181,27 +181,29 @@ This enrichment step always runs after the mandatory AWS Threat Model input gate
 ATT&CK technique data has two sources, in preference order:
 
 1. **`mitre-attack` MCP** (live MITRE ATT&CK knowledge base, source:
-   https://github.com/stoyky/mitre-attack-mcp). Always-on MCP shipped with this
-   plugin. Query it for technique details, sub-techniques, and tactic
-   relationships. Prefer this — it tracks the latest ATT&CK release.
+   https://github.com/stoyky/mitre-attack-mcp). Optional and disabled by default.
+   Use it only when the user has configured it. Query technique details,
+   sub-techniques, and tactic relationships. Do not install or require it.
 2. **`data/attack-cloud-matrix.json`** (bundled snapshot, schema_version 1.0,
-   ATT&CK 16.1). Fallback when the MCP fails to spawn or the user is offline.
+   ATT&CK 16.1). Default when the optional MCP is not configured; also the fallback on failure.
    Always present in the repo, so this branch always works.
 
 ```python
 import json
 
-# Try MCP first
+# The agent sets mitre_mcp_enabled from the user's MCP configuration.
+# Do not attempt an MCP call when the optional server is not configured.
 cloud_matrix = None
-try:
-    # mitre-attack MCP exposes get_techniques / get_tactics / get_technique_by_id
-    # Pseudocode — the agent should issue actual MCP tool calls here.
-    cloud_matrix = mcp_call("mitre-attack", "list_techniques",
-                             {"matrix": "enterprise-attack",
-                              "platforms": ["IaaS", "SaaS", "Identity Provider"]})
-except Exception as e:
-    # MCP unavailable (server didn't spawn, timed out, etc.) — fall back
-    print(f"mitre-attack MCP unreachable ({e}); using bundled snapshot")
+if mitre_mcp_enabled:
+    try:
+        # mitre-attack MCP exposes get_techniques / get_tactics / get_technique_by_id
+        # Pseudocode — the agent should issue actual MCP tool calls here.
+        cloud_matrix = mcp_call("mitre-attack", "list_techniques",
+                                 {"matrix": "enterprise-attack",
+                                  "platforms": ["IaaS", "SaaS", "Identity Provider"]})
+    except Exception as e:
+        # MCP unavailable (server didn't spawn, timed out, etc.) — fall back
+        print(f"mitre-attack MCP unreachable ({e}); using bundled snapshot")
 
 # Fallback: bundled JSON
 if not cloud_matrix:

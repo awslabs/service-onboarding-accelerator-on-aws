@@ -42,6 +42,7 @@ from pathlib import Path
 
 # Repo root on path for tools.paths (optional — only used for --slug resolution).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tools.validate.framework_review import referenced_controls, review_errors
 
 # Canonical CCMv4 domain order. Partials are concatenated in this order so the
 # merged file is stable regardless of filesystem iteration order.
@@ -167,7 +168,7 @@ def build_coverage_summary(
 
 
 def run_quality_gates(
-    mappings: list[dict], all_control_ids: set[str] | None
+    mappings: list[dict], all_control_ids: set[str] | None, reviews=None
 ) -> tuple[dict, list[str]]:
     """Run the cross-domain quality gates. Returns (results_dict, failures)."""
     failures: list[str] = []
@@ -230,14 +231,11 @@ def run_quality_gates(
 
     # Rule 7 — orphaned controls (needs the full control set).
     orphaned: list[str] = []
+    rule7_errors = []
     if all_control_ids is not None:
-        mapped_ids = {
-            c["control_id"]
-            for m in mappings
-            for c in m.get("controls", [])
-            if c.get("control_id")
-        }
-        orphaned = sorted(all_control_ids - mapped_ids)
+        orphaned = sorted(all_control_ids - referenced_controls(mappings))
+        rule7_errors = review_errors(mappings, all_control_ids, reviews if reviews is not None else [])
+        failures.extend(rule7_errors)
 
     results = {
         "rule_1_coverage_level_consistency": "PASS",
@@ -246,7 +244,7 @@ def run_quality_gates(
         "rule_4_org_process_domains": "PASS",
         "rule_5_rationale_present": rule5,
         "rule_6_max_5_full_per_objective": rule6,
-        "rule_7_orphan_review": "PASS",
+        "rule_7_orphan_review": "FAIL" if rule7_errors else ("PASS" if all_control_ids is not None else "NOT_CHECKED"),
         "orphaned_controls": orphaned,
     }
     return results, failures
@@ -256,6 +254,7 @@ def merge(
     by_prefix: dict[str, list[dict]],
     fw_parsed: dict,
     controls: list[dict] | None,
+    reviews=None,
 ) -> dict:
     """Assemble the merged map-framework-mapped.json content."""
     parsed_objectives = fw_parsed.get("framework_objectives", [])
@@ -270,7 +269,7 @@ def merge(
     all_control_ids = (
         {c["id"] for c in controls if c.get("id")} if controls is not None else None
     )
-    quality, _failures = run_quality_gates(mappings, all_control_ids)
+    quality, _failures = run_quality_gates(mappings, all_control_ids, reviews)
 
     framework = fw_parsed.get("framework", {}) or {}
     out: dict = {
@@ -279,6 +278,7 @@ def merge(
         "framework_mapping": mappings,
         "framework_coverage_summary": summary,
         "quality_gate_results": quality,
+        "unmapped_control_reviews": reviews if reviews is not None else [],
     }
     if framework.get("name"):
         out["framework_name"] = framework["name"]
@@ -317,6 +317,7 @@ def main() -> int:
                         "(default: <map>/_domains)")
     parser.add_argument("--parsed", help="path to map-framework-parsed.json")
     parser.add_argument("--controls", help="path to map-controls-generated.json")
+    parser.add_argument("--reviews", help="JSON array of reviews (default: <map>/unmapped-control-reviews.json)")
     parser.add_argument("--out", help="output path (default: <map>/map-framework-mapped.json)")
     args = parser.parse_args()
 
@@ -340,16 +341,22 @@ def main() -> int:
         out_path = Path(args.out)
 
     fw_parsed = _load_json(parsed_path)
-    controls = None
-    if controls_path and controls_path.exists():
-        controls = _load_json(controls_path).get("controls", [])
+    if not controls_path or not controls_path.exists():
+        print("ERROR: control inventory is required to validate Rule 7 (--controls or --slug).", file=sys.stderr)
+        return 1
+    controls = _load_json(controls_path).get("controls", [])
+    reviews_path = Path(args.reviews) if args.reviews else out_path.parent / "unmapped-control-reviews.json"
+    if args.reviews and not reviews_path.exists():
+        print(f"ERROR: reviews file not found: {reviews_path}", file=sys.stderr)
+        return 1
+    reviews = _load_json(reviews_path) if reviews_path.exists() else []
 
     by_prefix = collect_partials(domains_dir)
     if not by_prefix:
         print(f"ERROR: no per-domain partials found in {domains_dir}", file=sys.stderr)
         return 1
 
-    merged = merge(by_prefix, fw_parsed, controls)
+    merged = merge(by_prefix, fw_parsed, controls, reviews)
 
     completeness = check_completeness(
         merged["framework_mapping"], fw_parsed.get("framework_objectives", [])
@@ -371,7 +378,7 @@ def main() -> int:
     fails = [k for k, v in qg.items() if v == "FAIL"]
     print(f"  Quality gates: {'all PASS' if not fails else 'FAIL: ' + ', '.join(fails)}")
     print(f"  Orphaned controls: {len(qg.get('orphaned_controls', []))}")
-    return 0
+    return 1 if fails else 0
 
 
 if __name__ == "__main__":

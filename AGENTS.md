@@ -33,7 +33,7 @@ that identifies it and tells agents when to activate it.
 are invoked from this one.
 
 Agents should:
-1. Read the user's request for an AWS service name and a required matching AWS Threat Model JSON export (input folder or `--threat-model-file`).
+1. Read the user's requested AWS service name; Intake retrieves the latest matching published AWS Threat Model automatically.
 2. Activate the `service-approval` skill.
 3. Follow the pipeline steps in the skill body.
 4. Write all state to `.service-approval/<service-slug>/` (per-service, per-phase layout).
@@ -60,15 +60,18 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
 
 ## Hard rules (enforced at Stop hook time)
 
-0. A matching AWS Threat Model JSON export is mandatory for every service.
-   Run `tools/validate/validate_threat_model_input.py` before assessment/research
-   and again on resume. Missing, malformed, or wrong-service input halts the
-   pipeline; no flag or saved state bypasses it. Record the validated absolute
-   source path in `inputs.threat_model_file` in the intake manifest.
-   Real AWS Threat Model exports are local runtime inputs: NEVER commit or
-   upload them to the repository, including renamed copies or model-derived
-   runtime state. Prefer an external path via `--threat-model-file`; use only
-   synthetic, hand-authored model fixtures in repository tests.
+0. A matching published AWS Threat Model is mandatory for every service.
+   Run `tools/validate/fetch_threat_model.py --service <name>` before assessment
+   or research, and record its `threat_model_file` and `threat_model_source`
+   inputs fragment in the intake manifest. On every entry/resume with saved state,
+   run `validate_threat_model_input.py --slug <slug>` offline using the original
+   snapshot. Only new intake fetches latest. A missing/modified local snapshot
+   halts resume; upstream changes do not. Source-link and readable-report defects
+   are advisory and must be disclosed by `audit_threat_model.py` (P14). No local export or flag bypasses this requirement.
+   Between phases, hooks verify the immutable snapshot and provenance locally.
+   Downloaded models and derived runtime state remain under ignored
+   `.service-approval/`; NEVER commit them. Tests use only synthetic fixtures.
+   See `docs/THREAT-MODELS.md` for retrieval and readable citation behavior.
 
 1. Never write a one-shot generator script that hardcodes state or controls. Run every
    phase through its `SKILL.md`.
@@ -105,7 +108,6 @@ on `docs.aws.amazon.com`. See [How no-MCP mode works](docs/NO-MCP.md) and
 | `.agents/skills/` | Symlink to `skills/` (cross-tool compatibility alias) |
 | `schemas/` | 11 JSON Schemas for pipeline state files |
 | `tools/validate/` | Python validators + hooks (runs at PostToolUse + Stop) |
-| `tools/kb-search-mcp/` | Bedrock KB search MCP server |
 | `data/` | SAR slug map, launch-type constraints, KMS consumer specs |
 | `rules/` | Safety rules applied across all phases |
 | `.claude-plugin/` | Claude Code plugin manifest |

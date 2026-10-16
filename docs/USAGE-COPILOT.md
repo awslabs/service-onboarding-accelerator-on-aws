@@ -96,17 +96,17 @@ Copilot auto-discovers the plugin — no install step required. It reads:
 For running the plugin, open a **separate folder** — not the plugin repo:
 
 1. Create a new folder: `mkdir ~/my-service-approval`
-2. Add the required matching AWS Threat Model JSON export and optional framework:
+2. Optionally add a framework or supporting documents:
    ```bash
    mkdir ~/my-service-approval/input
-   cp /path/to/service-aws-threat-model.json ~/my-service-approval/input/
    cp /path/to/ccmv4-framework.json ~/my-service-approval/input/
    ```
 3. Open this folder in VS Code: **File** → **Open Folder** → select `~/my-service-approval/`
 
-The pipeline stops before assessment/research without a valid matching AWS
-Threat Model export. You may instead pass `--threat-model-file=<path>`.
-This requirement also applies to saved intake, resume, and `--no-mcp`.
+Intake retrieves the latest matching model from the public AWS Threat Models
+repository. Missing services and retrieval failures stop the pipeline; local
+exports cannot bypass it. Resume uses the same saved snapshot offline. See
+[Threat Models](THREAT-MODELS.md) for provenance, citations, and migration.
 
 > **Note:** The agent and MCP configs live in the plugin repo. If running from a
 > different folder, copy `.vscode/mcp.json` and `.github/` from the plugin repo
@@ -123,19 +123,19 @@ This requirement also applies to saved intake, resume, and `--no-mcp`.
 Type in Copilot Chat:
 
 ```
-@service-approval ./input --service=s3
+@service-approval ./input --service=lambda
 ```
 
-Or select the required export explicitly:
+A run without optional supporting documents:
 ```
-@service-approval --service=bedrock-agentcore --threat-model-file="/path/to/agentcore-aws-threat-model.json"
+@service-approval --service=dsql
 ```
 
 With additional flags:
 ```
 @service-approval ./input --service=kms --framework=ccmv4
 @service-approval --service=lambda --dry-run
-@service-approval ./input --service=s3 --clean
+@service-approval ./input --service=lambda --clean
 ```
 
 ## Step 6: Approve MCP connections
@@ -143,10 +143,9 @@ With additional flags:
 On first run, Copilot may prompt you to approve MCP server connections:
 - `aws-documentation` — AWS docs lookup
 - `awsknowledge` — AWS knowledge base
-- `mitre-attack` — MITRE ATT&CK techniques
+- Optional `mitre-attack` — appears only if you [enable it](MCP.md); otherwise the bundled ATT&CK snapshot is used.
 
-Click **Allow** for each. These are read-only research tools. Two additional
-servers (`kb-search`, `iam`) are optional and used only when configured.
+Click **Allow** for each. These are read-only research tools.
 
 > **Running without MCP:** the pipeline can also run with no MCP servers at all,
 > using web access instead. See [Running without MCP](#running-without-mcp) below.

@@ -281,3 +281,8 @@ def test_log_phase_event_backward_compat(tmp_sa, monkeypatch):
     content = (tmp_sa[2] / "pipeline.log").read_text()
     assert "[04-map]" in content
     assert "[hook:check-phase-complete:pass]" in content
+
+
+def test_downloaded_source_path_is_not_a_service_slug():
+    from _hook_log import _slug_and_phase_from_path
+    assert _slug_and_phase_from_path("/workspace/.service-approval/_sources/commit/model.json") == (None, None)

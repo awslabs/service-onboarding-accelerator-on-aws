@@ -106,7 +106,7 @@ Cultural rules (skill-based execution, no one-shot generator scripts) live in [`
 > `kiro-cli` separately and is being re-evaluated; for new CI pipelines,
 > consider Claude Code CLI (`install-claude.sh`).
 
-Kiro CLI 2.0 headless mode works with this Power when `kiro-cli` is installed manually. Set `KIRO_API_KEY`, pass `--no-interactive --trust-tools="aws-documentation,awsknowledge,kb-search"`. Full recipe in [`steering/headless.md`](steering/headless.md).
+Kiro CLI 2.0 headless mode works with this Power when `kiro-cli` is installed manually. Set `KIRO_API_KEY`, pass `--no-interactive --trust-tools="aws-documentation,awsknowledge"`. Full recipe in [`steering/headless.md`](steering/headless.md).
 
 ## Updating
 

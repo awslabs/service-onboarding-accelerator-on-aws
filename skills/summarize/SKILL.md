@@ -230,3 +230,41 @@ Framework: {name} — {mapped} / {total} objectives covered
 Threat model: {threat_model_name} — {covered} / {total} techniques covered (if attack_coverage present)
 Total control artifacts: N
 ```
+
+
+## Published threat-model provenance
+
+Read `inputs.threat_model_source` from Intake. Include the published readable
+`report_url`, fetched commit, and retrieval date in the summary's source details.
+Use the index's `threat_model_url` or assembled controls' `threat_model_urls` when
+showing mitigation/implementation aliases. These links target verified headings
+at the fetched commit, so upstream changes do not move the evidence. Preserve AWS
+documentation and reference-policy citations alongside them; the readable model
+link does not replace capability or policy-feasibility verification.
+
+
+## Mandatory integrity disclosure
+
+After writing `SUMMARY-REPORT.md`, run:
+
+```bash
+python3 tools/validate/audit_threat_model.py --slug <slug>
+```
+
+This updates a concise source/processing-check appendix at the end of
+`04-map/framework-mapping.md`, below the citation/review sections, and removes
+obsolete integrity banners from the summary and control catalog. You MUST keep
+this information in that appendix instead of copying it above the report body.
+Preserve the generated appendix and its link to the detailed audit.
+The integrity JSON and Markdown files at the service root account for every
+original source mitigation and list source defects, processing gaps, and recorded
+ID repairs. Source-reference findings, pipeline-processing findings, and completed
+corrections are distinct; corrections to generated output are not upstream defects.
+Findings are advisory. No acceptance flag is required, and their
+presence must not be described as a failed source prerequisite. P14 blocks only
+missing/stale/edited disclosure, not a nonzero finding count.
+
+Generated alias/UUID mismatches and invalid dispositions remain authoring errors:
+repair them against the unambiguous snapshot before final disclosure. P14 rejects
+those errors even when listed, while source defects and honest unresolved
+coverage remain advisory.

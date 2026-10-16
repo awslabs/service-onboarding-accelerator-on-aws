@@ -434,6 +434,20 @@ in `validated.json.api_surface.operations[].parameters[]`:
 3. **Every min/max/pattern constraint (TF `validation`, CFN `MinValue`/`MaxValue`/
    `AllowedPattern`) MUST come from `parameters[].min` / `parameters[].max` /
    `parameters[].pattern`.**
+4. **Customer approval lists are required configuration, not AWS enums.** When a
+   control requires customer-approved identities, profiles, instance types, or
+   similar values, you MUST use required rule input parameters rather than invent
+   approved values or omit the control. For Guard, verify and use its documented
+   [`--input-parameters` interface](https://docs.aws.amazon.com/cfn-guard/latest/ug/using-input-parameters.html).
+   Keep the trusted approval list separate from the template being evaluated.
+   You MUST emit the required configuration structure with no fabricated defaults
+   and document how the customer supplies it. For applicable resources, missing
+   or empty lists MUST fail closed. Test allowed, disallowed, missing, and empty
+   inputs using explicitly synthetic test values kept outside customer outputs.
+   The report MUST say that the control requires customer configuration; do not
+   imply that an approval list has already been supplied or deployed. If the
+   mechanism cannot support this parameterization, report the limitation instead
+   of shipping a rule that always passes or claiming an artifact was authored.
 
 Validator CHECK-14b enforces rule 2 at hook time by scanning the artifact body for
 enum-style literal lists and verifying every uppercase-literal value exists in

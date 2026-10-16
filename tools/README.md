@@ -1,11 +1,10 @@
 # `tools/`
 
-Shared scripts for validation, MCP integration, post-processing, and cross-IDE sync. Every agentic client (Claude Code, Kiro) reaches into this directory through its own hook or command system.
+Shared scripts for validation, post-processing, and cross-IDE sync. Every agentic client (Claude Code, Kiro) reaches into this directory through its own hook or command system.
 
 | Dir / File | Purpose |
 |------------|---------|
 | `validate/` | Python validators for state files, controls, and pipeline integrity. Run at `PostToolUse` and `Stop` hook time. |
-| `kb-search-mcp/` | Local MCP server that proxies a Bedrock Knowledge Base (optional — point at your organization's mitigations or threat-model knowledge base). |
 | `post-process/` | Deterministic post-processors that run after the pipeline (e.g., canonicalizing output JSON shapes). |
 | `sync-ide-configs.py` | Regenerates per-client manifests from `manifest.yaml`. |
 

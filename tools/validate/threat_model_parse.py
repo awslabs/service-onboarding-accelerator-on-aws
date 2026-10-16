@@ -51,9 +51,19 @@ def is_threat_model_threats_shape(data: dict[str, Any]) -> bool:
     )
 
 
-def _entity_resource_type(entity: dict[str, Any]) -> str:
-    """Recover a resource_type string from an AWS Threat Model entity entry."""
-    return entity.get("resource_type") or entity.get("entityType") or ""
+def _entity_resource_types(entity: dict[str, Any]) -> list[str]:
+    """Read published CFN identifiers, preserving multiple types and legacy input."""
+    identifiers = entity.get("identifiers")
+    if isinstance(identifiers, dict):
+        types = identifiers.get("cfnResourceTypes")
+        if isinstance(types, list):
+            found = _dedup(t for t in types if isinstance(t, str) and t.startswith("AWS::"))
+            if found:
+                return found
+    legacy = entity.get("resource_type") or entity.get("entityType")
+    # Published entityType can be a semantic label ("RESOURCE"). Never invent
+    # a CFN type from that label.
+    return [legacy] if isinstance(legacy, str) and legacy.startswith("AWS::") else []
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +144,52 @@ def _collect_scoping_context(context_entries: list[Any]) -> list[str]:
     return out
 
 
+def _normalize_guide(value: Any) -> Any:
+    """Normalize known published structural keys, retaining opaque policy keys."""
+    keys = {
+        "authorizationPolicy": "authorization_policy",
+        "roleTrustPolicy": "role_trust_policy",
+        "governedIamPermissions": "governed_iam_permissions",
+        "governedResourceType": "governed_resource_type",
+        "conditionKeys": "condition_keys",
+        "configRule": "config_rule",
+        "ruleType": "rule_type",
+        "governedApiOperations": "governed_api_operations",
+        "cloudtrailEvent": "cloudtrail_event",
+        "monitoredOperations": "monitored_operations",
+        "requestParameters": "request_parameters",
+        "responseParameters": "response_parameters",
+        "cloudformationHook": "cloudformation_hook",
+        "governedResourceProperties": "governed_resource_properties",
+        "resourceType": "resource_type",
+        "declarativePolicy": "declarative_policy",
+        "policyType": "policy_type",
+        "governedAttributes": "governed_attributes",
+    }
+    if isinstance(value, dict):
+        return {keys.get(k, k): _normalize_guide(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_guide(v) for v in value]
+    return value
+
+
+def _permission_values(values: list[Any], field: str) -> list[str]:
+    result = []
+    for value in values or []:
+        if isinstance(value, str):
+            result.append(value)
+        elif isinstance(value, dict):
+            if isinstance(value.get(field), str):
+                result.append(value[field])
+            result.extend(_permission_values(value.get("alternatives", []), field))
+    return _dedup(result)
+
+
+def _guide_operations(values: list[Any]) -> list[dict[str, Any]]:
+    return [({"operation": op} if isinstance(op, str) else op)
+            for op in values or [] if isinstance(op, (str, dict))]
+
+
 def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
     """Normalize a typed `implementationGuide` into a flat, uniform shape.
 
@@ -154,13 +210,24 @@ def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
         "governed_resource_properties": [],
         "governed_attributes": [],
         "policy_type": "",
+        "guidance": "",
     }
     if not isinstance(guide, dict):
         return parsed
+    guide = _normalize_guide(guide)
 
-    auth = guide.get("authorization_policy")
+    guidance = guide.get("guidance")
+    if isinstance(guidance, dict):
+        parsed["guidance"] = str(guidance.get("description", "") or "")
+
+    auth = guide.get("authorization_policy") or guide.get("role_trust_policy")
     if isinstance(auth, dict):
-        perms = [p for p in auth.get("governed_iam_permissions", []) if isinstance(p, dict)]
+        perms = [
+            {**p, "actions": _permission_values(p.get("actions", []), "action"),
+             "resources": _permission_values(p.get("resources", []), "resource"),
+             "condition_keys": _permission_values(p.get("condition_keys", []), "key")}
+            for p in auth.get("governed_iam_permissions", []) if isinstance(p, dict)
+        ]
         parsed["authorization_policy"] = perms
         parsed["governed_resource_type"] = str(auth.get("governed_resource_type", "") or "")
         actions, resources, condition_keys = [], [], []
@@ -177,15 +244,13 @@ def _parse_implementation_guide(guide: dict[str, Any]) -> dict[str, Any]:
     config_rule = guide.get("config_rule")
     if isinstance(config_rule, dict):
         parsed["config_rule_type"] = str(config_rule.get("rule_type", "") or "")
-        parsed["governed_api_operations"] = [
-            op for op in config_rule.get("governed_api_operations", []) if isinstance(op, dict)
-        ]
+        parsed["governed_api_operations"] = _guide_operations(
+            config_rule.get("governed_api_operations", []))
 
     cloudtrail = guide.get("cloudtrail_event")
     if isinstance(cloudtrail, dict):
-        parsed["monitored_operations"] = [
-            op for op in cloudtrail.get("monitored_operations", []) if isinstance(op, dict)
-        ]
+        parsed["monitored_operations"] = _guide_operations(
+            cloudtrail.get("monitored_operations", []))
 
     hook = guide.get("cloudformation_hook")
     if isinstance(hook, dict):
@@ -219,7 +284,7 @@ def parse_threat_model_implementations(data: dict[str, Any]) -> list[dict[str, A
 
     Each output entry carries:
       - id / alias: the source `id` (UUID) and `alias`
-      - behavior: PREVENTIVE | PROACTIVE | DETECTIVE
+      - behavior: PREVENTIVE | PROACTIVE | DETECTIVE | DIRECTIVE
       - implementation_type: the raw `implementationType`
       - mechanism: mapped to the pipeline vocab (SCP / RCP / Resource Policy /
         Declarative Policy / CFN Hook / Config Rule / CloudTrail)
@@ -323,17 +388,13 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
         if not isinstance(mit, dict):
             continue
 
-        # Recover the linked entity (and thus resource_type) via the ENTITY mapping
-        entity_id = next(
-            (
-                m.get("id")
-                for m in (mit.get("mappings") or [])
-                if isinstance(m, dict) and m.get("type") == "ENTITY"
-            ),
-            None,
+        # A mitigation may govern several entities or several CFN types.
+        resource_types = _dedup(
+            resource_type
+            for link in (mit.get("mappings") or [])
+            if isinstance(link, dict) and link.get("type") == "ENTITY"
+            for resource_type in _entity_resource_types(entities_by_id.get(link.get("id"), {}))
         )
-        ent = entities_by_id.get(entity_id, {}) if entity_id else {}
-        resource_type = _entity_resource_type(ent)
 
         # Flatten configurationRequestParameters[].paths[].path -> request_parameters[]
         cfg_params = mit.get("configurationRequestParameters") or []
@@ -349,12 +410,14 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
         out.append(
             {
                 "id": mit.get("id", ""),
+                "source_uuid": mit.get("id", ""),
                 "alias": mit.get("alias", ""),
                 "statement": mit.get("statement", ""),
                 "mitigation_goal": mit.get("statement", ""),  # AWS Threat Model folds goal into statement
                 "request_parameters": flat_paths,
                 "configuration_request_parameters": cfg_params,
-                "resource_type": resource_type,
+                "resource_type": resource_types[0] if resource_types else "",
+                "resource_types": resource_types,
                 "scoping_context": _collect_scoping_context(context),
                 "reference_links": _collect_reference_links(context),
             }
@@ -363,7 +426,7 @@ def parse_threat_model_mitigations(data: dict[str, Any]) -> list[dict[str, Any]]
     return out
 
 
-def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[str, Any]:
+def build_threat_model_index(data: dict[str, Any], service: str = "", source: dict | None = None) -> dict[str, Any]:
     """Assemble the persisted threat-model-index.json payload from an AWS Threat Model doc.
 
     Shape validated by schemas/threat-model-index.schema.json. The `mitigations[]` are
@@ -371,7 +434,7 @@ def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[st
     `implementations[]` are the typed control examples. This is the single source
     of truth a downstream `type: "threat_model"` citation resolves its alias against.
     """
-    return {
+    index = {
         "_metadata": {
             "service": service or (data.get("metadata") or {}).get("name") or "unknown",
             "source": "threat_model",
@@ -380,6 +443,18 @@ def build_threat_model_index(data: dict[str, Any], service: str = "") -> dict[st
         "mitigations": parse_threat_model_mitigations(data),
         "implementations": parse_threat_model_implementations(data),
     }
+    if source:
+        if __package__:
+            from .threat_model_source import citation_url
+        else:
+            from threat_model_source import citation_url
+        index["_metadata"]["threat_model_source"] = source
+        for section in ("mitigations", "implementations"):
+            for row in index[section]:
+                url = citation_url(source, row.get("alias", ""))
+                if url:
+                    row["threat_model_url"] = url
+    return index
 
 
 def threat_model_index_aliases(index: dict[str, Any]) -> set[str]:

@@ -1,8 +1,8 @@
 # Service Approval
 
-Generate AWS security controls for any AWS service with a matching **AWS Threat
-Model JSON export**. Provide the service, its required export, and optionally a
-control framework; it researches the service
+Generate AWS security controls for services with a published **AWS Threat Model**.
+Provide the service and optionally a control framework; the pipeline retrieves
+the latest model from AWS and researches the service
 against authoritative AWS sources, maps every capability to a control framework,
 and produces a full set of **recommended** preventive, proactive, detective, and
 responsive controls. It recommends the controls — **you deploy them yourself**;
@@ -21,7 +21,7 @@ You do need a few common developer tools.
 
 | You need | When | Why |
 |----------|------|-----|
-| An AWS Threat Model JSON export for the requested service | always | mandatory source for threats, mitigations, and control intent; the pipeline stops before assessment/research if missing, invalid, or for another service |
+| A published [AWS Threat Model](https://github.com/aws/threat-models-for-aws-services) and network access to GitHub | always | retrieved automatically from the latest release; unpublished services or retrieval failures stop the pipeline |
 | One of: Claude Code, Kiro IDE, or VS Code + GitHub Copilot | always | the client that runs the skills |
 | [`git`](https://git-scm.com/downloads) | always | to clone this repository |
 | [Python](https://www.python.org/downloads/) 3.9 or newer | always | the validators and hooks that gate the pipeline |
@@ -144,24 +144,34 @@ guides:
 
 ---
 
+## MCP configuration
+
+`awsknowledge` and `aws-documentation` are required in the default MCP mode.
+`mitre-attack` is optional and disabled by default; ATT&CK mapping uses the bundled
+snapshot unless you enable it. See [MCP configuration](docs/MCP.md).
+
 ## How to run
 
-Place the service's AWS Threat Model JSON export in your input folder, or pass
-`--threat-model-file=<path>`. The export must contain service identity in
-`metadata.name` (with aliases in `metadata.identifiers`), and non-empty top-level
-`entities`, `mitigations`, and `threats` arrays. A framework, mitigation report,
-or MITRE ATT&CK matrix alone is insufficient. If several matching exports are
-present, select one explicitly.
+The pipeline retrieves the latest matching model from the public
+[AWS Threat Models repository](https://github.com/aws/threat-models-for-aws-services).
+You do not need a local JSON export. Optional frameworks and supporting documents
+can still go in `./input/`; the folder itself is optional. User-added input content
+is ignored recursively, except the two shipped examples. Custom `inputs/`,
+`input-*/`, `input_*/`, and `runs/` folders are also ignored; use external paths for
+arbitrarily named folders. Do not overwrite shipped samples with customer data.
 
-This prerequisite applies to **every service**, including DSQL, and to saved
-intake, resumed runs, and `--no-mcp`. The file is rechecked on resume; there is no
-skip flag or generated-threat fallback.
+Services and artifact paths are discovered through AWS's release manifest. Newly
+published services and model updates need no tooling change. If AWS has not
+published a matching model, the pipeline stops. Retrieval failures also stop the
+run; local files, cached models, and flags cannot bypass the requirement.
 
-**Keep AWS Threat Models local.** Real exports must never be committed or uploaded
-to this repository, including renamed copies or model-derived runtime state.
-Prefer `--threat-model-file` pointing outside your checkout (for example, a file
-in Downloads). Runtime input JSON and `.service-approval/` state are ignored by
-Git; do not force-add them. Repository test fixtures must be synthetic.
+Intake records a hash-verified snapshot and its commit. Every phase and resume
+uses that same snapshot offline. Only an explicit new run fetches latest. Source
+link and readable-report defects are reported as advisories without stopping a
+run that has usable JSON. Downloaded
+models and derived state stay under ignored `.service-approval/` paths and must
+not be committed. Tests use synthetic fixtures. See [retrieval, migration, and
+citation details](docs/THREAT-MODELS.md).
 
 Invoke the pipeline and answer the short intake prompts. The intake step asks for
 the service name and control framework; if you pass them as flags, it skips the
@@ -170,45 +180,40 @@ corresponding prompt.
 **Claude Code** — slash command:
 
 ```
-/service-approval ./input --service=s3
+/service-approval ./input --service=lambda
 ```
 
 **Kiro** — keyword or explicit invocation:
 
 ```
-run service approval for s3
+run service approval for lambda
 ```
 
 **GitHub Copilot** — `@`-mention in Agent mode:
 
 ```
-@service-approval ./input --service=s3
+@service-approval ./input --service=lambda
 ```
 
 ### Framework selection
 
 The default framework is **CCMv4** (with always-on MITRE ATT&CK threat mapping).
 NIST 800-53, CIS Benchmarks, and ISO 27001 are available with `--framework=<type>`;
-a custom framework file is anchored to CCMv4 guidance automatically. If a framework
+a custom framework is mapped directly to source-backed controls, using AWS Threat
+Models as the primary evidence and CCMv4 guidance as an optional aid. If a framework
 file is present in your input folder it is auto-detected; otherwise the intake step
 asks (or you pass `--framework=`).
 
 ### A concrete example
 
-```
-/service-approval ./input --service=bedrock-agentcore --framework=ccmv4
-```
-
-This requires a matching `bedrock-agentcore` AWS Threat Model JSON export in
-`./input/`, reads any additional mitigation report or framework spreadsheet,
-researches `bedrock-agentcore`, and writes all output under
-`.service-approval/bedrock-agentcore/`.
-
-With an explicit export path:
-
 ```text
-/service-approval --service=dsql --threat-model-file="/path/to/dsql-aws-threat-model.json"
+/service-approval --service=dsql --framework=ccmv4
 ```
+
+This retrieves the latest published Aurora DSQL model, reads optional supporting
+files, researches DSQL, and writes output under `.service-approval/dsql/`.
+The generated control catalog and framework mapping link source aliases directly
+to the readable AWS report at the fetched commit.
 
 ---
 
@@ -274,8 +279,7 @@ ATT&CK threat mapping.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `./input-folder` | Folder with the required AWS Threat Model JSON export and optional supporting files | `./input/` |
-| `--threat-model-file=<path>` | Explicit matching AWS Threat Model JSON export; required if discovery is ambiguous | Discover one matching export in the input folder |
+| `./input-folder` | Optional framework and supporting files | `./input/` |
 | `--service=<name>` | AWS service ID (e.g., `bedrock-agentcore`, `s3`, `kms`) | Required if no folder |
 | `--framework=<type>` | Control framework (`ccmv4`, `nist`, `cis`, `iso`) | `ccmv4` (asked at intake; flag bypasses the prompt) |
 | `--framework-file=<path>` | Explicit path to a framework file | Auto-detect from input |
@@ -284,7 +288,7 @@ ATT&CK threat mapping.
 | `--interactive` | Force the interactive intake form | false |
 | `--include-unverified` | Include unverified findings in generation | false |
 | `--dry-run` | Lint artifacts only, no deployment | false |
-| `--clean` | Delete existing `.service-approval/` state before the run | false |
+| `--clean` | Clear the selected service’s phase output after successful retrieval; preserve source snapshots | false |
 | `--no-mcp` | Run without MCP servers — verify facts over the web (see "Running without MCP" above) | false (MCP is the default) |
 | Plugin works in the repo but not elsewhere (Claude Code) | The marketplace registration didn't take — `claude plugin marketplace add .` then `claude plugin install service-approval@service-approval --scope user`. |
 | A phase reports too few MCP calls / integrity failure | The Stop hook enforces pipeline integrity (P1–P7); read `06-summarize/SUMMARY-REPORT.md` and `pipeline.log` for which check failed, then re-run from the failing phase. |
@@ -293,13 +297,12 @@ ATT&CK threat mapping.
 
 ## Validation
 
-The local **AWS Threat Model input gate** runs before assessment/research and on
-resume. It opens the selected file, validates the export shape, and matches its
-metadata to the requested service. The selected absolute path is recorded in
-`00-intake/intake-manifest.json` as `inputs.threat_model_file`. Pre-write hooks,
-phase preconditions, and the pipeline integrity check also enforce the
-prerequisite. This validates input structure and identity; AWS capability claims
-still require Research/Validate verification.
+The **published AWS Threat Model gate** retrieves current upstream data before
+assessment/research for new runs and rechecks the original snapshot locally on resume. Intake records
+`inputs.threat_model_file` and `inputs.threat_model_source`. Pre-write hooks,
+phase preconditions, and pipeline integrity enforce the model's shape, service
+identity, published provenance, and snapshot hash. AWS capability claims still
+require Research/Validate verification.
 
 Two complementary layers keep the output trustworthy.
 

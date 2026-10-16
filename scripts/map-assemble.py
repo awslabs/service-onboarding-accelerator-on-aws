@@ -178,6 +178,23 @@ def dedup_controls(controls: list[dict]) -> tuple[list[dict], dict[str, str]]:
     for key in order:
         group = sorted(groups[key], key=lambda c: c["id"])
         survivor = group[0]
+        from tools.validate.threat_model_integrity import control_aliases
+        all_aliases = sorted({a for c in group for a in control_aliases(c)})
+        if all_aliases:
+            survivor["mitigation_aliases"] = all_aliases
+        refs = {(r["alias"], r["uuid"]) for c in group for r in c.get("mitigation_references", [])}
+        if refs:
+            survivor["mitigation_references"] = [{"alias": a, "uuid": u} for a, u in sorted(refs)]
+            pairs = dict(refs)
+            if len(pairs) == len(refs) and set(all_aliases) <= pairs.keys():
+                survivor["mitigation_uuids"] = [pairs[a] for a in all_aliases]
+                primary = survivor.get("mitigation_alias") or all_aliases[0]
+                survivor["mitigation_alias"] = primary
+                if primary in pairs:
+                    survivor["mitigation_uuid"] = pairs[primary]
+        repairs = {r["id"]: r for c in group for r in c.get("threat_model_repairs", [])}
+        if repairs:
+            survivor["threat_model_repairs"] = sorted(repairs.values(), key=lambda r: r["id"])
         for dup in group[1:]:
             for field in _DEDUP_UNION_FIELDS:
                 merged = list(survivor.get(field, []))
@@ -230,6 +247,17 @@ def remap_framework_mapping(fw_mapped: dict, id_remap: dict[str, str]) -> None:
             if new_id not in remapped:
                 remapped.append(new_id)
         qgr["orphaned_controls"] = remapped
+
+    # A duplicate can collapse into a mapped survivor. Its no-match review is
+    # then obsolete; otherwise keep one review for the surviving control.
+    from tools.validate.framework_review import referenced_controls
+    referenced = referenced_controls(fw_mapped.get("framework_mapping", []))
+    reviews = {}
+    for review in fw_mapped.get("unmapped_control_reviews", []):
+        cid = id_remap.get(review["control_id"], review["control_id"])
+        if cid not in referenced:
+            reviews.setdefault(cid, {**review, "control_id": cid})
+    fw_mapped["unmapped_control_reviews"] = list(reviews.values())
 
 
 # ---------------------------------------------------------------------------
@@ -399,7 +427,9 @@ def build_attack_coverage(validated: dict, controls: list[dict]) -> dict:
     # technique_id -> [control ids]
     tech_to_ctrls: dict[str, list[str]] = {}
     for ctrl in controls:
-        for tid in ctrl.get("attack_techniques", []):
+        # Keep research associations and authoritative source-derived links.
+        # The source parser/trace stage stores the latter in mitre_techniques.
+        for tid in sorted(set(ctrl.get("attack_techniques", [])) | set(ctrl.get("mitre_techniques", []))):
             tech_to_ctrls.setdefault(tid, []).append(ctrl["id"])
 
     covered = [t for t in techniques if t["technique_id"] in tech_to_ctrls]
@@ -673,10 +703,13 @@ def assemble_mapping_results(
         "controls": controls,
         "threat_mitigation_map": threat_mitigation_map,
         "framework_mapping": fw_mapped["framework_mapping"],
+        "unmapped_control_reviews": fw_mapped.get("unmapped_control_reviews", []),
         "framework_coverage_summary": build_framework_coverage_summary(fw_mapped),
         "coverage_gaps": coverage_gaps,
         "control_summary": build_control_summary(controls),
         "_metadata": {
+            **({"framework_mapping_method": fw_mapped["_metadata"]["framework_mapping_method"]}
+               if fw_mapped.get("_metadata", {}).get("framework_mapping_method") else {}),
             "phase": "04-map",
             "assembled_by": "map-assemble",
             "attack_coverage": attack_coverage,
@@ -775,6 +808,25 @@ _MECH_GOVERNS = {
 }
 
 
+def attach_threat_model_links(controls: list[dict], model: dict, source: dict) -> None:
+    """Derive readable links from verified aliases, never an agent-supplied URL."""
+    from tools.validate.threat_model_source import citation_url
+    from tools.validate.threat_model_integrity import source_findings, control_aliases
+    findings = source_findings(model, source)
+    valid_aliases = {row.get("alias") for row in model.get("mitigations", [])}
+    for ctrl in controls:
+        related = set(control_aliases(ctrl))
+        ctrl["threat_model_warnings"] = [f"{f['id']}: {f['check']}" for f in findings
+                                         if related & set(f["mitigation_aliases"])]
+        # Only aliases actually attached to this control get readable links.
+        ctrl["threat_model_urls"] = {
+            alias: url for alias in sorted(valid_aliases.intersection(
+                set(ctrl.get("mitigation_aliases") or []) | {ctrl.get("mitigation_alias")}
+            ))
+            if (url := citation_url(source, alias))
+        }
+
+
 def _citation_cell(cm: dict, ctrl: dict) -> str:
     """Render the citation cell for a mapped-control row in framework-mapping.md.
 
@@ -789,10 +841,27 @@ def _citation_cell(cm: dict, ctrl: dict) -> str:
         bits.append(req)
     alias = cit.get("mitigation_alias") or ctrl.get("mitigation_alias")
     if alias:
-        bits.append(f"`{alias}`")
+        url = (ctrl.get("threat_model_urls") or {}).get(alias)
+        bits.append(f"[{alias}]({url})" if url else f"`{alias}`")
+        uuid = cit.get("mitigation_uuid")
+        if not uuid:
+            uuid = next((r.get("uuid") for r in ctrl.get("mitigation_references", [])
+                         if r.get("alias") == alias), None)
+        if not uuid and alias == ctrl.get("mitigation_alias"):
+            uuid = ctrl.get("mitigation_uuid")
+        if uuid:
+            bits.append(f"(UUID `{uuid}`)")
     source = (cit.get("source") or ctrl.get("trace_source") or "").strip()
     if source:
         bits.append(f"({source})")
+    if cit.get("supplemental_mechanism"):
+        bits.append("**Supplemental mechanism**")
+    if cit.get("reference_url"):
+        bits.append(f"[AWS documentation]({cit['reference_url']})")
+    if cit.get("evidence_note"):
+        bits.append(str(cit["evidence_note"]))
+    if ctrl.get("threat_model_warnings"):
+        bits.append("⚠ " + "; ".join(ctrl["threat_model_warnings"]))
     return " ".join(bits) if bits else "—"
 
 
@@ -909,10 +978,14 @@ def _catalog_citation_lines(
             if by_id.get(mid):
                 statement = by_id[mid]
                 break
-    cite = f"- **AWS Threat Model mitigation:** `{alias}`"
+    url = (ctrl.get("threat_model_urls") or {}).get(alias)
+    label = f"[{alias}]({url})" if url else f"`{alias}`"
+    cite = f"- **AWS Threat Model mitigation:** {label}"
     if uuid:
         cite += f" (UUID `{uuid}`)"
     out.append(cite)
+    if ctrl.get("threat_model_warnings"):
+        out.append("- **Source advisory:** ⚠ " + "; ".join(ctrl["threat_model_warnings"]))
     if statement:
         out.append(f"- **AWS Threat Model statement:** {statement}")
     return out
@@ -1202,22 +1275,30 @@ def write_framework_mapping(
             if status == "MAPPED":
                 lines.append(f"**{oid}: {title}** — Coverage: {obj.get('coverage', '')}\n")
                 lines.append("")
-                # The main mapping cites only AWS Threat Model-sourced controls. Controls
-                # not backed by an AWS Threat Model mitigation (assessment-gap / compensating)
-                # are surfaced in the "Suggestions for Review" section instead, so
-                # they are filtered out of the per-objective tables here.
+                # Keep AWS Threat Model evidence primary. Supplemental support
+                # must remain visible and traceable without looking model-backed.
                 threat_model_rows = [
                     cm for cm in obj.get("controls", [])
                     if ctrl_index.get(cm["control_id"], {}).get("trace_source") == "threat_model"
                 ]
-                if threat_model_rows:
+                supplemental_rows = [
+                    cm for cm in obj.get("controls", [])
+                    if ctrl_index.get(cm["control_id"], {}).get("trace_source") != "threat_model"
+                ]
+                for label, rows in (
+                    ("AWS Threat Model-backed controls", threat_model_rows),
+                    ("Supplemental controls — not sourced from AWS Threat Models", supplemental_rows),
+                ):
+                    if not rows:
+                        continue
+                    lines.append(f"**{label}**\n")
                     lines.append(
                         "| Control ID | Title | Category | Scope | Coverage Level | Rationale | Source | MITRE |"
                     )
                     lines.append(
                         "|------------|-------|----------|-------|----------------|-----------|--------|-------|"
                     )
-                    for cm in threat_model_rows:
+                    for cm in rows:
                         cid = cm["control_id"]
                         ctrl = ctrl_index.get(cid, {})
                         cat = CATEGORY_LABELS.get(
@@ -1265,9 +1346,9 @@ def write_framework_mapping(
             f"(missing={sorted(missing)[:10]}, extra={sorted(extra)[:10]})"
         )
 
-    # Controls not sourced from an AWS Threat Model mitigation. The main mapping above cites
-    # only AWS Threat Model-sourced controls; these are the assessment-gap / compensating
-    # controls the accelerator suggests. Each carries a specific AWS-documentation
+    # Additional index of controls not sourced from an AWS Threat Model mitigation.
+    # Per-objective supplemental mappings above preserve their distinct attribution.
+    # Each carries a specific AWS-documentation
     # Source reference so a reviewer can confirm it independently.
     suggested = coverage_gaps.get("uncited_controls") or coverage_gaps.get(
         "control_orphan", []
@@ -1276,8 +1357,9 @@ def write_framework_mapping(
         lines.append("## Controls Not Sourced from AWS Threat Model (Suggestions for Review)\n")
         lines.append("")
         lines.append(
-            "These controls are not backed by an AWS Threat Model mitigation, so they are "
-            "not cited in the main mapping above. They are suggested for review — "
+            "These controls are not backed by an AWS Threat Model mitigation. Any framework "
+            "support they provide is labelled supplemental in the objective tables above. "
+            "They are suggested for review — "
             "confirm each against the cited AWS documentation source before "
             "adopting it."
         )
@@ -1287,6 +1369,18 @@ def write_framework_mapping(
         for o in suggested:
             source = o.get("source") or control_source_ref(ctrl_index.get(o["control_id"], {}))
             lines.append(f"| {o['control_id']} | {o['name']} | {source} |")
+        lines.append("")
+
+    reviews = fw_mapped.get("unmapped_control_reviews", [])
+    if reviews:
+        lines += ["## Controls outside the selected framework", "",
+                  "These controls remain in the catalog. Each was reviewed against the selected "
+                  "framework and has no supported objective mapping; they do not increase framework coverage.", "",
+                  "| Control | Objectives reviewed | Reason |", "|---|---|---|"]
+        from tools.validate.threat_model_integrity import _cell
+        for review in reviews:
+            lines.append("| " + " | ".join(_cell(v) for v in (
+                review["control_id"], ", ".join(review["reviewed_objective_ids"]), review["rationale"])) + " |")
         lines.append("")
 
     # NOTE: the customer-facing report intentionally omits a "Coverage Gaps"
@@ -1367,13 +1461,13 @@ def validate(
 def detect_single_service() -> str | None:
     """Auto-detect service slug if exactly one exists under .service-approval/."""
     try:
-        root = paths.repo_root() / ".service-approval"
+        root = paths.workspace_root() / ".service-approval"
         if not root.exists():
             return None
 
         candidates = [
             d.name for d in root.iterdir()
-            if d.is_dir() and d.name not in ("_staging", "plans")
+            if d.is_dir() and not d.name.startswith("_") and d.name != "plans"
         ]
 
         if len(candidates) == 1:
@@ -1416,10 +1510,10 @@ def main() -> int:
             print("", file=sys.stderr)
             print("Detected services:", file=sys.stderr)
             try:
-                root = paths.repo_root() / ".service-approval"
+                root = paths.workspace_root() / ".service-approval"
                 candidates = [
                     d.name for d in root.iterdir()
-                    if d.is_dir() and d.name not in ("_staging", "plans")
+                    if d.is_dir() and not d.name.startswith("_") and d.name != "plans"
                 ]
                 if candidates:
                     for c in sorted(candidates):
@@ -1471,7 +1565,40 @@ def main() -> int:
     fw_mapped = load_json(map_dir / "map-framework-mapped.json")
     validated = load_json(validate_dir / "validated.json")
 
+    from tools.validate.framework_review import document_review_errors
+    review_failures = document_review_errors(fw_mapped, cg.get("controls", []))
+    if review_failures:
+        print("\n".join(review_failures), file=sys.stderr)
+        return 2
+
+    from tools.validate.validate_threat_model_input import load_run_export
+    model_path, errors = load_run_export(service_root)
+    if errors:
+        print("AWS THREAT MODEL REQUIRED: " + "; ".join(errors), file=sys.stderr)
+        return 2
+    intake = load_json(service_root / "00-intake" / "intake-manifest.json")
     controls = cg["controls"]
+    model = load_json(model_path)
+    from tools.validate.threat_model_integrity import repair_control_identity, repair_citations, disposition_errors, write_audit
+    repairs = []
+    for control in controls:
+        repairs.extend(repair_control_identity(control, model, stage="04-map/map-controls-generated.json"))
+    repairs.extend(repair_citations(cg, model, stage="04-map/map-controls-generated.json"))
+    repairs.extend(repair_citations(fw_mapped, model, stage="04-map/map-framework-mapped.json"))
+    invalid_dispositions = disposition_errors(cg.get("mitigation_dispositions", []), model, validated.get("existing_mitigations", []))
+    if invalid_dispositions:
+        print("\n".join(invalid_dispositions), file=sys.stderr)
+        return 2
+    if repairs:
+        recorded = {r["id"]: r for r in cg.get("_metadata", {}).get("threat_model_repairs", [])}
+        recorded.update({r["id"]: r for r in repairs})
+        cg.setdefault("_metadata", {})["threat_model_repairs"] = sorted(recorded.values(), key=lambda r: r["id"])
+    write_json(map_dir / "map-controls-generated.json", cg)
+    write_json(map_dir / "map-framework-mapped.json", fw_mapped)
+    # Keep the mapper's original inventory/reviews coherent for replay. Only the
+    # assembled result uses survivor IDs after deduplication.
+    import copy
+    fw_mapped = copy.deepcopy(fw_mapped)
 
     # Phase 0: Semantic de-duplication. Collapse controls that share a canonical
     # identity (name + scope + category + mechanism + resource_types + actions +
@@ -1482,6 +1609,11 @@ def main() -> int:
     pre_dedup_count = len(controls)
     controls, id_remap = dedup_controls(controls)
     remap_framework_mapping(fw_mapped, id_remap)
+    for control in controls:
+        extra = repair_control_identity(control, model, stage="04-map/deduplication")
+        if extra:
+            control.setdefault("threat_model_repairs", []).extend(extra)
+    attach_threat_model_links(controls, load_json(model_path), intake["inputs"]["threat_model_source"])
     collapsed = pre_dedup_count - len(controls)
     print(
         f"  {pre_dedup_count} controls -> {len(controls)} distinct "
@@ -1525,6 +1657,11 @@ def main() -> int:
     print(f"  Coverage: FULL={full}, PARTIAL={partial}, NONE={none_}")
     print()
 
+    dispositions = {d.get("mitigation_id"): d for d in cg.get("mitigation_dispositions", [])}
+    for entry in threat_mitigation_map:
+        if entry["mitigation_id"] in dispositions:
+            entry["disposition"] = dispositions[entry["mitigation_id"]]
+
     # Phase 2b: Build ATT&CK coverage summary (mandatory)
     print("Phase 2b: Building ATT&CK coverage summary...")
     attack_coverage = build_attack_coverage(validated, controls)
@@ -1561,6 +1698,7 @@ def main() -> int:
         service, attack_coverage,
     )
     mapping_results_path = map_dir / "mapping-results.json"
+    mapping_results.setdefault("_metadata", {})["threat_model_repairs"] = cg.get("_metadata", {}).get("threat_model_repairs", [])
     write_json(mapping_results_path, mapping_results)
     print()
 
@@ -1581,6 +1719,8 @@ def main() -> int:
         framework, service, fw_mapping_path,
     )
     print()
+
+    write_audit(service_root)
 
     # Phase 7: Validate
     print("Phase 7: Validating outputs...")

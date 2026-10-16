@@ -559,6 +559,25 @@ def test_15_cloudwatch_alarms_valid_for_reactive_detective() -> None:
     assert errors == []
 
 
+def test_15_documented_org_detective_artifacts_are_valid() -> None:
+    data = {"_metadata": {"posture": "reactive-detective"}}
+    for name in ("cloudtrail-org-config.json", "config-org-rules.json",
+                 "config-conformance-pack.yaml"):
+        assert check_posture_mechanism_consistency_15(
+            f"/tmp/fake-controls/detective/{name}", data) == []
+
+
+def test_15_org_detective_artifacts_still_reject_wrong_directory_or_posture() -> None:
+    for name in ("cloudtrail-org-config.json", "config-org-rules.json",
+                 "config-conformance-pack.yaml"):
+        assert check_posture_mechanism_consistency_15(
+            f"/tmp/fake-controls/preventive/{name}",
+            {"_metadata": {"posture": "reactive-detective"}})
+        assert check_posture_mechanism_consistency_15(
+            f"/tmp/fake-controls/detective/{name}",
+            {"_metadata": {"posture": "reactive-corrective"}})
+
+
 def test_15_compensating_controls_doc_valid_for_preventative_proactive() -> None:
     """compensating-controls-documentation.json is a cross-cutting gap-coverage
     artifact that lives in detective/ despite carrying a preventative-proactive

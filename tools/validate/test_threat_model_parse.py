@@ -127,3 +127,37 @@ def test_parse_threat_model_returns_empty_on_non_threat_model_shape() -> None:
         ]
     }
     assert parse_threat_model_mitigations(legacy) == []
+
+
+def test_published_entity_identifiers_preserve_all_cfn_types():
+    data = _load_fixture()
+    entity = data['entities'][0]
+    entity['entityType'] = 'RESOURCE'
+    entity['identifiers'] = {'cfnResourceTypes': ['AWS::Example::First', 'AWS::Example::Second', 'AWS::Example::First']}
+    mit = data['mitigations'][0]
+    mit['mappings'] = [{'type': 'ENTITY', 'id': entity['id']}]
+    normalized = parse_threat_model_mitigations(data)[0]
+    assert normalized['resource_types'] == ['AWS::Example::First', 'AWS::Example::Second']
+    assert normalized['resource_type'] == 'AWS::Example::First'
+
+
+def test_semantic_entity_label_is_not_invented_as_cfn_type():
+    data = _load_fixture()
+    for entity in data['entities']:
+        entity['entityType'] = 'RESOURCE'
+        entity.pop('resource_type', None)
+    assert all(m['resource_type'] == '' for m in parse_threat_model_mitigations(data))
+
+
+def test_index_builder_supports_documented_package_import():
+    import os
+    import subprocess
+    import sys
+    result = subprocess.run(
+        [sys.executable, "-c",
+         "from tools.validate.threat_model_parse import build_threat_model_index; "
+         "assert build_threat_model_index({}, source={'data_url': 'synthetic'})['mitigations'] == []"],
+        cwd=Path(__file__).resolve().parents[2],
+        env={**os.environ, "PYTHONPATH": ""}, capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stderr
