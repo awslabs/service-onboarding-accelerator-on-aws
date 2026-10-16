@@ -130,6 +130,14 @@ else:
 
 ## Context Available to This Skill
 
+**Scope of the KB-dependent rules below:** apply curated allow/deny classes,
+applicability matrices, and per-objective ceilings only to the framework and
+objective they actually describe. For a custom objective without applicable
+curated guidance, use the direct evidence contract above. Missing KB classes
+do not prohibit a mapping, and CCMv4 N/A decisions do not transfer to custom IDs.
+The generic requirements for truthful coverage, citations, per-objective
+rationales, source identity, and review of unmatched controls still apply.
+
 For each control, you have access to:
 - `description` — what the control does
 - `mechanism` — the AWS enforcement mechanism
