@@ -166,6 +166,27 @@ def _update_md_frontmatter(path: Path, updates: dict, check: bool) -> bool:
 # Per-client syncers — each returns True if drift/writes happened.
 # --------------------------------------------------------------------------
 
+def _sync_license_notice(path: Path, license_name: str, check: bool) -> bool:
+    """Keep shipped client notices under the same canonical license metadata."""
+    existing = path.read_text()
+    updated, count = re.subn(
+        r"(?m)(^\*\*License:\*\* |^## License\n\n)[^\n]+",
+        lambda match: match.group(1) + license_name,
+        existing,
+        count=1,
+    )
+    if count != 1:
+        raise ValueError(f"Expected a license notice in {path.relative_to(REPO)}")
+    if updated == existing:
+        return False
+    if check:
+        print(f"DRIFT  {path.relative_to(REPO)}", file=sys.stderr)
+    else:
+        path.write_text(updated)
+        print(f"wrote  {path.relative_to(REPO)}")
+    return True
+
+
 def sync_claude_code(m: dict, check: bool) -> bool:
     """Plugin metadata at .claude-plugin/plugin.json + MCP at .mcp.json."""
     drift = False
@@ -203,6 +224,8 @@ def sync_kiro(m: dict, check: bool) -> bool:
         "author": m["author"]["name"],
         "version": m["version"],
     }, check)
+    drift |= _sync_license_notice(power_md, m["license"], check)
+    drift |= _sync_license_notice(power_md.parent / "README.md", m["license"], check)
 
     mcp_json = REPO / "powers" / "service-approval" / "mcp.json"
     drift |= _write_json(mcp_json, render_mcp_kiro(m["mcp_servers"]), check)
@@ -227,6 +250,9 @@ def sync_copilot(m: dict, check: bool) -> bool:
         "keywords": m["keywords"][:10],  # awesome-copilot schema caps at 10
     }
     drift |= _write_json(plugin_json, new_plugin, check)
+    drift |= _sync_license_notice(
+        REPO / ".github/plugins/service-approval/README.md", m["license"], check
+    )
 
     vscode_mcp = REPO / ".vscode" / "mcp.json"
     drift |= _write_json(vscode_mcp, render_mcp_vscode(m["mcp_servers"]), check)

@@ -123,4 +123,4 @@ Skills / hooks / instructions are all file-based — Copilot re-reads them every
 
 ## License
 
-Apache-2.0
+Amazon Software License 1.0

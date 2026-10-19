@@ -6,7 +6,7 @@
     "name": "Service Onboarding on AWS Team"
   },
   "repository": "https://github.com/awslabs/service-onboarding-accelerator-on-aws",
-  "license": "Apache-2.0",
+  "license": "Amazon Software License 1.0",
   "keywords": [
     "aws",
     "security",

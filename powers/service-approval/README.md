@@ -132,4 +132,4 @@ Full testing guide at [`docs/TESTING-KIRO.md`](../../docs/TESTING-KIRO.md). Cove
 
 ## License
 
-Apache-2.0
+Amazon Software License 1.0
