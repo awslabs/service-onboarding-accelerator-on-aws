@@ -7,7 +7,7 @@
         <mxCell id="title" parent="1" style="text;html=1;fontSize=24;fontStyle=1;align=center;verticalAlign=middle;fontColor=#232F3E;" value="Service Approval Pipeline — recommends security controls that the customer applies themselves" vertex="1">
           <mxGeometry height="40" width="2280" x="60" y="24" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=15;align=center;verticalAlign=middle;fontColor=#5A6B7B;" value="State lands in .service-approval/&amp;lt;service-slug&amp;gt;/&amp;lt;NN&amp;gt;-&amp;lt;phase&amp;gt;/ — one directory per phase, no gaps. Default framework CCMv4 (others behind --framework)." vertex="1">
+        <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=15;align=center;verticalAlign=middle;fontColor=#5A6B7B;" value="State: .service-approval/&amp;lt;service-slug&amp;gt;/&amp;lt;NN&amp;gt;-&amp;lt;phase&amp;gt;/ · CCMv4 by default, or a supplied custom framework · one pinned AWS Threat Model per run" vertex="1">
           <mxGeometry height="26" width="2280" x="60" y="64" as="geometry" />
         </mxCell>
         <mxCell id="e_in_00" edge="1" parent="1" style="endArrow=block;html=1;strokeWidth=2.5;strokeColor=#232F3E;rounded=0;">
@@ -58,14 +58,14 @@
             <mxPoint x="2020" y="791" as="targetPoint" />
           </mxGeometry>
         </mxCell>
-        <mxCell id="inputs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontColor=#232F3E;" value="Inputs&lt;br&gt;&lt;br&gt;• AWS service name&lt;br&gt;• Input folder (threat model,&lt;br&gt;  mitigation report, framework file)&lt;br&gt;• AWS Threat Model export" vertex="1">
-          <mxGeometry height="140" width="180" x="-140" y="201" as="geometry" />
+        <mxCell id="inputs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fontColor=#232F3E;" value="Inputs&lt;br&gt;&lt;br&gt;• AWS service name&lt;br&gt;• Optional framework file&lt;br&gt;  and supporting inputs&lt;br&gt;&lt;br&gt;Model retrieved from AWS" vertex="1">
+          <mxGeometry height="160" width="180" x="-140" y="201" as="geometry" />
         </mxCell>
-        <mxCell id="p00" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#ED7100;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="00 — Intake&#xa;(precursor)" vertex="1">
+        <mxCell id="p00" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#ED7100;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="00 — Intake&#10;(precursor)" vertex="1">
           <mxGeometry height="200" width="280" x="100" y="171" as="geometry" />
         </mxCell>
-        <mxCell id="p00sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="skill: intake&lt;br&gt;&lt;br&gt;Collects service name, inputs,&lt;br&gt;framework choice." vertex="1">
-          <mxGeometry height="90" width="248" x="116" y="219" as="geometry" />
+        <mxCell id="p00sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="Collect service + framework.&lt;br&gt;Fetch latest published model;&lt;br&gt;verify commit, manifest + hash.&lt;br&gt;Save snapshot + intake seal.&lt;br&gt;Block if no usable model exists." vertex="1">
+          <mxGeometry height="104" width="248" x="116" y="219" as="geometry" />
         </mxCell>
         <mxCell id="p00out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ intake-manifest.json" vertex="1">
           <mxGeometry height="30" width="248" x="116" y="331" as="geometry" />
@@ -73,17 +73,17 @@
         <mxCell id="p01" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F0FE;strokeColor=#3B48CC;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="01 — Assess" vertex="1">
           <mxGeometry height="200" width="280" x="420" y="171" as="geometry" />
         </mxCell>
-        <mxCell id="p01sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="skill: assess&#xa;&#xa;5-domain CAF posture assessment;&#xa;extracts SAR facts, derives&#xa;canonical service slug." vertex="1">
+        <mxCell id="p01sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="skill: assess&#10;&#10;5-domain CAF posture assessment;&#10;extracts SAR facts, derives&#10;canonical service slug." vertex="1">
           <mxGeometry height="90" width="248" x="436" y="219" as="geometry" />
         </mxCell>
-        <mxCell id="p01out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ sar-facts.json,&#xa;   assessment-summary.md,&#xa;   checkpoint-results.json" vertex="1">
+        <mxCell id="p01out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ sar-facts.json,&#10;   assessment-summary.md,&#10;   checkpoint-results.json" vertex="1">
           <mxGeometry height="48" width="248" x="436" y="313" as="geometry" />
         </mxCell>
         <mxCell id="p02" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F4EA;strokeColor=#3F8624;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="02 — Research" vertex="1">
           <mxGeometry height="200" width="280" x="740" y="171" as="geometry" />
         </mxCell>
-        <mxCell id="p02sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="4 sub-skills (parallel):&#xa;• mitigations  • capabilities&#xa;• api-surface  • attack-surface&#xa;→ merged (MCP-verified)" vertex="1">
-          <mxGeometry height="90" width="248" x="756" y="219" as="geometry" />
+        <mxCell id="p02sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="4 sub-skills (parallel):&lt;br&gt;• mitigations • capabilities&lt;br&gt;• API surface • attack surface&lt;br&gt;Use the pinned model; verify&lt;br&gt;capabilities with AWS sources." vertex="1">
+          <mxGeometry height="104" width="248" x="756" y="219" as="geometry" />
         </mxCell>
         <mxCell id="p02out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ research.json (v3.0)" vertex="1">
           <mxGeometry height="30" width="248" x="756" y="331" as="geometry" />
@@ -91,8 +91,8 @@
         <mxCell id="p03" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE8EC;strokeColor=#DD344C;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="03 — Validate" vertex="1">
           <mxGeometry height="200" width="280" x="1060" y="171" as="geometry" />
         </mxCell>
-        <mxCell id="p03sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="skill: validate&#xa;&#xa;Confirm capabilities, API params,&#xa;condition keys, SCP/RCP&#xa;expressibility via MCP." vertex="1">
-          <mxGeometry height="90" width="248" x="1076" y="219" as="geometry" />
+        <mxCell id="p03sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="Verify research capabilities,&lt;br&gt;API parameters, condition keys,&lt;br&gt;and policy expressibility.&lt;br&gt;AWS MCPs by default;&lt;br&gt;documented web fallback." vertex="1">
+          <mxGeometry height="104" width="248" x="1076" y="219" as="geometry" />
         </mxCell>
         <mxCell id="p03out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ validated.json" vertex="1">
           <mxGeometry height="30" width="248" x="1076" y="331" as="geometry" />
@@ -100,34 +100,34 @@
         <mxCell id="p04" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F3EAFE;strokeColor=#8C4FFF;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="04 — Map" vertex="1">
           <mxGeometry height="200" width="280" x="1380" y="171" as="geometry" />
         </mxCell>
-        <mxCell id="p04sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="4 sub-skills:&#xa;parse-framework • generate-controls&#xa;• framework-mapping • assemble&#xa;Citation-gated, per-domain." vertex="1">
-          <mxGeometry height="90" width="248" x="1396" y="219" as="geometry" />
+        <mxCell id="p04sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="Parse framework + create controls;&lt;br&gt;map objectives, then assemble.&lt;br&gt;Primary: AWS Threat Model.&lt;br&gt;Supplemental evidence is labelled.&lt;br&gt;Custom frameworks map directly." vertex="1">
+          <mxGeometry height="104" width="248" x="1396" y="219" as="geometry" />
         </mxCell>
-        <mxCell id="p04out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ mapping-results.json,&#xa;   controls-catalog.md,&#xa;   framework-mapping.md" vertex="1">
+        <mxCell id="p04out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ mapping-results.json,&#10;   controls-catalog.md,&#10;   framework-mapping.md" vertex="1">
           <mxGeometry height="48" width="248" x="1396" y="313" as="geometry" />
         </mxCell>
         <mxCell id="p05" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#ED7100;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="05 — Recommended Guidance" vertex="1">
           <mxGeometry height="200" width="280" x="1700" y="171" as="geometry" />
         </mxCell>
-        <mxCell id="p05sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="2 sub-families:&#xa;• preventive (SCP/RCP/IAM,&#xa;  reference-anchored)&#xa;• detective / responsive" vertex="1">
-          <mxGeometry height="90" width="248" x="1716" y="219" as="geometry" />
+        <mxCell id="p05sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="• Preventive: recommend → authors&lt;br&gt;  → critic (reference-anchored)&lt;br&gt;• Proactive rules&lt;br&gt;• Detective controls&lt;br&gt;• Responsive runbook references" vertex="1">
+          <mxGeometry height="104" width="248" x="1716" y="219" as="geometry" />
         </mxCell>
-        <mxCell id="p05out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ 05-recommended-guidance/&#xa;   {preventive,proactive,&#xa;   detective,responsive}/" vertex="1">
+        <mxCell id="p05out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ 05-recommended-guidance/&#10;   {preventive,proactive,&#10;   detective,responsive}/" vertex="1">
           <mxGeometry height="48" width="248" x="1716" y="313" as="geometry" />
         </mxCell>
-        <mxCell id="p06" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE7F3;strokeColor=#E7157B;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="06 — Summarize&#xa;(terminal)" vertex="1">
+        <mxCell id="p06" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDE7F3;strokeColor=#E7157B;strokeWidth=2.5;fontSize=15;fontStyle=1;verticalAlign=top;spacingTop=8;fontColor=#232F3E;" value="06 — Summarize&#10;(terminal)" vertex="1">
           <mxGeometry height="200" width="160" x="2020" y="171" as="geometry" />
         </mxCell>
         <mxCell id="p06sub" parent="1" style="text;html=1;fontSize=12;align=left;verticalAlign=top;spacingLeft=6;fontColor=#3B4A57;" value="skill: summarize&lt;br&gt;&lt;br&gt;Coverage matrix, control&lt;br&gt;inventory." vertex="1">
           <mxGeometry height="100" width="140" x="2032" y="219" as="geometry" />
         </mxCell>
-        <mxCell id="p06out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ SUMMARY-&#xa;   REPORT.md" vertex="1">
+        <mxCell id="p06out" parent="1" style="text;html=1;fontSize=11;align=left;verticalAlign=middle;fontColor=#5A6B7B;fontStyle=2;" value="→ SUMMARY-&#10;   REPORT.md" vertex="1">
           <mxGeometry height="40" width="140" x="2032" y="323" as="geometry" />
         </mxCell>
-        <mxCell id="deliverable" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F4EA;strokeColor=#3F8624;strokeWidth=3;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;fontColor=#232F3E;" value="Deliverable to customer&#xa;&#xa;Recommended security controls.&#xa;The customer applies them themselves —&#xa;the pipeline does not deploy, test, or&#xa;attest against a live account." vertex="1">
+        <mxCell id="deliverable" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F4EA;strokeColor=#3F8624;strokeWidth=3;fontSize=14;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;fontColor=#232F3E;" value="Deliverable to customer&#10;&#10;Recommended security controls.&#10;The customer applies them themselves —&#10;the pipeline does not deploy, test, or&#10;attest against a live account." vertex="1">
           <mxGeometry height="160" width="320" x="2268" y="189" as="geometry" />
         </mxCell>
-        <mxCell id="gates" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;fontStyle=2;align=center;verticalAlign=middle;fontColor=#3B4A57;dashed=1;" value="Guardrails on every phase:  PostToolUse + Stop hooks · validate_pipeline_integrity (P1–P11) · check_phase_complete precondition gate · MCP-verified facts logged to pipeline.log · citation-gated mapping (AWS Threat Model → Control Catalog → service docs)" vertex="1">
+        <mxCell id="gates" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F7FA;strokeColor=#5A6B7B;strokeWidth=2;fontSize=13;fontStyle=2;align=center;verticalAlign=middle;fontColor=#3B4A57;dashed=1;" value="Guardrails: pre-write + post-write + Stop checks · verified intake and immutable snapshot (P0) · source accounting and report disclosure (P14) · phase completeness, factual verification and artifact checks" vertex="1">
           <mxGeometry height="60" width="2080" x="160" y="452" as="geometry" />
         </mxCell>
         <mxCell id="legend_box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#5A6B7B;strokeWidth=1.5;" value="" vertex="1">
@@ -136,10 +136,10 @@
         <mxCell id="legend_title" parent="1" style="text;html=1;fontSize=15;fontStyle=1;align=left;verticalAlign=top;spacingLeft=8;fontColor=#232F3E;" value="Legend / notes" vertex="1">
           <mxGeometry height="26" width="300" x="856" y="587" as="geometry" />
         </mxCell>
-        <mxCell id="legend_body" parent="1" style="text;html=1;fontSize=13;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fontColor=#3B4A57;" value="• Phases run in order; each phase consumes the previous phase&#39;s output (strict DAG).&lt;br&gt;&lt;br&gt;• In Claude Code (Agent tool available), Research (4), Map (2+fan-out), and&lt;br&gt;  Recommended Guidance (3 families) fan out to parallel sub-agents; other&lt;br&gt;  clients run sequentially.&lt;br&gt;&lt;br&gt;• Default framework is CCMv4; NIST 800-53 / CIS / ISO 27001 available via&lt;br&gt;  --framework, plus custom frameworks anchored to CCMv4 guidance." vertex="1">
+        <mxCell id="legend_body" parent="1" style="text;html=1;fontSize=13;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;fontColor=#3B4A57;" value="• Intake fetches once. Every phase and offline resume use the same sealed snapshot.&lt;br&gt;  Missing/modified snapshots or unauthenticated receipts block active runs.&lt;br&gt;&lt;br&gt;• Research and Map sub-skills run in parallel where the client supports it.&lt;br&gt;  Preventive guidance uses recommend → reference-based authors → root-cause critic.&lt;br&gt;&lt;br&gt;• CCMv4 is the default. Custom objectives map directly to model-backed controls;&lt;br&gt;  CCM text similarity is advisory. MITRE MCP is optional (bundled ATT&amp;CK fallback).&lt;br&gt;&lt;br&gt;• Source defects are disclosed in the framework-map appendix. Retired runs move&lt;br&gt;  to _archive/; active runs always require current model and reporting checks." vertex="1">
           <mxGeometry height="244" width="690" x="856" y="617" as="geometry" />
         </mxCell>
-        <mxCell id="meta" parent="1" style="text;html=1;fontSize=12;align=right;verticalAlign=middle;fontColor=#93A1AF;" value="Service Onboarding Accelerator · Pipeline flow · v3 (7-phase)" vertex="1">
+        <mxCell id="meta" parent="1" style="text;html=1;fontSize=12;align=right;verticalAlign=middle;fontColor=#93A1AF;" value="Service Onboarding Accelerator · Intake + six phases · published-model workflow" vertex="1">
           <mxGeometry height="24" width="980" x="1660" y="1027" as="geometry" />
         </mxCell>
       </root>

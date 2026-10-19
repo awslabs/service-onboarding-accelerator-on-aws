@@ -247,7 +247,7 @@ services:
 | Preventive | 9–12 | SCPs (split), resource policies, KMS key policy, permission boundary, VPC endpoint, RCP, tag policies |
 | Proactive | 12–15 | CFN Guard rules, OPA policies (per resource type), Checkov config + custom policies, CFN hooks |
 | Detective | 34–47 | Config rules + Lambda handlers, EventBridge rules, CloudWatch alarms, Access Analyzer, compensating controls |
-| Responsive | 6 | Lambda remediator + SAM template, SSM runbooks (org + account), Step Functions workflow |
+| Responsive | Varies | References to pre-authored AWS SSM Automation runbooks and how-to-use guides |
 
 
 ---
@@ -259,7 +259,8 @@ previous phase's output — a strict DAG — and writes to its own directory.
 
 ![Pipeline flow](docs/pipeline-flow.drawio.png)
 
-- **Intake** — collects the service name and framework choice → `intake-manifest.json`.
+- **Intake** — collects the service and framework, verifies the current published
+  AWS Threat Model, and saves a sealed snapshot → `intake-manifest.json`.
 - **Assess** — 5-domain CAF security posture assessment.
 - **Research** — discovers capabilities, API surface, and MITRE ATT&CK attack
   surface (4 parallel sub-skills, then merged) → `research.json`.
@@ -269,6 +270,25 @@ previous phase's output — a strict DAG — and writes to its own directory.
 - **Recommended Guidance** — produces the control artifacts across all
   categories (preventive is a gated sub-pipeline).
 - **Summarize** — the coverage matrix and control inventory → `SUMMARY-REPORT.md`.
+
+The same model snapshot is used throughout the run and on offline resume.
+Custom frameworks map directly to AWS Threat Model evidence; CCMv4 similarity
+is supporting guidance. See [source verification and workspace upgrades](docs/THREAT-MODELS.md).
+
+### Upgrading a workspace with old runs
+
+Old completed runs may predate the current model-verification and reporting
+requirements. Preserve their reports and retire them from the active sweep:
+
+```bash
+# Run from the customer workspace, using the installed repository's script path.
+python3 /path/to/service-onboarding/tools/archive_run.py --slug dsql --reason upgrade
+```
+
+This moves the selected run under ignored `.service-approval/_archive/`, without
+changing its reports or shared source snapshots. Then run `/service-approval`
+normally. An archive is a historical record, not approval under the new checks.
+See the [upgrade procedure](docs/THREAT-MODELS.md#upgrade-existing-workspaces).
 
 ---
 
@@ -301,7 +321,9 @@ The **published AWS Threat Model gate** retrieves current upstream data before
 assessment/research for new runs and rechecks the original snapshot locally on resume. Intake records
 `inputs.threat_model_file` and `inputs.threat_model_source`. Pre-write hooks,
 phase preconditions, and pipeline integrity enforce the model's shape, service
-identity, published provenance, and snapshot hash. AWS capability claims still
+identity, the authenticated intake seal, and snapshot hash. Only online intake
+checks AWS publication; offline resume verifies the prior intake and unchanged
+snapshot. AWS capability claims still
 require Research/Validate verification.
 
 Two complementary layers keep the output trustworthy.
