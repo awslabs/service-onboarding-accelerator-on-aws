@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/generate-preventive-iam/SKILL.md`.\n\nRead `.service-approval/<slug>/05-recommended-guidance/preventive-plan.json` and author IAM-family artifacts ONLY for rows where decision == \"GENERATE_IAM\", dispatching by the control's mechanism to the matching output file and adapting the anchored reference example. Stamp `_metadata.reference` on every artifact. Write to `.service-approval/<slug>/05-recommended-guidance/preventive/`.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"
@@ -17,6 +16,13 @@
   ],
   "includeMcpJson": true,
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 \"${workspaceRoot}/tools/validate/hook_pre_tool_use.py\"",
+        "timeout_ms": 30000
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "fs_write",

@@ -26,7 +26,7 @@ def _plan() -> dict:
                 "control_id": "CTRL-ORG-PRV-001", "mechanism": "SCP",
                 "decision": "GENERATE_SCP",
                 "anchor": {"example_id": "scp-ex-1", "repo": "r", "url": "u"},
-                "citation": {"type": "canopy", "id": "M-fn.0"},
+                "citation": {"type": "threat_model", "id": "M-fn.0"},
                 "rationale": "condition key gates CreateFunction",
             },
             {
@@ -81,7 +81,7 @@ def test_every_count_row_is_traceable() -> None:
     cov = bpc.build_coverage(_plan())
     for r in cov["controls"]:
         assert r["control_id"].startswith("CTRL-")
-        assert r["citation"]["type"] in {"canopy", "reference", "catalog", "service-doc"}
+        assert r["citation"]["type"] in {"threat_model", "reference", "catalog", "service-doc"}
         assert r["reason"]
 
 
@@ -161,7 +161,7 @@ def test_applicability_carried_for_authored_and_referred() -> None:
 
 
 def test_decision_without_applicability_is_valid() -> None:
-    """A plan/coverage row that carries no applicability (canopy-only, no URL, or
+    """A plan/coverage row that carries no applicability (threat-model-only, no URL, or
     absent) still builds and validates — applicability is carried only when present."""
     plan = {
         "_metadata": {"service": "x"},
@@ -169,7 +169,7 @@ def test_decision_without_applicability_is_valid() -> None:
             {"control_id": "CTRL-ORG-PRV-005", "mechanism": "SCP",
              "decision": "GENERATE_SCP",
              "anchor": {"example_id": "e", "repo": "r", "url": "u"},
-             "citation": {"type": "canopy", "id": "M-x.0"},
+             "citation": {"type": "threat_model", "id": "M-x.0"},
              "rationale": "gated"},
         ],
     }

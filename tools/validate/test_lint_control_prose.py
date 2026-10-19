@@ -239,6 +239,20 @@ def test_lint_markdown_clean_catalog_passes() -> None:
     assert lint_markdown_prose(_CATALOG_MD_CLEAN) == []
 
 
+def test_mapping_citation_limitations_are_not_rendered_control_claims() -> None:
+    md = """| Control ID | Title | Rationale | Source |
+|---|---|---|---|
+| CTRL-ACC-DET-001 | Monitor events | Records access events. | detection only; no blocking |
+"""
+    mapping = {"controls": [{"id": "CTRL-ACC-DET-001", "name": "Monitor events",
+                             "description": "Records access events."}]}
+    assert lint_markdown_prose(md) == []
+    assert find_md_divergences(md, mapping) == []
+    overclaim = md.replace("Records access events.", "Guarantees event detection.")
+    assert lint_markdown_prose(overclaim)
+    assert find_md_divergences(overclaim, mapping)
+
+
 def test_lint_markdown_flags_overreach_in_catalog_bullet() -> None:
     results = lint_markdown_prose(_CATALOG_MD_OVERREACH)
     flagged = {cid for cid, _ in results}

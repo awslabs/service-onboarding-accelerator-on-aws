@@ -1,12 +1,27 @@
 # Installation Guide
 
-Short version: `git clone && cd && ./install.sh`. That's it for most clients.
+Short version: `git clone && cd && install the Python packages && ./install.sh`.
+That's it for most clients.
+
+## Prerequisites
+
+- A client: Claude Code, Kiro IDE, or VS Code + GitHub Copilot
+- [`git`](https://git-scm.com/downloads)
+- [Python](https://www.python.org/downloads/) 3.9+ (`python3 --version`)
+- The Python packages in [`requirements.txt`](../requirements.txt) (installed below)
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — default MCP mode only; skip if you always use `--no-mcp`
+
+No AWS account or credentials are required to generate controls. For a from-zero
+walkthrough and a copy-paste prerequisite check, see the
+[README Prerequisites](../README.md#prerequisites).
 
 ## Quick install
 
 ```bash
 git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 cd service-onboarding-accelerator-on-aws
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ./install.sh
 ```
 
@@ -14,6 +29,7 @@ Windows:
 ```powershell
 git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 cd service-onboarding-accelerator-on-aws
+py -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt
 .\install.ps1
 ```
 
@@ -69,7 +85,7 @@ If you prefer to install the plugin manually without the script:
    ```
 
 > **Note:** The manual approach does not configure MCP servers. You will need to
-> approve MCP server connections (aws-documentation, awsknowledge, awsiac, etc.)
+> approve MCP server connections (aws-documentation, awsknowledge, etc.)
 > when prompted on first use, or run `./install-claude.sh` afterward to write the
 > MCP config.
 

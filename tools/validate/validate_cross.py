@@ -18,6 +18,11 @@ import os
 import re
 import sys
 
+try:
+    from .artifact_rules import iter_rules, resource_types
+except ImportError:
+    from artifact_rules import iter_rules, resource_types
+
 
 # ================================================================
 # Helpers
@@ -53,6 +58,11 @@ def _find_state_dir(controls_dir: str) -> dict[str, str] | None:
 
 
 def _extract_metadata(data: dict) -> dict | None:
+    # Some artifacts have a top-level JSON array (e.g. CloudFormation parameter
+    # files) rather than an object; those carry no _metadata. Guard the type so
+    # walking them never raises.
+    if not isinstance(data, dict):
+        return None
     meta = data.get("_metadata")
     if not meta or not isinstance(meta, dict):
         return None
@@ -103,9 +113,6 @@ def check_framework_header_consistency(controls_dir: str) -> list[str]:
     headers: dict[str, list[str]] = {}  # framework_string -> [file_paths]
 
     for fpath in _walk_json_files(controls_dir):
-        # Skip iac/ directory (IaC templates don't have _metadata)
-        if "/iac/" in fpath.replace("\\", "/"):
-            continue
         data = _load_json(fpath)
         if not data:
             continue
@@ -154,10 +161,8 @@ def check_control_coverage(controls_dir: str, mapping: dict) -> list[str]:
 
     # Scan JSON _metadata and inline control_ids
     for fpath in _walk_json_files(controls_dir):
-        if "/iac/" in fpath.replace("\\", "/"):
-            continue
         data = _load_json(fpath)
-        if not data:
+        if not data or not isinstance(data, dict):
             continue
         meta = _extract_metadata(data)
         if meta:
@@ -341,16 +346,12 @@ def check_resource_type_consistency(controls_dir: str, validated: dict) -> list[
     for fpath in _walk_json_files(controls_dir):
         basename = os.path.basename(fpath).lower()
         data = _load_json(fpath)
-        if not data:
+        if not data or not isinstance(data, dict):
             continue
 
-        if "config-rules" in basename:
-            for key, rule in data.items():
-                if key == "_metadata" or not isinstance(rule, dict):
-                    continue
-                rt = rule.get("resource_type", "")
-                if rt:
-                    config_types.add(rt)
+        if basename in {"config-rules.json", "config-org-rules.json"}:
+            for _, rule in iter_rules(data):
+                config_types.update(resource_types(rule))
 
     # Check Config types against validated assets
     invalid_config = config_types - valid_types
@@ -373,10 +374,8 @@ def check_no_duplicate_names(controls_dir: str) -> list[str]:
     names: dict[str, list[str]] = {}  # name -> [source files]
 
     for fpath in _walk_json_files(controls_dir):
-        if "/iac/" in fpath.replace("\\", "/"):
-            continue
         data = _load_json(fpath)
-        if not data:
+        if not data or not isinstance(data, dict):
             continue
         basename = os.path.basename(fpath)
 
@@ -440,7 +439,7 @@ def check_condition_key_consistency(controls_dir: str, validated: dict) -> list[
 
     for fpath in _walk_json_files(controls_dir):
         norm = fpath.replace("\\", "/")
-        if "/iac/" in norm or "/proactive/" in norm:
+        if "/proactive/" in norm:
             continue
         data = _load_json(fpath)
         if not data:
@@ -484,128 +483,6 @@ def check_condition_key_consistency(controls_dir: str, validated: dict) -> list[
 
 
 # ================================================================
-# Check X6: IaC template completeness
-# ================================================================
-
-def check_iac_completeness(controls_dir: str) -> list[str]:
-    """Verify all 4 IaC format templates exist and Terraform modules are complete."""
-    errors = []
-    iac_dir = os.path.join(controls_dir, "iac")
-    if not os.path.isdir(iac_dir):
-        return []  # IaC not generated yet — not an error at cross-validation time
-
-    # 4 required formats
-    required = {
-        "main.tf": "Terraform",
-        "compliant-resource.cdk.ts": "CDK TypeScript",
-        "compliant-resource.cfn.yaml": "CloudFormation",
-        "compliant-resource.cdktf.ts": "CDKTF",
-    }
-    # Check both direct files and subdirectories (TF/CDK/CFN/CDKTF may be in subdirs)
-    for filename, label in required.items():
-        direct = os.path.join(iac_dir, filename)
-        # Also check common subdirectory patterns
-        subdir_paths = [
-            os.path.join(iac_dir, "terraform", filename),
-            os.path.join(iac_dir, "cdk", filename),
-            os.path.join(iac_dir, "cloudformation", filename),
-            os.path.join(iac_dir, "cdktf", filename),
-        ]
-        found = os.path.isfile(direct) or any(os.path.isfile(p) for p in subdir_paths)
-
-        # Special case: CFN YAML may have service-specific name
-        if not found and filename.endswith(".yaml"):
-            for root, dirs, files in os.walk(iac_dir):
-                dirs[:] = [d for d in dirs if d not in (".terraform", "node_modules")]
-                for f in files:
-                    if f.endswith(".cfn.yaml") or (f.endswith(".yaml") and "template" in f.lower()):
-                        found = True
-                        break
-                if found:
-                    break
-
-        # Special case: CDK TS may have service-specific name
-        if not found and filename.endswith(".cdk.ts"):
-            for root, dirs, files in os.walk(iac_dir):
-                dirs[:] = [d for d in dirs if d not in (".terraform", "node_modules")]
-                for f in files:
-                    if f.endswith(".cdk.ts") or (f.endswith(".ts") and "cdk" in root.lower()):
-                        found = True
-                        break
-                if found:
-                    break
-
-        if not found:
-            errors.append(f"CHECK-X6 iac_completeness: missing {label} template ({filename})")
-
-    # Terraform module structure: each module needs main.tf, variables.tf, outputs.tf
-    modules_dir = os.path.join(iac_dir, "modules")
-    if os.path.isdir(modules_dir):
-        for mod_name in os.listdir(modules_dir):
-            mod_path = os.path.join(modules_dir, mod_name)
-            if not os.path.isdir(mod_path) or mod_name.startswith((".", "_")):
-                continue
-            for required_file in ("main.tf", "variables.tf", "outputs.tf"):
-                if not os.path.isfile(os.path.join(mod_path, required_file)):
-                    errors.append(
-                        f"CHECK-X6 tf_module: modules/{mod_name}/ missing {required_file}"
-                    )
-
-    return errors
-
-
-# ================================================================
-# Check X7: Terraform root ↔ module variable name consistency
-# ================================================================
-
-def check_terraform_variable_consistency(controls_dir: str) -> list[str]:
-    """Verify root main.tf arguments match child module variable declarations."""
-    errors = []
-    iac_dir = os.path.join(controls_dir, "iac")
-    root_main = os.path.join(iac_dir, "main.tf")
-    if not os.path.isfile(root_main):
-        return []
-
-    try:
-        content = open(root_main).read()
-    except OSError:
-        return []
-
-    # Parse module blocks: module "name" { ... }
-    for m in re.finditer(r'module\s+"(\w+)"\s*\{(.*?)\n\}', content, re.DOTALL):
-        mod_name = m.group(1)
-        mod_body = m.group(2)
-
-        source_match = re.search(r'source\s*=\s*"([^"]+)"', mod_body)
-        if not source_match:
-            continue
-        source = source_match.group(1)
-        mod_vars_path = os.path.join(iac_dir, source.lstrip("./"), "variables.tf")
-        if not os.path.isfile(mod_vars_path):
-            continue
-
-        try:
-            vars_content = open(mod_vars_path).read()
-        except OSError:
-            continue
-
-        declared_vars = set(re.findall(r'variable\s+"(\w+)"', vars_content))
-        # Extract arguments from module block (lines like: arg_name = value)
-        # Exclude Terraform meta-arguments that aren't module variables
-        tf_meta_args = {"source", "count", "for_each", "depends_on", "providers", "lifecycle"}
-        args = set(re.findall(r"^\s+(\w+)\s*=", mod_body, re.MULTILINE)) - tf_meta_args
-
-        for arg in sorted(args):
-            if arg not in declared_vars:
-                errors.append(
-                    f"CHECK-X7 tf_variable: module \"{mod_name}\": argument "
-                    f"\"{arg}\" not declared in {os.path.relpath(mod_vars_path, controls_dir)}"
-                )
-
-    return errors
-
-
-# ================================================================
 # Check X8: Lambda handler completeness
 # ================================================================
 
@@ -620,14 +497,12 @@ def check_lambda_handler_completeness(controls_dir: str) -> list[str]:
     custom_rules: list[str] = []
     for fpath in _walk_json_files(detective_dir):
         basename = os.path.basename(fpath).lower()
-        if "config-rules" not in basename:
+        if basename not in {"config-rules.json", "config-org-rules.json"}:
             continue
         data = _load_json(fpath)
-        if not data:
+        if not data or not isinstance(data, dict):
             continue
-        for key, rule in data.items():
-            if key == "_metadata" or not isinstance(rule, dict):
-                continue
+        for key, rule in iter_rules(data):
             if rule.get("source_type") == "CUSTOM_LAMBDA":
                 rule_name = rule.get("rule_name", key)
                 custom_rules.append(rule_name)
@@ -799,8 +674,6 @@ def validate_all(controls_dir: str) -> list[str]:
     # Always run (no state dependency)
     errors.extend(check_framework_header_consistency(controls_dir))
     errors.extend(check_no_duplicate_names(controls_dir))
-    errors.extend(check_iac_completeness(controls_dir))
-    errors.extend(check_terraform_variable_consistency(controls_dir))
     errors.extend(check_lambda_handler_completeness(controls_dir))
     errors.extend(check_confused_deputy(controls_dir))
     errors.extend(check_proactive_completeness(controls_dir))

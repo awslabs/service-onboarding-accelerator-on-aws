@@ -42,10 +42,16 @@ metadata.
 
 ## Authoring procedure
 
-Same as `generate-preventive-scp` (load anchor body → adapt actions/keys →
-apply shared authoring rules → stamp `_metadata.reference` → stamp
-`_metadata.applicability` verbatim from the plan row), with the RCP-specific
-requirements:
+Same as `generate-preventive-scp` — including the **AWS Threat Model-anchor path**: when
+the plan row's `anchor.source == "threat_model"`, author the RCP body from the matching
+AWS Threat Model implementation's `authorization_policy` (actions + condition_keys) in
+`.service-approval/<slug>/02-research/threat-model-index.json`, and stamp
+`_metadata.citation = {type: "threat_model", id: "<alias>", url: "<MCP-verified
+REFERENCE href>", verified_via: "mcp"}` instead of a repo `_metadata.reference`
+(stamp `reference` only if a repo body was also used). Otherwise load the
+reference-repo anchor body. Then adapt actions/keys → apply shared authoring
+rules → stamp `_metadata.applicability` verbatim from the plan row, with the
+RCP-specific requirements:
 
 - Always `"Effect": "Deny"` and `"Principal": "*"`.
 - Include `"BoolIfExists": {"aws:PrincipalIsAWSService": "false"}` where the
@@ -57,11 +63,13 @@ requirements:
 ## Required metadata
 
 Identical shape to `generate-preventive-scp` with `scope`/`layer` appropriate to
-the control and `posture: "preventative-request"`. `_metadata.reference.example_id`
-MUST equal the plan row's `anchor.example_id` and resolve in the index.
-`_metadata.applicability` MUST be copied verbatim from the plan row's
-`applicability` object (anchored RCPs carry `anchor.url`, so the plan row carries
-it and the reference-anchor validator hard-fails its omission).
+the control and `posture: "preventative-request"`. For a reference-repo anchor,
+`_metadata.reference.example_id` MUST equal the plan row's `anchor.example_id`
+and resolve in the index; for an AWS Threat Model anchor the artifact carries
+`_metadata.citation` of `type: "threat_model"` (alias resolves in `threat-model-index.json`)
+instead. `_metadata.applicability` MUST be copied verbatim from the plan row's
+`applicability` object (anchored RCPs carry a citation `url`, so the plan row
+carries it and the reference-anchor validator hard-fails its omission).
 
 ## Shared authoring rules
 

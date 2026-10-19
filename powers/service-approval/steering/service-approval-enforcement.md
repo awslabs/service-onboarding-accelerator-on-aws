@@ -34,7 +34,6 @@ equivalent to skipping the Validator.
 
 Minimum checks:
 - Artifact count meets ranges defined in `steering/phase-generate.md`
-- All IaC formats from `iac-support.json` (where `supported: true`) have output
 - Proactive controls exist as Guard + OPA + Checkov (all three engines)
 - Every SCP has `_metadata`, `_simulation_tests`, and ≥1 Deny statement
 - No placeholder account IDs in any generated file

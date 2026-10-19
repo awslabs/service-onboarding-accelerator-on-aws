@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas/threat-model-index.schema.json",
+  "title": "threat-model-index.json",
+  "description": "Normalized AWS Threat Model citation index. Written by research-mitigations when the input is an AWS Threat Model export at .service-approval/<slug>/02-research/threat-model-index.json. It is the single source of truth downstream citation lookups and the citation validator resolve a threat_model citation alias against. Carries the normalized mitigations[] (parse_threat_model_mitigations + the mitigation's cited REFERENCE links) and implementations[] (parse_threat_model_implementations) from tools/validate/threat_model_parse.py.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["_metadata", "mitigations", "implementations"],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["service"],
+      "properties": {
+        "service": {"type": "string", "minLength": 1},
+        "source": {"type": "string"},
+        "generated": {"type": "string"}
+      }
+    },
+    "mitigations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/mitigation"}
+    },
+    "implementations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/implementation"}
+    }
+  },
+  "$defs": {
+    "reference_link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["href"],
+      "properties": {
+        "href": {"type": "string", "minLength": 1},
+        "title": {"type": "string"}
+      }
+    },
+    "mitigation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "alias"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "alias": {"type": "string"},
+        "statement": {"type": "string"},
+        "scoping_context": {"type": "array", "items": {"type": "string"}},
+        "reference_links": {"type": "array", "items": {"$ref": "#/$defs/reference_link"}}
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["id", "alias", "behavior", "mechanism"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "alias": {"type": "string", "minLength": 1},
+        "behavior": {"type": "string", "enum": ["PREVENTIVE", "PROACTIVE", "DETECTIVE", "DIRECTIVE"]},
+        "implementation_type": {"type": "string"},
+        "mechanism": {"type": "string", "minLength": 1},
+        "actions": {"type": "array", "items": {"type": "string"}},
+        "resources": {"type": "array", "items": {"type": "string"}},
+        "condition_keys": {"type": "array", "items": {"type": "string"}},
+        "scoping_context": {"type": "array", "items": {"type": "string"}},
+        "reference_links": {"type": "array", "items": {"$ref": "#/$defs/reference_link"}},
+        "mitigation_ids": {"type": "array", "items": {"type": "string"}},
+        "entity_ids": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

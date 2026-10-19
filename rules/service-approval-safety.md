@@ -2,12 +2,30 @@
 
 These rules apply across all clients and all agents.
 
+## Mandatory published source
+- Intake MUST fetch the latest matching model with
+  `tools/validate/fetch_threat_model.py --service <name>`. Follow the public AWS
+  release manifest; never maintain a hardcoded supported-service list.
+- Persist the returned `inputs.threat_model_file` and `inputs.threat_model_source`.
+  Hooks and per-phase checks validate source identity, provenance, and SHA-256.
+- At every entry/resume with saved state, run
+  `validate_threat_model_input.py --slug <slug>` before dispatch. Resume is offline
+  and uses the same snapshot. Only explicit new intake adopts upstream changes.
+- For new intake, missing services, failed JSON downloads, rate limits, invalid
+  models, and JSON hash mismatches stop the pipeline. Missing/altered local
+  snapshots stop resume. Readable-report failures and broken source relationships
+  are advisory; preserve them in the integrity report and customer-facing output. Local exports, stale snapshots, flags, saved
+  intake, MITRE defaults, and mitigation reports cannot waive this requirement.
+- Downloaded models and derived runtime state MUST remain under ignored
+  `.service-approval/` paths. NEVER commit them; tests use synthetic fixtures only.
+- Readable model links supplement existing AWS documentation and policy-reference
+  citations; they do not replace capability verification or reference anchoring.
+
 ## Deployment & Teardown (customer responsibility)
-- This pipeline produces recommended security controls and compliant IaC; it does
-  not deploy, test, or tear down resources against a live AWS account. Deploying the
-  generated artifacts — and tearing them down afterward — is the customer's
-  responsibility.
-- The generated IaC and control artifacts are what the customer reviews and applies
+- This pipeline produces recommended security controls; it does not deploy, test, or
+  tear down resources against a live AWS account. Applying the generated artifacts —
+  and removing them afterward — is the customer's responsibility.
+- The generated control artifacts are what the customer reviews and applies
   in their own account through their own change process; no agent in this pipeline
   assumes an AWS profile or mutates account state.
 
@@ -28,3 +46,11 @@ These rules apply across all clients and all agents.
 - All API parameters, condition keys, and Config rule names must be sourced from MCP — never
   from model training data.
 - Log every MCP call to `.service-approval/<slug>/mcp-calls.log`.
+
+- P14 recomputes source mitigation accounting and verifies exact disclosure of
+  findings/repairs in reports. Findings do not fail P14; missing/stale disclosure does.
+
+Generated alias/UUID mismatches and invalid dispositions remain authoring errors:
+repair them against the unambiguous snapshot before final disclosure. P14 rejects
+those errors even when listed, while source defects and honest unresolved
+coverage remain advisory.

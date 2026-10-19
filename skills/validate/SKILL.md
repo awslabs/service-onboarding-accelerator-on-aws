@@ -15,7 +15,7 @@ Produce `.service-approval/<slug>/03-validate/validated.json`.
 When confirming a claim or attaching a citation, consult sources in this fixed
 order and cite the **highest-priority** source that supports the claim:
 
-1. **Canopy** — the customer-provided mitigation/threat export, when present
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake
    (authoritative intent + top citation).
 2. **AWS Control Catalog API** — the control→objective authority.
 3. **Service-specific AWS documentation** — the target service's own pages only;
@@ -27,6 +27,10 @@ source. `sar-facts.json` / `checkpoint-results.json` remain the authoritative
 *assessment* inputs. Log every MCP lookup to `mcp-calls.log`.
 
 ## Prerequisites
+
+- [ ] You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+  before verification or reusing cached state. Stop on nonzero exit; the matching
+  AWS Threat Model export remains mandatory in every mode.
 
 - [ ] Confirm research.json exists (schema validation runs automatically via PostToolUse hook).
   Stop if `.service-approval/<slug>/02-research/research.json` is missing.
@@ -57,7 +61,7 @@ source. `sar-facts.json` / `checkpoint-results.json` remain the authoritative
   If it exists, ask the user verbatim:
 
   > A prior `validated.json` exists (dated {mtime}). This file contains MCP-verified facts
-  > about the service — every downstream artifact (controls, mappings, IaC) depends on it
+  > about the service — every downstream artifact (controls, mappings) depends on it
   > being accurate.
   >
   > Do you want to:
@@ -92,7 +96,25 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description>"
 ```
 
-Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `awsiac`, `iam`, etc.). Validate is the MCP-verification skill — expect 30+ canonical events per run.
+Substitute `<server>` with the MCP server name (`awsknowledge`, `aws-documentation`, `mitre-attack`). Validate is the MCP-verification skill — expect 30+ canonical events per run.
+
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), verify every claim over the web per
+[`rules/web-access.md`](../../rules/web-access.md) using the discovery→verify
+loop: run open `WebSearch` to locate a page when the URL is unknown, then
+`WebFetch` the Service Authorization Reference
+(`docs.aws.amazon.com/service-authorization/...`) for condition keys / actions /
+resources, and the IAM Access Analyzer API reference for
+SCP/RCP/permission-boundary feasibility, instead of `awsknowledge` /
+`aws-documentation`. Log each web lookup with `--source web:<source-key>
+--verdict fetch` (or `search`) instead of the `mcp:<server>:call` event above;
+these `web:*` events satisfy the same P1 call floor. Validate remains the
+verification skill — the requirement to confirm every capability, parameter, and
+condition key is unchanged; only the transport changes. Direct `aws
+accessanalyzer validate-policy` CLI checks are available in either mode.
 
 ## Verification note rules
 
@@ -201,7 +223,7 @@ For each technique in `attack_surface.applicable_techniques[]`:
    ```bash
    python3 -c "
    import json
-   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; use custom if --threat-model-file provided
+   xw = json.load(open('data/attack-nist-ccm-crosswalk.json'))  # default crosswalk; additional customer mappings may supplement it
    xw_map = {m['attack_technique_id']: m for m in xw['mappings']}
    # Check each technique's framework mappings
    "
@@ -437,7 +459,6 @@ Before writing validated.json, sanitize ALL string values (including metadata fi
 MCP tool identifiers with user-facing names per CLAUDE.md terminology rules:
 - `mcp__awsknowledge__aws___*` → "AWS Documentation"
 - `mcp__aws-documentation__*` → "AWS Documentation"
-- `mcp__kb-search__search_*_kb` → "{KB Name} KB"
 - `gateway_aws-documentation-mcp___*` → "AWS Documentation"
 This applies to `verification_source`, `mcp_sources_used`, and any other string field.
 
@@ -467,3 +488,14 @@ Validation complete (v3):
   - UNVERIFIED items:            N
   Output: .service-approval/<slug>/03-validate/validated.json
 ```
+
+
+## Source mitigation accounting
+
+Preserve every source mitigation's `alias` and `source_uuid` (the original UUID)
+when assigning internal `M-*` IDs. Internal IDs are separate from source UUIDs.
+Never silently drop source records or replace a source alias with an inferred one.
+After writing this phase's outputs, run
+`python3 tools/validate/audit_threat_model.py --slug <slug>`. It records source
+defects and missing source mitigations as advisories, preserving usable results.
+A missing MITRE technique alone is not a defect.

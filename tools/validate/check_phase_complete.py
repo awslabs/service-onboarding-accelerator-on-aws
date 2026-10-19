@@ -15,7 +15,7 @@ Usage:
 
 Exit codes:
     0 — all required outputs present and meet size thresholds
-    2 — at least one required output missing or under-sized
+    2 — AWS Threat Model prerequisite failed, or output missing/under-sized
 
 Examples:
     # At the start of /generate, verify Map produced everything:
@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from validate_pipeline_integrity import PHASE_REQUIRED_OUTPUTS  # noqa: E402
 from _hook_log import log_phase_event  # noqa: E402
+from validate_threat_model_input import check_run  # noqa: E402
 
 # Reuse paths.py for service_root resolution + slug validation
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -43,7 +44,7 @@ from paths import service_root  # type: ignore  # noqa: E402
 
 
 def check_phase(slug: str, phase: str) -> list[str]:
-    """Return list of error messages for missing/undersized outputs.
+    """Return errors for a missing source prerequisite or missing/undersized outputs.
 
     Args:
         slug: Canonical service slug (e.g., 'awslambda').
@@ -63,15 +64,14 @@ def check_phase(slug: str, phase: str) -> list[str]:
         return errors
 
     required = PHASE_REQUIRED_OUTPUTS[phase]
-    if not required:
-        # Phase has no JSON/MD outputs to check (e.g., 05-recommended-guidance uses
-        # subdirs; that gate lives in validate_pipeline_integrity directly).
-        return errors
-
     try:
         sroot = service_root(slug)
     except Exception as e:
         errors.append(f"Service slug invalid: {e}")
+        return errors
+
+    errors.extend(check_run(sroot))
+    if errors or not required:
         return errors
 
     phase_dir = sroot / phase

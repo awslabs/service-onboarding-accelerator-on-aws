@@ -41,7 +41,7 @@ def main() -> int:
     parser.add_argument("--phase", help="Phase tag (e.g. 04-map). Optional if file_path is given.")
     parser.add_argument("--source", required=True,
                         help="Source identifier (e.g. 'skill:map-assemble', 'mcp:awsknowledge', "
-                             "'script:smoke-deploy-test', 'hook:post-tool-use')")
+                             "'script:merge-domain-mappings', 'hook:post-tool-use')")
     parser.add_argument("--verdict", required=True,
                         help="Status keyword (start|end|retry|halt|pass|fail|warn|snoozed|"
                              "reject|error|call|response)")

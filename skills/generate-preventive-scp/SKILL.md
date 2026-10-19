@@ -63,6 +63,29 @@ any other reason — one statement per file is wrong.
 
 ## Authoring procedure (per approved control)
 
+**When the plan row's `anchor.source == "threat_model"`** (an AWS Threat Model implementation
+anchor), author the SCP body directly from the AWS Threat Model implementation instead of a
+reference-repo body:
+
+1. **Load the AWS Threat Model implementation** from
+   `.service-approval/<slug>/02-research/threat-model-index.json` — match `implementations[]`
+   by the `anchor.example_id` (the implementation `alias`). Its
+   `authorization_policy` gives the exact `actions`, `resources`, and
+   `condition_keys` to author into the Deny.
+2. **Adapt into full SCP JSON** — build the Deny statement(s) from those governed
+   actions + condition keys (still resolving Action strings through the SAR — see
+   Action rule below; the SAR is the authority for the literal action strings).
+3. **Apply the SCP authoring rules** (below).
+4. **Stamp `_metadata.citation = {type: "threat_model", id: "<alias>", url: "<REFERENCE
+   href>", verified_via: "mcp"}`** — the AWS Threat Model anchor. MCP-verify the REFERENCE
+   `href` at generation time and log the call. Stamp `_metadata.reference` ONLY if
+   a reference-repo body was ALSO used (both then must resolve). A resolvable
+   AWS Threat Model citation satisfies the P8 anchor gate on its own.
+5. **Stamp `_metadata.applicability`** — copy the plan row's `applicability`
+   object verbatim (required whenever the citation surfaces a `url`).
+
+**Otherwise (reference-repo anchor — `anchor.source` absent or `"reference"`):**
+
 1. **Load the anchor body.** Read the example from the index entry's
    `source_path` (vendored JSON). For facts-only entries (share-alike license,
    `source_path: null`), fetch the structure from the `source_url` via the doc
@@ -117,9 +140,13 @@ any other reason — one statement per file is wrong.
 }
 ```
 
-The `reference.example_id` MUST equal the plan row's `anchor.example_id` and
-MUST resolve in `data/reference-repos/index.yaml`. Mark the policy as an example
-to be verified against the service authorization guide before deployment.
+For a **reference-repo** anchor, `reference.example_id` MUST equal the plan row's
+`anchor.example_id` and MUST resolve in `data/reference-repos/index.yaml`. For a
+**AWS Threat Model** anchor (`anchor.source == "threat_model"`), the artifact carries
+`_metadata.citation = {type: "threat_model", id: "<alias>", ...}` instead (the alias
+resolves in `threat-model-index.json`); `_metadata.reference` is present only if a repo
+body was also used. Mark the policy as an example to be verified against the
+service authorization guide before deployment.
 
 ## Shared authoring rules
 

@@ -74,7 +74,13 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
 
 ## Authoring procedure (per approved control)
 
-1. Load the anchor body (vendored JSON, or facts-only re-expressed from
+1. Load the anchor body. **When the plan row's `anchor.source == "threat_model"`**,
+   load the matching AWS Threat Model implementation from
+   `.service-approval/<slug>/02-research/threat-model-index.json` (match `implementations[]`
+   by `anchor.example_id` == the implementation `alias`) and author from its
+   `authorization_policy` (governed `actions` / `resources` / `condition_keys`);
+   the AWS Threat Model anchor is complete on its own. **Otherwise** load the
+   reference-repo anchor body (vendored JSON, or facts-only re-expressed from
    `source_url` for share-alike entries — log the MCP lookup).
 2. Adapt to the target service: actions from `validated.json` (action rule
    below), condition keys from the recommender's `enforcing_condition_keys[]`.
@@ -126,19 +132,25 @@ invented control ID). Generate ONLY files whose mechanism appears in the plan.
      actions may flow through the endpoint) remain a valid VPCE-policy use
      case.
    - KMS key policies: `kms:ViaService` keyed to the consuming service.
-4. Stamp `_metadata.reference` (REQUIRED — the anchor gate hard-fails otherwise).
+4. Stamp the anchor. For a **AWS Threat Model** anchor, stamp `_metadata.citation =
+   {type: "threat_model", id: "<alias>", url: "<MCP-verified REFERENCE href>",
+   verified_via: "mcp"}` (stamp `_metadata.reference` only if a repo body was
+   also used). For a **reference-repo** anchor, stamp `_metadata.reference`
+   (REQUIRED — the anchor gate hard-fails an artifact with neither).
 5. Stamp `_metadata.applicability` — copy the plan row's `applicability` object
-   verbatim. Anchored IAM artifacts carry `anchor.url`, so the plan row carries
-   `applicability` and the reference-anchor validator hard-fails a URL-cited
-   artifact that omits it. (A refer-only trust-policy pointer ships no policy and
-   is exempt.)
+   verbatim. Anchored IAM artifacts surface a citation `url`, so the plan row
+   carries `applicability` and the reference-anchor validator hard-fails a
+   URL-cited artifact that omits it. (A refer-only trust-policy pointer ships no
+   policy and is exempt.)
 
 ## Required metadata
 
 Same shape as `generate-preventive-scp`, with `posture: "preventative-request"`
-and `scope`/`layer` from the control. `_metadata.reference.example_id` MUST equal
-the plan row's `anchor.example_id` and resolve in the index.
-`_metadata.applicability` MUST be copied verbatim from the plan row's
+and `scope`/`layer` from the control. For a reference-repo anchor,
+`_metadata.reference.example_id` MUST equal the plan row's `anchor.example_id`
+and resolve in the index; for an AWS Threat Model anchor the artifact carries
+`_metadata.citation` of `type: "threat_model"` (alias resolves in `threat-model-index.json`)
+instead. `_metadata.applicability` MUST be copied verbatim from the plan row's
 `applicability` object (what the policy targets + how to use it, including where
 NOT to apply it).
 

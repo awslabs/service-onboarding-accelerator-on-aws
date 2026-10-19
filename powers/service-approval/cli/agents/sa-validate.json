@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/validate/SKILL.md`.\n\nRead the skill file, consume `.service-approval/<slug>/02-research/research.json`, cross-reference with\ncheckpoint-results.json and sar-facts.json, and write `.service-approval/<slug>/03-validate/validated.json`.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"
@@ -17,6 +16,13 @@
   ],
   "includeMcpJson": true,
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 \"${workspaceRoot}/tools/validate/hook_pre_tool_use.py\"",
+        "timeout_ms": 30000
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "fs_write",

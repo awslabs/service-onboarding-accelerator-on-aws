@@ -36,10 +36,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-try:
-    from validate_deployable import SKIP_DIRS  # type: ignore
-except Exception:  # pragma: no cover
-    SKIP_DIRS = {"node_modules", ".git", "cdk.out", "__pycache__"}
+# Vendored/build directories to skip when walking artifact trees.
+SKIP_DIRS = {"node_modules", ".git", "cdk.out", "__pycache__", ".terraform", ".venv"}
 
 
 def _load_json(path: Path) -> dict | None:

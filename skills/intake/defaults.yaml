@@ -11,13 +11,7 @@
 # Default control framework for all services
 framework: "ccmv4"
 
-# Default input-folder bootstrap behavior
-# Applied only when ./input/ is missing AND the run is non-interactive.
-# Interactive runs always prompt the user and ignore these defaults.
-input:
-  bootstrap:
-    seed_from_plugin: false
-    auto_download_ccmv4: false
+# AWS Threat Model input is mandatory and has no skip/default fallback.
 
 # Default pipeline options
 options:
@@ -25,3 +19,5 @@ options:
   include_artifact_matrix: true
   include_unverified: false
   clean: false
+  # MCP is the default; set true (or pass --no-mcp) to verify facts over the web.
+  no_mcp: false

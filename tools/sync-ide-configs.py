@@ -44,6 +44,8 @@ def render_mcp_claude(mcp: dict) -> dict:
     """Claude Code .mcp.json format. Script paths are repo-root-relative."""
     out = {}
     for name, cfg in mcp.items():
+        if cfg.get("optional", False):
+            continue
         if cfg["type"] == "http":
             out[name] = {"type": "http", "url": cfg["url"]}
         elif cfg["type"] == "stdio":
@@ -70,6 +72,8 @@ def render_mcp_kiro(mcp: dict) -> dict:
     KIRO_PATH = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
     out = {}
     for name, cfg in mcp.items():
+        if cfg.get("optional", False):
+            continue
         if "kiro" in cfg.get("skip_clients", []):
             continue
         if cfg["type"] == "http":
@@ -90,6 +94,8 @@ def render_mcp_vscode(mcp: dict) -> dict:
     """VS Code .vscode/mcp.json uses `servers` (not mcpServers)."""
     out = {}
     for name, cfg in mcp.items():
+        if cfg.get("optional", False):
+            continue
         if cfg["type"] == "http":
             out[name] = {"type": "http", "url": cfg["url"]}
         elif cfg["type"] == "stdio":
@@ -160,6 +166,27 @@ def _update_md_frontmatter(path: Path, updates: dict, check: bool) -> bool:
 # Per-client syncers — each returns True if drift/writes happened.
 # --------------------------------------------------------------------------
 
+def _sync_license_notice(path: Path, license_name: str, check: bool) -> bool:
+    """Keep shipped client notices under the same canonical license metadata."""
+    existing = path.read_text()
+    updated, count = re.subn(
+        r"(?m)(^\*\*License:\*\* |^## License\n\n)[^\n]+",
+        lambda match: match.group(1) + license_name,
+        existing,
+        count=1,
+    )
+    if count != 1:
+        raise ValueError(f"Expected a license notice in {path.relative_to(REPO)}")
+    if updated == existing:
+        return False
+    if check:
+        print(f"DRIFT  {path.relative_to(REPO)}", file=sys.stderr)
+    else:
+        path.write_text(updated)
+        print(f"wrote  {path.relative_to(REPO)}")
+    return True
+
+
 def sync_claude_code(m: dict, check: bool) -> bool:
     """Plugin metadata at .claude-plugin/plugin.json + MCP at .mcp.json."""
     drift = False
@@ -197,6 +224,8 @@ def sync_kiro(m: dict, check: bool) -> bool:
         "author": m["author"]["name"],
         "version": m["version"],
     }, check)
+    drift |= _sync_license_notice(power_md, m["license"], check)
+    drift |= _sync_license_notice(power_md.parent / "README.md", m["license"], check)
 
     mcp_json = REPO / "powers" / "service-approval" / "mcp.json"
     drift |= _write_json(mcp_json, render_mcp_kiro(m["mcp_servers"]), check)
@@ -221,6 +250,9 @@ def sync_copilot(m: dict, check: bool) -> bool:
         "keywords": m["keywords"][:10],  # awesome-copilot schema caps at 10
     }
     drift |= _write_json(plugin_json, new_plugin, check)
+    drift |= _sync_license_notice(
+        REPO / ".github/plugins/service-approval/README.md", m["license"], check
+    )
 
     vscode_mcp = REPO / ".vscode" / "mcp.json"
     drift |= _write_json(vscode_mcp, render_mcp_vscode(m["mcp_servers"]), check)
@@ -239,10 +271,31 @@ def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--check", action="store_true", help="Dry-run; exit 2 on drift")
     p.add_argument("--client", choices=list(SYNCERS.keys()), help="Sync one client only")
+    p.add_argument(
+        "--optional-mcp-config", metavar="SERVER",
+        help="Print an optional server config for the selected client; write no files",
+    )
     args = p.parse_args()
+    if args.optional_mcp_config and (not args.client or args.check):
+        p.error("--optional-mcp-config requires --client and cannot be used with --check")
 
     with MANIFEST_PATH.open() as f:
         manifest = yaml.safe_load(f)
+
+    if args.optional_mcp_config:
+        server = args.optional_mcp_config
+        config = manifest["mcp_servers"].get(server)
+        if not config or not config.get("optional", False):
+            p.error(f"{server!r} is not an optional MCP server in manifest.yaml")
+        renderers = {
+            "claude-code": render_mcp_claude,
+            "kiro": render_mcp_kiro,
+            "copilot": render_mcp_vscode,
+        }
+        # Explicit opt-in only affects printed output, never the default configs.
+        selected = {server: {**config, "optional": False}}
+        print(json.dumps(renderers[args.client](selected), indent=2))
+        return 0
 
     clients = [args.client] if args.client else list(SYNCERS.keys())
     any_drift = False

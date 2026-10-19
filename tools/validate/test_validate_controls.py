@@ -15,9 +15,7 @@ Current coverage:
              AWS key (case-insensitive) or a KMS service-owned key inside a
              KMS key policy.
 - CHECK-14b: API-driven artifacts (proactive/**,
-             detective/config-rule-lambdas/**, responsive/ssm-runbook*,
-             responsive/stepfunctions-workflow.json,
-             responsive/lambda-remediator/**, iac/**) — any enum-style
+             detective/config-rule-lambdas/**) — any enum-style
              literal list must reference values from
              validated.json.api_surface.operations[].parameters[].enum.
 - CHECK-15:  posture-mechanism consistency — a generated artifact's
@@ -354,27 +352,6 @@ def test_14b_cfn_guard_enum_mismatch_fails() -> None:
         os.unlink(path)
 
 
-def test_14b_cdk_allowed_values_passes() -> None:
-    """CDK TypeScript AllowedValues matching parameter enum passes."""
-    content = """
-    const launchType = new CfnParameter(this, 'LaunchType', {
-      AllowedValues: ["EC2", "FARGATE", "EXTERNAL"],
-    });
-    """
-    fd, path = tempfile.mkstemp(suffix=".ts", prefix="iac-cdk-")
-    with os.fdopen(fd, "w") as fh:
-        fh.write(content)
-    # Simulate path under iac/
-    target = path.replace(os.path.basename(path), "iac/cdk/" + os.path.basename(path))
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    os.rename(path, target)
-    try:
-        errors = check_api_driven_enum_literals_14b(target, SAMPLE_VALIDATED)
-        assert errors == [], f"expected no errors, got {errors}"
-    finally:
-        os.unlink(target)
-
-
 def test_14b_python_in_list_passes_when_values_match() -> None:
     """Python Config Lambda `if x in [...]` matching parameter enum passes."""
     content = """
@@ -516,13 +493,6 @@ def test_15_preventative_proactive_guard_passes() -> None:
     assert errors == []
 
 
-def test_15_preventative_proactive_iac_passes() -> None:
-    data = {"_metadata": {"posture": "preventative-proactive"}}
-    target = "/tmp/fake-controls/iac/cloudformation/compliant-resource.cfn.yaml"
-    errors = check_posture_mechanism_consistency_15(target, data)
-    assert errors == []
-
-
 def test_15_no_posture_metadata_passes() -> None:
     """Files without _metadata.posture are not subject to CHECK-15 (opt-in)."""
     data = {"_metadata": {"scope": "account"}}
@@ -589,6 +559,25 @@ def test_15_cloudwatch_alarms_valid_for_reactive_detective() -> None:
     assert errors == []
 
 
+def test_15_documented_org_detective_artifacts_are_valid() -> None:
+    data = {"_metadata": {"posture": "reactive-detective"}}
+    for name in ("cloudtrail-org-config.json", "config-org-rules.json",
+                 "config-conformance-pack.yaml"):
+        assert check_posture_mechanism_consistency_15(
+            f"/tmp/fake-controls/detective/{name}", data) == []
+
+
+def test_15_org_detective_artifacts_still_reject_wrong_directory_or_posture() -> None:
+    for name in ("cloudtrail-org-config.json", "config-org-rules.json",
+                 "config-conformance-pack.yaml"):
+        assert check_posture_mechanism_consistency_15(
+            f"/tmp/fake-controls/preventive/{name}",
+            {"_metadata": {"posture": "reactive-detective"}})
+        assert check_posture_mechanism_consistency_15(
+            f"/tmp/fake-controls/detective/{name}",
+            {"_metadata": {"posture": "reactive-corrective"}})
+
+
 def test_15_compensating_controls_doc_valid_for_preventative_proactive() -> None:
     """compensating-controls-documentation.json is a cross-cutting gap-coverage
     artifact that lives in detective/ despite carrying a preventative-proactive
@@ -614,7 +603,7 @@ def test_15_compensating_controls_doc_outside_detective_fails() -> None:
     data = {"_metadata": {"posture": "preventative-proactive"}}
     target = "/tmp/fake-controls/preventive/compensating-controls-documentation.json"
     errors = check_posture_mechanism_consistency_15(target, data)
-    # preventative-proactive expects proactive/** or iac/** or the specific
+    # preventative-proactive expects proactive/** or the specific
     # detective/ cross-cutting file — preventive/ is wrong.
     assert len(errors) == 1
     assert "CHECK-15" in errors[0]
@@ -1094,7 +1083,7 @@ def test_17_display_name_service_skips() -> None:
 
 
 def test_17_only_runs_on_sar_driven_files() -> None:
-    """A proactive/IaC file is not SAR-driven — CHECK-17 must not run on it."""
+    """A proactive file is not SAR-driven — CHECK-17 must not run on it."""
     scp = _scp_with_actions(["ecs:SearchClusters"])
     path = _tmp_file("_cfn-guard-rules.guard", json.dumps(scp))
     try:

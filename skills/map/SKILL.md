@@ -31,7 +31,7 @@ framework mappings, and traceability. This skill bridges the gap between capabil
 When a mapping row needs an external fact or citation, consult sources in this
 fixed order and record the **highest-priority** source that supported the row:
 
-1. **Canopy** — the customer-provided mitigation/threat export, when present
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake
    (authoritative intent + top citation).
 2. **AWS Control Catalog API** — the control→objective authority.
 3. **Service-specific AWS documentation** — the target service's own pages only;
@@ -71,6 +71,9 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 ---
 
 ## Prerequisites
+
+You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+before mapping or reusing cached inputs. Stop on nonzero exit.
 
 ```python
 from tools.paths import phase_dir, service_root
@@ -157,16 +160,16 @@ Do NOT set `model` parameter — let subagents inherit the caller's model.
 
 ### Step 2b: Compute Applicability Matrix (after Step 2 completes)
 
-After `map-generate-controls` completes (which means the Canopy input has been
+After `map-generate-controls` completes (which means the AWS Threat Model input has been
 fully parsed), compute the service applicability matrix:
 
 ```bash
-python3 scripts/compute-applicability-matrix.py <canopy-json-path> \
+python3 scripts/compute-applicability-matrix.py <threat-model-json-path> \
   --output .service-approval/<slug>/04-map/applicability-matrix.json
 ```
 
 This script:
-1. Scans the Canopy threat model's mitigation **statements only** (never entity
+1. Scans the AWS Threat Model threat model's mitigation **statements only** (never entity
    description prose, which must never assert a customer capability)
 2. Derives three-valued capability flags (present / absent / unknown) and the
    service's category label(s)
@@ -176,9 +179,9 @@ This script:
 4. Writes `applicability-matrix.json` (every N/A cites its rule + evidence),
    consumed by map-framework-mapping
 
-The Canopy JSON path is the same file provided as input to the pipeline (in the
-`input/` folder). If no Canopy JSON is available, skip this step — the mapping
-skill will assume all objectives are applicable (backward-compatible behavior).
+The AWS Threat Model JSON path is `inputs.threat_model_file` from intake.
+If that export is missing or invalid, STOP and re-run the input prerequisite;
+do not skip the applicability screen or assume an export-free run.
 
 ### Step 3: Framework mapping (after 1+2+2b complete)
 

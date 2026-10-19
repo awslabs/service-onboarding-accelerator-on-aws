@@ -33,6 +33,11 @@ sub-skills in parallel (all 4 if ATT&CK enrichment is enabled) and calls the mer
 
 ## Prerequisites
 
+You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+before research, including before reusing cached research. Stop on nonzero exit.
+Read the required export from intake's `inputs.threat_model_file`; an optional
+supporting-input folder is not a substitute. If there is no intake, run Intake first.
+
 ```bash
 from tools.paths import phase_dir, mcp_log
 research_dir = phase_dir(slug, "research")  # .service-approval/<slug>/02-research/
@@ -41,8 +46,7 @@ mcp_log(slug).touch()  # .service-approval/<slug>/mcp-calls.log
 ```
 
 **MCP refresh decision (REQUIRED — ask the user when a prior research.json exists)**:
-research-capabilities and research-api-surface call `awsknowledge` / `kb-search` /
-`aws-documentation` MCPs for every capability and API parameter. If a prior `research.json`
+research-capabilities and research-api-surface call `awsknowledge` / `aws-documentation` MCPs for every capability and API parameter. If a prior `research.json`
 exists, ask the user before re-running:
 
 ```bash
@@ -327,3 +331,14 @@ Research v3 complete:
     - Doc sources:     {N}
     - MCP calls:       {N}
 ```
+
+
+## Source mitigation accounting
+
+Preserve every source mitigation's `alias` and `source_uuid` (the original UUID)
+when assigning internal `M-*` IDs. Internal IDs are separate from source UUIDs.
+Never silently drop source records or replace a source alias with an inferred one.
+After writing this phase's outputs, run
+`python3 tools/validate/audit_threat_model.py --slug <slug>`. It records source
+defects and missing source mitigations as advisories, preserving usable results.
+A missing MITRE technique alone is not a defect.

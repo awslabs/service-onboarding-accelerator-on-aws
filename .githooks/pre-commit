@@ -62,7 +62,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   GATE_FAIL=1
 elif ! python3 -c "import pytest" >/dev/null 2>&1; then
   echo "  [pre-commit] pytest not installed — R16 cannot run." >&2
-  echo "  Install with: pip3 install pytest  (or: pip3 install -r tools/kb-search-mcp/requirements.txt)" >&2
+  echo "  Install with: pip3 install -r requirements.txt" >&2
   GATE_FAIL=1
 elif ! python3 -m pytest tools/validate/test_no_legacy_path_refs.py -q >/dev/null 2>&1; then
   echo "  [pre-commit] R16 legacy path refs check FAILED:" >&2

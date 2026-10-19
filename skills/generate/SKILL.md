@@ -1,6 +1,6 @@
 ---
 name: generate-v3
-description: Generate all security control artifacts and compliant IaC templates from mapping-results.json and validated.json. Split into 3 focused sub-skills for better accuracy; this skill orchestrates them.
+description: Generate all security control artifacts from mapping-results.json and validated.json. Split into focused sub-skills for better accuracy; this skill orchestrates them.
 disable-model-invocation: false
 argument-hint: '[--service=<name>] [--include-unverified]'
 ---
@@ -14,7 +14,7 @@ for API surface and capabilities. Generate artifacts organized by the Controls M
 
 ## Sub-Skill Architecture
 
-This skill is split into 3 focused control families that write to separate
+This skill is split into focused control families that write to separate
 directories. The **preventive family is itself a sequenced sub-pipeline** (a
 recommender gate → reference-anchored authors → a root-cause critic), so that
 the *decision* of how to enforce an objective happens before any policy is
@@ -24,7 +24,6 @@ authored, and every authored policy is proven anchored and enforcing:
 |--------|-----------|-----------------|
 | Preventive (gated) | `generate-preventive-recommend` → (`generate-preventive-scp` / `generate-preventive-rcp` / `generate-preventive-iam`) → `generate-preventive-rootcause` | `<slug>/05-recommended-guidance/preventive/`, `<slug>/05-recommended-guidance/proactive/` |
 | Detective | `generate-detective` | `<slug>/05-recommended-guidance/detective/`, `<slug>/05-recommended-guidance/responsive/` |
-| IaC | `generate-iac` | `<slug>/05-recommended-guidance/iac/` |
 
 `skills/generate-preventive/SKILL.md` is retained as the **shared authoring-rules
 reference** the preventive authors follow (SCP/RCP/IAM rules, Rule C2, the
@@ -32,7 +31,7 @@ proactive sections). It is no longer dispatched as a single monolithic generator
 
 **When invoked directly** (via `/generate`), this skill runs the families
 sequentially (and the preventive sub-pipeline in its fixed order).
-**When invoked by the orchestrator**, the orchestrator dispatches the three
+**When invoked by the orchestrator**, the orchestrator dispatches the two
 families in parallel; the preventive family runs its sub-skills in order.
 
 ## Agent model rule
@@ -50,9 +49,8 @@ a `model` parameter. Omitting `model` causes subagents to inherit the caller's m
 python3 -m tools.validate.check_phase_complete --slug <slug> --phase 03-validate || exit 2
 python3 -m tools.validate.check_phase_complete --slug <slug> --phase 04-map || exit 2
 
-mkdir -p .service-approval/<slug>/05-recommended-guidance/{proactive,preventive,detective,responsive,iac}
+mkdir -p .service-approval/<slug>/05-recommended-guidance/{proactive,preventive,detective,responsive}
 mkdir -p .service-approval/<slug>/05-recommended-guidance/proactive/opa-policies
-mkdir -p .service-approval/<slug>/05-recommended-guidance/responsive/lambda-remediator
 mkdir -p .service-approval/<slug>/05-recommended-guidance/detective/config-rule-lambdas
 ```
 
@@ -60,14 +58,6 @@ The check_phase_complete CLI verifies every required artifact (mapping-results.j
 controls-catalog.md, framework-mapping.md, validated.json, etc.) exists and is
 non-stub. Without this gate, generate would silently skip controls when its
 inputs are missing, producing an empty 05-recommended-guidance/ tree.
-
-Create Terraform module directories:
-```bash
-for asset in $(python3 -c "import json; d=json.load(open('.service-approval/<slug>/03-validate/validated.json')); [print(a['name'].lower().replace(' ','-')) for a in d['assets']]"); do
-  mkdir -p ".service-approval/<slug>/05-recommended-guidance/iac/modules/${asset}"
-done
-mkdir -p .service-approval/<slug>/05-recommended-guidance/iac/modules/_shared
-```
 
 ---
 
@@ -96,12 +86,7 @@ Runs AFTER Step 1's root-cause critic so it can consume
 not-preventable and routed to detective) in its top-up pass.
 Wait for `<slug>/05-recommended-guidance/detective/` and `<slug>/05-recommended-guidance/responsive/` to be populated.
 
-### Step 3: Run generate-iac
-Follow ALL instructions in `skills/generate-iac/SKILL.md`.
-Pass: `--service`, `--include-unverified` if set.
-Wait for `<slug>/05-recommended-guidance/iac/` to be populated with all 4 formats.
-
-### Step 4: Final Validation
+### Step 3: Final Validation
 Run the comprehensive validation below.
 
 ---
@@ -115,8 +100,8 @@ Final validation runs automatically via PostToolUse hooks (validate_controls.py 
 ## Phase 4 Inventory
 
 After sub-skills finish, print a one-screen inventory of what was generated. This
-gives the user (and Summarize) a quick view of category counts and which IaC formats
-are actually present. Runs unconditionally — no HITL gate.
+gives the user (and Summarize) a quick view of category counts. Runs
+unconditionally — no HITL gate.
 
 ```bash
 python3 - <<'PY'
@@ -124,28 +109,18 @@ import json
 from pathlib import Path
 
 root = Path(f".service-approval/{slug}/05-recommended-guidance")
-categories = ["preventive", "proactive", "detective", "responsive", "iac"]
+categories = ["preventive", "proactive", "detective", "responsive"]
 counts = {c: sum(1 for _ in (root / c).rglob("*") if _.is_file()) if (root / c).exists() else 0
           for c in categories}
-
-iac_formats = {}
-iac_root = root / "iac"
-if iac_root.exists():
-    iac_formats["terraform"]      = (iac_root / "modules").exists()
-    iac_formats["cloudformation"] = any(iac_root.glob("*.cfn.yaml")) or any(iac_root.glob("*.yaml"))
-    iac_formats["cdk-typescript"] = any(iac_root.rglob("*.ts"))
-    iac_formats["cdktf"]          = (iac_root / "cdktf").exists() or any(iac_root.rglob("cdktf.json"))
 
 service = None
 sj = Path(f".service-approval/{slug}/03-validate/validated.json")
 if sj.exists():
     service = json.loads(sj.read_text()).get("service")
 
-formats_present = ", ".join(k for k, v in iac_formats.items() if v) or "(none)"
 print(f"Phase 4 complete — {service or '(unknown service)'}:")
 for c in categories:
     print(f"  {c.capitalize():13} {counts[c]} files")
-print(f"  IaC formats:  {formats_present}")
 PY
 ```
 
@@ -158,18 +133,15 @@ Control generation complete (v3):
   Sub-skills:
     - generate-preventive:  preventive/ + proactive/
     - generate-detective:   detective/ + responsive/
-    - generate-iac:         iac/ (4 formats + {N} TF modules)
   Controls matrix:
     Org×Proactive:    tag-policy, OPA, cfn-guard [, scp-provisioning]
     Org×Preventive:   scp-policy [, ai-optout]
     Org×Detective:    config-org-rules, conformance-pack, cloudtrail-org-config
-    Org×Responsive:   ssm-runbook-org
+    Org×Responsive:   ssm-runbook-org (referenced)
     Acc×Proactive:    cfn-guard-rules, cfn-hooks-policy, checkov-config, OPA
     Acc×Preventive:   permission-boundary
     Acc×Detective:    config-rules, eventbridge-rules, cloudwatch-alarms [, access-analyzer]
-    Acc×Responsive:   lambda-remediator, ssm-runbook, stepfunctions-workflow
+    Acc×Responsive:   ssm-runbook (referenced)
     Res×Preventive:   resource-policy [, kms-key-policy] [, rcp-policy]
-    Res×Responsive:   stepfunctions-workflow (resource-level)
-  IaC:          CDK, CFN, CDKTF + Terraform ({N} modules)
   Output: .service-approval/<slug>/05-recommended-guidance/
 ```

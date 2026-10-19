@@ -56,6 +56,13 @@ def render_ide_md(spec: dict) -> str:
 # per kiro.dev/docs/cli/hooks — hooks are defined inside agent configs, not as
 # standalone files.
 CLI_AGENT_HOOKS = {
+    "PreToolUse": [
+        {
+            "matcher": "fs_write",
+            "command": 'python3 "${workspaceRoot}/tools/validate/hook_pre_tool_use.py"',
+            "timeout_ms": 30000,
+        }
+    ],
     "PostToolUse": [
         {
             "matcher": "fs_write",
@@ -128,6 +135,8 @@ P5 — framework coverage below 15% with no per-objective rationale
 P7 — phase-output completeness: every phase dir on disk must contain
      its declared outputs (mapping-results.json, controls-catalog.md,
      framework-mapping.md, etc.) at min-size thresholds
+P14 — threat-model integrity accounting/disclosure is missing or stale, or
+      generated alias/UUID pairs are inconsistent. Source defects remain advisory.
 
 Cultural rules (no one-shot generator scripts, etc.) live in
 `steering/service-approval-enforcement.md`, not in this hook's list.
@@ -141,6 +150,14 @@ toolTypes: ["write"]
 ---
 
 # Block direct writes to pipeline state and controls
+
+Before any downstream phase write, run
+`python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`.
+Exit code 2 means STOP: a published AWS Threat Model snapshot is required.
+Before intake-manifest writes, fetch using `fetch_threat_model.py --service <service>`,
+merge its inputs fragment, then validate with `--manifest`. At entry/resume,
+validate the same snapshot offline. Only new runs fetch latest. Source defects
+are advisory and must be disclosed by audit_threat_model.py.
 
 You are about to write to a file. If this write targets the pipeline state
 or controls directories, confirm: are you executing through the power's

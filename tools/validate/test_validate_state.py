@@ -400,7 +400,7 @@ def test_no_pipeline_schema_defines_confidence_property() -> None:
 
 def test_mapping_results_schema_has_no_confidence() -> None:
     """`mapping-results.schema.json` specifically must define neither
-    `confidence` nor `run_confidence` (the deprecated CANOPY-PARITY §4.10
+    `confidence` nor `run_confidence` (the deprecated THREAT_MODEL-PARITY §4.10
     feature put both there — it is descoped)."""
     import json
     from pathlib import Path

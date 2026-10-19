@@ -7,18 +7,41 @@ Step-by-step guide to install and run the Service Approval Plugin with Kiro IDE.
 ## Prerequisites
 
 - [Kiro IDE](https://kiro.dev) installed
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH (for MCP servers)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) running (for Terraform MCP)
-- Python 3.9+ (for kb-search MCP and validators)
+- [`git`](https://git-scm.com/downloads) — to clone this repository
+- [Python](https://www.python.org/downloads/) 3.9+ (`python3 --version`) — validators and hooks
+- The Python packages in [`requirements.txt`](../requirements.txt) — installed in Step 1 below
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) on PATH — only for default MCP mode; skip if you always use `--no-mcp`
+
+No AWS account or credentials are required to generate controls.
 
 ---
 
-## Step 1: Clone the repo
+## Step 1: Clone the repo and install Python packages
 
 ```bash
 git clone https://github.com/awslabs/service-onboarding-accelerator-on-aws.git
 cd service-onboarding-accelerator-on-aws
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
+
+> On Windows PowerShell, use `py -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt`.
+
+Confirm everything the pipeline needs is present (each line prints `PASS` or
+`MISSING`; a `MISSING` for `uv` is fine if you only use `--no-mcp`):
+
+```bash
+check() { if eval "$2" >/dev/null 2>&1; then echo "PASS     $1"; else echo "MISSING  $1"; fi; }
+PY=.venv/bin/python; [ -x "$PY" ] || PY=python3
+check "git"                "command -v git"
+check "python3 (>=3.9)"    "$PY -c 'import sys; raise SystemExit(0 if sys.version_info[:2] >= (3,9) else 1)'"
+check "pyyaml"             "$PY -c 'import yaml'"
+check "jsonschema"         "$PY -c 'import jsonschema'"
+check "pytest"             "$PY -c 'import pytest'"
+check "uv (MCP mode only)" "command -v uv"
+```
+
+(The PowerShell equivalent is in the [README](../README.md#verify-your-setup).)
 
 ## Step 2: Install the Power via Kiro IDE
 
@@ -37,14 +60,16 @@ Open a **new folder** in Kiro for your service approval work — not the plugin 
 1. **File** → **Open Folder**
 2. Create or select an empty folder (e.g., `~/my-service-approval/`)
 
-Optionally add custom input files:
+Optionally add a framework or supporting documents:
 ```bash
 mkdir ~/my-service-approval/input
-cp /path/to/threat-model.xlsx ~/my-service-approval/input/
 cp /path/to/ccmv4-framework.json ~/my-service-approval/input/
 ```
 
-If you don't add input files, the plugin uses built-in defaults (CCMv4 + MITRE ATT&CK).
+Intake retrieves the latest matching model from the public AWS Threat Models
+repository. Missing services and retrieval failures stop the pipeline; local
+exports cannot bypass it. Resume uses the same saved snapshot offline. See
+[Threat Models](THREAT-MODELS.md) for provenance, citations, and migration.
 
 ## Step 4: Start the plugin
 
@@ -76,11 +101,11 @@ The plugin runs an Intake precursor plus 6 numbered phases:
 3. **Research** — discovers service capabilities, API surface, attack surface
 4. **Validate** — verifies research findings via MCP
 5. **Map** — maps capabilities to control framework objectives
-6. **Recommended Guidance** — produces all security control artifacts and IaC templates
+6. **Recommended Guidance** — produces all security control artifacts
 7. **Summarize** — produces SUMMARY-REPORT.md
 
-The pipeline recommends controls + compliant IaC that you deploy yourself; it
-does not deploy, test, or attest against a live account.
+The pipeline recommends controls that you deploy yourself; it does not deploy,
+test, or attest against a live account.
 
 Kiro runs phases sequentially. You may see MCP connection prompts — approve them
 to allow the plugin to query AWS documentation and knowledge bases.
@@ -96,11 +121,31 @@ Output lands in `.service-approval/<service-slug>/` in your working directory:
   02-research/        ← research.json
   03-validate/        ← validated.json
   04-map/             ← mapping-results.json, controls-catalog.md
-  05-recommended-guidance/        ← all generated artifacts (85+ files)
+  05-recommended-guidance/        ← all generated artifacts
   06-summarize/       ← SUMMARY-REPORT.md (Summary Report)
 ```
 
 The key deliverable is `06-summarize/SUMMARY-REPORT.md` — contains the coverage matrix, mitigation traceability, and artifact inventory.
+
+---
+
+## Running without MCP
+
+MCP servers are the **default** and recommended path. The pipeline can also run
+with no MCP servers at all — it verifies the same facts over the web instead. Ask
+Kiro to run in no-MCP mode (e.g. "run service approval for s3 without MCP") or
+set `options.no_mcp: true` in an intake YAML; either records
+`pipeline_flags.no_mcp` in the intake manifest and puts every phase into its
+**No-MCP mode** fallback.
+
+No-MCP mode uses an **open discovery → allowlisted fetch → narrow cite** loop: an
+open `WebSearch` finds the right AWS page, an allowlisted `WebFetch` reads it, and
+citations stay on `docs.aws.amazon.com`. Threat data comes from
+`attack.mitre.org` or the bundled `data/attack-cloud-matrix.json` snapshot, so
+the pipeline works offline too.
+
+See [How no-MCP mode works](NO-MCP.md) for the full walkthrough and
+[`rules/web-access.md`](../rules/web-access.md) for the policy.
 
 ---
 
@@ -116,7 +161,6 @@ service-approval power."
 
 **MCP connection errors (`fetch failed`, `Connection closed`)**
 - Check `uv` is on PATH: open terminal in Kiro and run `which uv`
-- Check Docker is running for Terraform MCP
 - See [`docs/TESTING-KIRO.md`](TESTING-KIRO.md) for detailed MCP troubleshooting
 
 **`workspaceRoot not approved` warning**

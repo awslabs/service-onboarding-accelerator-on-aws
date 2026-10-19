@@ -201,9 +201,10 @@ def test_no_dangerous_confused_deputy_sid_pair(skill_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Sourcing-order rule (recommender): Canopy must be the first-priority intent
-# source, and the SKILL must state Canopy supplies intent + citation but not
-# policy body — Canopy implementations are Config rules + CFN hooks only.
+# Sourcing-order rule (recommender): AWS Threat Model must be the first-priority source,
+# and the SKILL must state AWS Threat Model implementations supply BOTH the intent AND the
+# preventive policy shape (governed actions + condition keys) plus a cited public
+# doc URL — an AWS Threat Model implementation is a complete anchor for GENERATE_*.
 # ---------------------------------------------------------------------------
 
 
@@ -211,8 +212,8 @@ def _recommend_skill_text() -> str:
     return (_repo_root() / "skills" / "generate-preventive-recommend" / "SKILL.md").read_text()
 
 
-def test_recommend_skill_documents_canopy_first() -> None:
-    """The recommend SKILL must declare Canopy mitigations as the
+def test_recommend_skill_documents_threat_model_first() -> None:
+    """The recommend SKILL must declare AWS Threat Model mitigations as the
     first-priority preventive sourcing source — ahead of the reference-repo
     index, the AWS Control Catalog, and AWS service docs."""
     text = _recommend_skill_text()
@@ -221,29 +222,34 @@ def test_recommend_skill_documents_canopy_first() -> None:
     section = m.group(1)
     first = re.search(r"^\s*1\.\s+(.+)$", section, re.MULTILINE)
     assert first, "Sourcing order section has no numbered list"
-    assert "Canopy" in first.group(1), (
-        f"first-priority source must be Canopy; got: {first.group(1)!r}"
+    assert "AWS Threat Model" in first.group(1), (
+        f"first-priority source must be AWS Threat Model; got: {first.group(1)!r}"
     )
 
 
-def test_recommend_skill_states_canopy_supplies_intent_not_body() -> None:
-    """Canopy contains no preventive policy text — the recommend SKILL must
-    say so and require a separate reference-repo body anchor (or downgrade
-    to detective/proactive)."""
+def test_recommend_skill_states_threat_model_supplies_policy_shape() -> None:
+    """An AWS Threat Model implementation now supplies the preventive policy SHAPE
+    (governed actions + condition keys) AND a cited public doc URL, so it is a
+    complete anchor for a GENERATE_* decision. The recommend SKILL must say so
+    and must NOT retain the old (false) 'AWS Threat Model has no preventive policy text'
+    claim."""
     text = _recommend_skill_text()
+    # New: AWS Threat Model implementation supplies the policy shape (actions/condition
+    # keys) and counts as a complete anchor.
     assert re.search(
-        r"Canopy.{0,200}(no|NO).{0,80}(preventive|policy).{0,80}(text|body|TEXT|BODY)",
+        r"AWS Threat Model implementation.{0,400}(authorization_policy|policy\s+shape|condition_keys|actions)",
         text,
         re.DOTALL,
-    ), "recommend SKILL must state Canopy contains no preventive policy text/body"
+    ), "recommend SKILL must state an AWS Threat Model implementation supplies the policy shape"
     assert re.search(
-        r"Canopy.{0,200}(intent|citation).{0,400}(reference[- ]repo|policy\s+body|policy\s+BODY|downgrade)",
+        r"AWS Threat Model implementation is a\s+complete anchor",
         text,
-        re.DOTALL,
-    ), (
-        "recommend SKILL must say Canopy supplies intent + citation and that "
-        "the policy body still requires a reference-repo anchor (or downgrade)"
-    )
+    ), "recommend SKILL must state an AWS Threat Model implementation is a complete anchor"
+    # The stale 'AWS Threat Model contains NO preventive policy TEXT' claim must be gone.
+    assert not re.search(
+        r"AWS Threat Model contains (no|NO)\b.{0,40}(preventive)?\s*(policy)?\s*(TEXT|text|BODY|body)",
+        text,
+    ), "recommend SKILL must NOT retain the stale 'AWS Threat Model has no preventive policy text' claim"
 
 
 @pytest.mark.parametrize("skill_path", _skill_paths(), ids=lambda p: p.parent.name)

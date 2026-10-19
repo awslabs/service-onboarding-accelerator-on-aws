@@ -1,19 +1,99 @@
 ---
 name: generate-detective
-description: Generate detective and responsive security control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, SSM runbooks, Step Functions workflows, CloudTrail configuration. Reads from mapping-results.json and validated.json.
+description: Generate detective control artifacts — Config rules with Lambda handlers, EventBridge rules, CloudWatch alarms, CloudTrail configuration — and responsive references to pre-authored AWS SSM Automation runbooks. Reads from mapping-results.json and validated.json.
 disable-model-invocation: false
 argument-hint: '[--service=<name>] [--include-unverified]'
 ---
 
 # Service Approval — Generator: Detective & Responsive Controls
 
-Generate all detective and responsive security control artifacts from the Controls Matrix.
-This covers Organisation×Detective, Organisation×Responsive, Account×Detective,
-Account×Responsive, Resource×Detective, and Resource×Responsive cells.
+Generate all detective control artifacts from the Controls Matrix, plus responsive
+guidance that **references** pre-authored AWS SSM Automation runbooks (we source,
+we do not author remediation). This covers Organisation×Detective,
+Organisation×Responsive, Account×Detective, Account×Responsive, Resource×Detective,
+and Resource×Responsive cells.
 
 **Output:** `.service-approval/<slug>/05-recommended-guidance/detective/` and `.service-approval/<slug>/05-recommended-guidance/responsive/`
 
-This is one of 3 focused generate sub-skills. Each writes to separate directories.
+This is one of the focused generate sub-skills. Each writes to separate directories.
+
+## Citation discipline (REQUIRED for every authored artifact)
+
+Every JSON artifact this skill writes under `detective/` and `responsive/` MUST
+carry a **resolvable citation** in its `_metadata`, enforced by
+`validate_citation_coverage.py` (Stop-hook P12). There are three forms; use the
+one the table below specifies for each artifact:
+
+- **AWS Threat Model anchor (first-priority when an AWS Threat Model is present)** — `_metadata.citation
+  = {type: "threat_model", id: "<alias>", url: "<REFERENCE href>", verified_via: "mcp"}`
+  whose `id` resolves to a mitigation/implementation `alias` in
+  `.service-approval/<slug>/02-research/threat-model-index.json`. See "AWS Threat Model-first
+  sourcing" below.
+- **Repo anchor** — `_metadata.reference = {example_id, repo, url}` whose
+  `example_id` resolves to an entry in `data/reference-repos/index.yaml`. Used for
+  **custom Config rules** (CUSTOM_LAMBDA / CUSTOM_POLICY), which anchor to
+  `aws-config-custom-policy-rule-samples` (a Guard-DSL sample repo). Resolve the
+  anchor with `tools/reference_index.py` `best_anchor("AWS Config Rule", [], [],
+  resource_types=[<the CFN resource type the rule evaluates>])`.
+- **Doc anchor** — `_metadata.citation = {type: "aws_doc", title, url,
+  verified_via: "mcp"}` where `url` is an AWS documentation page **fetched via MCP
+  at generation time** (`awsknowledge` / `aws-documentation`) to prove it is live,
+  and the call logged to `pipeline.log`. NEVER hardcode a URL from training data.
+
+### No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), prove each citation URL live over the web
+per [`rules/web-access.md`](../../rules/web-access.md) using the discovery→verify
+loop: run open `WebSearch` to find the right page when the URL is unknown, then
+`WebFetch` the doc / REFERENCE URL on `docs.aws.amazon.com` instead of
+`awsknowledge` / `aws-documentation`, and stamp `verified_via: "web"` (instead of
+`"mcp"`) on the citation. Cited URLs stay on `docs.aws.amazon.com` — a managed
+rule or fact discovered on a blog must be confirmed on the authoritative doc page
+before it is cited. Log each web lookup with `--source web:<source-key> --verdict
+fetch` (or `search`) instead of the `mcp:<server>:call` event; these `web:*`
+events satisfy the same P1 call floor, and P12 accepts either `verified_via`
+value. The resolvable-citation / live-URL requirement is unchanged — only the
+transport changes; still NEVER hardcode a URL from training data.
+
+### AWS Threat Model-first sourcing (when an AWS Threat Model threat-model was provided)
+
+Before the managed-rule / custom-rule lookup for a control, check
+`.service-approval/<slug>/02-research/threat-model-index.json` for a `behavior ==
+"DETECTIVE"` implementation matching the control's resource type / monitored
+operation:
+
+- A `mechanism == "Config Rule"` implementation carries `governed_api_operations[]`
+  (`service` + `operation` + `response_parameters[].path`) — use those to shape the
+  Config rule's evaluation, and cite it (`type: "threat_model"`, id = the implementation
+  `alias`), linking to the implementation's REFERENCE `href` (or its mapped
+  mitigation's cited link) as the doc URL.
+- A `mechanism == "CloudTrail"` implementation carries `monitored_operations[]`
+  (`operation` + `request_parameters[].path`) — use those to shape the CloudTrail /
+  EventBridge rule, cited the same way.
+
+MCP-verify the REFERENCE `href` at generation time (`awsknowledge` /
+`aws-documentation`) and log the call to `pipeline.log`; stamp `verified_via:
+"mcp"`. **Fall through** to the managed-rule / repo-anchor / doc-anchor paths below
+only when AWS Threat Model has no matching implementation for the control.
+
+| Artifact | Citation form |
+|----------|---------------|
+| `detective/config-rules.json` AWS_MANAGED rule | doc anchor → the managed-rule's AWS Config developer-guide page |
+| `detective/config-rules.json` CUSTOM_LAMBDA / CUSTOM_POLICY rule | repo anchor → `aws-config-custom-policy-rule-samples` example (or doc anchor if none fits) |
+| `detective/config-org-rules.json`, `detective/config-conformance-pack.yaml` | same as the rule kind above |
+| `detective/eventbridge-rules.json` | doc anchor → the EventBridge / relevant service-event AWS doc |
+| `detective/cloudwatch-alarms.json` | doc anchor → the CloudWatch metric/alarm AWS doc |
+| `detective/cloudtrail-org-config.json` | doc anchor → the CloudTrail AWS doc |
+| `detective/access-analyzer.json` | doc anchor → the IAM Access Analyzer AWS doc |
+| `responsive/ssm-runbook-reference*.json` | doc anchor → the SSM automation-runbook-reference doc + the specific runbook page |
+
+When a rule is CUSTOM but no `aws-config-custom-policy-rule-samples` example
+matches its resource type, fall back to a doc anchor (the service's AWS Config
+custom-rule authoring doc). Every artifact ends with at least one resolvable
+citation — no exceptions except explicit gap/skip stubs
+(`_metadata.status: "NOT_APPLICABLE"`).
 
 ---
 
@@ -23,7 +103,7 @@ This is one of 3 focused generate sub-skills. Each writes to separate directorie
 test -f .service-approval/<slug>/04-map/mapping-results.json && echo "mapping-results: OK" || echo "ERROR"
 test -f .service-approval/<slug>/03-validate/validated.json && echo "validated: OK" || echo "ERROR"
 mkdir -p .service-approval/<slug>/05-recommended-guidance/detective/config-rule-lambdas
-mkdir -p .service-approval/<slug>/05-recommended-guidance/responsive/lambda-remediator
+mkdir -p .service-approval/<slug>/05-recommended-guidance/responsive
 ```
 
 Load detective and responsive controls:
@@ -64,6 +144,42 @@ loop is closed. `validate_detective_routing.py` confirms every routed entry ends
 up with a real `covered_by` artifact. This top-up runs AFTER the root-cause
 critic; the orchestrator sequences a detective pass once the critic finishes.
 
+## Config-supportability gate (REQUIRED before emitting any Config rule)
+
+AWS Config cannot record every resource type — a Config rule for an unsupported
+type is a silent no-op. **Before emitting a Config rule (managed or custom) for a
+resource type, confirm AWS Config supports it.** Source of truth:
+`data/config-supported-resource-types.json` (built from the botocore Config
+`ResourceType` enum + doc-confirmed additions from the public AWS Config
+"Supported Resource Types" reference).
+
+Probe each candidate resource type:
+
+```bash
+python3 tools/validate/validate_config_support.py --resource-type "AWS::<Service>::<Resource>" --json
+# {"resource_type": "...", "status": "SUPPORTED" | "UNSUPPORTED"}
+```
+
+- **SUPPORTED** → emit the Config rule as normal.
+- **UNSUPPORTED** → do **NOT** emit a Config rule. Instead:
+  - route the control to an alternate detective mechanism — a CloudTrail
+    data/management event or an EventBridge rule on the control-plane API call, or
+  - record the gap in `detective-routing.json` (or a `NOT_APPLICABLE` stub) with
+    the reason `"AWS Config does not support AWS::<Service>::<Resource>"`, cited to
+    the resource-config-reference doc
+    (`https://docs.aws.amazon.com/config/latest/developerguide/resource-config-reference.html`).
+
+**AWS Threat Model divergence:** if AWS Threat Model proposes a Config rule (`config_rule`
+implementation) for a type the doc list does not support, the deterministic gate
+wins — AWS Threat Model can be aspirational. Do not emit the Config rule; log the
+divergence to `pipeline.log` and route/gap the control as above. (The doc is the
+freshest source of truth and can be ahead of the SDK enum — e.g.
+`AWS::DSQL::Cluster` is doc-supported; the data file carries such additions.)
+
+`validate_config_support.py --slug <slug>` runs at generation review and the P13
+Stop-hook integrity check hard-fails a run that emitted a Config rule for an
+unsupported type.
+
 ## Artifact Header Template
 
 Every generated artifact MUST include these comment lines at the top:
@@ -84,9 +200,11 @@ artifact implements. For Python, use comment block at top.
 **CHECK-15 enforcement:** Every generated artifact's `_metadata.posture` MUST match its
 directory family:
 - `reactive-detective` → `detective/config-rule-lambdas/**`, `detective/config-rules.json`,
-  or `detective/access-analyzer.json`
-- `reactive-corrective` → `responsive/ssm-runbook*.yaml`,
-  `responsive/stepfunctions-workflow.json`, or `responsive/lambda-remediator/**`
+  `detective/config-org-rules.json`, `detective/config-conformance-pack.yaml`,
+  `detective/cloudtrail-org-config.json`, `detective/access-analyzer.json`,
+  `detective/eventbridge-rules.json`, or `detective/cloudwatch-alarms.json`
+- `reactive-corrective` → `responsive/**` (reference JSON pointing at a pre-authored
+  AWS SSM Automation runbook; we do not author remediation code)
 
 A Config rule Lambda tagged with `posture: "preventative-request"` would fail the hook —
 Rule C1 in map-generate-controls should never have produced it. If the hook fires, fix
@@ -96,30 +214,23 @@ the posture classification in `map-controls-generated.json`, not the artifact.
 
 ## Rule C3 — API-driven mechanism contents (applies to ALL sections below except EventBridge)
 
-Config rule Lambdas, SSM Automation runbooks, Step Functions SDK workflows, Lambda
-remediators, managed Config rules, and Access Analyzer configs are all **API-driven** —
-they read or act on AWS resource state as exposed by the service's API surface. Their
-contents MUST be grounded in `validated.json.api_surface.operations[].parameters[]`:
+Config rule Lambdas, managed Config rules, and Access Analyzer configs are all
+**API-driven** — they read AWS resource state as exposed by the service's API
+surface. Their contents MUST be grounded in
+`validated.json.api_surface.operations[].parameters[]`:
 
 1. **Every property path the handler reads (e.g., `configurationItem.configuration.<...>`)
    MUST map to a parameter path in `api_surface.operations[].parameters[]`.** AWS Config
    configuration items mirror the API request/response shape; a handler that checks a
    property not in the API surface is reading a path that doesn't exist at runtime.
-2. **Every enum-literal list in Python `if x in [...]`, Step Functions `Choice` conditions,
-   SSM `AllowedValues`, and Lambda remediator enum comparisons MUST use values from
+2. **Every enum-literal list in Python `if x in [...]` comparisons MUST use values from
    `parameters[].enum`.** Do NOT re-scrape AWS docs; the enum values in `validated.json`
    are the single source of truth for this service run. Copy verbatim — substituting
    `IAM` for `IAM_AUTH` or `CustomJWT` for `CUSTOM_JWT_AUTHORIZER` causes detective
    handlers to mark compliant resources NON_COMPLIANT.
-3. **Every API parameter passed by a Lambda remediator, SSM `aws:executeAwsApi` step, or
-   Step Functions SDK task MUST appear in `api_surface.operations[].parameters[]`** for
-   the target operation. Cross-reference the op's `parameters[].path` for the exact
-   parameter name.
 
 Validator CHECK-14b enforces rule 2 at hook time. An enum-literal value not in any
-parameter's enum fails the hook. The check is scoped to `detective/config-rule-lambdas/**`,
-`responsive/ssm-runbook*`, `responsive/stepfunctions-workflow.json`, and
-`responsive/lambda-remediator/**`.
+parameter's enum fails the hook. The check is scoped to `detective/config-rule-lambdas/**`.
 
 ---
 
@@ -165,22 +276,34 @@ after `# FRAMEWORK: ` (and into `_metadata.framework` for JSON files), done.
 ### Config Org Rules (`detective/config-org-rules.json`)
 - Use `awsknowledge` MCP to find managed Config rules for each resource type
 - Deploy org-wide via AWS Config Organizations aggregator
+- **Citation:** each rule entry carries its citation — an AWS_MANAGED rule cites
+  the managed-rule's developer-guide page (doc anchor); a custom rule cites its
+  `aws-config-custom-policy-rule-samples` example (repo anchor). See the per-rule
+  citation block in "Config Rules" below; the org file uses the same shapes.
 
 ### Config Conformance Pack (`detective/config-conformance-pack.yaml`)
 - List Config conformance pack rules to enable org-wide
 - Map to specific controls
+- Cite the AWS Config conformance-pack developer-guide page (doc anchor) in a
+  leading comment header (this is a YAML file, cited via its sibling
+  `config-org-rules.json`/`config-rules.json` entries).
 
 ### CloudTrail Org Trail (`detective/cloudtrail-org-config.json`)
 - Org trail with data events for the service's resource types
 - Use resource types from `validated.json` `capabilities.logging.cloudtrail.data_events`
+- **Citation (doc anchor):** MCP-fetch and cite the CloudTrail data-events AWS doc
+  page; put it in `_metadata.citation` (`{type:"aws_doc", title, url,
+  verified_via:"mcp"}`).
 
 ---
 
 ## Organisation × Responsive
 
-### Org SSM Runbook (`responsive/ssm-runbook-org.yaml`)
-- SSM Automation document for org-level responsive actions
-- Triggered by Config Org Rule non-compliance events
+Responsive is **reference-only** — we do not author remediation code. For an
+org-level remediation need, find the pre-authored AWS SSM Automation runbook via
+MCP and emit a reference (see "Account × Responsive" for the full contract). Write
+`responsive/ssm-runbook-org-reference.json` with the org-scoped runbook reference +
+how-to-use guide, cited to the automation-runbook-reference doc.
 
 ---
 
@@ -190,17 +313,46 @@ after `# FRAMEWORK: ` (and into `_metadata.framework` for JSON files), done.
 - Use `awsknowledge` MCP to find managed Config rules
 - For uncovered controls, generate CUSTOM_LAMBDA rules
 - **MANDATORY:** For every CUSTOM_LAMBDA rule, generate a corresponding Lambda handler
+- **MANDATORY citation on every rule** (per the citation-discipline table above).
 
-Each custom Config rule entry:
+Each Config rule entry carries a citation. **AWS_MANAGED** rules cite the managed
+rule's AWS Config developer-guide page as a doc anchor:
+```json
+{
+  "rule_name": "<managed-rule-identifier>",
+  "source_type": "AWS_MANAGED",
+  "resource_type": "AWS::<Service>::<Resource>",
+  "control_ids": ["CTRL-ACC-DET-001"],
+  "citation": {
+    "type": "aws_doc",
+    "title": "AWS Config Managed Rules — <rule-identifier>",
+    "url": "https://docs.aws.amazon.com/config/latest/developerguide/<rule-identifier>.html",
+    "verified_via": "mcp"
+  }
+}
+```
+**CUSTOM_LAMBDA / CUSTOM_POLICY** rules cite the
+`aws-config-custom-policy-rule-samples` example they adapt (repo anchor). Resolve
+it with `best_anchor("AWS Config Rule", [], [], resource_types=["AWS::<Service>::<Resource>"])`:
 ```json
 {
   "rule_name": "<resource>-<check-name>",
   "source_type": "CUSTOM_LAMBDA",
   "resource_type": "AWS::<Service>::<Resource>",
   "evaluation_logic": "Check if <property> meets <requirement>",
-  "control_ids": ["CTRL-ACC-DET-001"]
+  "control_ids": ["CTRL-ACC-DET-001"],
+  "reference": {
+    "example_id": "<resolved index example id>",
+    "repo": "aws-config-custom-policy-rule-samples",
+    "url": "<example source_url from the index>"
+  }
 }
 ```
+If no sample matches the resource type, fall back to a doc anchor citing the AWS
+Config custom-rule authoring guide. The file's top-level `_metadata` also carries
+the citation for the *primary* rule so `validate_citation_coverage.py` (which reads
+`_metadata`) resolves; each rule additionally carries its own `citation`/`reference`
+as shown.
 
 ### Config Rule Lambda Handlers
 
@@ -356,8 +508,8 @@ API calls for its primary check WILL fail the smoke test.
   `authorizerConfiguration.customJwtConfiguration.discoveryUrl`, the Config item may use the
   same nesting — the handler MUST navigate to the correct depth. Do NOT assume Config items
   flatten nested structures.
-- **Boto3 client name consistency**: All generated Python artifacts (Config rule handlers, Lambda
-  remediators, SSM runbooks with Lambda steps) MUST use the same boto3 client name for the
+- **Boto3 client name consistency**: All generated Python artifacts (Config rule handlers)
+  MUST use the same boto3 client name for the
   target service. Before generating, verify the correct client name by checking the boto3
   documentation or the service's API model. Common error: using inconsistent hyphenation or
   suffixes across handlers. Pick the correct name and use it
@@ -425,10 +577,15 @@ API calls for its primary check WILL fail the smoke test.
 ### EventBridge Rules (`detective/eventbridge-rules.json`)
 - One rule per critical API operation (Create, Update, Delete, PutResourcePolicy)
 - Target: SNS topic for notifications + optional Lambda for enrichment
+- **Citation (doc anchor, REQUIRED):** MCP-fetch and cite the EventBridge / relevant
+  service-event AWS doc page. Put it in the file's top-level `_metadata.citation`
+  (`{type:"aws_doc", title, url, verified_via:"mcp"}`).
 - **Top-level schema (REQUIRED for smoke-test deploy)**:
   ```json
   {
-    "_metadata": {...},
+    "_metadata": {
+      "citation": {"type": "aws_doc", "title": "...", "url": "https://docs.aws.amazon.com/...", "verified_via": "mcp"}
+    },
     "rules": [
       {
         "rule_name": "ctrl-acc-det-NNN-description",
@@ -469,6 +626,8 @@ API calls for its primary check WILL fail the smoke test.
 ### CloudWatch Alarms (`detective/cloudwatch-alarms.json`)
 - Use `awsknowledge` MCP to confirm available metrics
 - Alarm per key metric from `capabilities.logging.cloudwatch`
+- **Citation (doc anchor, REQUIRED):** MCP-fetch and cite the CloudWatch metrics/alarm
+  AWS doc page for the service in the file's top-level `_metadata.citation`.
 
 ### Access Analyzer (`detective/access-analyzer.json`)
 - Only if any resource type supports resource-based policies
@@ -478,126 +637,83 @@ API calls for its primary check WILL fail the smoke test.
   service's resource types are NOT in this list, document it as a KNOWN GAP with a comment
   explaining which resource types are not yet supported by Access Analyzer. Do NOT generate
   an Access Analyzer config that references unsupported resource types.
+- **Citation (doc anchor, REQUIRED):** MCP-fetch and cite the IAM Access Analyzer AWS doc
+  page in the file's top-level `_metadata.citation`.
 
 ---
 
-## Account × Responsive
+## Account × Responsive — REFERENCE-ONLY
 
-### Lambda Remediator (`responsive/lambda-remediator/handler.py`)
-Python Lambda: receive EventBridge event → parse resource ARN + violation → remediate → log.
+**We do not author remediation code.** No Lambda remediator, no authored SSM
+document, no Step Functions workflow. For each `COR` (responsive) control, find
+the relevant **pre-authored AWS SSM Automation runbook** via MCP and emit a
+**reference + how-to-use guide** instead. This is the "we source, we don't
+generate" rule applied to remediation.
 
-### Lambda CFN Template (`responsive/lambda-remediator/template.yaml`)
-Lambda + least-privilege IAM role + EventBridge trigger.
-
-**CRITICAL — SAM template metadata:** Do NOT use `_metadata` as a top-level key in
-CloudFormation/SAM templates — cfn-lint rejects unknown top-level keys (E1001). Instead,
-place pipeline metadata under the standard `Metadata` key:
-```yaml
-Metadata:
-  ServiceApproval:
-    scope: account
-    layer: responsive
-    controls: "CTRL-ACC-COR-001,CTRL-ACC-COR-002"
-    framework: "BCR-01,BCR-03,..."
-    generated: "service-approval v3.0.0"
-    service: "<service-name>"
-```
-This passes cfn-lint validation while preserving traceability metadata for cross-validation.
-
-### SSM Runbook (`responsive/ssm-runbook.yaml`)
-SSM Automation document for manual/scheduled remediation.
-
-- **Top-level schema (REQUIRED)**: `ssm-runbook.yaml` MUST be a **bare SSM automation
-  document**, NOT a CloudFormation template that wraps an `AWS::SSM::Document` resource.
-  The file MUST start with `schemaVersion: "0.3"` and have top-level keys `description`,
-  `assumeRole`, `parameters`, `mainSteps`. Do NOT start with `AWSTemplateFormatVersion`
-  or include a top-level `Resources:` block. CFN wrapping of an SSM document belongs
-  ONLY in `<slug>/05-recommended-guidance/iac/cloudformation/compliant-resource.cfn.yaml` (IaC), never in
-  this remediation file. The Tier 2 deploy script passes this file's contents directly
-  to `ssm:CreateDocument` — a CFN wrapper causes `mainSteps` to be absent at top level
-  and the API rejects the document.
-- **API parameter cross-reference (CRITICAL)**: Every parameter in SSM `aws:executeAwsApi` steps
-  MUST match the exact parameter name from `validated.json` `api_surface.operations[]`. Read the
-  validated API surface for each operation before generating runbook steps.
-- **Parameter mutability check**: If an encryption or configuration parameter is only accepted on
-  `Create*` operations and NOT on `Update*` operations, the setting is immutable after creation.
-  Do NOT generate a remediation step that attempts to update an immutable parameter — instead
-  document it as requiring resource recreation or flag as manual intervention required.
-- **SSM `{{ }}` / CloudFormation `!Sub` conflict (CRITICAL)**: SSM Automation documents use
-  `{{ ParameterName }}` syntax for parameter references. CloudFormation `!Sub` also uses `${}`
-  substitution. When an SSM document is deployed via CloudFormation, these two syntaxes conflict.
-  Rules:
-  - **`responsive/ssm-runbook.yaml` and `responsive/ssm-runbook-org.yaml` are BOTH standalone
-    documents** (deployed via `ssm:CreateDocument` at Tier 2, not via CFN). Use `{{ param }}`
-    freely. Do NOT use `!Sub` or `${}` in these files.
-  - **CFN-deployed SSM documents** (if ever embedded in `iac/cloudformation/*.cfn.yaml`):
-    use `!Sub` with `${param}` for CFN parameters AND escape SSM parameters as `{{param}}`
-    (no spaces) or use `Fn::Sub` with a mapping
-  - **NEVER mix `!Sub` with `{{ param }}`** in the same string — CloudFormation will try to
-    resolve `{{ }}` as a CFN reference and fail.
-
-### Step Functions Workflow (`responsive/stepfunctions-workflow.json`)
-Workflow: detect → notify → remediate → verify → close finding.
-
-**CRITICAL — ResultPath on SDK integration tasks:** Every Task state that calls an AWS SDK
-action (e.g., `arn:aws:states:::aws-sdk:...`) MUST use `ResultPath` to place the API response
-into a sub-key of the state, preserving the original event context. Without `ResultPath`, the
-SDK response OVERWRITES the entire state input — subsequent steps lose access to the resource
-ARN, violation details, and other fields from the original event.
+For each responsive control, write one JSON reference file
+`responsive/<control-id>-ssm-runbook-reference.json` (or a single
+`responsive/ssm-runbook-references.json` keyed by control id):
 
 ```json
 {
-  "Type": "Task",
-  "Resource": "arn:aws:states:::aws-sdk:<service>:<apiAction>",
-  "Parameters": { "ResourceId.$": "$.resourceId" },
-  "ResultPath": "$.describeResult",
-  "Next": "CheckCompliance"
-}
-```
-
-Do NOT omit `ResultPath` — this is the #1 cause of broken Step Functions workflows where
-the remediation step cannot find the resource ARN because the describe step overwrote it.
-
-**CRITICAL — SDK service name casing:** Step Functions SDK integrations use camelCase service
-identifiers in the Resource ARN: `arn:aws:states:::aws-sdk:<serviceName>:<apiAction>`. The
-service name is derived from the AWS SDK service identifier with hyphens removed and camelCase
-applied. For example, a hyphenated service ID like `my-service` becomes `myService` (NOT `myservice`).
-Verify the correct SDK service ID via `awsknowledge` MCP. An incorrect service name causes
-a runtime error: "The service '<wrong>' is not supported by Step Functions."
-
-**CRITICAL — Remediation task required parameters:** SDK integration tasks for Update/Put
-operations MUST include ALL required parameters, not just the field being remediated. Cross-
-reference `validated.json` `api_surface.operations[]` for the target operation's full parameter
-list. Common error: passing only `ResourceId` + the remediation field to an Update API that
-also requires `Name` or other identifying parameters.
-
-**CRITICAL — Policy parameter serialization:** When a Step Functions Task state includes a
-`Policy` parameter that expects a JSON string (common in PutResourcePolicy-style API calls),
-the `Parameters` block must serialize it with `States.JsonToString()`:
-```json
-{
-  "Parameters": {
-    "ResourceArn.$": "$.resourceArn",
-    "Policy.$": "States.JsonToString($.policyDocument)"
+  "_metadata": {
+    "scope": "account",
+    "layer": "responsive",
+    "posture": "reactive-corrective",
+    "controls": "CTRL-ACC-COR-001",
+    "framework": "<framework_header_canonical>",
+    "generated": "service-approval v3.0.0",
+    "service": "<service-name>",
+    "citation": {
+      "type": "aws_doc",
+      "title": "AWS Systems Manager Automation runbook reference — AWS-<Runbook>",
+      "url": "https://docs.aws.amazon.com/systems-manager-automation-runbooks/latest/userguide/automation-aws-<runbook>.html",
+      "verified_via": "mcp"
+    }
+  },
+  "runbook": {
+    "name": "AWS-<Runbook>",
+    "found_via": "mcp: awsknowledge / aws-documentation search of the SSM automation-runbook-reference",
+    "how_to_use": {
+      "invoke": "aws ssm start-automation-execution --document-name AWS-<Runbook> --parameters '{...}'",
+      "required_parameters": ["<param1>", "<param2>"],
+      "applies_to": "<which resource type / finding this runbook remediates>",
+      "responds_to": "<the detective finding/control this closes>"
+    }
   }
 }
 ```
-Passing a raw JSON object where the API expects a JSON string causes a runtime error. Check
-the API documentation for each SDK integration task — if the parameter type is `String` and
-the value is a policy document, use `States.JsonToString()` to convert it.
+
+Rules:
+- **Find the runbook via MCP.** Search the SSM automation-runbook-reference
+  (`automation-runbook-reference.html`) via `awsknowledge` / `aws-documentation`
+  for a pre-authored `AWS-*` runbook that remediates the control's finding. Log the
+  MCP call to `pipeline.log`.
+- **Citation is REQUIRED** (doc anchor): the `automation-runbook-reference` doc URL
+  and, when the runbook has its own page, that page. MCP-verified, never hardcoded.
+- **If no pre-authored AWS runbook fits**, do NOT author one. Emit the reference
+  file with `"runbook": {"name": null, "note": "No pre-authored AWS SSM runbook
+  covers this remediation; manual intervention required."}` and cite the SSM
+  automation-runbook-reference index page so the customer can search it themselves.
+- The `how_to_use` block tells the customer how to invoke it, its required
+  parameters, where it applies, and which detective finding it responds to.
 
 ---
 
 ## Resource × Detective
 
-Append resource-specific rules to `detective/config-rules.json` with resource-level scope.
-Generate corresponding Lambda handlers for any custom rules.
+Append resource-specific rules to `detective/config-rules.json` with resource-level scope
+(each carrying its citation per the Config Rules section). Generate corresponding Lambda
+handlers for any custom rules.
 
 ---
 
 ## Resource × Responsive
 
-Extend `responsive/stepfunctions-workflow.json` with resource-level remediation steps.
+Reference-only, same as Account × Responsive: emit a resource-scoped
+`responsive/<control-id>-ssm-runbook-reference.json` pointing at the pre-authored
+AWS SSM runbook that remediates the resource-level finding, cited to the SSM
+automation-runbook-reference doc.
 
 ---
 
@@ -669,12 +785,13 @@ Artifact validation runs automatically via PostToolUse hook (validate_controls.p
 ```
 Generate (detective/responsive) complete:
   Org×Detective:    config-org-rules, conformance-pack, cloudtrail-org-config
-  Org×Responsive:   ssm-runbook-org
+  Org×Responsive:   ssm-runbook-org-reference (pre-authored AWS runbook reference)
   Acc×Detective:    config-rules ({N} managed, {N} custom), eventbridge-rules, cloudwatch-alarms [, access-analyzer]
-  Acc×Responsive:   lambda-remediator, ssm-runbook, stepfunctions-workflow
+  Acc×Responsive:   ssm-runbook-reference(s) (pre-authored AWS runbook references)
   Res×Detective:    resource-level config rules
-  Res×Responsive:   resource-level remediation steps
+  Res×Responsive:   resource-level ssm-runbook-reference(s)
   Compensating:     compensating-controls-documentation ({N} gap documentations)
   Lambda handlers:  {N} custom rule handlers generated
+  Citations:        every detective/responsive artifact carries a repo or doc anchor
   Output: .service-approval/<slug>/05-recommended-guidance/detective/, .service-approval/<slug>/05-recommended-guidance/responsive/
 ```

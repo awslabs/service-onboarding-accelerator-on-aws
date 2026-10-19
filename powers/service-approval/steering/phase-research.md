@@ -11,7 +11,7 @@ Applies to: `sa-research-mitigations`, `sa-research-capabilities`, `sa-research-
 
 ## Hard rules
 
-1. **Every capability claim must be MCP-verified.** For each mitigation, capability, API parameter, and condition key, make at least one call to `@awsknowledge`, `@aws-documentation`, or `@awsiac`. Log it to `<slug>/mcp-calls.log`. Integrity rule P1 enforces a minimum of 10 total calls.
+1. **Every capability claim must be MCP-verified.** For each mitigation, capability, API parameter, and condition key, make at least one call to `@awsknowledge` or `@aws-documentation`. Log it to `<slug>/mcp-calls.log`. Integrity rule P1 enforces a minimum of 10 total calls.
 
 2. **No training-data values.** If your answer starts with "I know that S3 supports..." or "Lambda has a feature called...", stop. Re-query MCP. Training data is banned as a source of truth.
 

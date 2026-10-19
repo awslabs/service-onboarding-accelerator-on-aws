@@ -85,20 +85,20 @@ def test_module_main_function_exists() -> None:
 def test_citation_cell_renders_requirement_alias_source() -> None:
     m = _load_module()
     cm = {"control_id": "C1", "citation": {
-        "objective_requirement": "least privilege", "source": "canopy",
+        "objective_requirement": "least privilege", "source": "threat_model",
         "mitigation_alias": "Mitigation.LAMBDA.Function.6"}}
     cell = m._citation_cell(cm, {})
     assert "least privilege" in cell
     assert "Mitigation.LAMBDA.Function.6" in cell
-    assert "(canopy)" in cell
+    assert "(threat_model)" in cell
 
 
 def test_citation_cell_falls_back_to_control_trace() -> None:
-    """A citation-free legacy row still shows the control's threaded Canopy alias."""
+    """A citation-free legacy row still shows the control's threaded AWS Threat Model alias."""
     m = _load_module()
     cell = m._citation_cell({"control_id": "C1"},
-                            {"mitigation_alias": "Mitigation.X.1", "trace_source": "canopy"})
-    assert "Mitigation.X.1" in cell and "(canopy)" in cell
+                            {"mitigation_alias": "Mitigation.X.1", "trace_source": "threat_model"})
+    assert "Mitigation.X.1" in cell and "(threat_model)" in cell
 
 
 def test_citation_cell_assessment_gap() -> None:
@@ -148,7 +148,7 @@ def _fw_mapped_fixture() -> dict:
                            "coverage_level": "Partial Coverage",
                            "rationale": "SCP denies X",
                            "citation": {"objective_requirement": "least privilege",
-                                        "source": "canopy",
+                                        "source": "threat_model",
                                         "mitigation_alias": "Mitigation.L.1"}}]},
             {"objective_id": "IAM-02", "domain": "Identity & Access Management",
              "title": "Unique user IDs", "status": "UNCERTAIN", "coverage": "N/A",
@@ -180,7 +180,7 @@ def test_framework_mapping_summary_has_only_four_rows(tmp_path) -> None:
     m = _load_module()
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
+                                     "category": "PRV", "scope": "ACC", "trace_source": "threat_model"}])
     assert "| Mapped |" in md
     assert "| Not Applicable |" in md
     assert "| Uncertain (review needed) |" in md
@@ -194,7 +194,7 @@ def test_framework_mapping_lists_every_objective_sequentially(tmp_path) -> None:
     m = _load_module()
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
+                                     "category": "PRV", "scope": "ACC", "trace_source": "threat_model"}])
     assert "**IAM-01: IAM Policy**" in md
     assert "**IAM-02: Unique user IDs**" in md and "UNCERTAIN (review needed)" in md
     assert "**DCS-01: Physical security**" in md and "N/A — AWS-managed" in md
@@ -205,7 +205,7 @@ def test_framework_mapping_drops_removed_sections(tmp_path) -> None:
     m = _load_module()
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
+                                     "category": "PRV", "scope": "ACC", "trace_source": "threat_model"}])
     assert "## Coverage Gaps" not in md
     assert "## Mitigation Traceability" not in md
 
@@ -217,7 +217,7 @@ def test_framework_mapping_render_asserts_completeness(tmp_path) -> None:
     # Normal fixture renders without raising.
     _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                               [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                "category": "PRV", "scope": "ACC", "trace_source": "canopy"}])
+                                "category": "PRV", "scope": "ACC", "trace_source": "threat_model"}])
 
 
 def test_suggestions_section_renamed_with_source_column(tmp_path) -> None:
@@ -232,8 +232,8 @@ def test_suggestions_section_renamed_with_source_column(tmp_path) -> None:
                    "orgs_manage_policies_rcps.html#rcp-supported-services)"}]}
     md = _render_framework_mapping(m, tmp_path, _fw_mapped_fixture(),
                                    [{"id": "CTRL-ACC-PRV-001", "name": "PB",
-                                     "category": "PRV", "scope": "ACC", "trace_source": "canopy"}], cg)
-    assert "Controls Not Sourced from Canopy (Suggestions for Review)" in md
+                                     "category": "PRV", "scope": "ACC", "trace_source": "threat_model"}], cg)
+    assert "Controls Not Sourced from AWS Threat Model (Suggestions for Review)" in md
     assert "Potential Recommendations" not in md
     assert "Why not yet cited" not in md
     assert "Not Yet Cited to an Objective" not in md
@@ -241,24 +241,24 @@ def test_suggestions_section_renamed_with_source_column(tmp_path) -> None:
     assert "rcp-supported-services" in md
 
 
-def test_build_uncited_controls_emits_only_non_canopy() -> None:
-    """Only trace_source != 'canopy' controls are emitted (with a Source field);
-    Canopy controls — including defense-in-depth twins — are never listed."""
+def test_build_uncited_controls_emits_only_non_threat_model() -> None:
+    """Only trace_source != 'threat_model' controls are emitted (with a Source field);
+    AWS Threat Model controls — including defense-in-depth twins — are never listed."""
     m = _load_module()
     controls = [
         {"id": "CTRL-ACC-PRV-001", "name": "A", "mitigation_ids": ["M-L.1"],
-         "trace_source": "canopy"},
+         "trace_source": "threat_model"},
         {"id": "CTRL-ACC-DET-001", "name": "A-twin", "mitigation_ids": ["M-L.1"],
-         "trace_source": "canopy"},
+         "trace_source": "threat_model"},
         {"id": "CTRL-RES-DET-009", "name": "Gap", "mitigation_ids": ["M-GAP-3.0"],
          "trace_source": "assessment_gap",
          "doc_reference": {"url": "https://docs.aws.amazon.com/x.html", "title": "X"}},
-        {"id": "CTRL-ORG-PRV-050", "name": "Lonely-canopy", "mitigation_ids": ["M-Z.0"],
-         "trace_source": "canopy"},
+        {"id": "CTRL-ORG-PRV-050", "name": "Lonely-threat-model", "mitigation_ids": ["M-Z.0"],
+         "trace_source": "threat_model"},
     ]
     ctrl_to_objs = {"CTRL-ACC-PRV-001": ["IAM-01"]}
     out = {u["control_id"]: u for u in m.build_uncited_controls(controls, {}, ctrl_to_objs)}
-    # Only the assessment_gap control is emitted — every Canopy control is excluded.
+    # Only the assessment_gap control is emitted — every AWS Threat Model control is excluded.
     assert set(out) == {"CTRL-RES-DET-009"}
     assert out["CTRL-RES-DET-009"]["source"] == "[X](https://docs.aws.amazon.com/x.html)"
     assert "why_uncited" not in out["CTRL-RES-DET-009"]
@@ -283,37 +283,69 @@ def test_control_source_ref_variants() -> None:
     assert "pending" in m.control_source_ref({})
 
 
-def test_main_mapping_cites_only_canopy_controls(tmp_path) -> None:
-    """A non-Canopy control mapped to an objective is filtered out of the main
-    per-objective table (main = Canopy-only)."""
+def test_mapping_keeps_model_evidence_primary_and_supplemental_support_visible(tmp_path) -> None:
+    """Supplemental rows retain their objective linkage in a separately labelled table."""
     m = _load_module()
     fw = _fw_mapped_fixture()
-    # Add a non-Canopy control row to the mapped IAM-01 objective.
+    # Add a non-AWS Threat Model control row to the mapped IAM-01 objective.
     fw["framework_mapping"][0]["controls"].append(
         {"control_id": "CTRL-ACC-PRO-026", "coverage_level": "Partial Coverage",
          "rationale": "compensating", "citation": {"objective_requirement": "x",
                                                     "source": "assessment_gap"}})
     controls = [
         {"id": "CTRL-ACC-PRV-001", "name": "PB", "category": "PRV", "scope": "ACC",
-         "trace_source": "canopy"},
+         "trace_source": "threat_model"},
         {"id": "CTRL-ACC-PRO-026", "name": "Compensating", "category": "PRO",
          "scope": "ACC", "trace_source": "assessment_gap"},
     ]
     md = _render_framework_mapping(m, tmp_path, fw, controls)
-    # Under IAM-01 the Canopy control renders; the non-Canopy one does not.
-    assert "CTRL-ACC-PRV-001" in md
-    assert "CTRL-ACC-PRO-026" not in md
+    primary = md.index("**AWS Threat Model-backed controls**")
+    secondary = md.index("**Supplemental controls")
+    assert primary < md.index("CTRL-ACC-PRV-001", primary) < secondary
+    assert md.index("CTRL-ACC-PRO-026", secondary) > secondary
+
+
+def test_supplemental_only_objective_renders_control_and_documentation(tmp_path) -> None:
+    m = _load_module()
+    fw = _fw_mapped_fixture()
+    fw["framework_mapping"][0]["controls"][0]["citation"] = {
+        "source": "assessment_gap", "objective_requirement": "collect audit evidence",
+        "reference_url": "https://docs.aws.amazon.com/example/audit.html",
+    }
+    controls = [{"id": "CTRL-ACC-PRV-001", "name": "Audit prerequisite",
+                 "category": "PRV", "scope": "ACC", "trace_source": "assessment_gap"}]
+    md = _render_framework_mapping(m, tmp_path, fw, controls)
+    assert "**AWS Threat Model-backed controls**" not in md
+    assert "**Supplemental controls" in md
+    assert "| CTRL-ACC-PRV-001 |" in md
+    assert "https://docs.aws.amazon.com/example/audit.html" in md
+
+
+def test_citation_renders_exact_identity_and_supplemental_mechanism():
+    m = _load_module()
+    cm = {"citation": {"source": "threat_model", "mitigation_alias": "Mitigation.X.2",
+                       "supplemental_mechanism": True, "evidence_note": "Intent from model; mechanism from docs.",
+                       "reference_url": "https://docs.aws.amazon.com/example/"}}
+    ctrl = {"mitigation_alias": "Mitigation.X.1", "mitigation_uuid": "wrong-primary-uuid",
+            "mitigation_references": [{"alias": "Mitigation.X.2", "uuid": "correct-uuid"}],
+            "threat_model_urls": {"Mitigation.X.2": "https://github.com/example/model#x2"}}
+    cell = m._citation_cell(cm, ctrl)
+    assert "correct-uuid" in cell and "wrong-primary-uuid" not in cell
+    assert "https://github.com/example/model#x2" in cell
+    assert "Supplemental mechanism" in cell
+    assert "https://docs.aws.amazon.com/example/" in cell
+    assert "Intent from model; mechanism from docs." in cell
 
 
 def test_identify_coverage_gaps_keeps_control_orphan_alias() -> None:
     """control_orphan retains the {control_id, name} back-compat shape and lists
-    only non-Canopy controls (Canopy controls stay in the main mapping)."""
+    only non-AWS Threat Model controls (AWS Threat Model controls stay in the main mapping)."""
     m = _load_module()
     controls = [
         {"id": "CTRL-RES-DET-009", "name": "Gap", "mitigation_ids": ["M-GAP-3.0"],
          "trace_source": "assessment_gap"},
-        {"id": "CTRL-ORG-PRV-050", "name": "Lonely-canopy",
-         "mitigation_ids": ["M-Z.0"], "trace_source": "canopy"},
+        {"id": "CTRL-ORG-PRV-050", "name": "Lonely-threat-model",
+         "mitigation_ids": ["M-Z.0"], "trace_source": "threat_model"},
     ]
     fw_mapped = {"framework_mapping": []}
     gaps = m.identify_coverage_gaps([], controls, fw_mapped, {})
@@ -321,8 +353,8 @@ def test_identify_coverage_gaps_keeps_control_orphan_alias() -> None:
     assert gaps["uncited_controls"][0]["source"]
 
 
-def test_catalog_cites_canopy_and_labels_gap(tmp_path) -> None:
-    """Canopy control shows alias+UUID+statement; gap control is labelled."""
+def test_catalog_cites_threat_model_and_labels_gap(tmp_path) -> None:
+    """AWS Threat Model control shows alias+UUID+statement; gap control is labelled."""
     from pathlib import Path
     m = _load_module()
     controls = [
@@ -344,6 +376,30 @@ def test_catalog_cites_canopy_and_labels_gap(tmp_path) -> None:
     m.write_controls_catalog(controls, tmm, {"tactic_coverage": {}}, "lambda", out,
                              mitigations=mitigations)
     md = out.read_text()
-    assert "**Canopy mitigation:** `Mitigation.LAMBDA.Function.3` (UUID `uuid-1`)" in md
+    assert "**AWS Threat Model mitigation:** `Mitigation.LAMBDA.Function.3` (UUID `uuid-1`)" in md
     assert "Require a customer-managed KMS key on function creation." in md
-    assert "assessment gap (no Canopy mitigation; recommended control)" in md
+    assert "assessment gap (no AWS Threat Model mitigation; recommended control)" in md
+
+
+def test_readable_threat_model_links_in_both_reports(tmp_path):
+    from threat_model_test_support import source_receipt
+    m = _load_module()
+    path = tmp_path / "model.json"
+    path.write_text("{}")
+    provenance = source_receipt(path)
+    alias = "Mitigation.DSQL.Cluster.4"
+    provenance["report_aliases"] = [alias]
+    control = {"mitigation_alias": alias, "trace_source": "threat_model"}
+    m.attach_threat_model_links([control], {"mitigations": [{"alias": alias}]}, provenance)
+    link = f"[{alias}]({provenance['report_url']}#mitigationdsqlcluster4)"
+    assert link in m._citation_cell({}, control)
+    assert any(link in line for line in m._catalog_citation_lines(control, {}, {}))
+    assert "https://" not in m._citation_cell({"citation": {"mitigation_alias": "Invented"}}, control)
+
+
+def test_service_autodetection_ignores_downloaded_sources(tmp_path, monkeypatch):
+    m = _load_module()
+    for name in ("_sources", "_staging", "plans", "dsql"):
+        (tmp_path / ".service-approval" / name).mkdir(parents=True)
+    monkeypatch.setattr(m.paths, "workspace_root", lambda: tmp_path)
+    assert m.detect_single_service() == "dsql"

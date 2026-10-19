@@ -14,19 +14,23 @@ Flags can also be expressed in natural language:
 ## What it does
 Read the skill at `skills/service-approval/SKILL.md` and follow it step by step.
 Run the pipeline: Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize.
-It recommends controls + compliant IaC; you deploy them yourself.
+It recommends controls; you deploy them yourself.
+Every run requires a published AWS Threat Model retrieved from the latest release.
+Run the canonical Intake fetch gate before MCP/assessment/research. Missing
+services or retrieval failures stop the run; local files cannot substitute.
+Resume checks the original snapshot offline; only a new run fetches latest.
+Source defects are advisory and must appear in the integrity reports. See `docs/THREAT-MODELS.md`.
 All state is written to `.service-approval/<service-slug>/` (per-service layout) in the current working directory.
 
 ## MCP servers
 Registered via `.vscode/mcp.json`. Confirm these are reachable before starting the skill:
-- `aws-documentation` (HTTP)
+- `aws-documentation` (stdio, via `uvx`)
 - `awsknowledge` (HTTP)
-- `awsiac` (HTTP)
-- `terraform` (stdio via Docker — `hashicorp/terraform-mcp-server:0.5.1`)
+- Optional `mitre-attack` (not registered by default; use bundled `data/attack-cloud-matrix.json` unless the user enables it). See `docs/MCP.md`.
 
-Note: the `aws-cdk` MCP server was removed from this plugin. CDK/CDKTF construct lookups
-should use `aws-documentation` and `awsiac` instead. If the skill instructs you to use
-`aws-cdk-mcp-server`, fall back to those two.
+The pipeline can also run without any MCP servers — pass `--no-mcp` and facts are
+verified over the web instead. See the "Running without MCP" section of
+`docs/USAGE-COPILOT.md`.
 
 ## Output
 - Final report: `.service-approval/<service-slug>/06-summarize/SUMMARY-REPORT.md`
@@ -42,17 +46,15 @@ not Ask mode.
    pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) as described
    in `skills/service-approval/SKILL.md`.
 2. Every capability claim, API parameter, and condition key must be verified via MCP
-   (`awsknowledge`, `aws-documentation`, `awsiac`). Hardcoded values from training data
+   (`awsknowledge`, `aws-documentation`). Hardcoded values from training data
    are banned.
 3. Log every MCP call to `.service-approval/<service-slug>/mcp-calls.log`. The Stop hook enforces
    a minimum of 10 logged calls.
 4. Every item in `validated.json` must have a unique `verification_note` specific to that
    item. Templated or duplicated notes fail integrity checks.
-5. IaC templates must be parameterized. No hardcoded account IDs (`123456789012`) or
-   placeholder ARNs.
-6. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals`
+5. SCPs must contain at least one `Deny` statement. `StringEquals` and `StringNotEquals`
    in the same Condition must target the same key or the statement cannot fire.
-7. Verdict must match integrity. If any pipeline integrity check fails, the verdict is
+6. Verdict must match integrity. If any pipeline integrity check fails, the verdict is
    `REQUIRES REMEDIATION`, not `APPROVED`.
 
 The Stop hook runs `validate_pipeline_integrity.py` and blocks on any rule above.

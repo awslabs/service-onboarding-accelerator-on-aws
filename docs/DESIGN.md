@@ -11,6 +11,19 @@ was justified.
 
 ## Mapping accuracy: a deterministic, citation-gated layer
 
+Every onboarding run requires a matching published AWS Threat Model. Intake
+resolves current `main`, follows AWS's release manifest, verifies artifact hashes,
+and saves a pinned snapshot with provenance. Service discovery uses the live
+manifest and model metadata. Missing services or retrieval errors halt the run.
+At entry/resume, `validate_threat_model_input.py` checks the original snapshot
+offline. Only a new run fetches upstream. Source defects are advisory and disclosed
+through deterministic source accounting and report blocks (P14).
+
+The shared manifest, pre-write/post-write, phase, and integrity gates check the
+saved source and its SHA-256 locally. Readable report citations use verified
+headings at the fetched commit. Model claims still pass through Research/Validate.
+See [THREAT-MODELS.md](THREAT-MODELS.md).
+
 The framework-mapping phase constrains what each control may claim, so a control
 is only mapped to an objective it genuinely satisfies — and every confident
 mapping shows its evidence. The controls that drive it:
@@ -18,9 +31,9 @@ mapping shows its evidence. The controls that drive it:
 ### Service applicability screen
 
 Before mapping begins, the tool derives the service's capabilities and category
-from the Canopy threat model and screens objectives for applicability:
+from the AWS Threat Model threat model and screens objectives for applicability:
 
-- **`data/service-capability-rules.json`** — capability flags derived from Canopy
+- **`data/service-capability-rules.json`** — capability flags derived from AWS Threat Model
   mitigation *statements only* (never entity description prose, which describes
   the resource but asserts no customer capability). Each flag is three-valued —
   present / absent / unknown — with a required polarity so "AWS manages patching"
@@ -32,7 +45,7 @@ from the Canopy threat model and screens objectives for applicability:
   a positive structural reason (an organizational objective, or a category fact
   such as "serverless compute has no customer-managed OS to patch"). An unknown
   capability never forces N/A — it defers to the guidance-KB default.
-- **`scripts/compute-applicability-matrix.py`** — takes a Canopy JSON and writes
+- **`scripts/compute-applicability-matrix.py`** — takes an AWS Threat Model JSON and writes
   an applicability matrix in which every N/A cites the rule and evidence
   (`derived_from`) that drove it.
 
@@ -41,22 +54,22 @@ automatically N/A for serverless services; backup objectives (BCR-08) are N/A fo
 serverless unless a backup/replication API is definitively present. No capability
 is ever inferred from descriptive prose.
 
-### Canopy traceability (alias + UUID + statement + MITRE)
+### AWS Threat Model traceability (alias + UUID + statement + MITRE)
 
-**`scripts/canopy_trace.py`** resolves, per Canopy mitigation, its alias, UUID,
+**`scripts/threat_model_trace.py`** resolves, per AWS Threat Model mitigation, its alias, UUID,
 verbatim statement, and MITRE ATT&CK techniques — walking `mitigation → THREAT
 mapping → threat → FRAMEWORK mapping` entirely inside the golden-source file (no
 external lookup). map-generate-controls threads these onto each control so the
-final mapping can cite the exact Canopy mitigation and MITRE technique behind
-every row. The **control catalog** then prints, under each control, its Canopy
+final mapping can cite the exact AWS Threat Model mitigation and MITRE technique behind
+every row. The **control catalog** then prints, under each control, its AWS Threat Model
 alias, UUID, and verbatim statement (control IDs are minted by the tool because
-Canopy carries none); a control derived from an assessment gap rather than a
-Canopy mitigation is labelled a recommendation.
+AWS Threat Model carries none); a control derived from an assessment gap rather than a
+AWS Threat Model mitigation is labelled a recommendation.
 
-### Citation verification against Canopy
+### Citation verification against AWS Threat Model
 
-**`tools/validate/validate_canopy_facts.py`** confirms every Canopy-cited row is
-factual against the provided Canopy export: the cited alias exists, its governed
+**`tools/validate/validate_threat_model_facts.py`** confirms every AWS Threat Model-cited row is
+factual against the provided AWS Threat Model export: the cited alias exists, its governed
 operations are consistent with the control's actions, and any quoted mitigation
 statement appears **verbatim** (normalized for case/whitespace/punctuation) in
 the export's `mitigations[].statement`. It runs `--strict` in the map and
@@ -77,7 +90,7 @@ differently for, say, a serverless vs a storage service.
 ### Citation-as-gate + UNCERTAIN status
 
 Every confident `MAPPED` row carries a `citation` (the specific objective
-sub-requirement satisfied + its source — Canopy mitigation, reference example, or
+sub-requirement satisfied + its source — AWS Threat Model mitigation, reference example, or
 AWS doc). A relationship the mapper believes but cannot cite concretely is emitted
 as **`UNCERTAIN`** with a `review_reason` — surfaced for review, excluded from
 coverage %, never silently asserted or dropped.
@@ -112,8 +125,8 @@ than a confident wrong one.
 ### Verify
 
 ```bash
-# Compute the applicability matrix from a Canopy JSON
-python3 scripts/compute-applicability-matrix.py <canopy-json> --output /tmp/matrix.json
+# Compute the applicability matrix from an AWS Threat Model JSON
+python3 scripts/compute-applicability-matrix.py <threat-model-json> --output /tmp/matrix.json
 
 # Validate a mapping against ceilings + citations + applicability
 python3 tools/validate/validate_domain_mapping_accuracy.py <map-framework-mapped.json> \
@@ -172,7 +185,7 @@ fixed priority order and cites the highest-priority source that supports the
 claim — the same order everywhere facts are pulled (research, validation,
 mapping, and preventive recommendation):
 
-1. **Canopy** — the customer-provided mitigation/threat export, when present. It
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake. It
    is the authoritative source of *what* matters for the service (control intent)
    and the top citation.
 2. **AWS Control Catalog API** — the control→objective authority for controls the
@@ -181,10 +194,10 @@ mapping, and preventive recommendation):
    never general blog posts or third-party write-ups.
 
 The reference-repo library above supplies the *vetted policy body* for a
-preventive control, adapted under the Canopy (or catalog/doc) intent — Canopy
+preventive control, adapted under the AWS Threat Model (or catalog/doc) intent — AWS Threat Model
 sets what to enforce and is the top citation; the reference repo supplies how.
 Each mapping row and each preventive decision records a typed `citation` whose
-`type` (`canopy` / `reference` / `catalog` / `service-doc`) reflects the
+`type` (`threat_model` / `reference` / `catalog` / `service-doc`) reflects the
 highest-priority source that backs it.
 
 ---
@@ -226,7 +239,7 @@ Validation runs at several layers:
   rendered `.md` files for over-claims and upward re-wording), runs the
   deterministic semantic checks (every referenced control resolves, every mapped
   objective exists, no control claims an unverified action/condition key), and
-  the Canopy-factual check. A post-generate gate proves every preventive artifact
+  the AWS Threat Model-factual check. A post-generate gate proves every preventive artifact
   is reference-anchored and actually enforcing.
 - **Root-cause critic.** The last step of preventive generation proves each
   emitted policy both resolves to a reference and enforces its control's root
@@ -235,7 +248,7 @@ Validation runs at several layers:
 - **Reference-anchor enforcement** plus **preventability / enforcement /
   action-scope** checks ensure no policy ships unanchored, no Deny is a silent
   no-op, and no Deny widens beyond the reviewed action set.
-- **Canopy-factual check.** Any control citing a Canopy mitigation must name a
+- **AWS Threat Model-factual check.** Any control citing an AWS Threat Model mitigation must name a
   mitigation that actually exists in the provided export, with consistent gated
   operations — fabricated or drifted citations are flagged.
 - **Conflict detection.** A deterministic pre-filter surfaces control pairs that

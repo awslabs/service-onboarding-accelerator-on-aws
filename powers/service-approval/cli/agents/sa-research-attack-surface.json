@@ -4,8 +4,7 @@
   "prompt": "Follow the instructions in `skills/research-attack-surface/SKILL.md`.\n\nRead the skill file and the ATT&CK reference data in `data/`. Execute all steps and write the output to `.service-approval/<slug>/02-research/research-attack-surface.json`.",
   "mcpServers": [
     "aws-documentation",
-    "awsknowledge",
-    "awsiac"
+    "awsknowledge"
   ],
   "tools": [
     "*"
@@ -17,6 +16,13 @@
   ],
   "includeMcpJson": true,
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "python3 \"${workspaceRoot}/tools/validate/hook_pre_tool_use.py\"",
+        "timeout_ms": 30000
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "fs_write",

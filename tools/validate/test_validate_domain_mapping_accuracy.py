@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -70,6 +71,31 @@ def test_classifier_config_rule_is_misconfig_detection():
         GUIDANCE["mechanism_classes"],
     )
     assert "misconfig_detection" in classes
+
+
+@pytest.mark.parametrize("mechanism,name,expected,objective", [
+    ("CloudFormation Guard", "Require approved template configuration", "change_control", "CCC-03"),
+    ("Compensating Control Documentation", "Client-side attribute encryption", "at_rest_encryption", "CEK-03"),
+    ("Compensating Control Documentation", "Resource-based policies for authorization", "access_control", "IAM-16"),
+    ("Compensating Control Documentation", "Publish table size and item count metrics", "capacity_monitoring", "IVS-02"),
+    ("Compensating Control Documentation", "Retrieve secrets from Secrets Manager", "secrets_management", "DSP-17"),
+    ("CloudFormation Guard", "Require application and system logging", "system_event_logging", "LOG-07"),
+])
+def test_published_control_mechanisms_are_recognized(mechanism, name, expected, objective):
+    classes = vma.classify_control(_ctrl("C1", mechanism, name=name), GUIDANCE["mechanism_classes"])
+    assert expected in classes
+    guide = vma.build_objective_index(GUIDANCE)[objective]
+    assert expected in guide["allow_mechanisms"]
+
+
+def test_capacity_metrics_and_system_logs_do_not_imply_other_coverage():
+    classes = vma.classify_control(
+        _ctrl("C1", "CloudWatch Logs", name="Collect system logs and publish item count metrics"),
+        GUIDANCE["mechanism_classes"])
+    assert "capacity_monitoring" in classes and "system_event_logging" in classes
+    assert "access_event_logging" not in classes and "resilience" not in classes
+    guide = vma.build_objective_index(GUIDANCE)["IVS-02"]
+    assert vma.effective_ceiling(guide, GUIDANCE, classes) == "Partial Coverage"
 
 
 # --- IVS-07 (migration process) must not get a TLS/transit control ----------
@@ -325,7 +351,7 @@ def test_category_applicable_is_clean():
 
 # --- Check 5: citation-as-gate -----------------------------------------------
 
-def _cited(oid, cid, requirement="the specific sub-requirement", source="canopy"):
+def _cited(oid, cid, requirement="the specific sub-requirement", source="threat_model"):
     return _mapped([
         {"objective_id": oid, "status": "MAPPED",
          "controls": [{"control_id": cid, "rationale": "r",
@@ -343,7 +369,7 @@ def test_confident_mapped_without_citation_fails():
         # A second row carries a citation → the mapping opts into the gate.
         {"objective_id": "IAM-09", "status": "MAPPED",
          "controls": [{"control_id": "C2", "rationale": "r",
-                       "citation": {"objective_requirement": "x", "source": "canopy"}}]},
+                       "citation": {"objective_requirement": "x", "source": "threat_model"}}]},
     ])
     controls = _ctrls(_ctrl("C1", "SCP", name="least privilege", keywords=["iam"]),
                       _ctrl("C2", "SCP", name="privileged role segregation", keywords=["iam"]))

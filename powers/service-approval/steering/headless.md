@@ -31,7 +31,7 @@ service-approval:
     - export KIRO_API_KEY=$KIRO_API_KEY_SECRET
     - kiro-cli
         --no-interactive
-        --trust-tools="aws-documentation,awsknowledge,awsiac,terraform,kb-search"
+        --trust-tools="aws-documentation,awsknowledge"
         "run service approval for ${AWS_SERVICE} using ./input"
   artifacts:
     paths:
@@ -53,7 +53,7 @@ service-approval:
 for interactive approval. List ALL servers the pipeline uses:
 
 ```
---trust-tools="aws-documentation,awsknowledge,awsiac,terraform,kb-search"
+--trust-tools="aws-documentation,awsknowledge"
 ```
 
 `--trust-all-tools` is also valid but wider than needed. Prefer the explicit list.
@@ -87,7 +87,7 @@ Set a Kiro workspace token budget in the dashboard if running on a schedule.
 
 Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
 - `<slug>/06-summarize/SUMMARY-REPORT.md` — customer-facing Summary Report
-- `<slug>/05-recommended-guidance/` — all generated artifacts (preventive/proactive/detective/responsive/iac)
+- `<slug>/05-recommended-guidance/` — all generated artifacts (preventive/proactive/detective/responsive)
 - `<slug>/mcp-calls.log` — audit trail of every MCP call
 - `<slug>/03-validate/validated.json` — proof of MCP verification for every item
 
@@ -95,12 +95,12 @@ Upload `.service-approval/` as a CI artifact. Reviewers can inspect:
 
 ### `kiro-cli: Pipeline integrity failed`
 Read `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` for the Summary Report and root cause. The
-integrity script prints which of P1–P7 failed.
+integrity script prints which check failed.
 
 ### `Too few MCP calls in mcp-calls.log`
 The research phase didn't run — likely because `--trust-tools` omitted a server.
 Verify the flag includes every server in `mcp.json`.
 
-### Timeouts on `sa-generate-iac`
-IaC generation is the largest phase. If hitting token or time limits, narrow
-scope: skip ATT&CK enrichment (`--skip-attack`), or split by IaC format.
+### Timeouts during Recommended Guidance
+Recommended Guidance is the largest phase. If hitting token or time limits,
+narrow scope: skip ATT&CK enrichment (`--skip-attack`).

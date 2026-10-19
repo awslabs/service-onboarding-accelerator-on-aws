@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Compute the service applicability matrix from a Canopy threat model.
+"""Compute the service applicability matrix from an AWS Threat Model threat model.
 
 Screens framework objectives for applicability to a target service BEFORE
 mapping. Three risk-averse principles, all encoded here so the decision is
 auditable:
 
-  1. Capability flags are derived from Canopy mitigation STATEMENTS only —
+  1. Capability flags are derived from AWS Threat Model mitigation STATEMENTS only —
      never entity 'information'/description prose. A statement is a normative
      assertion about how the service must be configured; entity information is
      descriptive prose (e.g. a Layer "custom runtime ... reused across
@@ -19,7 +19,7 @@ auditable:
      (`derived_from`) — there is no unexplained N/A.
 
 Usage:
-    python3 scripts/compute-applicability-matrix.py <canopy-json> [--output <path>]
+    python3 scripts/compute-applicability-matrix.py <threat-model-json> [--output <path>]
     python3 scripts/compute-applicability-matrix.py --slug <slug>
 """
 from __future__ import annotations
@@ -54,10 +54,10 @@ def _load_json(path: Path) -> dict:
         return json.load(fh)
 
 
-def _mitigation_statements(canopy: dict) -> list[str]:
+def _mitigation_statements(threat_model: dict) -> list[str]:
     """Return the mitigation STATEMENTS only — entity prose is deliberately excluded."""
     out = []
-    for m in canopy.get("mitigations", []) or []:
+    for m in threat_model.get("mitigations", []) or []:
         if isinstance(m, dict):
             stmt = m.get("statement")
             if isinstance(stmt, str) and stmt.strip():
@@ -75,7 +75,7 @@ def _matches_any(statements: list[str], patterns: list[str]) -> str | None:
     return None
 
 
-def derive_capabilities(canopy: dict, capability_rules: dict) -> dict[str, dict]:
+def derive_capabilities(threat_model: dict, capability_rules: dict) -> dict[str, dict]:
     """Derive three-valued capability flags from mitigation statements only.
 
     Returns capability_id -> {state, evidence} where state is present / absent /
@@ -83,7 +83,7 @@ def derive_capabilities(canopy: dict, capability_rules: dict) -> dict[str, dict]
     unknown). Absent wins over present when both match (a statement may mention
     a capability only to say AWS owns it).
     """
-    statements = _mitigation_statements(canopy)
+    statements = _mitigation_statements(threat_model)
     caps: dict[str, dict] = {}
     for rule in capability_rules.get("capability_rules", []):
         cap_id = rule["capability_id"]
@@ -202,15 +202,15 @@ def evaluate_applicability(
     return result
 
 
-def compute_matrix(canopy_path: Path, output_path: Path | None = None) -> dict:
-    canopy = _load_json(canopy_path)
+def compute_matrix(threat_model_path: Path, output_path: Path | None = None) -> dict:
+    threat_model = _load_json(threat_model_path)
     capability_rules = _load_json(_CAPABILITY_RULES)
     category_rules = _load_json(_CATEGORY_RULES)
     applicability_rules = _load_json(_APPLICABILITY_RULES)
 
-    service_name = (canopy.get("metadata") or {}).get("name", "unknown")
+    service_name = (threat_model.get("metadata") or {}).get("name", "unknown")
 
-    caps = derive_capabilities(canopy, capability_rules)
+    caps = derive_capabilities(threat_model, capability_rules)
     categories = derive_categories(caps, category_rules)
     objective_applicability = evaluate_applicability(caps, categories, applicability_rules)
 
@@ -221,7 +221,7 @@ def compute_matrix(canopy_path: Path, output_path: Path | None = None) -> dict:
     result = {
         "schema_version": "2.0",
         "service": service_name,
-        "source_file": canopy_path.name,
+        "source_file": threat_model_path.name,
         "service_categories": categories,
         "derived_capabilities": {
             "present": present,
@@ -261,8 +261,8 @@ def compute_matrix(canopy_path: Path, output_path: Path | None = None) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("canopy_json", nargs="?", help="Path to Canopy threat model JSON")
-    parser.add_argument("--slug", help="Service slug (looks in .service-approval/<slug>/input/)")
+    parser.add_argument("threat_model_json", nargs="?", help="Path to AWS Threat Model threat model JSON")
+    parser.add_argument("--slug", help="Service slug (reads the export selected in its intake manifest)")
     parser.add_argument("--output", "-o", help="Output path (default: stdout JSON)")
     args = parser.parse_args()
 
@@ -272,25 +272,24 @@ def main() -> None:
         except paths.PathResolutionError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(2)
-        input_dir = svc_root / "input"
-        candidates = list(input_dir.glob("*.json")) if input_dir.exists() else []
-        if not candidates:
-            print(f"SKIP: no JSON files in {input_dir}", file=sys.stderr)
-            sys.exit(0)
-        canopy_path = candidates[0]
+        from tools.validate.validate_threat_model_input import load_run_export
+        threat_model_path, errors = load_run_export(svc_root)
+        if errors:
+            print("AWS THREAT MODEL REQUIRED: " + "; ".join(errors), file=sys.stderr)
+            sys.exit(2)
         output_path: Path | None = svc_root / "04-map" / "applicability-matrix.json"
-    elif args.canopy_json:
-        canopy_path = Path(args.canopy_json)
+    elif args.threat_model_json:
+        threat_model_path = Path(args.threat_model_json)
         output_path = Path(args.output) if args.output else None
     else:
-        parser.error("Provide a Canopy JSON path or --slug")
+        parser.error("Provide an AWS Threat Model JSON path or --slug")
         return
 
-    if not canopy_path.exists():
-        print(f"ERROR: file not found: {canopy_path}", file=sys.stderr)
+    if not threat_model_path.exists():
+        print(f"ERROR: file not found: {threat_model_path}", file=sys.stderr)
         sys.exit(1)
 
-    result = compute_matrix(canopy_path, output_path)
+    result = compute_matrix(threat_model_path, output_path)
     if not output_path:
         print(json.dumps(result, indent=2))
 

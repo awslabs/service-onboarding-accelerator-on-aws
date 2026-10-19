@@ -70,6 +70,23 @@ python3 -m tools.validate.log \
 
 Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail.
 
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), read the Service Authorization Reference
+over the web per [`rules/web-access.md`](../../rules/web-access.md): `WebFetch`
+`https://docs.aws.amazon.com/service-authorization/latest/reference/list_<service>.html`
+instead of the `awsknowledge` SAR read, and extract the full actions and
+condition-keys tables the same way. For any operation or parameter not on the
+SAR page, use the discovery→verify loop — open `WebSearch` to find the
+authoritative `docs.aws.amazon.com` API-reference page, then `WebFetch` it. Log
+each web lookup with `--source web:aws-docs --verdict fetch` (or `--source
+web:search --verdict search` for a discovery query) instead of the
+`mcp:<server>:call` event above; these `web:*` events satisfy the same P1 call
+floor. The complete-API-surface requirement is unchanged — only the transport
+changes.
+
 ---
 
 ## Step 1: Get the Authoritative Action List
@@ -327,8 +344,8 @@ permission-only list, emit it in `api_surface.operations[]` with:
   `"Evaluated during ExecuteStatement/BatchExecuteStatement"`).
 
 Downstream skills use the `source` field to distinguish real ops from virtual ones
-(e.g., `generate-iac` skips parameter generation for virtual ops; `map-generate-controls`
-maps them to IAM controls like any other action).
+(e.g., proactive rule generators skip parameter generation for virtual ops;
+`map-generate-controls` maps them to IAM controls like any other action).
 
 ---
 

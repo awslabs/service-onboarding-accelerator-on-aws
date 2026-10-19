@@ -659,14 +659,16 @@ Each entry MUST explain WHY it is not applicable.
 
 ---
 
-## Controls Not Sourced from Canopy (Suggestions for Review)
+## Controls Not Sourced from AWS Threat Model (Suggestions for Review)
 
-Controls that are NOT backed by a Canopy mitigation (`trace_source != "canopy"` — the
-assessment-gap / compensating controls). The main per-objective mapping cites only
-Canopy-sourced controls; these are surfaced separately as suggestions a reviewer should
-confirm against a specific AWS-documentation source. The `Source` column is a deep-link to
+Controls that are NOT backed by an AWS Threat Model mitigation (`trace_source != "threat_model"` — the
+assessment-gap / compensating controls). Per-objective tables present AWS Threat
+Model-backed controls first, followed by a separately labelled supplemental table
+when needed. Never hide the supporting controls for a mapped objective merely
+because all its support is supplemental. This index also surfaces non-model
+controls for review against a specific AWS-documentation source. The `Source` column is a deep-link to
 the exact AWS doc page (threaded onto the control as `doc_reference` in
-map-generate-controls) so the suggestion is cross-checkable. Canopy-sourced controls —
+map-generate-controls) so the suggestion is cross-checkable. AWS Threat Model-sourced controls —
 including a detective/responsive twin that shares a mitigation with an already-mapped
 control — belong in the main mapping (defense-in-depth), never here.
 
@@ -752,16 +754,20 @@ Techniques with HIGH or MEDIUM applicability that have NO mitigating controls.
 
 4. For each control in the objective's controls table, look up the control's `name` and
    `category` from `map-controls-generated.json`. Write the full name, not just the ID.
+   Keep AWS Threat Model-backed rows primary and display their exact alias/UUID
+   and available pinned readable link. Label supplemental mechanisms explicitly,
+   with their documentation links and evidence notes. Put non-model controls in
+   a separate supplemental table under the same objective so their linkage remains
+   visible without implying AWS Threat Model attribution.
 
-5. For objectives with `status: "NOT_MAPPED"` or `status: "N/A"`, write status as
-   "Not Applicable" and include the reason from `map-framework-mapped.json`.
+5. For objectives with `status: "N/A"`, write "Not Applicable" with its reason.
+   For `UNCERTAIN`, retain that status and its missing-evidence review reason.
 
-6. For the Not Applicable Objectives section, collect all objectives where status is NOT
-   "MAPPED" and list them with their full titles and reasons.
+6. Never fold `UNCERTAIN` objectives into N/A counts or listings.
 
-7. For the "Controls Not Sourced from Canopy (Suggestions for Review)" section, list only
-   controls with `trace_source != "canopy"` (assessment-gap / compensating controls) and
-   render each control's `doc_reference` in the Source column. Canopy-sourced controls are
+7. For the "Controls Not Sourced from AWS Threat Model (Suggestions for Review)" section, list only
+   controls with `trace_source != "threat_model"` (assessment-gap / compensating controls) and
+   render each control's `doc_reference` in the Source column. AWS Threat Model-sourced controls are
    never listed here — they belong in the main mapping.
 
 8. For Coverage Gaps, use `coverage_gaps` assembled in Phase 3 of this skill, filtered to

@@ -23,7 +23,7 @@ into the final `research.json`.
 When a capability claim needs an external fact or citation, consult sources in
 this fixed order and cite the **highest-priority** source that supports the claim:
 
-1. **Canopy** — the customer-provided mitigation/threat export, when present. It
+1. **AWS Threat Model** — the published mitigation/threat model retrieved during Intake. It
    is the authoritative source of *what* matters for this service (intent) and
    the top citation.
 2. **AWS Control Catalog API** — the control→objective authority for controls the
@@ -32,7 +32,7 @@ this fixed order and cite the **highest-priority** source that supports the clai
    Never general AWS blog posts, third-party write-ups, or other services' docs.
 
 The reference-repo index supplies the *vetted policy body* for a preventive
-control, adapted under the Canopy (or catalog/doc) intent — it is the
+control, adapted under the AWS Threat Model (or catalog/doc) intent — it is the
 implementation library, not a fact/citation source for capability discovery.
 `sar-facts.json` / `checkpoint-results.json` remain the authoritative *assessment*
 inputs; this ordering governs **external** fact and citation sourcing. Log every
@@ -101,7 +101,22 @@ python3 -m tools.validate.log \
     --message "<tool-name>: <one-line description of query>"
 ```
 
-Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`, `kb-search`, `awsiac`, etc.). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail. The legacy `[Step N] [Capabilities] ...` summary line is optional and may be appended to `mcp-calls.log` for human-readable narrative — it does NOT replace the canonical event.
+Substitute `<server>` with the actual MCP server name (`awsknowledge`, `aws-documentation`). Issue this command BEFORE the next agent action so a failure mid-run still leaves the audit trail. The legacy `[Step N] [Capabilities] ...` summary line is optional and may be appended to `mcp-calls.log` for human-readable narrative — it does NOT replace the canonical event.
+
+## No-MCP mode
+
+**MCP is the default.** When the run is in No-MCP mode
+(`pipeline_flags.no_mcp == true` in `00-intake/intake-manifest.json`, set by the
+`--no-mcp` flag), verify the same facts over the web per
+[`rules/web-access.md`](../../rules/web-access.md) using the discovery→verify
+loop: run open `WebSearch` to find the right page, then `WebFetch` the
+authoritative Service Authorization Reference and security docs on
+`docs.aws.amazon.com` instead of `awsknowledge` / `aws-documentation`. Log each
+web lookup with `--source web:<source-key> --verdict fetch` (or `search`)
+instead of the `mcp:<server>:call` event above; these `web:*` events satisfy the
+same P1 call floor. Every capability, API
+parameter, and condition key must still be verified — the fact-checking
+requirement is identical; only the transport changes.
 
 ---
 

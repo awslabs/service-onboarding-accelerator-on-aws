@@ -8,23 +8,21 @@ alwaysApply: true
 
 ## Runtime
 
-- **Python 3.9+** for validators, hooks, and the KB search MCP server
-- **Docker** for `hashicorp/terraform-mcp-server:0.5.1` (stdio transport)
-- **AWS CLI** optional — required only for Tier 2 policy validation (Access Analyzer / CloudFormation `validate-template`)
+- **Python 3.9+** for validators, hooks, and pipeline tooling
+- **AWS CLI** optional — required only for Tier 2 policy validation (Access Analyzer)
 
 ## MCP servers
 
-All registered in `mcp.json`. Auto-loaded when the Power activates:
+Required servers are registered in `mcp.json`. The optional server is configured
+only if the user enables it (see `docs/MCP.md`).
 
 | Server | Transport | Purpose |
 |--------|-----------|---------|
-| `aws-documentation` | HTTP | Service docs, feature references, IAM key semantics |
+| `aws-documentation` | stdio | Service docs, feature references, IAM key semantics |
 | `awsknowledge` | HTTP | SAR (Service Authorization Reference) queries, condition keys |
-| `awsiac` | HTTP | IaC lookups: CFN resource types, CDK constructs, Terraform provider schema |
-| `terraform` | stdio (Docker) | Terraform provider details, module scaffolding |
-| `kb-search` | stdio | Amazon Bedrock Knowledge Base — optional, for organization-specific mitigations |
+| `mitre-attack` (optional) | stdio | User-enabled ATT&CK lookups; default uses the bundled snapshot |
 
-No MCP server is optional. P1 enforces a minimum count (≥10) of MCP calls per pipeline run; the strict expectation that every capability claim, API parameter, and condition key is MCP-verified lives in `service-approval-enforcement.md`.
+P1 enforces a minimum count (≥10) of MCP calls per pipeline run; the strict expectation that every capability claim, API parameter, and condition key is MCP-verified lives in `service-approval-enforcement.md`.
 
 ## Tools used by agents
 
@@ -46,8 +44,7 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     ├── 01-assess/
     │   ├── sar-facts.json
     │   ├── checkpoint-results.json
-    │   ├── assessment-summary.md
-    │   └── iac-support.json
+    │   └── assessment-summary.md
     ├── 02-research/
     │   ├── research.json            ← merged from 4 sub-skills
     │   ├── research-mitigations.json
@@ -66,8 +63,7 @@ formats, generated from `agents-src/sa-*.yaml` — declares:
     │   ├── preventive/              (SCPs, RCPs, resource policies)
     │   ├── proactive/               (CFN Guard, OPA, Checkov, CFN Hooks)
     │   ├── detective/               (Config rules + Lambda handlers, EventBridge)
-    │   ├── responsive/              (Lambda remediators, SSM runbooks)
-    │   └── iac/                     (CDK, CloudFormation, CDKTF, modular Terraform)
+    │   └── responsive/              (Lambda remediators, SSM runbooks)
     └── 06-summarize/
         ├── SUMMARY-REPORT.md
         └── ARTIFACT-FLOW-MATRIX.md
@@ -82,21 +78,20 @@ Every pipeline state file has a matching `schemas/<name>.schema.json` enforcing 
 | Script | Scope |
 |--------|-------|
 | `tools/validate/validate_state.py` | Schema + cross-file integrity for state files |
-| `tools/validate/validate_controls.py` | Generated artifact checks (SCP format, IaC parameterization) |
-| `tools/validate/validate_deployable.py` | Tier 1 (static) + Tier 2 (AWS API) deployability |
-| `tools/validate/validate_pipeline_integrity.py` | Stop-hook enforcement of P1–P7 integrity checks |
+| `tools/validate/validate_controls.py` | Generated artifact checks (SCP format, policy parameterization) |
+| `tools/validate/validate_pipeline_integrity.py` | Stop-hook enforcement of the pipeline integrity checks |
 | `tools/validate/validate_kms_consumers.py` | KMS key policy ↔ consumer resource cross-check |
 
 ## CLI 2.0 features used
 
-- `/spawn` — parallel subagent execution for Research (4), Map (2), Generate (3)
+- `/spawn` — parallel subagent execution for Research (4), Map (2), Generate (2)
 - Hooks with `${workspaceRoot}` — paths work regardless of install location (symlink vs copy)
 - Headless mode — `--no-interactive` + `KIRO_API_KEY` for CI runs
 
 ## Forbidden patterns
 
-- Hardcoded account IDs (`123456789012`, `000000000000`). Validator P4 blocks.
-- Placeholder ARNs (`arn:aws:kms:us-east-1:123456789012:key/example`). Validator P4 blocks.
+- Hardcoded account IDs (`123456789012`, `000000000000`). `validate_controls.py` blocks.
+- Placeholder ARNs (`arn:aws:kms:us-east-1:123456789012:key/example`). `validate_controls.py` blocks.
 - `StringEquals` and `StringNotEquals` on different keys in the same `Condition`. Validator P3 blocks (conditions AND together, so this never fires).
 - SCPs without a `Deny` statement. Safety rule enforced.
 - `APPROVED` verdict with integrity failures. Validator P6 blocks.

@@ -1,7 +1,7 @@
 ---
 name: service-approval
 displayName: AWS Service Security Controls Generator
-description: Generate AWS security controls and compliant IaC for any AWS service. Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) mapped to CCMv4 (other frameworks deferred).
+description: Generate AWS security controls for any AWS service. Runs a pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize) mapped to a supplied control framework, with CCMv4 guidance and direct custom-framework mapping backed by AWS Threat Model evidence.
 keywords:
 - aws
 - security
@@ -17,41 +17,39 @@ keywords:
 - cfn-guard
 - checkov
 - opa
-- terraform
-- cloudformation
-- cdk
-- cdktf
 - mitre-attack
 - preventive-controls
 - detective-controls
 - proactive-controls
 - responsive-controls
 author: Service Onboarding on AWS Team
-version: 1.1.0
+version: 1.3.0
 ---
 
 # AWS Service Security Controls Generator
 
 ## Overview
 
-This Power drives a pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to CCMv4 (other frameworks are deferred), and produces a full set of recommended control artifacts + compliant IaC that the customer deploys themselves.
+This Power drives a pipeline that generates AWS security controls for any AWS service. It reads customer inputs (mitigation reports, threat models, framework spreadsheets), researches the service via AWS knowledge MCP servers, maps every capability to CCMv4 (other frameworks are deferred), and produces a full set of recommended control artifacts that the customer deploys themselves.
 
 **Key capabilities:**
 - **Intake + 6-phase pipeline** — Intake → Assess → Research → Validate → Map → Recommended Guidance → Summarize
-- **Parallel execution** — 4 research sub-skills and 3 recommended-guidance families run concurrently via Kiro's `/spawn` command; the preventive family runs a gated sub-pipeline (recommend → reference-anchored authors → root-cause critic)
-- **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge`, `aws-documentation`, and `awsiac` MCPs. Hardcoded values from training data are banned.
-- **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks, CDK/CDKTF/Terraform/CloudFormation templates
+- **Parallel execution** — 4 research sub-skills and 2 recommended-guidance families run concurrently via Kiro's `/spawn` command; the preventive family runs a gated sub-pipeline (recommend → reference-anchored authors → root-cause critic)
+- **MCP-driven verification** — every capability claim, API parameter, and condition key is verified via `awsknowledge` and `aws-documentation` MCPs. Hardcoded values from training data are banned.
+- **Full artifact coverage** — SCPs, RCPs, Config rules + Lambda handlers, CFN Guard rules, OPA policies, Checkov custom policies, CFN Hooks
 - **Integrity-enforced** — the Stop hook runs `validate_pipeline_integrity.py` and blocks shortcut runs
 
 ## Prerequisites
 
+0. **Published AWS Threat Model and GitHub access** — Intake fetches the latest
+   matching release automatically. Missing services and retrieval failures stop
+   the run. Follow the canonical Intake gate, using the saved snapshot offline on resume.
+   Local exports and flags cannot bypass it. See `docs/THREAT-MODELS.md`.
 1. **Python 3.9+**: `python3 --version`
 2. **MCP servers** registered in `mcp.json` (auto-loaded by this Power):
    - `aws-documentation` (HTTP)
    - `awsknowledge` (HTTP)
-   - `awsiac` (HTTP)
-   - `terraform` (stdio via Docker — `hashicorp/terraform-mcp-server:0.5.1`)
-3. **AWS CLI profile** (optional) — only for Tier 2 policy validation (Access Analyzer / CloudFormation `validate-template`)
+3. **AWS CLI profile** (optional) — only for Tier 2 policy validation (Access Analyzer)
 
 ## How to invoke
 
@@ -67,7 +65,7 @@ Explicit invocation: ask Kiro to *"use the service-approval Power for Amazon S3"
 | Parameter | Description | Required |
 |-----------|-------------|----------|
 | `service` | AWS service ID (e.g., `s3`, `kms`, `bedrock-agentcore-control`) | Asked during Intake if not supplied as a flag |
-| input folder | Customer docs (.md, .json, .xlsx, .pdf, .docx) | No (Intake creates `./input/` if missing) |
+| input folder | Framework and supporting files | Optional |
 | `framework` | `ccmv4` for both Kiro Power and Claude Code (interactive intake is CCMv4-only). Multi-framework parsing remains available via the `--framework=<type>` CLI flag for advanced operators. | Asked during Intake if not supplied as a flag. **Not auto-detected silently.** |
 | `dry-run` | Lint artifacts only | Optional flag |
 
@@ -93,18 +91,18 @@ for the prompt itself.
 
 ```
 Phase Intake              → _staging/<ts>/00-intake/intake-manifest.json (promoted to <slug>/00-intake/ in Phase 0)
-Phase 0 Assess            → <slug>/01-assess/sar-facts.json, checkpoint-results.json, iac-support.json
+Phase 0 Assess            → <slug>/01-assess/sar-facts.json, checkpoint-results.json, assessment-summary.md
 Phase 1 Research          → <slug>/02-research/research.json (4 parallel sub-skills merged)
 Phase 2 Validate          → <slug>/03-validate/validated.json
 Phase 3 Map               → <slug>/04-map/mapping-results.json + framework-mapping.md
-Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/{preventive, proactive, detective, responsive, iac}/
+Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/{preventive, proactive, detective, responsive}/
 Phase 5 Summarize         → <slug>/06-summarize/SUMMARY-REPORT.md
 ```
 
 **Parallelization windows** (use `/spawn` at these points):
 - Window 1 — Research (Phase 1a–1d): 4 subagents
 - Window 2 — Map (Phase 3a–3b): 2 subagents, then 3c and 3d sequential
-- Window 3 — Recommended Guidance (Phase 4a–4c): 3 subagents
+- Window 3 — Recommended Guidance (Phase 4): 2 families (preventive sub-pipeline + detective)
 
 All output lands in `.service-approval/` in the working directory.
 
@@ -124,15 +122,15 @@ the source YAML.
 
 The Stop hook (`ide/hooks/stop.kiro.hook`) runs `tools/validate/hook_stop.py` which invokes
 `validate_pipeline_integrity.py`. The hook blocks the Stop event (exit code 2) on any of
-these P1–P7 failure signals (mirrors `validate_pipeline_integrity.py` module docstring):
+these failure signals (mirrors `validate_pipeline_integrity.py` module docstring):
 
 - **P1** — `pipeline.log` / `mcp-calls.log` missing or too few MCP calls (≥10 required, exempted by `[pipeline:complete:<VERDICT>]` terminal sentinel for finalized runs).
 - **P2** — `validated.json` has templated or empty verification notes (≥50% uniqueness required).
 - **P3** — IAM policy logic errors (mismatched `StringEquals`/`StringNotEquals` keys, broad Allow on `Resource:*` without Condition, SCP without Deny).
-- **P4** — IaC templates contain placeholder account IDs (`123456789012`, `000000000000`, `111111111111`) or placeholder ARNs.
 - **P5** — framework coverage below 15% with no per-objective rationale.
 - **P6** — verdict mismatch (`APPROVED` emitted despite integrity failures).
 - **P7** — phase-output completeness: every phase dir on disk must contain its declared outputs (`mapping-results.json`, `controls-catalog.md`, `framework-mapping.md`, etc.) at min-size thresholds.
+- **P12** — citation coverage: every authored artifact under `05-recommended-guidance/{detective,proactive,responsive}/` carries a resolvable citation (a reference-index repo anchor or an MCP-verified AWS-doc anchor).
 
 Cultural rules (skill-based execution, no one-shot generator scripts) live in
 [`steering/service-approval-enforcement.md`](steering/service-approval-enforcement.md), not in this list.
@@ -147,7 +145,7 @@ Cultural rules (skill-based execution, no one-shot generator scripts) live in
 ## Troubleshooting
 
 ### `mcp-calls.log missing` (P1 hook failure)
-Every subagent must call `@awsknowledge`, `@aws-documentation`, or `@awsiac` at least once and log to `.service-approval/<slug>/mcp-calls.log`. Check the Research and Validate phases — these are where calls are concentrated.
+Every subagent must call `@awsknowledge` or `@aws-documentation` at least once and log to `.service-approval/<slug>/mcp-calls.log`. Check the Research and Validate phases — these are where calls are concentrated.
 
 ### `validated.json verification notes duplicated` (P2)
 Every `verification_note` must be item-specific. If Kiro is templating notes, re-run Validate with stricter prompting: *"write a unique verification note citing the exact MCP call result for each item."*

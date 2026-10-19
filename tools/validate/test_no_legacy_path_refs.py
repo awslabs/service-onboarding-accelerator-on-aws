@@ -39,6 +39,7 @@ _ALLOWED_PREFIXES = ()
 _ALLOWED_FILENAMES = (
     "test_no_legacy_path_refs.py",  # this test (matches the literal in its allow rules)
     "test_intake_promotion.py",     # explicit migration test fixture
+    "test_hook_legacy_detection.py",  # exercises the legacy-layout detector directly
     "test_paths.py",                # W1 helper test
     "tools/paths.py",               # W1 — legacy_state_dir() documents the path
     "hook_post_tool_use.py",        # legacy detection + migration warning text
@@ -414,6 +415,104 @@ def _r17_allowed(file_path: str) -> bool:
     return any(sub in norm for sub in _R17_ALLOWED_SUBSTRINGS)
 
 
+# ---------------------------------------------------------------------------
+# R18 — retired IaC-generation guard.
+#
+# IaC generation was removed entirely: no `generate-iac` skill, no `iac/`
+# output directory, no CDKTF/CloudFormation/Terraform/CDK template emission,
+# no `iac-support.json`, no `aws-cdk-mcp-server` MCP, no `validate_deployable`
+# / KMS-consumer deploy validators, no `compliant-resource.*` templates.
+#
+# Production code must not reference any of them again. Patterns are specific
+# tokens (not the bare word "iac") so legitimate proactive-control language —
+# e.g. "CFN Guard rules inspect the customer's IaC template properties" — does
+# NOT trip. Each is a POSIX-extended regex fed to `git grep -E`.
+# ---------------------------------------------------------------------------
+_R18_GENERATE_IAC_SKILL = r"generate-iac"          # retired skill slug / path
+_R18_IAC_SUPPORT = r"iac-support"                  # retired assess Step 2b artifact
+_R18_IAC_OUTPUT_DIR = r"guidance/(\{[^}]*,)?iac[,/}]"  # 05-recommended-guidance/.../iac output dir
+_R18_CDKTF = r"cdktf"                              # CDK-for-Terraform emission
+_R18_AWS_CDK_MCP = r"aws-cdk-mcp"                  # retired IaC MCP server
+_R18_VALIDATE_DEPLOYABLE = r"validate_deployable"  # retired deployability validator
+_R18_COMPLIANT_RESOURCE = r"compliant-resource"    # retired IaC template basename
+
+_R18_PATTERNS = (
+    _R18_GENERATE_IAC_SKILL,
+    _R18_IAC_SUPPORT,
+    _R18_IAC_OUTPUT_DIR,
+    _R18_CDKTF,
+    _R18_AWS_CDK_MCP,
+    _R18_VALIDATE_DEPLOYABLE,
+    _R18_COMPLIANT_RESOURCE,
+)
+
+# Only this test file legitimately names the retired IaC tokens now.
+_R18_ALLOWED_SUBSTRINGS = (
+    "test_no_legacy_path_refs.py",   # this test names the patterns by definition
+    "CHANGELOG",
+)
+
+
+def _r18_allowed(file_path: str) -> bool:
+    """Return True if the file is allowed to name a retired IaC token."""
+    norm = file_path.replace("\\", "/")
+    if "/.git/" in norm:
+        return True
+    return any(sub in norm for sub in _R18_ALLOWED_SUBSTRINGS)
+
+
+def test_no_retired_iac_refs():
+    """Verify no `generate-iac`, `iac-support`, `cdktf`, `aws-cdk-mcp`,
+    `validate_deployable`, `compliant-resource`, or `iac/` output-dir refs in
+    shipped code.
+
+    IaC generation was removed entirely. The shipped skills, validators, hooks,
+    manifest, docs, and power files must not reference the removed skill,
+    output directory, template formats, MCP server, or deployability validator.
+    """
+    root = _repo_root()
+
+    all_matches: list[str] = []
+    for pat in _R18_PATTERNS:
+        for m in _run_git_grep(pat, root, regex=True):
+            if m and m not in all_matches:
+                all_matches.append(m)
+
+    violations = []
+    for line in all_matches:
+        if ":" not in line:
+            continue
+        file_path = line.split(":", 1)[0]
+        if _r18_allowed(file_path):
+            continue
+        violations.append(line)
+
+    if violations:
+        msg = (
+            "R18 VIOLATION: Found references to retired IaC generation in shipped code.\n"
+            "IaC generation was removed entirely — do not reintroduce generate-iac,\n"
+            "iac-support.json, the iac/ output dir, cdktf, aws-cdk-mcp-server,\n"
+            "validate_deployable, or compliant-resource.* templates.\n\n"
+            "Violations:\n" + "\n".join(f"  {v}" for v in violations)
+        )
+        raise AssertionError(msg)
+
+
+@pytest.mark.parametrize("offending_line,patterns", [
+    ('run "skills/generate-iac/SKILL.md"', [_R18_GENERATE_IAC_SKILL]),
+    ('OUT = ".service-approval/awslambda/01-assess/iac-support.json"', [_R18_IAC_SUPPORT]),
+    ('OUT = ".service-approval/awslambda/05-recommended-guidance/iac/main.tf"', [_R18_IAC_OUTPUT_DIR]),
+    ('mkdir -p 05-recommended-guidance/{preventive,proactive,detective,responsive,iac}', [_R18_IAC_OUTPUT_DIR]),
+    ('cd .service-approval/x/05-recommended-guidance/iac/cdktf', [_R18_CDKTF]),
+    ('claude mcp add aws-cdk-mcp-server -- npx -y @aws/cdk-mcp-server@latest', [_R18_AWS_CDK_MCP]),
+    ('from validate_deployable import SKIP_DIRS', [_R18_VALIDATE_DEPLOYABLE]),
+    ('template-file iac/cloudformation/compliant-resource.cfn.yaml', [_R18_COMPLIANT_RESOURCE]),
+])
+def test_r18_catches_retired_iac_refs(tmp_path, offending_line, patterns):
+    """Every retired-IaC pattern must trip on a synthetic violation."""
+    _exercise_r16_trip(tmp_path, offending_line, patterns)
+
+
 def test_no_retired_phase_refs():
     """Verify no `05-generate`, test-phase, or evidence-phase refs in production code.
 
@@ -469,4 +568,5 @@ if __name__ == "__main__":
     test_no_legacy_state_refs()
     test_no_legacy_controls_refs()
     test_no_retired_phase_refs()
-    print("R16/R17 PASS: No legacy or retired-phase references found.")
+    test_no_retired_iac_refs()
+    print("R16/R17/R18 PASS: No legacy, retired-phase, or IaC references found.")

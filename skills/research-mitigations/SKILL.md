@@ -25,17 +25,24 @@ Per-service phase directory (`.service-approval/<slug>/02-research/`) is created
 ## Inputs
 
 Parse arguments:
-- `./input-folder` (optional) — read all `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files
+- `inputs.threat_model_file` — required, validated AWS Threat Model JSON export from intake
+- `./input-folder` — optional additional `.md`, `.json`, `.xlsx`, `.pdf`, `.docx` files
 - `--service=<name>` — AWS service identifier (e.g., `bedrock-agentcore`, `lambda`, `s3`)
 
-If no input folder is provided, skip mitigation extraction (MCP-only mode — mitigations
-will be empty). If no --service is provided, ask the user.
+You MUST run `python3 tools/validate/validate_threat_model_input.py --slug "<slug>"`
+before extraction. On failure, STOP; do not emit an empty mitigation inventory.
+Parse `inputs.threat_model_file` even when it is outside the input folder, exactly
+once. Other files supplement it; an entity-nested report does not replace it.
 
 ---
 
 ## Step 1: Parse Input Files
 
-For each file in the input folder:
+Parse the export selected by `inputs.threat_model_file` first. Then parse optional
+supporting files in the input folder, without processing the selected file twice.
+Skip every other AWS Threat Model export, including older versions and models
+for other services: only the selected export supplies the citation index and
+authoritative model mitigations.
 
 ### JSON files (Mitigation Report)
 
@@ -46,15 +53,17 @@ the wrong branch silently drops every mitigation.
 own `mitigations[]` sub-array. For each entity, read `resource_type` and walk
 its mitigations.
 
-**Shape B — top-level (Canopy export):** the file has a top-level
+**Shape B — top-level (AWS Threat Model export):** the file has a top-level
 `mitigations[]` array AND `entities[]` entries with NO `mitigations` sub-key.
 Each top-level mitigation carries `alias`, `statement`,
 `configurationRequestParameters[]` (each `{service, operation, paths[].path}`),
 and `mappings[]` (entries `{type, id}` where `type` is one of `ENTITY`,
 `THREAT`, `MITIGATION_GOAL`, `IMPLEMENTATION`). Recover `resource_type` for a
 mitigation by following its `mappings[type=="ENTITY"].id` to the matching
-`entities[].id` and using the entity's `entityType` (or
-`AWS::<Service>::<entityType>` when an explicit CFN type is not present).
+`entities[].id`. Published models put CloudFormation types in
+`identifiers.cfnResourceTypes[]`; preserve all types and all linked entities.
+Legacy `resource_type` / `entityType` values are usable only when they are
+explicit `AWS::...` types. Never construct a CFN type from a semantic label.
 
 ```python
 import json
@@ -66,20 +75,10 @@ entities = data.get("entities") or []
 shape_b = bool(top_level_mits) and not any("mitigations" in e for e in entities)
 
 if shape_b:
-    # Build entity-id -> entity lookup for resource_type recovery
-    entity_by_id = {e.get("id"): e for e in entities}
-    for mit in top_level_mits:
-        # Recover resource_type via the ENTITY mapping
-        entity_id = next(
-            (m["id"] for m in mit.get("mappings", []) if m.get("type") == "ENTITY"),
-            None,
-        )
-        ent = entity_by_id.get(entity_id, {}) if entity_id else {}
-        resource_type = ent.get("resource_type") or ent.get("entityType") or ""
-        # Carry alias, statement, configurationRequestParameters[]:
-        #   request_parameters can be flattened from
-        #   mit["configurationRequestParameters"][i]["paths"][j]["path"]
-        # Preserve alias and full statement; do NOT summarize or truncate.
+    from tools.validate.threat_model_parse import parse_threat_model_mitigations
+    normalized = parse_threat_model_mitigations(data)
+    # Preserve alias, source_uuid, statement, resource_types, and full
+    # configuration_request_parameters when assigning internal M-* IDs.
 else:
     # Shape A — walk entity-nested mitigations
     for entity in entities:
@@ -97,7 +96,52 @@ zero-count outcome from a non-empty input set is almost always a shape
 mismatch, not a real empty mitigation list.
 
 A reference parser implementing this detector lives at
-`tools/validate/canopy_parse.py` — covered by `test_canopy_parse.py`.
+`tools/validate/threat_model_parse.py` — covered by `test_threat_model_parse.py`.
+
+#### AWS Threat Model citation index (Shape B only)
+
+An AWS Threat Model export also carries a top-level `implementations[]` array — typed
+control examples (preventive SCP / RCP / resource-based / declarative policy,
+proactive CloudFormation Hooks, detective AWS Config rules / CloudTrail events).
+Each implementation carries the exact governed actions + condition keys (or API
+operations / resource properties) AND a REFERENCE link to the public AWS
+documentation it is grounded in. This is the **first-priority citation source**
+for every control family downstream: a control anchored to an AWS Threat Model
+implementation cites that implementation's `alias` and links straight to its
+public doc URL.
+
+Persist the required export's normalized index so downstream
+citation lookups and the citation validator resolve against one source of truth:
+
+```python
+import json, sys
+sys.path.insert(0, "tools/validate")
+from threat_model_parse import build_threat_model_index
+
+data = json.load(open("<threat-model-file>"))
+manifest = json.load(open(".service-approval/<slug>/00-intake/intake-manifest.json"))
+index = build_threat_model_index(data, service="<service-name>",
+                                 source=manifest["inputs"]["threat_model_source"])
+with open(".service-approval/<slug>/02-research/threat-model-index.json", "w") as f:
+    json.dump(index, f, indent=2)
+```
+
+`threat-model-index.json` (schema: `schemas/threat-model-index.schema.json`) holds the
+normalized `mitigations[]` (alias + statement + cited REFERENCE links) and
+`implementations[]` (behavior, mechanism, governed actions/keys, and the
+REFERENCE `href`s), plus `threat_model_url` links to verified readable report
+headings at the fetched commit. Preserve these links as a separate provenance
+field; they do not replace capability-documentation `reference_links` or the
+existing `_metadata.citation.url` verification rules. Writing the index is mandatory
+for every pipeline run.
+The recommender and the authoring /
+detective / proactive skills read this file first when deciding each control's
+citation.
+
+Published `DIRECTIVE` implementations are process/configuration guidance. Preserve
+these rows, their `guidance` prose, and readable links in the index. Do not treat a
+DIRECTIVE row as evidence that an automated preventive/proactive/detective control
+exists; normal capability verification and behavior matching still apply.
 
 ### Markdown files (Mitigation Report)
 
@@ -199,8 +243,8 @@ Compile all extracted mitigations into a structured array:
 ```
 
 `alias` and `configuration_request_parameters` are populated only when the
-source provides them (e.g. the Canopy top-level shape). The flat
-`request_parameters[]` list MUST always be populated — for the Canopy shape,
+source provides them (e.g. the AWS Threat Model top-level shape). The flat
+`request_parameters[]` list MUST always be populated — for the AWS Threat Model shape,
 flatten every `configurationRequestParameters[].paths[].path` into it.
 
 **Quality rules:**
@@ -217,8 +261,12 @@ flatten every `configurationRequestParameters[].paths[].path` into it.
 
 ## Step 3: Build Initial Asset Inventory
 
-From the mitigations, derive an initial asset list. Each unique `resource_type` becomes
-an asset entry:
+From the mitigations, derive an initial asset list. Each unique type in
+`resource_types[]` (or legacy `resource_type`) becomes an asset entry. Missing
+CFN identifiers require discovery in research; do not fabricate asset types.
+Treat source identifiers as inventory candidates. Research/Validate MUST verify
+actual CloudFormation and AWS Config support via MCP before claiming that those
+services can deploy or monitor the resource type.
 
 ```json
 {
@@ -338,3 +386,14 @@ Research (mitigations) complete:
   Framework file:          {path or "none"}
   Output: .service-approval/<slug>/02-research/research-mitigations.json
 ```
+
+
+## Source mitigation accounting
+
+Preserve every source mitigation's `alias` and `source_uuid` (the original UUID)
+when assigning internal `M-*` IDs. Internal IDs are separate from source UUIDs.
+Never silently drop source records or replace a source alias with an inferred one.
+After writing this phase's outputs, run
+`python3 tools/validate/audit_threat_model.py --slug <slug>`. It records source
+defects and missing source mitigations as advisories, preserving usable results.
+A missing MITRE technique alone is not a defect.

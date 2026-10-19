@@ -19,9 +19,7 @@
 # Or pass an explicit path:
 #   service-approval --from-intake=path/to/my-service.yaml
 #
-# Only `service.name` is required. Everything else has sensible defaults.
-# IaC output formats are NOT configured here — they are auto-detected in
-# Phase 0 (Assess) based on actual provider support for your service.
+# `service.name` is required. A matching model is fetched from the latest AWS release.
 # ─────────────────────────────────────────────────────────────────────────────
 
 service:
@@ -30,31 +28,28 @@ service:
   name: ""
 
 input:
-  # Path to folder containing input files (.md, .json, .xlsx, .pdf, .docx)
-  # Set to null for MCP-only mode (pipeline researches everything from scratch)
-  folder: null
+  # Input paths are relative to the working directory, not this YAML's directory.
+  # Optional supporting documents; the model is downloaded automatically.
+  folder: "./input"
 
-  # What types of input are you providing?
-  threat_model: false       # Custom threat model in the input folder?
+  # No threat_model_file override: AWS must publish a matching model.
+  # Network access to the public AWS threat-model repository is required.
   mitigation_report: false  # Existing mitigation report?
 
   # Control framework to map against
-  # Options: ccmv4 | nist | cis | iso
-  # If a framework file is in the input folder, this is auto-detected
+  # Options: ccmv4 | nist | cis | iso | custom
+  # An explicit framework_file is authoritative; preserve its identity and IDs.
   framework: "ccmv4"
 
   # Explicit path to framework file (optional — auto-detected from folder if null)
   framework_file: null
 
-  # Bootstrap behavior when ./input/ does not exist in the user's cwd.
-  # In interactive mode the intake skill prompts for these. For file-driven
-  # runs (--from-intake=...), set them here to skip the prompt.
-  bootstrap:
-    # Copy the bundled CCMv4 framework xlsx from the plugin's input/ into ./input/
-    seed_from_plugin: false
-    # Try downloading the latest CCMv4 from CSA (falls back to opening browser
-    # if CSA returns a login wall instead of an xlsx)
-    auto_download_ccmv4: false
+  # Free-text notes describing a CUSTOM framework's structure (optional): how
+  # control / sub-control IDs are formatted, which column holds the control text,
+  # how requirements are grouped, which controls matter most. Read by the Map
+  # phase as advisory guidance. Equivalent to the --framework-specification flag.
+  framework_specification: null
+
 
 options:
   # Include MITRE ATT&CK threat mapping (adds ~15 min)
@@ -66,5 +61,10 @@ options:
   # Include unverified findings in generation (not recommended)
   include_unverified: false
 
-  # Delete existing .service-approval/ state before run
+  # Clear only the selected service's phase output after successful retrieval
   clean: false
+
+  # Run without MCP servers — verify every fact over the web (WebFetch/WebSearch
+  # against the rules/web-access.md allowlist) instead of calling MCP. MCP is the
+  # default; set true only to run in No-MCP mode. Equivalent to the --no-mcp flag.
+  no_mcp: false

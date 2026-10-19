@@ -3,7 +3,7 @@
     "aws-documentation": {
       "command": "uvx",
       "args": [
-        "awslabs.aws-documentation-mcp-server@latest"
+        "awslabs.aws-documentation-mcp-server@1.1.28"
       ],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR",
@@ -14,51 +14,6 @@
     "awsknowledge": {
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
-    },
-    "awsiac": {
-      "command": "uvx",
-      "args": [
-        "awslabs.aws-iac-mcp-server@latest"
-      ],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR",
-        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    },
-    "terraform": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "hashicorp/terraform-mcp-server:0.5.1"
-      ],
-      "env": {
-        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    },
-    "iam": {
-      "command": "uvx",
-      "args": [
-        "awslabs.iam-mcp-server@latest"
-      ],
-      "env": {
-        "AWS_PROFILE": "claude-code",
-        "AWS_REGION": "us-east-1",
-        "FASTMCP_LOG_LEVEL": "ERROR",
-        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
-    },
-    "mitre-attack": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "git+https://github.com/stoyky/mitre-attack-mcp",
-        "mitre-attack-mcp"
-      ],
-      "env": {
-        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-      }
     }
   }
 }

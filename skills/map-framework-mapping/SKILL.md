@@ -39,16 +39,48 @@ each objective actually means and which mechanisms legitimately satisfy it. The
   framework):** fall back to the **single-pass** behavior — map all objectives in
   one pass using Phases 0–4 below. NIST 800-53 / CIS / ISO have no guidance file
   yet, so they take this path; advanced-operator `--framework` flags keep working.
-  **If a `custom_to_ccmv4_anchor.json` is present** (written by map-parse-framework
-  Step 5 for a custom framework), reason with the anchored CCMv4 objective's
-  guidance: for a custom objective with `status:"anchored"`, look up its
-  `ccmv4_ids[]` in `data/domain-mapping-guidance/ccmv4.json` and apply that
-  objective's allow/deny classes and coverage ceilings, and record the anchor in
-  the citation (`"anchored_to": "CCMv4 <id>"`, plus the `anchor_score`). For a
-  custom objective with `status:"uncertain"` (best anchor below threshold), map it
-  `UNCERTAIN` with a `review_reason` naming the weak anchor — never force-fit weak
-  guidance. When several `ccmv4_ids` are returned, prefer the first (best-scoring)
-  and only borrow a second's guidance when both clearly apply.
+  **Map directly to the supplied objective's full requirement.** The pinned AWS
+  Threat Model is the primary evidence for the generated control; the customer's
+  framework defines the requirement being evaluated. Set
+  `_metadata.framework_mapping_method: "direct_objective_evidence"` in the output.
+  If `custom_to_ccmv4_anchor.json` is present, use it solely to find optional CCMv4
+  guidance. Its scores measure wording similarity, not confidence in a mapping.
+  Neither a low score nor missing CCM guidance makes a custom objective
+  `UNCERTAIN`; neither a high score nor a suggested CCM ID proves coverage.
+  Borrow guidance only after checking that the original custom requirement has
+  the same intent and scope. Never substitute CCM wording, applicability, or
+  coverage decisions for the customer's requirement.
+
+### Direct custom-framework evidence contract
+
+For every custom objective, you MUST make an independent applicability and
+evidence decision using its full specification:
+
+- **MAPPED:** identify the exact sub-requirement supported, the control's actual
+  mechanism, and the limits of that support. For an AWS Threat Model-sourced
+  control, cite its real mitigation alias and matching UUID from the pinned
+  model, retain the readable source link when available, and copy quoted statements
+  verbatim. Missing readable links remain disclosed source advisories.
+  The citation source MUST remain `threat_model`; a CCM match is not evidence.
+- **N/A:** explain why the requirement is outside the assessed service's control
+  scope. Organizational governance is not automatically covered by a technical
+  configuration. Missing evidence for an applicable requirement is not N/A.
+- **UNCERTAIN:** describe the specific missing or conflicting evidence for the
+  objective-to-control relationship. A weak CCM score alone is not a reason.
+
+AWS documentation verifies implementation feasibility and service behavior.
+Controls absent from AWS Threat Models may supplement the primary mapping only
+with explicit `assessment_gap` or `aws_doc` attribution and a verified AWS
+documentation `reference_url` in their mapping citation. Keep them visibly
+separate from AWS Threat Model-backed recommendations; never invent a model
+citation for them. Do not force every model mitigation into this framework:
+retain genuinely unmatched controls with the existing Rule 7 review.
+
+Use the existing coverage levels honestly: a technical prerequisite supporting
+an enterprise process is usually Supportive, not Full Coverage. Preserve the
+citation-as-gate and source-facts/identity checks below. Run an independent
+semantic review of MAPPED, N/A and UNCERTAIN decisions before assembly; numerical
+CCM similarity and CCM-only validator skips are not evidence of accuracy.
 
 Pick the path by checking for the guidance file:
 
@@ -98,6 +130,14 @@ else:
 
 ## Context Available to This Skill
 
+**Scope of the KB-dependent rules below:** apply curated allow/deny classes,
+applicability matrices, and per-objective ceilings only to the framework and
+objective they actually describe. For a custom objective without applicable
+curated guidance, use the direct evidence contract above. Missing KB classes
+do not prohibit a mapping, and CCMv4 N/A decisions do not transfer to custom IDs.
+The generic requirements for truthful coverage, citations, per-objective
+rationales, source identity, and review of unmatched controls still apply.
+
 For each control, you have access to:
 - `description` — what the control does
 - `mechanism` — the AWS enforcement mechanism
@@ -118,6 +158,13 @@ spirit (a control tagged `cmk_encryption` should not land on an IAM or network o
 but they do not override the mechanism-class gate — where they disagree, the KB
 allow/deny wins. Use the tags to build candidates fast, then confirm against the
 allow/deny classes.
+
+An empty or incorrect classification is a tooling-vocabulary gap, not evidence
+that a control has no framework match. You MUST report that gap for correction
+and re-review the control against the objective text. Do not disguise a known
+classifier omission as a `no_framework_match` exception. Likewise, membership
+in an allowed class only permits a candidate mapping: the rationale must still
+show how this particular control satisfies the objective at the claimed level.
 
 **The `security_rationale` field is your SECONDARY context.** It explains why this control exists
 and what security goal it achieves. Use it to write the mapping rationale — but do NOT use it
@@ -364,7 +411,7 @@ accordingly.
 Multiple control IDs legitimately mapping to one objective is **expected**, not spray:
 a single mitigation is commonly implemented as a preventive/proactive twin (SCP, RCP,
 CloudFormation Guard) plus a detective twin (AWS Config rule) plus a responsive twin (SSM
-Automation), and each is a distinct layer of defense. When a Canopy control shares one of
+Automation), and each is a distinct layer of defense. When an AWS Threat Model control shares one of
 its `mitigation_ids` with a control you already mapped to an objective, evaluate that
 control for the **same** objective too:
 - Map it as its **own row** with its own `rationale` describing *its* mechanism (the Config
@@ -378,11 +425,11 @@ control for the **same** objective too:
   objective's `allow_mechanisms` and none is in `deny_mechanisms` (same eligibility gate as
   any other control).
 - Do NOT banish a redundant twin to an "uncited" / suggestions list just because a sibling
-  already maps. **Every Canopy-sourced control must appear as a MAPPED row under an
+  already maps. **Every AWS Threat Model-sourced control must appear as a MAPPED row under an
   objective its mechanism class legitimately satisfies** (or, only if genuinely no objective
-  fits its mechanism, be left unmapped — never dumped to the non-Canopy suggestions
-  section). The assemble step lists ONLY non-Canopy (`trace_source != "canopy"`) controls in
-  "Suggestions for Review"; a Canopy control that reaches no objective is a mapping gap to
+  fits its mechanism, be left unmapped — never dumped to the non-AWS Threat Model suggestions
+  section). The assemble step lists ONLY non-AWS Threat Model (`trace_source != "threat_model"`) controls in
+  "Suggestions for Review"; an AWS Threat Model control that reaches no objective is a mapping gap to
   fix here, not a suggestion.
 
 ### 1.2 Objective coverage rollup (coverage-level consistency)
@@ -414,16 +461,16 @@ converts "silently wrong" into "explicitly uncertain."
   "objective_requirement": "<the specific sub-requirement of THIS objective the control satisfies>",
   "mitigation_alias": "Mitigation.LAMBDA.Function.3",
   "mitigation_uuid": "…",
-  "mitigation_statement": "<the mitigation's Canopy statement, VERBATIM — copy from the control's threaded mitigation_statement, do not paraphrase>",
+  "mitigation_statement": "<the mitigation's AWS Threat Model statement, VERBATIM — copy from the control's threaded mitigation_statement, do not paraphrase>",
   "mitre_techniques": ["T1530"],
-  "source": "canopy"           // canopy | assessment_gap | aws_doc
+  "source": "threat_model"           // threat_model | assessment_gap | aws_doc
 }
 ```
 
-When `source == "canopy"`, copy `mitigation_statement` **verbatim** from the
+When `source == "threat_model"`, copy `mitigation_statement` **verbatim** from the
 control's threaded `mitigation_statement` field (resolved deterministically from
-the Canopy export by map-generate-controls). A deterministic validator confirms
-this text appears verbatim in the Canopy export's `mitigations[].statement`; a
+the AWS Threat Model export by map-generate-controls). A deterministic validator confirms
+this text appears verbatim in the AWS Threat Model export's `mitigations[].statement`; a
 paraphrased or invented statement FAILs the map gate. If you cannot copy the
 statement verbatim, omit the `mitigation_statement` field rather than paraphrase.
 
@@ -431,7 +478,7 @@ Decide per row (the row's `status` is the signal — there is no separate
 confidence score field):
 
 - **You can name the concrete linkage** (this control's mechanism ↔ this
-  objective's named sub-requirement, backed by a Canopy mitigation or an AWS
+  objective's named sub-requirement, backed by an AWS Threat Model mitigation or an AWS
   doc): emit `status:"MAPPED"` with the full citation
   (`objective_requirement` + `source` are what make it concrete).
 - **You believe there is a relationship but cannot produce that concrete
@@ -445,15 +492,15 @@ confidence score field):
 concrete citation (`objective_requirement` + `source`): fix the citation or
 demote the row to `UNCERTAIN`. It does NOT fail an `UNCERTAIN` row.
 
-### 1.4 Traceability (attach the Canopy source + MITRE)
+### 1.4 Traceability (attach the AWS Threat Model source + MITRE)
 
 Each control was threaded with `mitigation_alias`, `mitigation_uuid`,
 `mitigation_statement`, and `mitre_techniques[]` in map-generate-controls (Phase
-3c, resolved deterministically from the Canopy source). Copy those onto the
-citation so the rendered `framework-mapping.md` can cite the exact Canopy
+3c, resolved deterministically from the AWS Threat Model source). Copy those onto the
+citation so the rendered `framework-mapping.md` can cite the exact AWS Threat Model
 mitigation and MITRE techniques behind the mapping, and so the citation can be
 provenance-checked against the export. A control with `trace_source:"assessment_gap"`
-has no Canopy alias — set `source:"assessment_gap"` and leave the
+has no AWS Threat Model alias — set `source:"assessment_gap"` and leave the
 mitigation/MITRE fields empty.
 
 ---
@@ -537,13 +584,21 @@ After building the initial mapping, check for controls not mapped to any objecti
 1. Read the control's mechanism and `security_rationale`
 2. Search framework objectives for alignment by mechanism (not just domain keyword)
 3. If a genuine match exists, add the mapping with a specific rationale
-4. A Canopy-sourced control (`trace_source == "canopy"`) that shares a mitigation with an
+4. An AWS Threat Model-sourced control (`trace_source == "threat_model"`) that shares a mitigation with an
    already-mapped control is a **defense-in-depth twin**, not an orphan — map it to the
    same objective per Phase 1 Step 6 rather than leaving it orphaned.
 5. Only leave a control orphaned if it truly has no framework objective match its mechanism
-   class satisfies. A leftover Canopy orphan is a signal to re-check Step 6 — it must not be
-   silently dropped or pushed to the non-Canopy "Suggestions for Review" section (that
-   section is `trace_source != "canopy"` controls only).
+   class satisfies. A leftover AWS Threat Model orphan is a signal to re-check Step 6 — it must not be
+   silently dropped or pushed to the non-AWS Threat Model "Suggestions for Review" section (that
+   section is `trace_source != "threat_model"` controls only).
+6. You MUST record each genuinely unmatched control in `unmapped_control_reviews[]`:
+   `control_id`, `status: "no_framework_match"`, a control-specific `rationale`,
+   and non-empty `reviewed_objective_ids` naming the closest objectives reviewed.
+   Explain why the mechanism does not satisfy those objectives. A valid threat-model
+   mitigation need not fit the customer's selected framework; retain the control
+   without claiming framework coverage. Do not invent a mapping to clear Rule 7.
+   Unexplained omissions, duplicate reviews, and reviews for unknown or already
+   referenced controls fail validation.
 
 ---
 
@@ -599,6 +654,14 @@ orphans), verifies every parsed objective appears exactly once, and writes
 per-domain subagents (a single subagent cannot see another domain's controls).
 The merged file is byte-shape identical to the single-pass output below.
 
+The merge writes diagnostic output and exits nonzero when a quality gate fails.
+If Rule 7 fails, you MUST complete the review above, repair genuine mappings in
+the domain partials, and write the remaining reviews as a JSON array to
+`04-map/unmapped-control-reviews.json`. Re-run the merge (it reads that file
+automatically), then `validate_state.py` on `map-framework-mapped.json`.
+Do not proceed to assembly until both pass. Single-pass mapping includes the
+same array directly as `unmapped_control_reviews` in its output.
+
 **Single-pass (non-CCMv4):** write
 `.service-approval/<slug>/04-map/map-framework-mapped.json` directly, in this exact
 shape:
@@ -625,7 +688,7 @@ shape:
             "mitigation_alias": "Mitigation.LAMBDA.Function.6",
             "mitigation_uuid": "…",
             "mitre_techniques": ["T1078"],
-            "source": "canopy"
+            "source": "threat_model"
           }
         }
       ]
@@ -637,7 +700,7 @@ shape:
       "status": "UNCERTAIN",
       "coverage": "N/A",
       "reason": "Candidate control relates to authorization but the specific sub-requirement linkage could not be evidenced.",
-      "review_reason": "No Canopy mitigation or AWS doc concretely ties this control's mechanism to the objective's uniquely-identified-user requirement.",
+      "review_reason": "No AWS Threat Model mitigation or AWS doc concretely ties this control's mechanism to the objective's uniquely-identified-user requirement.",
       "controls": [
         {
           "control_id": "CTRL-ACC-PRV-002",

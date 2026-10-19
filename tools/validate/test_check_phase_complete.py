@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from threat_model_test_support import source_receipt
 
 # Allow importing the module under test
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -28,16 +29,26 @@ from validate_pipeline_integrity import PHASE_REQUIRED_OUTPUTS  # type: ignore
 def fake_repo(tmp_path, monkeypatch):
     """Create a tmp repo with manifest.yaml + .service-approval/<slug>/ tree.
 
-    monkeypatches paths.repo_root() to return this tmp path so service_root()
+    monkeypatches paths.workspace_root() to return this tmp path so service_root()
     resolves correctly.
     """
     (tmp_path / "manifest.yaml").write_text("name: test\n")
     sa_dir = tmp_path / ".service-approval" / "awslambda"
     sa_dir.mkdir(parents=True)
+    model = json.loads((Path(__file__).parent / "fixtures/threat_model_minimal.json").read_text())
+    model["metadata"]["name"] = "lambda"
+    source = tmp_path / "model.json"
+    source.write_text(json.dumps(model))
+    intake = sa_dir / "00-intake"
+    intake.mkdir()
+    (intake / "intake-manifest.json").write_text(json.dumps({
+        "service": {"name": "lambda"},
+        "inputs": {"threat_model_file": str(source), "threat_model_source": source_receipt(source, "lambda")},
+    }))
 
-    # Re-anchor repo_root to tmp_path
+    # Re-anchor runtime output, keeping bundled assets in the plugin.
     import paths  # type: ignore
-    monkeypatch.setattr(paths, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(paths, "workspace_root", lambda: tmp_path)
     return tmp_path
 
 
@@ -46,7 +57,11 @@ def _populate_phase(repo: Path, slug: str, phase: str) -> Path:
     phase_dir = repo / ".service-approval" / slug / phase
     phase_dir.mkdir(parents=True, exist_ok=True)
     for filename, min_size in PHASE_REQUIRED_OUTPUTS.get(phase, []):
-        (phase_dir / filename).write_text("x" * min_size)
+        path = phase_dir / filename
+        if filename == "intake-manifest.json":
+            path.write_text(path.read_text().ljust(min_size))
+        else:
+            path.write_text("x" * min_size)
     return phase_dir
 
 
@@ -68,6 +83,13 @@ def test_complete_phase_returns_no_errors(fake_repo, phase):
 def test_05_generate_has_no_file_outputs():
     """05-recommended-guidance uses subdirs, not files; PHASE_REQUIRED_OUTPUTS empty entry."""
     assert PHASE_REQUIRED_OUTPUTS["05-recommended-guidance"] == []
+
+
+@pytest.mark.parametrize("phase", ["00-intake", "01-assess", "05-recommended-guidance", "06-summarize"])
+def test_complete_or_cached_phases_still_require_model(fake_repo, phase):
+    _populate_phase(fake_repo, "awslambda", phase)
+    (fake_repo / "model.json").unlink()
+    assert any("AWS Threat Model" in error for error in check_phase("awslambda", phase))
 
 
 # ---------------------------------------------------------------------------

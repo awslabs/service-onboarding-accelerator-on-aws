@@ -1,6 +1,6 @@
 # Service Approval — Kiro Power
 
-Kiro Power that generates AWS security controls for any AWS service via an Intake + 6-phase pipeline. Produces SCPs, Config rules, CFN Guard rules, Checkov policies, OPA policies, and compliant Terraform/CloudFormation/CDK/CDKTF templates, all mapped to CCMv4 (other frameworks deferred).
+Kiro Power that generates AWS security controls for any AWS service via an Intake + 6-phase pipeline. Produces SCPs, RCPs, Config rules, CFN Guard rules, Checkov policies, and OPA policies, all mapped to CCMv4 (other frameworks deferred).
 
 ## Install
 
@@ -22,8 +22,7 @@ From GitHub (Kiro desktop app):
 
 1. **Kiro IDE** — https://kiro.dev
 2. **Python 3.9+** — required for validators and hooks
-3. **Docker** — required for `terraform` MCP server
-4. **MCP servers** — registered in `mcp.json`, loaded automatically when the Power activates
+3. **MCP servers** — registered in `mcp.json`, loaded automatically when the Power activates
 
 ## Usage
 
@@ -41,17 +40,17 @@ Full parameter reference is in [`POWER.md`](POWER.md).
 1. Reads customer inputs (`./input/` folder with .md, .json, .xlsx, .pdf, .docx)
 2. Runs an Intake + 6-phase pipeline (Intake, Assess, Research, Validate, Map, Recommended Guidance, Summarize)
 3. Writes state and artifacts to `.service-approval/<service-slug>/` (per-service layout) in the working directory
-4. Produces `SUMMARY-REPORT.md` with a framework-coverage matrix. It recommends controls + compliant IaC that the customer deploys themselves.
+4. Produces `SUMMARY-REPORT.md` with a framework-coverage matrix. It recommends controls that the customer deploys themselves.
 
 ## Pipeline
 
 ```
 Intake               → _staging/<ts>/00-intake/intake-manifest.json (promoted to <slug>/00-intake/ in Phase 0)
-Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.json, iac-support.json
+Phase 0 Assess       → <slug>/01-assess/sar-facts.json, checkpoint-results.json, assessment-summary.md
 Phase 1 Research     → <slug>/02-research/research.json (4 parallel sub-skills)
 Phase 2 Validate     → <slug>/03-validate/validated.json (cross-MCP verification)
 Phase 3 Map          → <slug>/04-map/mapping-results.json (+ framework-mapping.md)
-Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/ (78–111 files across preventive/proactive/detective/responsive/iac)
+Phase 4 Recommended Guidance → <slug>/05-recommended-guidance/ (files across preventive/proactive/detective/responsive)
 Phase 5 Summarize    → <slug>/06-summarize/SUMMARY-REPORT.md
 ```
 
@@ -89,12 +88,11 @@ powers/service-approval/
 
 ## Hard rules
 
-The Stop hook (`ide/hooks/stop.kiro.hook`) runs `tools/validate/hook_stop.py` which invokes `validate_pipeline_integrity.py`. Exit code 2 blocks on any P1–P7 failure signal:
+The Stop hook (`ide/hooks/stop.kiro.hook`) runs `tools/validate/hook_stop.py` which invokes `validate_pipeline_integrity.py`. Exit code 2 blocks on any failure signal:
 
 - **P1** — too few MCP calls (≥10 required; exempted for finalized runs by the `[pipeline:complete:<VERDICT>]` terminal sentinel)
 - **P2** — `validated.json` notes templated or empty (≥50% uniqueness required)
 - **P3** — IAM policy logic errors (mismatched `StringEquals`/`StringNotEquals` keys, broad Allow on `Resource:*` without Condition, SCP without Deny)
-- **P4** — IaC templates contain placeholder account IDs or placeholder ARNs
 - **P5** — framework coverage below 15% with no per-objective rationale
 - **P6** — verdict mismatch (`APPROVED` despite integrity failures)
 - **P7** — phase-output completeness (every phase dir produces its declared outputs)
@@ -108,7 +106,7 @@ Cultural rules (skill-based execution, no one-shot generator scripts) live in [`
 > `kiro-cli` separately and is being re-evaluated; for new CI pipelines,
 > consider Claude Code CLI (`install-claude.sh`).
 
-Kiro CLI 2.0 headless mode works with this Power when `kiro-cli` is installed manually. Set `KIRO_API_KEY`, pass `--no-interactive --trust-tools="aws-documentation,awsknowledge,awsiac,terraform,kb-search"`. Full recipe in [`steering/headless.md`](steering/headless.md).
+Kiro CLI 2.0 headless mode works with this Power when `kiro-cli` is installed manually. Set `KIRO_API_KEY`, pass `--no-interactive --trust-tools="aws-documentation,awsknowledge"`. Full recipe in [`steering/headless.md`](steering/headless.md).
 
 ## Updating
 
@@ -127,10 +125,10 @@ Kiro app → Powers panel → service-approval → Uninstall. To remove the work
 
 Full testing guide at [`docs/TESTING-KIRO.md`](../../docs/TESTING-KIRO.md). Covers:
 - Verifying the install populated `.kiro/agents/`, `.kiro/hooks/`, `.kiro/steering/`
-- Confirming MCP servers connect (requires `uv` on PATH for `aws-documentation` and `awsiac`)
+- Confirming MCP servers connect (requires `uv` on PATH for `aws-documentation`)
 - Keyword activation tests
 - Hook-fire verification via `.service-approval/<slug>/mcp-calls.log`
-- Fixes for "fetch failed", "aws-cdk-mcp-server Connection closed", and the "workspaceRoot not approved" security warning
+- Fixes for "fetch failed", stale MCP server "Connection closed" errors, and the "workspaceRoot not approved" security warning
 
 ## License
 

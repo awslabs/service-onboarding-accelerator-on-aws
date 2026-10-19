@@ -5,7 +5,7 @@ description: >
   Produces intake-manifest.json consumed by all downstream phases.
   Supports file-based input (intake YAML) for repeatable, batch-friendly execution.
 disable-model-invocation: false
-argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive]"
+argument-hint: "[--service=<name>] [--framework-specification=<text>] [--from-intake=<file>] [--interactive] [--no-mcp]"
 ---
 
 # Service Approval — Intake
@@ -13,9 +13,71 @@ argument-hint: "[--service=<name>] [--from-intake=<file>] [--interactive]"
 Collect and validate inputs before the pipeline begins. This phase runs before Phase 0
 (Assess) and produces a manifest that configures the downstream pipeline.
 
-**IaC format selection is NOT part of intake.** The Assess phase (Phase 0) discovers which
-IaC providers support the target service and presents the available options to the user.
-This ensures format decisions are based on facts, not guesses.
+## Published AWS Threat Model prerequisite — all intake modes
+
+For a NEW run, you MUST retrieve the latest matching model from the public
+[Threat Models for AWS Services](https://github.com/aws/threat-models-for-aws-services)
+release before completing intake. This applies to interactive, CLI, and YAML
+new runs. A resumed run reuses its existing runtime manifest and snapshot; do not
+fetch or replace it. Do not dispatch Assess/Research or perform MCP preflight until the
+gate passes. Service availability comes from the live release manifest, never a
+bundled service list or `data/sar-slugs.json`.
+
+After collecting the requested service, run the installed plugin's helper
+(use its absolute script path when installed outside the working directory):
+
+```bash
+python3 tools/validate/fetch_threat_model.py --service "<service>" \
+  --output ".service-approval/_sources/selected-inputs.json"
+```
+
+The helper resolves current `main`, follows the release manifest's data/report
+paths at that commit, verifies SHA-256 hashes, validates service metadata and the
+consumed JSON shape, and checks readable report headings. It emits an **inputs
+fragment**, not an intake manifest. Merge its `threat_model_file`,
+`threat_model_source`, and `has_custom_threat_model` fields into intake's `inputs`
+without changing them. Add the downloaded absolute path to `inputs.input_files`
+as `type: "threat_model"`. The legacy `has_custom_threat_model` field means a
+model is present; the source is now AWS's public release.
+
+You MUST preserve the helper-issued `intake_verification` seal inside
+`threat_model_source`. Only this helper verifies the upstream commit and release
+manifest and seals the receipt. You MUST NOT construct or edit a receipt or
+seal because local model hashes alone do not prove AWS publication.
+
+The snapshot lives in its own unique directory under ignored
+`.service-approval/_sources/<commit>/`, outside
+the staging directory so promotion to the canonical slug does not break its
+absolute path. Do not commit downloaded models or derived runtime state; use
+synthetic fixtures in tests. Optional supporting files still come from the input
+folder. A missing input folder is acceptable when no supporting file was requested.
+
+On JSON model retrieval, hash, identity, format, or service availability errors,
+STOP. Readable-report and internal-reference defects are advisory: surface the
+helper warnings, continue with usable JSON, and preserve the findings in the
+source provenance. No acceptance flag or confirmation is required. Do not fall back to local files, stale snapshots, MITRE-only input, or a
+fabricated model. `--threat-model-file` and YAML `input.threat_model_file` are no
+longer supported as input overrides: report that the model must be fetched from
+AWS and stop if one was explicitly supplied. Files in the input folder cannot
+authorize an unsupported service. Model capability claims still require the
+normal Research/Validate verification.
+
+Validate the completed staging manifest before handing it to Assess:
+
+```bash
+python3 tools/validate/validate_threat_model_input.py --manifest "<manifest-path>"
+```
+
+For an existing runtime manifest, run the same local validation command before
+resuming. It rechecks the original snapshot hash and never reads upstream.
+Upstream changes or outages do not affect the run. Missing or altered local bytes
+halt the run; restore the exact original snapshot or explicitly start a new run.
+If a pre-upgrade run has no authenticated intake, you MUST explain the
+[archive procedure](../../docs/THREAT-MODELS.md#upgrade-existing-workspaces):
+the user can retire it with `python3 tools/archive_run.py --slug <slug>` and start
+fresh. Do not silently archive an active run or use a finalized marker as an
+exemption. Archived runs are historical and cannot resume in place.
+See [source lifecycle](../../docs/THREAT-MODELS.md).
 
 ---
 
@@ -29,17 +91,16 @@ AWS service. It produces:
 | **Proactive controls** | CFN Guard rules, CloudFormation hooks, Checkov policies, OPA policies |
 | **Preventive controls** | SCPs, RCPs, declarative policies, permission boundaries, tag policies, resource policies, KMS key policies |
 | **Detective controls** | AWS Config rules (with Lambda handlers), EventBridge rules, CloudWatch alarms, Access Analyzer configurations |
-| **Responsive controls** | Lambda auto-remediators, SSM runbooks, Step Functions remediation workflows |
-| **Compliant IaC templates** | Automatically determined based on provider support (CloudFormation, Terraform, CDK, CDKTF) |
+| **Responsive controls** | References to pre-authored AWS SSM Automation runbooks with how-to-use guides |
 | **Framework mapping** | Controls mapped to CCMv4 objectives (other frameworks are out of scope for now) |
 | **Threat model** | MITRE ATT&CK technique mapping with tactic coverage analysis (always included) |
 
 The pipeline verifies every claim via MCP servers (no hardcoded training data), maps controls
-to your chosen compliance framework, and produces recommended controls + compliant IaC that
-you deploy yourself — not just documentation.
+to your chosen compliance framework, and produces recommended controls that you apply
+yourself — each anchored to a published AWS reference.
 
-**Typical output:** per-service files across 5 control categories (preventive,
-proactive, detective, responsive, IaC), a framework coverage matrix, and a
+**Typical output:** per-service files across 4 control categories (preventive,
+proactive, detective, responsive), a framework coverage matrix, and a
 final Summary Report.
 
 ---
@@ -76,6 +137,13 @@ service-approval --service=s3 ./input --framework=ccmv4
 
 All required fields provided via flags — no prompts needed. `--interactive`
 forces the full prompt flow even when a YAML or manifest exists (escape hatch).
+
+**`--no-mcp`** (default off): when present, record `pipeline_flags.no_mcp = true`
+in the intake manifest. This is the single switch that puts every downstream
+phase into **No-MCP mode** — facts are verified over the web (WebFetch/WebSearch
+against the `rules/web-access.md` allowlist) instead of via MCP servers. MCP is
+the default; only set this when the user passes `--no-mcp` (CLI) or `options.no_mcp:
+true` (intake YAML). The flag is honored non-interactively and is not prompted for.
 
 ---
 
@@ -114,8 +182,8 @@ passed), render a digestible summary and prompt:
 [U]se as-is   [E]dit a field   (default: U)
 ```
 
-- **Use as-is** (default): proceed with the loaded values, write the manifest,
-  continue to Phase 0.
+- **Use as-is** (default): fetch the latest published AWS Threat Model using the
+  mandatory gate above, write and validate the manifest, then continue to Phase 0.
 - **Edit a field**: walk the user through the intake fields one at a time with
   current values pre-filled. The user accepts each (Enter) or overrides. After
   edits, write the updated YAML back to `./service-approval-intake.yaml` and
@@ -223,9 +291,9 @@ they never saw.
 
 ### Question order (both branches)
 
-1. Step 0 — Input folder bootstrap (only if `./input/` missing)
+1. Step 0 — Optional supporting input folder
 2. Step 1 — Service name
-3. Step 2 — Input type
+3. Step 2 — Published AWS Threat Model and optional supporting inputs
 4. Step 3 — Additional options
 5. Final summary (always — never skipped)
 
@@ -235,161 +303,18 @@ they never saw.
 
 Present this form when running interactively. Fields marked **(required)** must be answered.
 
-### 0. Input Folder Bootstrap (when `./input/` is missing)
+### 0. Optional supporting input folder
 
-Before asking the service question, check whether `./input/` exists in the user's
-current working directory:
-
-```bash
-test -d ./input && echo "PRESENT" || echo "MISSING"
-```
-
-**If PRESENT:** skip this step entirely and go to Step 1.
-
-**If MISSING:** create the folder and present the seed menu below. Do NOT silently
-fall back to MCP-only mode — let the user decide.
-
-```bash
-mkdir -p ./input
-```
-
-```
-No ./input/ folder was found in this directory. I just created an empty one.
-You can populate it with customer documents (.md, .json, .xlsx, .pdf, .docx) for
-mitigation reports, threat models, and control frameworks — or run without inputs.
-
-How would you like to seed it?
-  [1] Skip — run in MCP-only mode (research everything from scratch)
-  [2] Leave empty — I'll add files myself before continuing
-  [3] Seed bundled CCMv4 framework (recommended)
-  [4] Auto-download latest CCMv4 from CSA
-  [5] Both — copy bundled CCMv4 AND try CSA download
-
-Choice [1-5]:
-```
-
-If the run is non-interactive (CLI flags or `--from-intake=<file>`), read the answer
-from `input.bootstrap.{seed_from_plugin, auto_download_ccmv4}` in the intake YAML.
-Defaults: both `false` → equivalent to choice [1] (skip).
-
-#### Locate the plugin's bundled input/
-
-The plugin is symlinked or copied into client-specific paths. Walk up from a known
-anchor to find the plugin root (the directory containing `manifest.yaml`):
-
-```bash
-# Try environment variables first (Claude Code sets CLAUDE_PLUGIN_ROOT)
-PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
-
-# Fall back: walk up from the skill file's known location
-if [ -z "$PLUGIN_ROOT" ]; then
-  for dir in \
-    "$(pwd)" \
-    "$HOME/.claude/plugins/service-approval" \
-    "$HOME/.gemini/extensions/service-approval" \
-    "$HOME/.kiro/powers/service-approval"; do
-    if [ -f "$dir/manifest.yaml" ] && [ -d "$dir/input" ]; then
-      PLUGIN_ROOT="$dir"
-      break
-    fi
-  done
-fi
-
-# Last resort: search common parent paths for manifest.yaml + input/
-if [ -z "$PLUGIN_ROOT" ]; then
-  PLUGIN_ROOT="$(find "$HOME" -maxdepth 6 -name manifest.yaml -path '*service-onboarding*' -print -quit 2>/dev/null | xargs -I{} dirname {})"
-fi
-
-echo "$PLUGIN_ROOT"
-```
-
-If `PLUGIN_ROOT` cannot be located, warn the user, disable choices [3] and [5],
-and offer [1], [2], or [4] only.
-
-#### Choice [3] — Seed bundled CCMv4
-
-```bash
-cp "$PLUGIN_ROOT/input/CCMv4-sample.xlsx" ./input/
-```
-
-Print: `Copied CCMv4-sample.xlsx → ./input/`. Set `inputs.input_folder = "./input"`
-and `inputs.framework_type = "ccmv4"` in the manifest.
-
-The user supplies their own mitigation report (if any) by dropping it into
-`./input/` themselves.
-
-#### Choice [4] — Auto-download CCMv4 from CSA
-
-Try a direct download first. The CSA download URL may serve HTML (login wall) instead
-of an xlsx, so verify the response shape before trusting it.
-
-```bash
-CSA_URL="https://cloudsecurityalliance.org/download/artifacts/cloud-controls-matrix-v4-1"
-TMP=$(mktemp -t ccmv4.XXXXXX)
-
-# Follow redirects, fail on HTTP error, time out at 30s
-if curl -sSfL --max-time 30 -A "service-approval/1.0" -o "$TMP" "$CSA_URL"; then
-  CT=$(file -b --mime-type "$TMP")
-  case "$CT" in
-    application/vnd.openxmlformats-officedocument.spreadsheetml.sheet|\
-    application/zip|\
-    application/octet-stream)
-      mv "$TMP" ./input/CCMv4-CSA-latest.xlsx
-      echo "Downloaded CCMv4 from CSA → ./input/CCMv4-CSA-latest.xlsx"
-      ;;
-    *)
-      rm -f "$TMP"
-      echo "CSA returned $CT (likely a login/marketing page). Falling back to manual download."
-      OPEN_BROWSER=1
-      ;;
-  esac
-else
-  rm -f "$TMP"
-  echo "CSA download failed. Falling back to manual download."
-  OPEN_BROWSER=1
-fi
-
-if [ "${OPEN_BROWSER:-0}" = "1" ]; then
-  echo ""
-  echo "Manual CCMv4 download:"
-  echo "  1. Visit: $CSA_URL"
-  echo "  2. Sign in to your CSA account (free)"
-  echo "  3. Save the .xlsx file into ./input/"
-  echo ""
-
-  # Best-effort browser launch
-  if command -v open >/dev/null 2>&1; then
-    open "$CSA_URL" 2>/dev/null || true
-  elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$CSA_URL" 2>/dev/null || true
-  elif command -v start >/dev/null 2>&1; then
-    start "$CSA_URL" 2>/dev/null || true
-  fi
-
-  read -r -p "Press Enter once the file is in ./input/ (or Ctrl-C to abort): " _
-fi
-```
-
-#### Choice [5] — Both
-
-Run choice [3] first, then choice [4]. If both succeed, the user has two CCMv4 files
-in `./input/`. The Map phase auto-detects framework files by filename pattern (any
-xlsx with `CCMv4`/`ccm`/`CSA` in the name) — having both is harmless, but if both
-files are present, prefer the CSA download (it's likely newer). Tell the user:
-
-```
-You have two CCMv4 files in ./input/:
-  - CCMv4-sample.xlsx (bundled snapshot)
-  - CCMv4-CSA-latest.xlsx (just downloaded)
-
-The Map phase will use CCMv4-CSA-latest.xlsx (newer). Delete the other file if
-you want to silence this notice.
-```
-
-#### After bootstrap
-
-Continue to Step 1 with `inputs.input_folder = "./input"`. The rest of the intake
-form runs normally; `framework_type` defaults to `ccmv4` if a CCMv4 file is present.
+Use the explicitly supplied folder or `./input/` for optional supporting documents.
+A missing default folder is acceptable. If an explicitly supplied supporting folder
+or file does not exist, report that input error rather than silently ignoring it.
+Keep user documents in the ignored `input/`, `inputs/`, `input-*/`, `input_*/`, or
+`runs/` workspace conventions, or use a path outside the repository. Only the
+shipped `input/CCMv4-sample.xlsx` and `input/sar-slugs.json` belong in Git; do not
+overwrite those examples with customer content or force-add runtime inputs.
+Relative input paths resolve from the working directory, not the YAML location.
+Do not request or create a local threat
+model: intake retrieves it from the published AWS release after the service is known.
 
 ---
 
@@ -401,28 +326,46 @@ Examples: s3, lambda, bedrock-agentcore-control, kms, ecs, dynamodb
 ```
 
 - Accept any valid AWS service identifier (lowercase, hyphenated)
-- If the user provides a friendly name (e.g., "Amazon S3"), normalize to the service ID (`s3`)
-- Validate the service exists by checking `data/sar-slugs.json` for a matching entry
+- Pass friendly names or service identifiers to the fetch helper; it matches model metadata.
+- Use the returned namespace. Do not reject a newly published service because it is absent from the bundled SAR slug map; Assess discovers SAR after this gate.
 
-### 2. Input Type (optional)
+### 2. Published AWS Threat Model and supporting inputs
+
+Run the mandatory retrieval gate above without asking the user for a model file.
+Show the resolved namespace and published source link. Record the returned inputs
+fragment and optional supporting folder. An explicit `--framework-file` is the
+authoritative customer framework. Detect its identity from the file and record
+`framework_type: custom` when it is not a recognized built-in framework. Preserve
+the customer's IDs and wording; do not substitute CCMv4 for a supplied custom
+file. Map evaluates custom objectives directly against AWS Threat Model-backed
+controls; optional CCM guidance matches do not determine coverage or uncertainty.
+Leave the framework type unset when none was supplied.
+
+### 3. Elaborate on your control framework (optional — only when a custom framework is provided)
+
+**Skip this step entirely when no custom control framework was provided** (see §2 /
+`has_custom_framework`). When one *is* provided, offer the user a chance to describe
+it in their own words before mapping — this is free text with no required format, and
+it helps the Map phase interpret non-obvious conventions:
 
 ```
-Are you providing any of the following? (select all that apply)
-  [ ] Custom threat model (.md, .json, .pdf, .docx)
-  [ ] Custom control framework (.xlsx, .json — CCMv4 only)
-  [ ] Existing mitigation report (.md, .json)
-  [ ] None — use MCP-only mode (research everything from scratch)
+You've provided a custom control framework. Would you like to add any details
+about how it's structured before we map it? (optional — press Enter to skip)
+For example: how control IDs and sub-control IDs are formatted, which column holds
+the control text, how requirements are grouped, or which controls matter most.
 ```
 
-- If custom inputs are provided, record the input folder path
-- If a custom control framework is provided, detect the framework type:
-  - Filename contains "CCMv4" or "ccm" → `ccmv4`
-  - Any other framework filename (NIST, CIS, ISO) → warn and ignore;
-    those frameworks are out of scope for the current pipeline.
-- If no framework file is provided, leave `framework_type` unset
-  (the user's intake reply determines whether CCMv4 is included).
+**Inline / non-interactive:** the same text can be supplied directly on the invocation
+with `--framework-specification "<free text>"` (or in the intake YAML as
+`inputs.framework_specification`). When the flag is present, skip this prompt and
+record its value verbatim.
 
-### 3. Additional Options (optional)
+- Record the text verbatim as `inputs.framework_specification` (a single string).
+  Leave it `null` when no custom framework was provided or the user skips.
+- Do not parse, validate, or reshape the text — pass it through untouched so the
+  Map phase can read it alongside the framework file.
+
+### 4. Additional Options (optional)
 
 ```
 Additional options:
@@ -470,11 +413,14 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "candidate_slug": "{lowercase, hyphenated service name from user input}"
   },
   "inputs": {
-    "input_folder": "{path or null}",
-    "has_custom_threat_model": true|false,
+    "input_folder": "{optional supporting folder or null}",
+    "has_custom_threat_model": true,
+    "threat_model_file": "{downloaded absolute snapshot path}",
+    "threat_model_source": {"...": "copy the helper output object verbatim"},
     "has_custom_framework": true|false,
-    "framework_type": "ccmv4 | null",
+    "framework_type": "ccmv4 | nist | cis | iso | custom | null",
     "framework_file": "{path or null}",
+    "framework_specification": "{customer's free-text description of their control format/structure, or null}",
     "has_mitigation_report": true|false,
     "input_files": [
       {"path": "...", "type": "threat_model|framework|mitigation_report|context"}
@@ -490,13 +436,11 @@ Write to `.service-approval/_staging/<timestamp>/00-intake/intake-manifest.json`
     "framework": "{type}",
     "framework_file": "{path or null}",
     "include_unverified": false,
-    "clean": false
+    "clean": false,
+    "no_mcp": false
   }
 }
 ```
-
-**Note:** `iac_formats` and `iac_support` are NOT in the intake manifest. They are
-determined by Phase 0 (Assess) and written to `<slug>/01-assess/iac-support.json`.
 
 **Staging → Canonical Promotion:** Phase 0 (Assess) will atomically promote this staging directory to `.service-approval/<slug>/` after deriving the canonical slug from the SAR `service_prefix`. The promotion is described in Phase 0's Step 0b.
 
@@ -513,10 +457,8 @@ After collecting inputs, present a summary:
 │  Service:        {friendly_name} ({service-id})             │
 │  Input:          {description of inputs}                    │
 │  Framework:      {framework_type}                           │
+│  Framework spec: {"provided" | "none"}                      │
 │  ATT&CK Mapping: {Yes | No}                                 │
-├─────────────────────────────────────────────────────────────┤
-│  Note: IaC output formats will be determined in Phase 0     │
-│  (Assess) based on actual provider support for this service.│
 └─────────────────────────────────────────────────────────────┘
 
 Proceed? (Y/n)
@@ -528,8 +470,8 @@ Proceed? (Y/n)
 
 | Condition | Action |
 |-----------|--------|
-| Service not found in `sar-slugs.json` | Warn user, attempt SAR page lookup via MCP. If found, continue. If not, halt. |
-| `./input/` folder missing | Run Step 0 bootstrap (create empty + offer seed menu). Never silently skip. |
+| Service absent from published manifest | Stop. Local exports and flags cannot bypass availability. |
+| `./input/` folder missing | Continue with published model retrieval; supporting inputs are optional. |
 | Plugin root cannot be located for seeding | Warn, disable choices [3] and [5], keep [1]/[2]/[4] available |
 | CSA auto-download returns HTML / non-xlsx | Delete partial file, fall back to opening browser + printing URL, wait for user to drop file |
 | Input folder path invalid | Ask user to correct the path |
@@ -542,12 +484,17 @@ Proceed? (Y/n)
 
 | Phase | What it reads from intake-manifest.json |
 |-------|----------------------------------------|
-| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion) |
-| Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface` |
-| Phase 2 (Validate) | `service` |
-| Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file` |
-| Phase 4 (Recommended Guidance) | Reads `<slug>/01-assess/iac-support.json` (from Phase 0), NOT intake |
+| Phase 0 (Assess) | `service`, `inputs.input_folder`, `service.sar_slug`, `staging_timestamp` (to locate staging dir for promotion), `pipeline_flags.no_mcp` |
+| Phase 1 (Research) | `service`, `inputs.*`, `output.include_attack_surface`, `pipeline_flags.no_mcp` |
+| Phase 2 (Validate) | `service`, `pipeline_flags.no_mcp` |
+| Phase 3 (Map) | `inputs.framework_type`, `inputs.framework_file`, `inputs.framework_specification` (optional customer guidance on control format/structure) |
+| Phase 4 (Recommended Guidance) | `service`, `inputs.include_unverified`, `pipeline_flags.no_mcp` |
 | Phase 5 (Summarize) | Full manifest for report metadata |
+
+`pipeline_flags.no_mcp` (default `false`) is the single switch for **No-MCP
+mode**: when `true`, the phases above verify facts over the web per
+`rules/web-access.md` instead of calling MCP. See each skill's "No-MCP mode"
+subsection.
 
 ---
 
@@ -562,6 +509,5 @@ Intake complete:
   Staging: .service-approval/_staging/{STAGING_TS}/00-intake/intake-manifest.json
 
 Canonical service slug will be derived in Phase 0 (Assess).
-IaC formats will be determined in Phase 0 (Assess).
 Ready for Phase 0.
 ```

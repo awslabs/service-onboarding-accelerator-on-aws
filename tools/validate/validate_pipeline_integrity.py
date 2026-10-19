@@ -9,14 +9,19 @@ artifacts instead of running real MCP-driven research/validation/generation.
 Fires from the Stop hook. Exits 2 on failure so Claude Code auto-retries.
 
 Failure signals:
-    P1 — pipeline.log / mcp-calls.log missing or too few MCP calls
-         (exempted when pipeline.log carries the
+    P14 — source mitigation accounting/disclosure missing or stale, or generated
+          identities inconsistent; disclosed source defects remain advisory
+    P0 — missing, invalid, or wrong-service AWS Threat Model source input;
+         saved state and finalized markers do not replace the required export
+    P1 — pipeline.log / mcp-calls.log missing or too few external lookups
+         (MCP calls in the default mode, or `web:<source>:fetch|search`
+         events in no-MCP mode — both count toward the same floor;
+         exempted when pipeline.log carries the
          `[pipeline:complete:FINALIZED]` terminal sentinel — finalized
          runs are immutable, retroactive remediation impossible)
     P2 — validated.json has templated or empty verification notes
     P3 — IAM policy logic errors (mismatched StringEquals/StringNotEquals
          keys, broad Allow on Resource:* without Condition, SCP without Deny)
-    P4 — IaC templates contain placeholder account IDs / ARNs
     P5 — framework coverage below threshold with no per-objective rationale
     P7 — phase-output completeness: every phase dir on disk must contain
          its declared outputs (mapping-results.json, controls-catalog.md,
@@ -39,6 +44,18 @@ Failure signals:
          HIGH/MEDIUM/LOW/SPECULATIVE band attached to a control). The guard targets
          scored/keyed confidence, not the English word, so prose that merely uses
          the word "confidence" is not flagged.
+    P12 — citation coverage: every authored artifact under
+         05-recommended-guidance/{detective,proactive,responsive}/ must carry a
+         resolvable citation — a repo anchor (_metadata.reference resolving to a
+         reference-index example), a doc anchor (_metadata.citation of type
+         aws_doc with an MCP-verified AWS documentation URL), or an AWS Threat Model anchor
+         (_metadata.citation of type threat_model resolving to an ingested AWS Threat Model
+         alias). The preventive family is covered separately by P8.
+    P13 — Config-supportability: every emitted Config-rule artifact under
+         05-recommended-guidance/detective/ must target a resource type AWS
+         Config supports (per data/config-supported-resource-types.json). A
+         Config rule for an unsupported type is a silent no-op — route it to
+         CloudTrail/EventBridge or record a reasoned gap instead.
 """
 from __future__ import annotations
 
@@ -51,11 +68,9 @@ from pathlib import Path
 
 MIN_MCP_CALLS = 10
 MIN_FRAMEWORK_COVERAGE_PCT = 15
-PLACEHOLDER_ACCOUNTS = {"123456789012", "000000000000", "111111111111"}
-PLACEHOLDER_ARN_FRAGMENTS = (
-    "arn:aws:kms:us-east-1:123456789012:key/example",
-    "arn:aws:iam::123456789012:role/lambda-exec",
-)
+
+# Vendored/build directories to skip when walking artifact trees.
+SKIP_DIRS = {".terraform", "node_modules", "__pycache__", "cdk.out", ".venv", ".git"}
 
 # Base positive/negative IAM condition operator pairs.
 # Source: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition_operators.html
@@ -98,6 +113,13 @@ def _load_json(path: Path) -> dict | None:
 
 
 _MCP_CALL_TOKEN_RE = re.compile(r"\[mcp:[^\]]+:call\]")
+# No-MCP mode: external lookups go through WebFetch/WebSearch instead of MCP,
+# logged as `[web:<source>:fetch]` / `[web:<source>:search]` (see
+# rules/web-access.md). Anchored at the source-tag column so a message body
+# containing the literal text cannot inflate the count. These count toward the
+# same P1 floor as MCP calls — a run in no-MCP mode satisfies P1 with web
+# lookups, and a mixed run counts both.
+_WEB_LOOKUP_TOKEN_RE = re.compile(r"\[web:[^\]]+:(?:fetch|search)\]")
 # Terminal-state sentinel emitted by summarize/evidence at end of pipeline.
 # Anchor at the source-tag column (3rd bracketed token of a pipeline.log
 # line) so a message body containing the literal text can't satisfy the
@@ -133,11 +155,13 @@ def check_mcp_log(service_root: Path) -> list[str]:
     """Check MCP call count from the consolidated pipeline.log.
 
     Counts lines whose source matches the canonical `[mcp:<server>:call]`
-    token in pipeline.log. Anchored regex so a message field that happens
-    to contain the literal text `[mcp:` or `:call]` cannot inflate the
-    count (e.g., a `skill:research:start` event whose message describes
-    "starting [mcp:awsknowledge:call] phase" would substring-match but not
-    regex-match).
+    token in pipeline.log, plus no-MCP-mode `[web:<source>:fetch]` /
+    `[web:<source>:search]` lookups (rules/web-access.md) — both count
+    toward the same floor. Anchored regexes so a message field that happens
+    to contain the literal text `[mcp:`, `[web:`, `:call]`, or `:fetch]`
+    cannot inflate the count (e.g., a `skill:research:start` event whose
+    message describes "starting [mcp:awsknowledge:call] phase" would
+    substring-match but not regex-match).
 
     Falls back to the legacy mcp-calls.log shadow file. Legacy lines start
     with literal "MCP CALL"; we anchor with `startswith` so a message
@@ -163,9 +187,10 @@ def check_mcp_log(service_root: Path) -> list[str]:
     call_lines: list[str] = []
 
     if pipeline_log.exists():
+        # Count MCP calls AND no-MCP-mode web lookups against the same floor.
         call_lines.extend(
             ln for ln in content.splitlines()
-            if _MCP_CALL_TOKEN_RE.search(ln)
+            if _MCP_CALL_TOKEN_RE.search(ln) or _WEB_LOOKUP_TOKEN_RE.search(ln)
         )
 
     # Either source — pipeline.log uses the new format; mcp-calls.log may
@@ -186,9 +211,10 @@ def check_mcp_log(service_root: Path) -> list[str]:
 
     if len(call_lines) < MIN_MCP_CALLS:
         errors.append(
-            f"P1 pipeline.log has {len(call_lines)} logged MCP calls "
+            f"P1 pipeline.log has {len(call_lines)} logged external lookups "
             f"(minimum {MIN_MCP_CALLS}). Validate and Research phases must "
-            f"call MCP for every capability, API parameter, and condition key."
+            f"verify every capability, API parameter, and condition key via "
+            f"MCP (default) or WebFetch/WebSearch (no-MCP mode)."
         )
     return errors
 
@@ -267,8 +293,6 @@ def check_validated_notes(validate_dir: Path) -> list[str]:
 
 
 def _iter_json_files(root: Path):
-    from validate_deployable import SKIP_DIRS
-
     if not root.exists():
         return
     for p in root.rglob("*.json"):
@@ -805,8 +829,6 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
     rendered markdown (mapping .md files + the Summary Report) for band labels.
     Finalized runs are exempt (frozen artifacts cannot be remediated).
     """
-    from validate_deployable import SKIP_DIRS
-
     if is_finalized(service_root):
         return []
 
@@ -842,39 +864,6 @@ def check_no_confidence_scoring(service_root: Path) -> list[str]:
             rel = report.relative_to(service_root)
             errors.extend(_confidence_scoring_errors_in_text(text, str(rel), True))
 
-    return errors
-
-
-def check_iac_placeholders(iac_dir: Path) -> list[str]:
-    # Reuse the canonical exclude list from validate_deployable so adding a new
-    # vendored-dep dir doesn't require touching two places.
-    from validate_deployable import SKIP_DIRS
-
-    errors: list[str] = []
-    if not iac_dir.exists():
-        return errors
-    for path in iac_dir.rglob("*"):
-        if not path.is_file():
-            continue
-        if any(part in SKIP_DIRS for part in path.parts):
-            continue
-        try:
-            content = path.read_text()
-        except (OSError, UnicodeDecodeError):
-            continue
-        rel = path.relative_to(iac_dir)
-        for acct in PLACEHOLDER_ACCOUNTS:
-            if acct in content:
-                errors.append(
-                    f"P4 {rel}: contains placeholder account ID {acct}. "
-                    f"Use parameters or Sub references, not hardcoded accounts."
-                )
-        for fragment in PLACEHOLDER_ARN_FRAGMENTS:
-            if fragment in content:
-                errors.append(
-                    f"P4 {rel}: contains placeholder ARN '{fragment}'. "
-                    f"IaC must be parameterized."
-                )
     return errors
 
 
@@ -941,6 +930,17 @@ def check_framework_coverage(map_dir: Path) -> list[str]:
     return errors
 
 
+def check_mapping_state(map_dir: Path) -> list[str]:
+    """Replay state gates so a failed mapper cannot be hidden by final reports."""
+    from validate_state import validate_state_file
+    errors = []
+    for name in ("map-framework-mapped.json", "mapping-results.json"):
+        path = map_dir / name
+        if path.exists():
+            errors.extend(f"P5 FAIL: {e}" for e in validate_state_file(str(path)))
+    return errors
+
+
 # ----------------------------------------------------------------------
 # P7: per-phase output completeness
 # ----------------------------------------------------------------------
@@ -966,7 +966,6 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
         ("sar-facts.json", 256),
         ("checkpoint-results.json", 256),
         ("assessment-summary.md", 1024),
-        ("iac-support.json", 256),
     ],
     "02-research": [
         ("research.json", 1024),
@@ -994,7 +993,7 @@ PHASE_REQUIRED_OUTPUTS: dict[str, list[tuple[str, int]]] = {
     "05-recommended-guidance": [
         # 05-recommended-guidance/ contains category subdirs, not single files.
         # Existence of at least one of {preventive, proactive, detective,
-        # responsive, iac} signals the phase ran. Empty dir = incomplete.
+        # responsive} signals the phase ran. Empty dir = incomplete.
     ],
     "06-summarize": [
         ("SUMMARY-REPORT.md", 2048),
@@ -1041,7 +1040,7 @@ def check_phase_outputs(service_root: Path) -> list[str]:
     # satisfy the gate. Require at least one actual file.
     generate_dir = service_root / "05-recommended-guidance"
     if generate_dir.exists():
-        categories = ["preventive", "proactive", "detective", "responsive", "iac"]
+        categories = ["preventive", "proactive", "detective", "responsive"]
         any_populated = False
         for cat in categories:
             cat_dir = generate_dir / cat
@@ -1073,6 +1072,67 @@ def check_reference_anchors(service_root: Path) -> list[str]:
     return check_service(service_root)
 
 
+def check_citation_coverage(service_root: Path) -> list[str]:
+    """P12: every detective/proactive/responsive artifact must carry a citation.
+
+    Delegates to validate_citation_coverage.check_service. Imported lazily so a
+    missing module degrades gracefully (returns []) rather than breaking the
+    whole Stop hook — the dedicated PostToolUse path still surfaces citation
+    failures per-file in that case.
+
+    Finalized runs are exempt: P12 is a newly-added check, so a run that
+    finalized before it existed had no chance to satisfy it and cannot be
+    remediated in place (its artifacts are frozen). This mirrors P1/P11 —
+    see is_finalized(). Mid-flight runs (no sentinel) still get the strict check.
+    """
+    if is_finalized(service_root):
+        return []
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validate_citation_coverage import check_service as citation_check  # type: ignore
+    except ImportError:
+        return []
+    # Re-prefix the delegate's "CITATION" errors with P12 for the Stop-hook trail.
+    return [f"P12 {e}" if not e.startswith("P12") else e for e in citation_check(service_root)]
+
+
+def check_config_support(service_root: Path) -> list[str]:
+    """P13: every emitted Config-rule artifact must target a Config-supported type.
+
+    Delegates to validate_config_support.check_service. Imported lazily so a
+    missing module or data file degrades gracefully (returns []) rather than
+    breaking the whole Stop hook — the dedicated pre-generation gate in the
+    detective skill still catches unsupported types earlier in the run.
+
+    Finalized runs are exempt: P13 is a newly-added check, so a run that
+    finalized before it existed cannot be remediated in place. Mirrors P1/P11/P12.
+    """
+    if is_finalized(service_root):
+        return []
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from validate_config_support import check_service as config_check  # type: ignore
+    except ImportError:
+        return []
+    errors: list[str] = []
+    try:
+        results = config_check(service_root)
+    except (OSError, ValueError):
+        # Data file missing/malformed — a broken install. The dedicated CLI
+        # surfaces this loudly; don't brick the Stop hook.
+        return []
+    for r in results:
+        if r.get("status") == "UNSUPPORTED":
+            errors.append(
+                f"P13 config_support: {r['artifact']} rule "
+                f"{r['rule_name']!r} targets resource type {r['resource_type']} "
+                f"which AWS Config does not support — a Config rule for it is a "
+                f"silent no-op. Route this control to CloudTrail/EventBridge or "
+                f"record a reasoned gap instead."
+            )
+    return errors
+
+
 # Validator contract: every check_*() must fail-closed when the artifact it
 # reads exists but is missing/malformed. Pass-7 audit (2026-05-19) confirmed:
 #   - P1, P2, P5, P7 fail-closed with explicit `P{N}`-prefixed errors.
@@ -1093,7 +1153,9 @@ def validate_pipeline(root: Path) -> list[str]:
     """Validate pipeline integrity for all services in .service-approval/.
 
     Iterates over all service subdirectories (.service-approval/<slug>/)
-    and runs integrity checks on each one. Skips _staging/ and plans/.
+    and runs integrity checks on each one. Skips reserved directories including
+    _archive/ (explicitly retired runs), _sources/, _staging/, and plans/.
+    A finalized marker on an active run never skips P0 or P14.
     """
     output_dir = root / ".service-approval"
     if not output_dir.exists():
@@ -1126,7 +1188,15 @@ def validate_pipeline(root: Path) -> list[str]:
         return []
 
     # Validate each service
+    from validate_threat_model_input import check_run
     for service_root in service_dirs:
+        errors.extend(
+            f"P0 FAIL: [{service_root.name}] {error} "
+            f"To retire a pre-upgrade run, use tools/archive_run.py --slug {service_root.name}; "
+            "archiving preserves reports but does not approve or migrate them."
+            for error in check_run(service_root)
+        )
+
         # Check MCP log at service root
         errors.extend(check_mcp_log(service_root))
 
@@ -1144,11 +1214,14 @@ def validate_pipeline(root: Path) -> list[str]:
         controls_dir = service_root / "05-recommended-guidance"
         if controls_dir.exists():
             errors.extend(check_iam_policies(controls_dir))
-            iac_dir = controls_dir / "iac"
-            if iac_dir.exists():
-                errors.extend(check_iac_placeholders(iac_dir))
             # P8: every preventive policy artifact must anchor to a reference.
             errors.extend(check_reference_anchors(service_root))
+            # P12: every detective/proactive/responsive artifact must carry a
+            # resolvable citation (repo anchor, MCP-verified doc anchor, or
+            # resolvable AWS Threat Model anchor).
+            errors.extend(check_citation_coverage(service_root))
+            # P13: every emitted Config rule must target a Config-supported type.
+            errors.extend(check_config_support(service_root))
             # P9: every Resource ARN must use the SAR-mandated delimiter for its
             # resource type (catches function/* vs function:* silent no-ops).
             errors.extend(check_arn_shapes(service_root))
@@ -1160,6 +1233,10 @@ def validate_pipeline(root: Path) -> list[str]:
         map_dir = service_root / "04-map"
         if map_dir.exists():
             errors.extend(check_framework_coverage(map_dir))
+            errors.extend(check_mapping_state(map_dir))
+
+        from threat_model_integrity import check_reporting
+        errors.extend(f"P14 FAIL: {error}" for error in check_reporting(service_root))
 
         # P11: no emitted artifact may carry per-item confidence scoring.
         errors.extend(check_no_confidence_scoring(service_root))

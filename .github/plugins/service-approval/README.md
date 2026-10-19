@@ -18,6 +18,10 @@ The plugin references existing files via relative paths — nothing is duplicate
 
 Copilot auto-discovers `.github/` contents when the repo is opened in VS Code with Copilot Chat in Agent mode. Nothing to install.
 
+> Given a `.zip` of the repo instead of git access? Unzip it and open the extracted
+> folder in VS Code — no clone needed. See "Running from a repo zip" in
+> [`docs/USAGE-COPILOT.md`](../../../docs/USAGE-COPILOT.md).
+
 For clean activation:
 1. Open the repo in VS Code
 2. Open Copilot Chat (Ctrl+Alt+I)
@@ -45,9 +49,8 @@ Enforced at `sessionEnd` via `.github/hooks/pipeline-integrity/validate.sh`:
 2. Every capability/API/condition-key MCP-verified (no training-data values)
 3. `mcp-calls.log` ≥10 entries
 4. `validated.json` verification notes unique
-5. IaC parameterized — no hardcoded accounts / ARNs
-6. SCPs have ≥1 `Deny`; `StringEquals`/`StringNotEquals` target same key
-7. Verdict matches integrity — no false `APPROVED`
+5. SCPs have ≥1 `Deny`; `StringEquals`/`StringNotEquals` target same key
+6. Verdict matches integrity — no false `APPROVED`
 
 ## MCP servers
 
@@ -55,8 +58,11 @@ Registered via `.vscode/mcp.json` (workspace-scoped):
 
 - `aws-documentation` — service docs, feature references
 - `awsknowledge` — SAR queries, condition keys
-- `awsiac` — IaC lookups (CFN, CDK, TF)
-- `terraform` — Terraform provider details (Docker stdio)
+- Optional `mitre-attack` — user-enabled ATT&CK lookups. The default uses
+  `data/attack-cloud-matrix.json`. See `docs/MCP.md` for opt-in configuration.
+
+The pipeline can also run with no MCP servers at all, using web access instead —
+see the "Running without MCP" section of `docs/USAGE-COPILOT.md`.
 
 Create `.vscode/mcp.json` if missing:
 
@@ -66,7 +72,7 @@ Create `.vscode/mcp.json` if missing:
     "aws-documentation": {
       "type": "stdio",
       "command": "uvx",
-      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "args": ["awslabs.aws-documentation-mcp-server@1.1.28"],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR",
         "AWS_DOCUMENTATION_PARTITION": "aws"
@@ -75,18 +81,6 @@ Create `.vscode/mcp.json` if missing:
     "awsknowledge": {
       "type": "http",
       "url": "https://knowledge-mcp.global.api.aws"
-    },
-    "awsiac": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["awslabs.aws-iac-mcp-server@latest"],
-      "env": {
-        "FASTMCP_LOG_LEVEL": "ERROR"
-      }
-    },
-    "terraform": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "hashicorp/terraform-mcp-server:0.5.1"]
     }
   }
 }
@@ -115,8 +109,8 @@ Create `.vscode/mcp.json` if missing:
 
 ## Output
 
-- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report + CCMv4 matrix
-- `.service-approval/<slug>/05-recommended-guidance/` — all 78–111 generated artifacts
+- `.service-approval/<slug>/06-summarize/SUMMARY-REPORT.md` — Summary Report (coverage summary, per-domain rollup, threat coverage; links to companion docs)
+- `.service-approval/<slug>/05-recommended-guidance/` — all generated artifacts
 - `.service-approval/<slug>/` — pipeline state files per phase + mcp-calls.log
 
 ## Update
@@ -129,4 +123,4 @@ Skills / hooks / instructions are all file-based — Copilot re-reads them every
 
 ## License
 
-MIT
+Apache-2.0

@@ -91,7 +91,7 @@ def _slug_and_phase_from_path(file_path: str) -> tuple[str | None, str | None]:
     if len(parts) != 2:
         return None, None
     rest = parts[1].split("/")
-    if not rest or rest[0] in ("_staging", "plans") or rest[0].startswith("."):
+    if not rest or rest[0] == "plans" or rest[0].startswith((".", "_")):
         return None, None
     slug = rest[0]
     phase = rest[1] if len(rest) >= 2 and _PHASE_DIR_RE.match(rest[1]) else None
@@ -142,7 +142,7 @@ def log_event(
         phase: Phase tag (e.g. "04-map"). If None and file_path is given,
                try to resolve from the path; otherwise tag as "?".
         source: Source identifier (e.g. "hook:post-tool-use", "mcp:awsknowledge",
-                "skill:map-assemble", "script:smoke-deploy-test").
+                "skill:map-assemble", "script:merge-domain-mappings").
         verdict: Status keyword (pass/fail/warn/reject/error/start/end/retry/
                  call/response).
         message: Single-line message.
@@ -267,7 +267,7 @@ def log_mcp(slug: str | None, phase: str | None, server: str, verdict: str,
 
 def log_script(slug: str | None, phase: str | None, script: str, verdict: str,
                message: str, *, extra: dict | None = None) -> None:
-    """Log a subprocess invocation (smoke-deploy-test.sh, etc.)."""
+    """Log a subprocess invocation (merge-domain-mappings.py, etc.)."""
     log_event(
         phase=phase,
         source=f"script:{script}",

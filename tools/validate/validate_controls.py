@@ -17,9 +17,16 @@ import json
 import os
 import re
 import sys
+from urllib.parse import urlparse
+
+try:
+    from .artifact_rules import iter_rules, resource_types
+except ImportError:
+    from artifact_rules import iter_rules, resource_types
 
 # ================================================================
-# Global AWS condition keys — always valid, not service-specific
+# Known AWS global condition-key names. Availability must still be verified
+# for the target service and request context during Validate/generation review.
 # ================================================================
 
 _GLOBAL_CONDITION_KEYS = {
@@ -56,6 +63,11 @@ _GLOBAL_CONDITION_KEYS = {
     "aws:SourceOrgPaths",
     "aws:SourceVpc",
     "aws:SourceVpce",
+    # IAM global condition context keys: VPC endpoint owner's organization.
+    # https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html
+    "aws:VpceOrgID",
+    "aws:VpceAccount",
+    "aws:VpceOrgPaths",
     "aws:TagKeys",
     "aws:TokenIssueTime",
     "aws:UserAgent",
@@ -215,25 +227,37 @@ def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[st
     expected_source = f"aws.{expected_service}"
     expected_event_source = f"{expected_service}.amazonaws.com"
 
-    rules = data.get("rules", [])
-    if not isinstance(rules, list):
-        return errors
-
-    for i, rule in enumerate(rules):
-        if not isinstance(rule, dict):
-            continue
-        rule_name = rule.get("rule_name", f"rule[{i}]")
-        pattern = rule.get("event_pattern", {})
+    for rule_name, rule in iter_rules(data):
+        pattern = rule.get("EventPattern", rule.get("event_pattern", {}))
         if not isinstance(pattern, dict):
             continue
+        allowed_sources = {expected_source}
+        allowed_event_sources = {expected_event_source}
+        if rule.get("cross_service") is True:
+            # Dependencies may legitimately emit events for a different AWS
+            # service. Require explicit API prefixes; the flag alone must not
+            # disable validation of the emitted source/eventSource pair.
+            operations = rule.get("monitored_parameters", {})
+            prefixes = {
+                op.split(":", 1)[0] for op in operations
+                if isinstance(op, str) and re.fullmatch(r"[a-z0-9-]+:[A-Za-z0-9]+", op)
+            } if isinstance(operations, dict) else set()
+            if not prefixes:
+                errors.append(
+                    f"CHECK-1 service_prefix: {rule_name} is cross-service but "
+                    "does not declare service:Operation keys in monitored_parameters"
+                )
+                continue
+            allowed_sources = {f"aws.{prefix}" for prefix in prefixes}
+            allowed_event_sources = {f"{prefix}.amazonaws.com" for prefix in prefixes}
 
         # Check source field
         sources = pattern.get("source", [])
         for src in sources:
-            if src != expected_source:
+            if src not in allowed_sources:
                 errors.append(
                     f"CHECK-1 service_prefix: {rule_name} has source "
-                    f"'{src}', expected '{expected_source}'"
+                    f"'{src}', expected one of {sorted(allowed_sources)}"
                 )
 
         # Check eventSource in detail
@@ -241,10 +265,10 @@ def check_service_prefix(file_path: str, data: dict, validated: dict) -> list[st
         if isinstance(detail, dict):
             event_sources = detail.get("eventSource", [])
             for es in event_sources:
-                if es != expected_event_source:
+                if es not in allowed_event_sources:
                     errors.append(
                         f"CHECK-1 service_prefix: {rule_name} has eventSource "
-                        f"'{es}', expected '{expected_event_source}'"
+                        f"'{es}', expected one of {sorted(allowed_event_sources)}"
                     )
 
     return errors
@@ -371,6 +395,50 @@ def _normalize_service_identifier(value: str) -> str:
 # Check 3: Condition keys valid
 # ================================================================
 
+def _verified_cross_service_keys(file_path: str, validated: dict) -> set[str]:
+    """Use documented caller-context keys only in explicitly verified policy types."""
+    name = os.path.basename(file_path).lower()
+    if "scp" in name:
+        policy_types = {"service control policies", "scp"}
+    elif "rcp" in name:
+        policy_types = {"resource control policies", "rcp"}
+    elif any(part in name for part in ("iam-policy", "iam-policies", "permission-boundary")):
+        policy_types = {"identity-based policies", "identity policies", "iam"}
+    else:
+        policy_types = {"resource-based policies"}
+    result = set()
+    iam = validated.get("capabilities", {}).get("iam", {})
+    records = [
+        item for field in ("cross_service_condition_keys", "context_only_condition_keys")
+        for item in (iam.get(field) or []) if isinstance(item, dict)
+    ]
+    aliases = {
+        "identity-based": "identity-based policies",
+        "resource-based": "resource-based policies",
+    }
+    for item in records:
+        if not isinstance(item, dict) or item.get("verified") is not True:
+            continue
+        try:
+            documented = any(
+                isinstance(item.get(field), str)
+                and urlparse(item[field]).hostname in {"docs.aws.amazon.com", "aws.amazon.com"}
+                for field in ("doc_url", "source_url")
+            )
+        except ValueError:
+            documented = False
+        usable = {aliases.get(s.lower(), s.lower())
+                  for s in item.get("usable_in", item.get("policy_types", []))
+                  if isinstance(s, str)}
+        prohibited = {aliases.get(s.lower(), s.lower())
+                      for s in item.get("not_usable_in", item.get("not_supported_in", []))
+                      if isinstance(s, str)}
+        key = item.get("key")
+        if documented and isinstance(key, str) and policy_types & usable and not policy_types & prohibited:
+            result.add(key)
+    return result
+
+
 def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[str]:
     """Verify condition keys in IAM policies match validated.json."""
     errors = []
@@ -380,7 +448,11 @@ def check_condition_keys(file_path: str, data: dict, validated: dict) -> list[st
         if key:
             service_keys.add(key)
 
-    if not service_keys:
+    service_keys.update(_verified_cross_service_keys(file_path, validated))
+    if not service_keys and not any(
+        validated.get("capabilities", {}).get("iam", {}).get(field)
+        for field in ("cross_service_condition_keys", "context_only_condition_keys")
+    ):
         return errors
 
     # KMS key policies may reference KMS service-owned condition keys
@@ -443,20 +515,8 @@ def check_resource_types(file_path: str, data: dict, validated: dict) -> list[st
     if not valid_types:
         return errors
 
-    for key, rule in data.items():
-        if key == "_metadata":
-            continue
-        if not isinstance(rule, dict):
-            continue
-        rt = rule.get("resource_type")
-        if rt and rt not in valid_types:
-            errors.append(
-                f"CHECK-4 resource_type: rule '{key}' has resource_type "
-                f"'{rt}' not found in validated.json assets"
-            )
-        # Also check resource_types (plural)
-        rts = rule.get("resource_types", [])
-        for t in rts:
+    for key, rule in iter_rules(data):
+        for t in resource_types(rule):
             if t not in valid_types:
                 errors.append(
                     f"CHECK-4 resource_type: rule '{key}' has resource_type "
@@ -840,6 +900,9 @@ _PREV_REQUEST_BASENAME_PATTERNS = _SAR_DRIVEN_BASENAME_PATTERNS + (
 # config-rule-lambdas/).
 _REACTIVE_DETECTIVE_BASENAMES = (
     "config-rules.json",
+    "config-org-rules.json",
+    "config-conformance-pack.yaml",
+    "cloudtrail-org-config.json",
     "access-analyzer.json",
     "eventbridge-rules.json",
     "cloudwatch-alarms.json",
@@ -897,7 +960,7 @@ def check_sar_condition_keys_14a(
         return errors
     if not isinstance(data, dict):
         return errors
-    service_keys = _build_sar_key_allowlist(validated)
+    service_keys = _build_sar_key_allowlist(validated) | _verified_cross_service_keys(file_path, validated)
     global_keys_ci = {k.lower() for k in _GLOBAL_CONDITION_KEYS}
     is_kms_key_policy = "kms-key-policy" in os.path.basename(file_path).lower()
 
@@ -1073,10 +1136,10 @@ def check_iam_action_sourcing_17(
 # Check 14b: API-driven artifacts — enum literals must match parameters[].enum
 # ================================================================
 #
-# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-# responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-# responsive/lambda-remediator/**, iac/**), any enum-style literal list must reference
-# values from validated.json.api_surface.operations[].parameters[].enum.
+# For API-driven artifact files (proactive/**, detective/config-rule-lambdas/**),
+# any enum-style literal list must reference values from
+# validated.json.api_surface.operations[].parameters[].enum. (Responsive is
+# reference-only — its artifacts carry no authored enum literals.)
 #
 # Patterns detected (a reasonable subset — language-agnostic literal scan):
 #   cfn-guard / Checkov / OPA / CDK / TF:  `in [<...>]`, `AllowedValues: [<...>]`,
@@ -1093,15 +1156,9 @@ _STRING_LITERAL_PATTERN = re.compile(r"[\"']([A-Z][A-Z0-9_]{1,63})[\"']")
 _API_DRIVEN_PATH_FRAGMENTS = (
     "/proactive/",
     "/detective/config-rule-lambdas/",
-    "/responsive/ssm-runbook",
-    "/responsive/stepfunctions-workflow",
-    "/responsive/lambda-remediator/",
-    "/iac/",
 )
 _API_DRIVEN_BASENAME_PREFIXES = (
     "proactive-",
-    "iac-cdk-",
-    "iac-",
     "handler-",
 )
 _API_DRIVEN_EXTENSIONS = {".guard", ".rego", ".py", ".yaml", ".yml", ".ts", ".tf", ".json"}
@@ -1141,9 +1198,7 @@ def check_api_driven_enum_literals_14b(
 ) -> list[str]:
     """CHECK-14b — Enum-style literal lists must reference parameters[].enum values.
 
-    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**,
-    responsive/ssm-runbook*, responsive/stepfunctions-workflow.json,
-    responsive/lambda-remediator/**, iac/**).
+    Scope: API-driven artifact files (proactive/**, detective/config-rule-lambdas/**).
     Each SCREAMING_SNAKE literal in an `in [...]` / `AllowedValues: [...]` / similar
     enum-style list must appear in validated.json.api_surface.operations[].parameters[].enum.
     """
@@ -1189,7 +1244,7 @@ def check_api_driven_enum_literals_14b(
 # matches its posture:
 #   preventative-request   → preventive/{scp,rcp,iam-policies,permission-boundary,
 #                             resource-policy,vpce-policy,kms-key-policy}*.json
-#   preventative-proactive → proactive/** or iac/**
+#   preventative-proactive → proactive/**
 #   reactive-detective     → detective/config-rule-lambdas/** or detective/config-rules.json
 #                             or detective/access-analyzer.json
 #   reactive-corrective    → responsive/**
@@ -1214,7 +1269,7 @@ def _file_is_in_posture_family(file_path: str, posture: str) -> bool:
             pat in base for pat in _PREV_REQUEST_BASENAME_PATTERNS
         )
     if posture == "preventative-proactive":
-        if "/proactive/" in norm or "/iac/" in norm:
+        if "/proactive/" in norm:
             return True
         if "/detective/" in norm and base in _PREV_PROACTIVE_CROSS_CUTTING_BASENAMES:
             return True
@@ -1252,10 +1307,12 @@ def check_posture_mechanism_consistency_15(
             f"declares _metadata.posture='{posture}' but lives outside the expected "
             f"directory family. preventative-request→preventive/{{scp,rcp,iam-policies,"
             f"permission-boundary,resource-policy,vpce-policy,kms-key-policy,tag-policy}}*.json; "
-            f"preventative-proactive→proactive/** or iac/** or "
+            f"preventative-proactive→proactive/** or "
             f"detective/compensating-controls-documentation.json; "
             f"reactive-detective→detective/config-rule-lambdas/** or one of "
-            f"detective/{{config-rules,access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json; "
+            f"detective/{{config-rules,config-org-rules,cloudtrail-org-config,"
+            f"access-analyzer,eventbridge-rules,cloudwatch-alarms}}.json or "
+            f"detective/config-conformance-pack.yaml; "
             f"reactive-corrective→responsive/**."
         )
     return errors
@@ -1329,10 +1386,59 @@ def _check_reference_anchor_preventive(file_path: str) -> list[str]:
     if "/05-recommended-guidance/preventive/" not in norm and "/controls/preventive/" not in norm:
         return []
     try:
-        from validate_reference_anchor import check_artifact  # type: ignore
+        from validate_reference_anchor import (  # type: ignore
+            _known_ids,
+            _load_threat_model_aliases,
+            _mapping_control_ids,
+            check_artifact,
+        )
     except ImportError:
         return []
-    return check_artifact(file_path)
+    # Locate the service root so the single-file P8 check can resolve an AWS Threat Model
+    # anchor against that run's threat-model-index.json and check the orphan
+    # source_control_id — parity with the standalone CLI's single-file mode and
+    # the whole-service check_service() path. Without this, an AWS Threat Model-anchored
+    # artifact fails the hook because threat_model_aliases defaults to None.
+    from pathlib import Path
+
+    known_ids: set[str] | None = None
+    mapping_ids: set[str] | None = None
+    threat_model_aliases: set[str] | None = None
+    try:
+        known_ids = _known_ids()
+    except (ImportError, FileNotFoundError):
+        known_ids = None
+    for parent in Path(file_path).resolve().parents:
+        if (parent / "05-recommended-guidance").is_dir() or (parent / "02-research").is_dir():
+            threat_model_aliases = _load_threat_model_aliases(parent)
+            mapping_ids = _mapping_control_ids(parent)
+            break
+    return check_artifact(file_path, known_ids, mapping_ids, threat_model_aliases)
+
+
+def _check_config_support(file_path: str) -> list[str]:
+    """P13 per-file: a Config-rule artifact must target Config-supported types.
+
+    Imported lazily so a missing module / data file degrades to no-op rather than
+    breaking the hook. Only config-rules.json / config-org-rules.json are gated
+    (validate_config_support keys on those basenames).
+    """
+    try:
+        from validate_config_support import check_artifact  # type: ignore
+    except ImportError:
+        return []
+    try:
+        results = check_artifact(file_path)
+    except (OSError, ValueError):
+        return []
+    return [
+        f"P13 config_support: rule {r['rule_name']!r} targets resource type "
+        f"{r['resource_type']} which AWS Config does not support — a Config rule "
+        f"for it is a silent no-op. Route to CloudTrail/EventBridge or record a "
+        f"reasoned gap."
+        for r in results
+        if r.get("status") == "UNSUPPORTED"
+    ]
 
 
 def _categorize_file(file_path: str) -> str:
@@ -1356,7 +1462,7 @@ def _categorize_file(file_path: str) -> str:
             return "lambda_handler"
         if "eventbridge" in os.path.basename(norm).lower():
             return "eventbridge"
-        if "config-rules" in os.path.basename(norm).lower():
+        if os.path.basename(norm).lower() in {"config-rules.json", "config-org-rules.json"}:
             return "config_rules"
         return "detective"
     if _in("responsive"):
@@ -1367,20 +1473,22 @@ def _categorize_file(file_path: str) -> str:
         return "responsive"
     if _in("proactive"):
         return "proactive"
-    if _in("iac"):
-        return "iac"
     return "unknown"
 
 
-def check_preventive_plan(data: dict) -> list[str]:
+def check_preventive_plan(data: dict, file_path: str | None = None) -> list[str]:
     """Validate preventive-plan.json — the recommender's decision plan.
 
     Two layers:
       1. Schema (preventive-plan.schema.json) — shape, decision enum, the
          GENERATE_*-requires-anchor and ROUTE_DETECTIVE-requires-route rules.
-      2. Anchor resolution — every GENERATE_* decision's anchor.example_id must
-         resolve to a real entry in data/reference-repos/index.yaml (the same
-         gate the per-artifact P8 check enforces, applied to the plan up front).
+      2. Anchor resolution — every GENERATE_* decision's anchor must resolve.
+         A reference-repo anchor (anchor.source absent or "reference") must
+         resolve to a real entry in data/reference-repos/index.yaml. An AWS Threat Model
+         anchor (anchor.source == "threat_model") carries an AWS Threat Model implementation/
+         mitigation alias as its example_id and resolves against the run's
+         02-research/threat-model-index.json instead — the same dual-anchor rule the
+         per-artifact P8 gate (validate_reference_anchor.py) enforces.
     """
     errors: list[str] = []
     # Schema layer. Lazy import mirrors validate_state's `from _schemas import …`.
@@ -1402,21 +1510,57 @@ def check_preventive_plan(data: dict) -> list[str]:
         known = example_ids()
     except (ImportError, FileNotFoundError):
         known = None
-    if known is not None:
-        for d in data.get("decisions", []):
-            if not isinstance(d, dict):
-                continue
-            if d.get("decision", "").startswith("GENERATE_"):
-                anchor = d.get("anchor") or {}
-                ex_id = anchor.get("example_id")
-                if ex_id and ex_id not in known:
-                    errors.append(
-                        f"preventive-plan: control {d.get('control_id')} decision "
-                        f"{d.get('decision')} anchors to example_id '{ex_id}' which "
-                        f"does not resolve in data/reference-repos/index.yaml. "
-                        f"Pick a real anchor or change the decision to "
-                        f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
-                    )
+
+    # AWS Threat Model alias set for the run (when an AWS Threat Model index is present next to the
+    # plan). None → no AWS Threat Model input; a threat-model-sourced anchor is then treated the
+    # same as an unresolvable one.
+    threat_model_aliases: set[str] | None = None
+    if file_path:
+        try:
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            from threat_model_parse import (  # type: ignore
+                threat_model_index_aliases,
+                load_threat_model_index,
+            )
+
+            # <service_root>/05-recommended-guidance/preventive-plan.json →
+            # <service_root>/02-research/threat-model-index.json
+            service_root = os.path.dirname(os.path.dirname(os.path.abspath(file_path)))
+            idx = load_threat_model_index(
+                os.path.join(service_root, "02-research", "threat-model-index.json")
+            )
+            if idx is not None:
+                threat_model_aliases = threat_model_index_aliases(idx)
+        except (ImportError, FileNotFoundError):
+            threat_model_aliases = None
+
+    for d in data.get("decisions", []):
+        if not isinstance(d, dict):
+            continue
+        if not d.get("decision", "").startswith("GENERATE_"):
+            continue
+        anchor = d.get("anchor") or {}
+        ex_id = anchor.get("example_id")
+        if not ex_id:
+            continue
+        if anchor.get("source") == "threat_model":
+            # AWS Threat Model-sourced anchor: resolve the alias against threat-model-index.json.
+            if threat_model_aliases is not None and ex_id not in threat_model_aliases:
+                errors.append(
+                    f"preventive-plan: control {d.get('control_id')} decision "
+                    f"{d.get('decision')} anchors to AWS Threat Model alias '{ex_id}' which "
+                    f"does not resolve in 02-research/threat-model-index.json. Cite a "
+                    f"real AWS Threat Model implementation/mitigation alias or change the "
+                    f"decision to REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+                )
+        elif known is not None and ex_id not in known:
+            errors.append(
+                f"preventive-plan: control {d.get('control_id')} decision "
+                f"{d.get('decision')} anchors to example_id '{ex_id}' which "
+                f"does not resolve in data/reference-repos/index.yaml. "
+                f"Pick a real anchor or change the decision to "
+                f"REFER_TO_REFERENCE / ROUTE_DETECTIVE."
+            )
     return errors
 
 
@@ -1451,7 +1595,7 @@ def validate_file(file_path: str) -> list[str]:
     # Lives at 05-recommended-guidance/ root (category "unknown"), so dispatch on basename
     # before the category logic. Schema-validated; it is not a policy artifact.
     if basename == "preventive-plan.json" and data is not None:
-        errors.extend(check_preventive_plan(data))
+        errors.extend(check_preventive_plan(data, file_path))
         return errors
 
     # Load state files
@@ -1481,7 +1625,7 @@ def validate_file(file_path: str) -> list[str]:
 
     # Check 13: Full-body CTRL-* references against mapping-results.json
     # (complements check 11 which only scans the first 30 lines for # CONTROLS: headers)
-    if mapping and category in ("preventive", "detective", "responsive", "proactive", "iac"):
+    if mapping and category in ("preventive", "detective", "responsive", "proactive"):
         errors.extend(check_body_control_id_references(file_path, mapping))
 
     # Check 12: SCP size limit (5120 bytes minified, excluding _metadata)
@@ -1531,6 +1675,10 @@ def validate_file(file_path: str) -> list[str]:
         # Check 4: Resource types
         if validated:
             errors.extend(check_resource_types(file_path, data, validated))
+        # P13: Config-supportability — no Config rule may target a resource type
+        # AWS Config does not support (a silent no-op). Fires at write time here
+        # and again at Stop via validate_pipeline_integrity.
+        errors.extend(_check_config_support(file_path))
 
     elif category == "stepfunctions" and data:
         # Check 8: ResultPath
@@ -1551,18 +1699,8 @@ def validate_file(file_path: str) -> list[str]:
             except (ImportError, Exception):
                 pass
 
-    # Check 13: KMS consumer → key-policy grant parity (IaC only)
-    # Enforces generate-iac/SKILL.md Rule 4 at write time.
-    if category == "iac" and ext in (".yaml", ".yml", ".tf"):
-        try:
-            from validate_kms_consumers import validate_kms_consumers
-            errors.extend(validate_kms_consumers(file_path))
-        except ImportError:
-            pass
-
     # Check 14b: API-driven — enum literals must match parameters[].enum.
-    # Applies to proactive/**, detective/config-rule-lambdas/**, responsive/ssm-runbook*,
-    # responsive/stepfunctions-workflow.json, responsive/lambda-remediator/**, iac/**.
+    # Applies to proactive/**, detective/config-rule-lambdas/**.
     if validated and _is_api_driven_artifact(file_path):
         errors.extend(check_api_driven_enum_literals_14b(file_path, validated))
 
