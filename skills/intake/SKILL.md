@@ -40,6 +40,11 @@ without changing them. Add the downloaded absolute path to `inputs.input_files`
 as `type: "threat_model"`. The legacy `has_custom_threat_model` field means a
 model is present; the source is now AWS's public release.
 
+You MUST preserve the helper-issued `intake_verification` seal inside
+`threat_model_source`. Only this helper verifies the upstream commit and release
+manifest and seals the receipt. You MUST NOT construct or edit a receipt or
+seal because local model hashes alone do not prove AWS publication.
+
 The snapshot lives in its own unique directory under ignored
 `.service-approval/_sources/<commit>/`, outside
 the staging directory so promotion to the canonical slug does not break its
@@ -67,6 +72,11 @@ For an existing runtime manifest, run the same local validation command before
 resuming. It rechecks the original snapshot hash and never reads upstream.
 Upstream changes or outages do not affect the run. Missing or altered local bytes
 halt the run; restore the exact original snapshot or explicitly start a new run.
+If a pre-upgrade run has no authenticated intake, you MUST explain the
+[archive procedure](../../docs/THREAT-MODELS.md#upgrade-existing-workspaces):
+the user can retire it with `python3 tools/archive_run.py --slug <slug>` and start
+fresh. Do not silently archive an active run or use a finalized marker as an
+exemption. Archived runs are historical and cannot resume in place.
 See [source lifecycle](../../docs/THREAT-MODELS.md).
 
 ---

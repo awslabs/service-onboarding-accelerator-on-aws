@@ -169,6 +169,15 @@ request (`--clean`), reuse that run and its manifest. Do not fetch, run fresh
 Intake, replace the manifest, or rerun completed phases merely because the chat
 resumed. Ambiguous service/run selection must be resolved before dispatch.
 
+You MUST keep historical archives under `.service-approval/_archive/` outside
+run selection. For a pre-upgrade run that cannot satisfy the current intake or
+reporting checks, explain `python3 tools/archive_run.py --slug <slug> --reason
+upgrade` and the [upgrade procedure](../../docs/THREAT-MODELS.md#upgrade-existing-workspaces).
+Archive only a run the user explicitly wants to retire, then start a fresh run.
+A finalized marker does not exempt an active run from P0/P14. You MUST preserve
+the helper's `intake_verification` seal because it authenticates online intake;
+do not replace it with caller-supplied publication claims.
+
 For a NEW run only, follow Intake's prerequisite and run:
 
 ```bash

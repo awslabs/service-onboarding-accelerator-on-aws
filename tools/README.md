@@ -7,6 +7,7 @@ Shared scripts for validation, post-processing, and cross-IDE sync. Every agenti
 | `validate/` | Python validators for state files, controls, and pipeline integrity. Run at `PostToolUse` and `Stop` hook time. |
 | `post-process/` | Deterministic post-processors that run after the pipeline (e.g., canonicalizing output JSON shapes). |
 | `sync-ide-configs.py` | Regenerates per-client manifests from `manifest.yaml`. |
+| `archive_run.py` | Explicitly retires an old run to ignored `.service-approval/_archive/`, preserving reports and recording file hashes. |
 
 ## Sync tool
 
@@ -23,10 +24,11 @@ Edit `manifest.yaml` at the repo root. Never edit the per-client manifests direc
 | Client | Manifest generated |
 |--------|--------------------|
 | Claude Code | `.claude-plugin/plugin.json` |
-| Kiro Power | `powers/service-approval/POWER.md` (frontmatter only; body preserved) |
+| Kiro Power | `powers/service-approval/POWER.md` (frontmatter and license notice) |
 | Copilot plugin | `.github/plugins/service-approval/.github/plugin/plugin.json` |
 
-Body content (Kiro POWER.md body, Copilot plugin README) is NOT touched. Those are human-edited.
+The Kiro Power and Kiro/Copilot READMEs' license notices also follow the canonical
+manifest. Other body content is human-edited and preserved.
 
 ## Validators
 

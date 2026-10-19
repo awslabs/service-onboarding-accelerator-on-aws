@@ -7,7 +7,8 @@ are blocked, even if a local model exists. Local export overrides are unsupporte
 
 ## One source version per run
 
-The fetch helper resolves current `main` once, reads the release manifest, and
+The fetch helper resolves current `main` once, verifies that the pinned commit
+exists in AWS's repository, reads the release manifest, and
 follows its artifact paths at that immutable commit. It verifies the JSON model's
 SHA-256, identity, and required structure. Service names come from the manifest
 and model metadata; additions require no bundled list update.
@@ -17,6 +18,23 @@ Each new run owns a unique snapshot directory under
 `inputs.threat_model_file` and complete `inputs.threat_model_source`. Copy the
 helper's inputs fragment without changing those values. Staging promotion does
 not invalidate the path, and later runs cannot overwrite it.
+
+Only successful online intake issues a locally authenticated
+`intake_verification` seal. It binds the source receipt (including release-manifest
+hash, service namespace, artifact hash, and citation metadata) to the exact
+snapshot path. A hand-written receipt, a self-consistent model/hash pair, or a
+`verified: true` flag cannot replace that intake. Later hooks verify the seal
+and snapshot offline; they print **snapshot integrity verified**, not a claim
+that AWS publication was freshly checked.
+
+The private verification key is stored outside run outputs at
+`~/.local/state/service-approval/intake-verification.key` (or the explicitly
+configured `SERVICE_APPROVAL_TRUST_DIR`). Keep that local trust directory between
+sessions; never bundle it with customer ZIPs or commit it. Receipts cannot be
+silently imported from another installation or moved to a different snapshot
+path. If the key or original snapshot is lost, archive the old run and start
+fresh. This seal enforces the tool's intake boundary; it is not an AWS signature
+or a security boundary against a user who controls the installed code/private key.
 
 ```bash
 python3 tools/validate/fetch_threat_model.py --service dsql \
@@ -43,6 +61,33 @@ old phase tree, preserving source snapshots and other services.
 New intake needs access to the public GitHub API and raw content hosts. Requests
 have a 30-second timeout and a 32 MiB artifact limit. Model retrieval failures,
 invalid JSON, wrong service, and a JSON hash mismatch remain hard stops.
+
+## Upgrade existing workspaces
+
+Pre-upgrade completed runs remain historical reports. They may lack the verified
+intake seal or current integrity appendix and therefore fail today's gates.
+Do not edit a completion marker, invent a receipt, or relabel old outputs as
+current. Archive each run you want to retire, from its original workspace:
+
+```bash
+python3 /path/to/service-onboarding/tools/archive_run.py --slug dsql --reason upgrade
+```
+
+Use the exact directory name under `.service-approval/` (for example, `awslambda`
+for an existing Lambda run), and stop any pipeline still writing to that run
+before archiving it. The command moves that selected run atomically to
+`.service-approval/_archive/<slug>-<timestamp>-<unique>/run/`. Its companion
+`archive.json` records the reason, original path, and file hashes. All reports
+and phase outputs are preserved without alteration; shared `_sources/` snapshots
+and other services remain untouched. The archive is ignored by Git and excluded
+from the active integrity and Stop-hook sweeps.
+
+Then start `/service-approval` normally to create a new run with a freshly
+verified published model. Archives cannot resume in place and are not approved
+by current validators. Restoring an archived directory to an active service
+directory re-enables every current check. A `FINALIZED` marker never exempts an
+active run from the published-model or current-reporting gates. Archiving can
+also explicitly retire an abandoned run; it does not assert that it completed.
 
 ## Advisory source defects and readable citations
 

@@ -212,6 +212,8 @@ def check_artifact_prerequisite(file_path: str) -> list[str]:
         if parent.name != ".service-approval":
             continue
         parts = path.relative_to(parent).parts
+        if parts and parts[0] == "_archive":
+            return ["Archived runs are historical, read-only records. Start a new intake to generate current outputs."]
         if (
             len(parts) >= 4 and parts[0] == "_staging"
             and re.fullmatch(r"0[1-6]-[a-z-]+", parts[2])
@@ -272,7 +274,7 @@ def main() -> int:
         print(f"OK: local export structure verified: {selected}. "
               "Pipeline intake must still fetch a published model and record its provenance.")
     else:
-        print("OK: published AWS Threat Model prerequisite verified.")
+        print("OK: snapshot integrity verified against previously verified intake (offline).")
     return 0
 
 

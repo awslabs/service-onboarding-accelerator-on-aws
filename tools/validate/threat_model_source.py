@@ -19,6 +19,7 @@ REPOSITORY = "https://github.com/aws/threat-models-for-aws-services"
 RELEASE_ROOT = "threat-models-for-aws-services"
 RAW_ROOT = "https://raw.githubusercontent.com/aws/threat-models-for-aws-services"
 HEAD_URL = "https://api.github.com/repos/aws/threat-models-for-aws-services/git/ref/heads/main"
+COMMIT_ROOT = "https://api.github.com/repos/aws/threat-models-for-aws-services/git/commits"
 MAX_BYTES = 32 * 1024 * 1024
 
 
@@ -123,8 +124,16 @@ def fetch_latest(service: str) -> tuple[bytes, dict]:
     head = _json(download(HEAD_URL), "repository main reference")
     obj = head.get("object")
     commit = obj.get("sha") if isinstance(obj, dict) else None
-    if not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit):
+    if (
+        not isinstance(commit, str) or not re.fullmatch(r"[a-f0-9]{40}", commit)
+        or commit == "0" * 40
+    ):
         raise SourceError("Repository main reference has no valid commit SHA")
+    # Confirm that the pinned identifier resolves to an actual commit in AWS's
+    # repository before following the release manifest at that same commit.
+    pinned = _json(download(f"{COMMIT_ROOT}/{commit}"), "AWS repository commit")
+    if pinned.get("sha") != commit:
+        raise SourceError("AWS repository commit does not match the pinned main reference")
     manifest_bytes = download(artifact_url(commit, "manifest.json", raw=True))
     manifest = _json(manifest_bytes, "AWS release manifest")
     entries = manifest.get("services")
@@ -218,12 +227,17 @@ def save_latest(service: str, workspace: Path) -> dict:
     directory = Path(tempfile.mkdtemp(prefix=source["namespace"] + "-", dir=parent))
     path = directory / (source["namespace"] + ".json")
     atomic_write(path, content)
+    from source_verification import seal_verified_intake
+    try:
+        seal_verified_intake(source, path)
+    except (OSError, ValueError) as exc:
+        raise SourceError(f"Cannot authenticate verified intake using the local trust key: {exc}") from exc
     return {"threat_model_file": str(path), "threat_model_source": source,
             "has_custom_threat_model": True}
 
 
 def check_source(source: object, path: Path) -> list[str]:
-    """Offline hook backstop: published provenance and exact downloaded bytes."""
+    """Offline backstop: authenticated prior intake and unchanged snapshot bytes."""
     try:
         if (
             not isinstance(source, dict)
@@ -258,6 +272,14 @@ def check_source(source: object, path: Path) -> list[str]:
                 raise SourceError(f"Threat model source {key} does not match its pinned artifact")
         if hashlib.sha256(path.read_bytes()).hexdigest() != data_ref["sha256"]:
             raise SourceError("Threat model snapshot changed or is corrupt (SHA-256 mismatch). Re-run intake.")
+        from source_verification import has_verified_intake
+        if not has_verified_intake(source, path):
+            raise SourceError(
+                "Verified online intake required: this receipt was not authenticated "
+                "by the installed fetch helper, or its source/path changed. Start a "
+                "new intake; archive pre-upgrade runs with tools/archive_run.py. "
+                "Local hashes and caller-supplied receipts cannot prove AWS publication."
+            )
     except (SourceError, OSError) as exc:
         return [str(exc)]
     return []

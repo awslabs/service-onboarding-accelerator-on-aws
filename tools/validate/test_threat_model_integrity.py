@@ -46,8 +46,9 @@ def run(tmp_path, data=None):
     data = data or model()
     root = tmp_path / '.service-approval/lambda'
     snapshot = write(tmp_path / '.service-approval/_sources/model.json', data)
-    source = source_receipt(snapshot, 'lambda')
-    source['report_aliases'] = [r['alias'] for section in ('mitigations', 'threats', 'implementations') for r in data.get(section, [])]
+    source = source_receipt(snapshot, 'lambda', report_aliases=[
+        r['alias'] for section in ('mitigations', 'threats', 'implementations')
+        for r in data.get(section, [])])
     write(root / '00-intake/intake-manifest.json', {'service':{'name':'lambda'}, 'inputs':{'threat_model_file':str(snapshot),'threat_model_source':source}})
     return root, source
 
@@ -307,7 +308,8 @@ def test_complete_map_assembly_repairs_and_discloses(tmp_path, monkeypatch):
     # Force a source advisory while keeping the source hash valid.
     manifest_path = root / '00-intake/intake-manifest.json'
     manifest = json.loads(manifest_path.read_text())
-    manifest['inputs']['threat_model_source']['report_aliases'] = []
+    manifest['inputs']['threat_model_source'] = source_receipt(
+        Path(manifest['inputs']['threat_model_file']), 'lambda', report_aliases=[])
     write(manifest_path, manifest)
     cs = controls(data)
     for i, c in enumerate(cs):

@@ -14,6 +14,7 @@ COMMIT = "c" * 40
 
 def release(monkeypatch, names=("future-service",), commit=COMMIT):
     payloads = {source.HEAD_URL: json.dumps({"object": {"sha": commit}}).encode()}
+    payloads[f"{source.COMMIT_ROOT}/{commit}"] = json.dumps({"sha": commit}).encode()
     manifest = {"version": "1.1.0", "services": []}
     for name in names:
         model = export(name)
@@ -50,7 +51,7 @@ def test_new_service_and_changed_paths_need_no_tooling_update(monkeypatch, tmp_p
     assert json.loads(model_path.read_text())["metadata"]["name"] == "future-service"
     assert source.check_source(inputs["threat_model_source"], model_path) == []
     assert all("/main/" not in url for url in calls if url != source.HEAD_URL)
-    assert len(calls) == 4  # current commit, manifest, model, report
+    assert len(calls) == 5  # main ref, commit existence, manifest, model, report
 
 
 @pytest.mark.parametrize("name", ["Amazon FUTURE-SERVICE", "Short future-service", "future-service-api", "FUTURE-SERVICE"])
@@ -223,3 +224,103 @@ def test_malformed_provenance_blocks_before_downstream_consumption(tmp_path, fie
     data["inputs"]["threat_model_source"][field] = value
     manifest.write_text(json.dumps(data))
     assert check_run(run)
+
+
+@pytest.mark.parametrize("commit", ["0" * 40, "e" * 40])
+def test_fabricated_s3_receipt_cannot_authorize_pipeline(tmp_path, commit):
+    """Reproduce a locally consistent model/hash/receipt without AWS intake."""
+    path, run, manifest = setup_run(tmp_path, service="s3")
+    data = json.loads(manifest.read_text())
+    receipt = data["inputs"]["threat_model_source"]
+    receipt.pop("intake_verification")
+    receipt.update(commit=commit, verified=True, publication_verified=True)
+    receipt["data_url"] = source.artifact_url(commit, receipt["data"]["path"])
+    receipt["report_url"] = source.artifact_url(commit, receipt["report"]["path"])
+    manifest.write_text(json.dumps(data))
+    assert source.check_source(receipt, path)
+    assert any("Verified online intake required" in error for error in check_run(run))
+
+
+def test_nonexistent_upstream_commit_cannot_issue_verified_intake(monkeypatch, tmp_path):
+    release(monkeypatch)
+    original = source.download
+
+    def missing_commit(url):
+        if url.startswith(source.COMMIT_ROOT):
+            raise source.SourceError("404 nonexistent commit")
+        return original(url)
+
+    monkeypatch.setattr(source, "download", missing_commit)
+    with pytest.raises(source.SourceError, match="nonexistent commit"):
+        source.save_latest("future-service", tmp_path)
+    assert not (tmp_path / ".service-approval").exists()
+
+
+def test_upstream_commit_response_must_match_pinned_reference(monkeypatch, tmp_path):
+    payloads, _, _ = release(monkeypatch)
+    payloads[f"{source.COMMIT_ROOT}/{COMMIT}"] = json.dumps({"sha": "e" * 40}).encode()
+    with pytest.raises(source.SourceError, match="does not match"):
+        source.save_latest("future-service", tmp_path)
+
+
+def test_all_zero_upstream_reference_is_rejected(monkeypatch, tmp_path):
+    release(monkeypatch, commit="0" * 40)
+    with pytest.raises(source.SourceError, match="no valid commit"):
+        source.save_latest("future-service", tmp_path)
+
+
+def test_verified_receipt_cannot_be_reused_for_changed_bytes_or_metadata(monkeypatch, tmp_path):
+    release(monkeypatch)
+    inputs = source.save_latest("future-service", tmp_path)
+    path = Path(inputs["threat_model_file"])
+    receipt = inputs["threat_model_source"]
+    path.write_bytes(path.read_bytes() + b"\n")
+    assert any("SHA-256 mismatch" in e for e in source.check_source(receipt, path))
+    # Updating both the local bytes and the locally claimed hash is insufficient.
+    receipt["data"]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    assert any("Verified online intake required" in e for e in source.check_source(receipt, path))
+
+
+def test_intake_seal_cannot_be_copied_to_a_different_snapshot_path(monkeypatch, tmp_path):
+    release(monkeypatch)
+    inputs = source.save_latest("future-service", tmp_path)
+    clone = tmp_path / "copied.json"
+    clone.write_bytes(Path(inputs["threat_model_file"]).read_bytes())
+    assert source.check_source(inputs["threat_model_source"], clone)
+
+
+def test_genuine_offline_resume_checks_seal_and_uses_honest_message(monkeypatch, tmp_path, capsys):
+    import validate_threat_model_input
+    from source_verification import _key_path
+    release(monkeypatch)
+    inputs = source.save_latest("future-service", tmp_path)
+    run = tmp_path / ".service-approval/future-service/00-intake"
+    run.mkdir(parents=True)
+    manifest = run / "intake-manifest.json"
+    manifest.write_text(json.dumps({"service": {"name": "future-service"}, "inputs": inputs}))
+    saved = manifest.read_bytes()
+    monkeypatch.setattr(source, "download", lambda url: pytest.fail("Resume must remain offline"))
+    monkeypatch.setattr("sys.argv", ["validator", "--manifest", str(manifest)])
+    assert validate_threat_model_input.main() == 0
+    output = capsys.readouterr().out
+    assert "snapshot integrity verified" in output
+    assert "published AWS Threat Model prerequisite verified" not in output
+    assert manifest.read_bytes() == saved
+    # Losing the local trust state must not silently authorize an invented receipt.
+    _key_path().unlink()
+    assert validate_threat_model_input.main() == 2
+    assert not _key_path().exists()
+
+
+def test_concurrent_intakes_share_one_complete_key(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from source_verification import has_verified_intake, seal_verified_intake
+    def seal(number):
+        snapshot = tmp_path / f"{number}.json"
+        snapshot.write_text("{}")
+        receipt = {"commit": COMMIT, "number": number}
+        seal_verified_intake(receipt, snapshot)
+        return receipt, snapshot
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        receipts = list(pool.map(seal, range(16)))
+    assert all(has_verified_intake(receipt, snapshot) for receipt, snapshot in receipts)

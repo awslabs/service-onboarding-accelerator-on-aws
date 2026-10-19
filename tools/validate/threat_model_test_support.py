@@ -3,11 +3,11 @@ import hashlib
 from threat_model_source import REPOSITORY, artifact_url
 
 
-def source_receipt(path, namespace="dsql"):
+def source_receipt(path, namespace="dsql", **overrides):
     commit = "a" * 40
     data_path = f"data/services/{namespace}.json"
     report_path = f"reports/services/{namespace}.md"
-    return {
+    source = {
         "repository": REPOSITORY, "ref": "main", "commit": commit,
         "namespace": namespace,
         "data": {"path": data_path, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()},
@@ -16,3 +16,9 @@ def source_receipt(path, namespace="dsql"):
         "report_url": artifact_url(commit, report_path),
         "report_aliases": [],
     }
+    source.update(overrides)
+    # Synthetic fixtures simulate the already-verified intake boundary. Real
+    # publication tests exercise save_latest through a mocked AWS transport.
+    from source_verification import seal_verified_intake
+    seal_verified_intake(source, path)
+    return source

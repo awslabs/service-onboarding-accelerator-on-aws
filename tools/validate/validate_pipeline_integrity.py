@@ -1153,7 +1153,9 @@ def validate_pipeline(root: Path) -> list[str]:
     """Validate pipeline integrity for all services in .service-approval/.
 
     Iterates over all service subdirectories (.service-approval/<slug>/)
-    and runs integrity checks on each one. Skips _staging/ and plans/.
+    and runs integrity checks on each one. Skips reserved directories including
+    _archive/ (explicitly retired runs), _sources/, _staging/, and plans/.
+    A finalized marker on an active run never skips P0 or P14.
     """
     output_dir = root / ".service-approval"
     if not output_dir.exists():
@@ -1188,7 +1190,12 @@ def validate_pipeline(root: Path) -> list[str]:
     # Validate each service
     from validate_threat_model_input import check_run
     for service_root in service_dirs:
-        errors.extend(f"P0 FAIL: {error}" for error in check_run(service_root))
+        errors.extend(
+            f"P0 FAIL: [{service_root.name}] {error} "
+            f"To retire a pre-upgrade run, use tools/archive_run.py --slug {service_root.name}; "
+            "archiving preserves reports but does not approve or migrate them."
+            for error in check_run(service_root)
+        )
 
         # Check MCP log at service root
         errors.extend(check_mcp_log(service_root))

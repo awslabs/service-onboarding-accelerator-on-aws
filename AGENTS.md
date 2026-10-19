@@ -69,6 +69,10 @@ See [`README.md`](README.md) for per-phase artifact counts and the full flag ref
    halts resume; upstream changes do not. Source-link and readable-report defects
    are advisory and must be disclosed by `audit_threat_model.py` (P14). No local export or flag bypasses this requirement.
    Between phases, hooks verify the immutable snapshot and provenance locally.
+   Preserve the fetch helper's authenticated `intake_verification` seal. Offline
+   validation never authorizes an invented receipt or creates a seal. Retire
+   pre-upgrade runs explicitly with `tools/archive_run.py --slug <slug>`; archived
+   reports are historical, while active runs still require P0/P14.
    Downloaded models and derived runtime state remain under ignored
    `.service-approval/`; NEVER commit them. Tests use only synthetic fixtures.
    See `docs/THREAT-MODELS.md` for retrieval and readable citation behavior.
