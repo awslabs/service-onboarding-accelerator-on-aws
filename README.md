@@ -369,9 +369,6 @@ For information about contributing and reporting security issues, see
 
 ## License
 
-This project is licensed under the Amazon Software License 1.0. See
-[`LICENSE`](LICENSE) for the full terms. Use of this software is limited to
-the web services, computing platforms, and applications provided by
-Amazon.com, Inc. or its affiliates, including Amazon Web Services, Inc.
-
-See [`DISCLAIMER`](DISCLAIMER.md) for the terms governing this AWS Content.
+This project is licensed under the Apache License, Version 2.0 (`Apache-2.0`).
+See [`LICENSE`](LICENSE) for the full terms and [`DISCLAIMER`](DISCLAIMER.md)
+for guidance on evaluating and using the project's outputs.

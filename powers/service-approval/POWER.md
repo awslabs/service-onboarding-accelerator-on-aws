@@ -166,4 +166,4 @@ through Claude Code's CLI. See `steering/headless.md` for the full CI recipe.
 
 ---
 
-**License:** Amazon Software License 1.0
+**License:** Apache-2.0
