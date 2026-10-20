@@ -12,7 +12,7 @@
 # Core — required for the validators, config-sync tooling, and the test suite.
 pyyaml==6.0.2
 jsonschema==4.23.0
-pytest==8.3.4
+pytest==9.0.3
 
 # Data-query and templating helpers used by the verification tooling.
 jmespath==1.0.1
