@@ -16,7 +16,7 @@ pytest==8.3.4
 
 # Data-query and templating helpers used by the verification tooling.
 jmespath==1.0.1
-jinja2==3.1.4
+jinja2==3.1.6
 
 # Reads .xlsx control-framework files during the Map phase (e.g. a CCMv4
 # spreadsheet). Only needed if you supply a framework as .xlsx.
