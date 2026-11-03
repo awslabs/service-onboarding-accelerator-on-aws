@@ -22,6 +22,9 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $RepoDir = Split-Path -Parent $PSCommandPath
+$Python = "python3"
+$venvPython = Join-Path $RepoDir ".venv\Scripts\python.exe"
+if (Test-Path $venvPython) { $Python = $venvPython }
 
 function Log  { if (-not $Quiet) { Write-Host $args } }
 function Ok   { Log "  [OK] $args" }
@@ -36,6 +39,7 @@ if ($Update) {
     Log "Pulling latest changes..."
     try {
         git -C $RepoDir pull --ff-only
+        if ($LASTEXITCODE -ne 0) { throw "git pull failed" }
     } catch {
         Warn "git pull failed - fix conflicts and rerun"
         exit 1
@@ -103,15 +107,15 @@ function Sync-Configs {
         return $false
     }
     try {
-        & python3 -c "import yaml" 2>$null
+        & $Python -c "import yaml" 2>$null
         if ($LASTEXITCODE -ne 0) { throw "no yaml" }
     } catch {
         Warn "PyYAML not installed - run: pip3 install pyyaml"
         return $false
     }
-    & python3 (Join-Path $RepoDir "tools\sync-ide-configs.py")
+    & $Python (Join-Path $RepoDir "tools\sync-ide-configs.py") | ForEach-Object { Log $_ }
     if ($LASTEXITCODE -ne 0) { return $false }
-    & python3 (Join-Path $RepoDir "tools\generate-kiro-agents.py")
+    & $Python (Join-Path $RepoDir "tools\generate-kiro-agents.py") | ForEach-Object { Log $_ }
     if ($LASTEXITCODE -ne 0) { return $false }
     return $true
 }
@@ -120,15 +124,13 @@ function Sync-Configs {
 # Sync mode — copy Kiro IDE files, regenerate client manifests, stop.
 # ===========================================================================
 if ($Sync) {
+    Log "Client manifest sync"
+    if (-not (Sync-Configs)) { exit 1 }
+    Ok "manifests + agent mirrors regenerated from manifest.yaml + agents-src\"
+
     Log "Kiro IDE sync"
     Sync-KiroIde
     Ok "workspace .kiro\ synced from powers\service-approval\"
-
-    Log ""
-    Log "Client manifest sync"
-    if (Sync-Configs) {
-        Ok "manifests + agent mirrors regenerated from manifest.yaml + agents-src\"
-    }
 
     Log ""
     Log "Done. Re-run any time after editing manifest.yaml, agents-src\*.yaml, powers\, or steering."
@@ -154,7 +156,8 @@ if (-not $devMode -or $devMode.AllowDevelopmentWithoutDevLicense -ne 1) {
 # ---------------------------------------------------------------------------
 $cmdLink = Join-Path $RepoDir ".claude-plugin\commands"
 $skLink  = Join-Path $RepoDir ".claude-plugin\skills"
-foreach ($link in @($cmdLink, $skLink)) {
+$agentLink = Join-Path $RepoDir ".agents\skills"
+foreach ($link in @($cmdLink, $skLink, $agentLink)) {
     if (Test-Path $link) {
         $item = Get-Item $link -Force
         $isReparse = $item.Attributes -band [IO.FileAttributes]::ReparsePoint
@@ -164,12 +167,28 @@ foreach ($link in @($cmdLink, $skLink)) {
             Write-Host "       Fix:" -ForegroundColor Red
             Write-Host "         1. Enable Developer Mode (above)" -ForegroundColor Red
             Write-Host "         2. git config --global core.symlinks true" -ForegroundColor Red
-            Write-Host "         3. git -c core.symlinks=true checkout HEAD -- .claude-plugin/" -ForegroundColor Red
+            Write-Host "         3. git -c core.symlinks=true checkout HEAD -- .claude-plugin/ .agents/" -ForegroundColor Red
             Write-Host "         4. Re-run .\install.ps1" -ForegroundColor Red
             exit 1
         }
     }
 }
+
+# ---------------------------------------------------------------------------
+# Codex — project MCP + lifecycle hooks, with shared skills.
+# ---------------------------------------------------------------------------
+Log ""
+Log "Codex"
+if (-not (Test-Path "$RepoDir\.agents\skills\service-approval\SKILL.md")) {
+    Warn ".agents\skills is missing or broken - restore the repository symlink"
+    exit 1
+}
+if ($Check) {
+    & $Python (Join-Path $RepoDir "tools\sync-ide-configs.py") --client codex --check | ForEach-Object { Log $_ }
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+Ok "shared skills + project MCP and hooks configured by manifest sync"
+Log "Open the project in Codex and review/trust its hooks before the first run."
 
 # ---------------------------------------------------------------------------
 # Claude Code — auto-discovers.
@@ -241,9 +260,8 @@ if ((Test-Path $kiroApp) -or (Test-Path "$env:USERPROFILE\.kiro")) {
 if (-not $Check) {
     Log ""
     Log "Running sync to regenerate client manifests + agent mirrors..."
-    if (Sync-Configs) {
-        Ok "manifests + agent mirrors in sync with sources"
-    }
+    if (-not (Sync-Configs)) { exit 1 }
+    Ok "manifests + agent mirrors in sync with sources"
 }
 
 Log ""

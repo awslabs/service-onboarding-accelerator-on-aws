@@ -2,10 +2,11 @@
 
 Short version: `git clone && cd && install the Python packages && ./install.sh`.
 That's it for most clients.
+All four clients use the same shared skills and manifest-driven configuration.
 
 ## Prerequisites
 
-- A client: Claude Code, Kiro IDE, or VS Code + GitHub Copilot
+- A client: Claude Code, Codex, Kiro IDE, or VS Code + GitHub Copilot
 - [`git`](https://git-scm.com/downloads)
 - [Python](https://www.python.org/downloads/) 3.9+ (`python3 --version`)
 - The Python packages in [`requirements.txt`](../requirements.txt) (installed below)
@@ -33,10 +34,20 @@ py -m venv .venv ; .\.venv\Scripts\pip install -r requirements.txt
 .\install.ps1
 ```
 
-The installer detects which CLIs you have installed and wires each one up. Re-run
-anytime. Idempotent.
+The installer configures Claude Code, Codex, Kiro, and Copilot. Re-run anytime.
+Codex's MCP configuration and validation hooks are generated under `.codex/`.
 
 ## Per-client install detail
+
+### Codex
+
+Codex discovers `.agents/skills/`, a symlink to this repository's `skills/`,
+and reads `AGENTS.md`. The same install/sync commands generate `.codex/config.toml`
+and `.codex/hooks.json`. Open the project, trust it, and review the hooks in
+Codex before the first run. Hooks validate native patches, shell-written artifacts,
+and completed runs with the shared validators.
+Follow [USAGE-CODEX.md](USAGE-CODEX.md) for an external runtime workspace,
+a custom-framework example, and troubleshooting.
 
 ### Claude Code — scripted install (recommended)
 
@@ -122,6 +133,9 @@ Run the check mode:
 
 Prints what would be installed without making changes. Use to confirm detection
 worked before a real install.
+This also checks Codex configuration for drift without writing files. MCP
+connectivity and native hook trust are checked in the running client; see
+[USAGE-CODEX.md](USAGE-CODEX.md#verify-setup).
 
 ## Updating
 
@@ -130,6 +144,7 @@ git pull
 ```
 
 Auto-discovered clients (Claude Code, Copilot) read the latest files every session.
+Codex follows the shared skill symlinks; restart it if updated skills do not appear.
 Kiro reads from the Power path — re-add the Power if you move the repo.
 
 If an IDE caches configs, restart the client after a pull that changes MCP servers
@@ -143,6 +158,9 @@ Delete the repo. Optionally remove the Power from Kiro first:
 2. Remove **service-approval**
 
 Neither is strictly required — with the repo gone, the clients stop discovering it.
+For Codex, remove the generated Service Approval MCP block and hook handlers
+from external workspaces, along with their skill/instruction symlinks. Keep any
+unrelated configuration and customer inputs/review outputs as needed.
 
 ## Kiro-specific testing and troubleshooting
 

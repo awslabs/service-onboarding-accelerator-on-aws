@@ -140,6 +140,10 @@ mcp_servers:
 # Clients — which files each client's sync generates.
 # ---------------------------------------------------------------------------
 clients:
+  codex:
+    mcp_config: .codex/config.toml
+    hooks_config: .codex/hooks.json
+    skills_discovery: symlink
   claude-code:
     manifest: .claude-plugin/plugin.json
     # Symlink — Claude Code reads metadata only; skills are auto-discovered
@@ -166,7 +170,7 @@ clients:
 
 # ---------------------------------------------------------------------------
 # Pipeline-integrity checks — enforced at Stop hook time across every client
-# that supports hooks (Claude Code, Kiro, Copilot).
+# that supports hooks (Claude Code, Codex, Kiro, Copilot).
 # ---------------------------------------------------------------------------
 integrity_checks:
   - id: P1

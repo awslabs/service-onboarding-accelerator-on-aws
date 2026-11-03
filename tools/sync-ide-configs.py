@@ -31,6 +31,7 @@ except ImportError:
 # anyway; calling the canonical version eliminates the drift hazard.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from paths import repo_root  # type: ignore  # noqa: E402
+from codex_config import configure as configure_codex, render_mcp as render_mcp_codex
 
 REPO = repo_root()
 MANIFEST_PATH = REPO / "manifest.yaml"
@@ -261,6 +262,7 @@ def sync_copilot(m: dict, check: bool) -> bool:
 
 
 SYNCERS = {
+    "codex": lambda m, check: configure_codex(REPO, m["mcp_servers"], check=check),
     "claude-code": sync_claude_code,
     "kiro": sync_kiro,
     "copilot": sync_copilot,
@@ -294,13 +296,20 @@ def main() -> int:
         }
         # Explicit opt-in only affects printed output, never the default configs.
         selected = {server: {**config, "optional": False}}
-        print(json.dumps(renderers[args.client](selected), indent=2))
+        if args.client == "codex":
+            print(render_mcp_codex(selected))
+        else:
+            print(json.dumps(renderers[args.client](selected), indent=2))
         return 0
 
     clients = [args.client] if args.client else list(SYNCERS.keys())
     any_drift = False
     for client in clients:
-        any_drift |= SYNCERS[client](manifest, args.check)
+        try:
+            any_drift |= SYNCERS[client](manifest, args.check)
+        except (ValueError, OSError) as exc:
+            print(f"{client} configuration failed: {exc}", file=sys.stderr)
+            return 2
 
     if args.check and any_drift:
         print("\nDrift detected. Run `python3 tools/sync-ide-configs.py` to fix.",

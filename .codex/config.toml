@@ -1,0 +1,12 @@
+# BEGIN service-approval MCP (generated from manifest.yaml)
+[mcp_servers."aws-documentation"]
+command = "uvx"
+args = ["awslabs.aws-documentation-mcp-server@1.1.28"]
+
+[mcp_servers."aws-documentation".env]
+"FASTMCP_LOG_LEVEL" = "ERROR"
+"AWS_DOCUMENTATION_PARTITION" = "aws"
+
+[mcp_servers."awsknowledge"]
+url = "https://knowledge-mcp.global.api.aws"
+# END service-approval MCP

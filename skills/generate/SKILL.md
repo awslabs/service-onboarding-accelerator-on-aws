@@ -93,7 +93,13 @@ Run the comprehensive validation below.
 
 ## Final Validation
 
-Final validation runs automatically via PostToolUse hooks (validate_controls.py per-file checks) and Stop hook (validate_cross.py cross-artifact checks X1-X11).
+On clients with configured repository hooks, PostToolUse runs
+`validate_controls.py` per-file checks and Stop runs cross-artifact and pipeline
+integrity checks. Codex's project hooks adapt its native patch/shell events to
+the same validators. Follow the
+[orchestrator](../service-approval/SKILL.md#codex-execution-and-validation)
+for hook setup and the required phase/review gates.
+If hooks are inactive, run the validators explicitly and disclose that limitation.
 
 ---
 

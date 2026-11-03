@@ -244,12 +244,24 @@ or require it during preflight. Without user opt-in, use the bundled ATT&CK
 snapshot. See [MCP configuration](../../docs/MCP.md).
 
 **Step 1 — Detect environment** (reuse the same logic as Environment Detection below):
+- Host identifies itself as Codex → Codex (check this before tool-name heuristics)
 - `Agent` tool in tool list → Claude Code
 - `KIRO_AGENT` env var set → Kiro
 - `GITHUB_COPILOT` env var set → GitHub Copilot (VS Code)
 - Otherwise → Generic (Aider, Continue, other)
 
 **Step 2 — Check and install missing MCPs:**
+
+**Codex:**
+
+Inspect the active session's tools for the two required servers. Client/plugin
+prefixes may differ; match the documented AWS search/read capabilities.
+Use existing connections without adding duplicates. For missing servers, follow
+[Codex MCP configuration](../../docs/MCP.md#codex): the common installer/sync
+generates the project TOML and hooks from the manifest. Preserve unrelated
+settings and the user's native trust decisions. Reconnect as needed and verify
+a search/read before relying on the connection. Log every actual MCP call using
+the canonical audit format above.
 
 **Claude Code:**
 ```bash
@@ -392,10 +404,14 @@ Detect execution environment to choose parallelism strategy:
 env | grep -E 'KIRO_AGENT|GITHUB_COPILOT' 2>/dev/null
 ```
 
-Additionally: check whether the `Agent` tool appears in your available tool list.
+First use the host's explicit identity when available. A Codex host remains
+Codex even if a tool is named `Agent`.
+Otherwise, check whether the `Agent` tool appears in your available tool list.
 If it does, treat this as Claude Code regardless of env var results.
 
 Decision logic:
+- Codex with native subagent tools → **Parallel Mode**, using the Codex adaptation below
+- Codex without native subagent tools → **Sequential Mode**
 - `Agent` tool available in tool list → **Claude Code — use Parallel Mode** (see below)
 - `KIRO_AGENT` env var set → **Kiro — Sequential Mode**
 - `GITHUB_COPILOT` env var set → **GitHub Copilot — Sequential Mode**
@@ -403,7 +419,53 @@ Decision logic:
 
 ---
 
-## Sequential Mode (default for all non-Claude-Code clients)
+## Codex execution and validation
+
+Read [Codex usage](../../docs/USAGE-CODEX.md) for setup and an external runtime
+workspace. Resolve repository files from this skill's installed location; keep
+pipeline commands in the user's run workspace and use absolute script paths.
+For `python -m tools...` commands, set `PYTHONPATH` to the repository and use its
+Python environment.
+
+Use the native subagent launch/wait/message tools available in Codex in place of
+the `Agent(...)` examples below. Inherit the caller's model, respect available
+concurrency, and launch independent tasks in waves when necessary. Wait for every
+required result before merging or moving downstream. Give a clean review agent
+only the review instructions and relevant artifact paths, with no authoring
+conversation history. When using Sequential Mode, retain the mapping and
+generation review gates described in Parallel Mode, including the conflict
+review; mark any review that cannot be performed as incomplete.
+
+The common installer registers project-local Codex hooks. The user must trust
+the project and review the exact hook definitions in Codex before they run;
+never mark hooks trusted or bypass that review on the user's behalf. Hooks
+adapt patches and shell edits and invoke the shared Stop validation.
+You MUST still follow the same phase/review requirements as the other clients:
+
+1. Run the published-model prerequisite before assessment/research and on resume,
+   as specified by the phase skills.
+2. Inspect validation feedback after writes and repair failures before consuming
+   the file downstream. If hooks are unavailable or untrusted, explicitly run
+   `tools/validate/validate_state.py <file>` for state and
+   `tools/validate/validate_controls.py <file>` for controls, and disclose that
+   hook integration was inactive.
+3. Run `tools/validate/check_phase_complete.py --slug <slug> --phase <NN-name>`
+   at each phase boundary. Existence alone is not enough.
+4. Execute every phase's semantic checks and review gates. After Summarize,
+   check all seven phase outputs, run `validate_pipeline_integrity.py`,
+   `validate_cross.py <controls-dir>`, and `hook_stop.py` from the run workspace.
+   The direct validators must pass; a silent no-op or snoozed Stop hook is not
+   evidence of success.
+5. Record real check results and any skipped checks in the run diagnostics.
+   Report completion only after the required gates pass.
+
+Keep customer inputs, retrieved models, derived state, and review ZIPs outside
+the source checkout. `tools/setup-codex.py --workspace <external-directory>`
+installs the same project configuration and shared skill links there.
+
+---
+
+## Sequential Mode (clients without native parallel execution)
 
 Run each phase in order. Pass all relevant flags through.
 
@@ -540,9 +602,10 @@ Report the summary of findings to the user (this report issues no verdict).
 
 ---
 
-## Parallel Mode (Claude Code only — Agent tool available)
+## Parallel Mode (Claude Code or Codex with native subagent tools)
 
-Leverage the Agent tool to parallelize independent sub-skills within each phase.
+Use native subagent tools to parallelize independent sub-skills within each phase.
+The `Agent` examples use Claude Code notation; Codex follows the adaptation above.
 
 ### Intake (Precursor — Mandatory)
 Always dispatch Intake — the intake skill itself decides whether to prompt or

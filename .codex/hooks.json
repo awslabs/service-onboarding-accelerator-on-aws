@@ -1,0 +1,45 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/tools/validate/hook_codex.py\"",
+            "commandWindows": "& { $saRoot = git rev-parse --show-toplevel; $saPython = Join-Path $saRoot '.venv/Scripts/python.exe'; if (-not (Test-Path $saPython)) { $saPython = 'python' }; & $saPython (Join-Path $saRoot 'tools/validate/hook_codex.py'); exit $LASTEXITCODE }",
+            "timeout": 30,
+            "statusMessage": "Service Approval: PreToolUse validation"
+          }
+        ],
+        "matcher": "Bash|apply_patch|Write|Edit|fs_write"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/tools/validate/hook_codex.py\"",
+            "commandWindows": "& { $saRoot = git rev-parse --show-toplevel; $saPython = Join-Path $saRoot '.venv/Scripts/python.exe'; if (-not (Test-Path $saPython)) { $saPython = 'python' }; & $saPython (Join-Path $saRoot 'tools/validate/hook_codex.py'); exit $LASTEXITCODE }",
+            "timeout": 180,
+            "statusMessage": "Service Approval: PostToolUse validation"
+          }
+        ],
+        "matcher": "Bash|apply_patch|Write|Edit|fs_write"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/tools/validate/hook_codex.py\"",
+            "commandWindows": "& { $saRoot = git rev-parse --show-toplevel; $saPython = Join-Path $saRoot '.venv/Scripts/python.exe'; if (-not (Test-Path $saPython)) { $saPython = 'python' }; & $saPython (Join-Path $saRoot 'tools/validate/hook_codex.py'); exit $LASTEXITCODE }",
+            "timeout": 180,
+            "statusMessage": "Service Approval: Stop validation"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -456,7 +456,8 @@ duplicate them at the root level.
 
 **CRITICAL — Terminology sanitization:**
 Before writing validated.json, sanitize ALL string values (including metadata fields) to replace
-MCP tool identifiers with user-facing names per CLAUDE.md terminology rules:
+MCP tool identifiers with user-facing names per the
+[shared report-writing rules](../../rules/report-writing.md):
 - `mcp__awsknowledge__aws___*` → "AWS Documentation"
 - `mcp__aws-documentation__*` → "AWS Documentation"
 - `gateway_aws-documentation-mcp___*` → "AWS Documentation"

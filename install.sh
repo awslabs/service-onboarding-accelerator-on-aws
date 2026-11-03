@@ -22,6 +22,10 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 MODE="install"
 QUIET=0
+PYTHON="python3"
+if [ -x "$REPO_DIR/.venv/bin/python" ]; then
+  PYTHON="$REPO_DIR/.venv/bin/python"
+fi
 
 for arg in "$@"; do
   case "$arg" in
@@ -37,10 +41,13 @@ for arg in "$@"; do
   esac
 done
 
-log() { [ "$QUIET" -eq 0 ] && echo "$@"; }
+log() { if [ "$QUIET" -eq 0 ]; then echo "$@"; fi; }
 ok()  { log "  ✓ $*"; }
 skip(){ log "  · $*"; }
 warn(){ echo "  ! $*" >&2; }
+run_python() {
+  if [ "$QUIET" -eq 1 ]; then "$PYTHON" "$@" >/dev/null; else "$PYTHON" "$@"; fi
+}
 
 # ---------------------------------------------------------------------------
 # --update: git pull first, then fall through to --sync
@@ -110,31 +117,47 @@ sync_configs() {
     skip "manifest.yaml missing — skipping config sync"
     return 0
   fi
-  if ! python3 -c "import yaml" >/dev/null 2>&1; then
+  if ! "$PYTHON" -c "import yaml" >/dev/null 2>&1; then
     warn "PyYAML not installed — run: pip3 install pyyaml"
     return 1
   fi
-  python3 "$REPO_DIR/tools/sync-ide-configs.py" || return $?
-  python3 "$REPO_DIR/tools/generate-kiro-agents.py" || return $?
+  run_python "$REPO_DIR/tools/sync-ide-configs.py" || return $?
+  run_python "$REPO_DIR/tools/generate-kiro-agents.py" || return $?
 }
 
 # ===========================================================================
 # Sync mode — copy Kiro IDE files, regenerate client manifests, stop.
 # ===========================================================================
 if [ "$MODE" = "sync" ]; then
+  log "Client manifest sync"
+  sync_configs || exit $?
+  ok "manifests + agent mirrors regenerated from manifest.yaml + agents-src/"
+
   log "Kiro IDE sync"
   sync_kiro_ide
   ok "workspace .kiro/ synced from powers/service-approval/"
-
-  log ""
-  log "Client manifest sync"
-  sync_configs && ok "manifests + agent mirrors regenerated from manifest.yaml + agents-src/"
 
   log ""
   log "Done. Re-run any time after editing manifest.yaml, agents-src/*.yaml, powers/, or steering."
   log "Enable auto-sync on git pull: git config core.hooksPath .githooks"
   exit 0
 fi
+
+# ---------------------------------------------------------------------------
+# Codex — project MCP + lifecycle hooks, with the shared skill symlink.
+# Native hook trust remains a user decision in Codex.
+# ---------------------------------------------------------------------------
+log ""
+log "Codex"
+if [ ! -f "$REPO_DIR/.agents/skills/service-approval/SKILL.md" ]; then
+  warn ".agents/skills is missing or broken — restore the repository symlink"
+  exit 1
+fi
+if [ "$MODE" = "check" ]; then
+  run_python "$REPO_DIR/tools/sync-ide-configs.py" --client codex --check || exit $?
+fi
+ok "shared skills + project MCP and hooks configured by manifest sync"
+log "  Open the project in Codex and review/trust its hooks before the first run."
 
 # ===========================================================================
 # Install / check mode — detect clients, wire them up.
@@ -186,7 +209,8 @@ fi
 if [ "$MODE" = "install" ]; then
   log ""
   log "Running sync to regenerate client manifests + agent mirrors..."
-  sync_configs >/dev/null 2>&1 && ok "manifests + agent mirrors in sync with sources"
+  sync_configs || exit $?
+  ok "manifests + agent mirrors in sync with sources"
 fi
 
 log ""

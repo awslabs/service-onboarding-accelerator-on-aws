@@ -53,7 +53,7 @@ table or any Fully/Partial/Supportive grade, and shows **no percentages anywhere
   capabilities were verified", "47 controls were generated".
 - NO verdict label ("APPROVED", "REQUIRES REMEDIATION", readiness rating).
 - NO per-item confidence score or band (validator P11 enforces this).
-- Apply all terminology rules from CLAUDE.md.
+- Apply the [shared report-writing rules](../../rules/report-writing.md).
 
 ## Report structure
 

@@ -12,6 +12,10 @@
 !.vscode/**
 !.agents
 !.agents/**
+!.codex
+.codex/*
+!.codex/config.toml
+!.codex/hooks.json
 !.gitlab-ci.yml
 !.githooks
 !.githooks/**

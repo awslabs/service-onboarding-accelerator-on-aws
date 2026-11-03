@@ -263,7 +263,8 @@ The Service Authorization Reference page is the definitive source for IAM action
 
 For EACH of the 5 CAF Security Perspective domains, use subagents for parallel research.
 
-Each domain has mandatory reads, mandatory searches, and KB queries defined in CLAUDE.md.
+Each domain has mandatory reads and search topics defined in
+[the shared domain research checklist](references/domain-research.md).
 Substitute `{service}` with the actual service name, `{service_slug}` with the GR page slug,
 and `{cfn_prefix}` with the CloudFormation prefix from SAR facts.
 
@@ -277,7 +278,7 @@ Spawn 5 agents in parallel:
 ```
 
 Each research agent MUST:
-1. Execute ALL mandatory reads for its domain (from CLAUDE.md)
+1. Execute ALL mandatory reads for its domain from the shared domain research checklist
 2. Execute ALL mandatory searches (substituting `{service}`)
 3. Verify domain-specific findings against public AWS documentation using `awsknowledge` or `aws-documentation` (use the documented web fallback in No-MCP mode)
 4. Include the SAR facts for IAM/LOGGING/DATA domains
@@ -328,7 +329,7 @@ These rules ensure research completeness and prevent wasted tool calls:
    exploratory research at 40 calls and reserve remaining budget for mandatory items.
 
 3. **Mandatory coverage enforcement**: Before concluding research for ANY domain, verify
-   that ALL mandatory reads and ALL mandatory searches from CLAUDE.md for that domain have
+   that ALL mandatory reads and search topics from the shared domain research checklist have
    been completed. If any mandatory item is missing, execute it before moving to synthesis.
    A domain with incomplete mandatory coverage is a research failure — do not proceed to
    synthesis until all mandatory items are attempted.
@@ -339,7 +340,8 @@ Before finalizing any output (assessment-summary.md or assessment-questionnaire.
 these checks. Fix any issues found before writing the file.
 
 1. **Terminology leak scan**: Check every line against the terminology replacement table
-   in CLAUDE.md. If any leaked term is found (e.g., `gateway_aws-documentation-mcp___`,
+   in [the shared report-writing rules](../../rules/report-writing.md). If any leaked
+   term is found (e.g., `gateway_aws-documentation-mcp___`,
    `mcp__aws-documentation__`, `pre-researched findings`, `TOOL FAILURE GUARD`), replace
    it with the corresponding user-facing term. This is a hard gate — do not write output
    containing any leaked term.
@@ -355,7 +357,7 @@ these checks. Fix any issues found before writing the file.
 
 4. **Answer direction normalization** (questionnaire mode): Every `[A#]` answer MUST start
    with exactly one of: `Yes` / `No` / `Not found` / `Yes, partially` / `This is`. Apply
-   the direction normalization table from CLAUDE.md. Common fixes:
+   the shared report-writing rules for direction normalization. Common fixes:
    - "No, partially" or "No with a nuance" -> "No."
    - "Partially" or "Partial." -> "Yes, partially."
    - Stuttered directions ("partially, partially" or "partially. partially") -> single "Yes, partially."
@@ -450,12 +452,12 @@ Status values (EXACTLY these strings):
 Apply SAR facts as a minimum floor for IAM/LOGGING/DATA domains.
 Apply checkpoint results — override any synthesis that contradicts a checkpoint.
 
-Follow ALL precision rules and synthesis rules from CLAUDE.md for each domain.
-Follow ALL terminology rules — never leak internal tool names.
+Follow ALL precision and synthesis rules below for each domain, together with
+the shared domain research checklist and report-writing rules.
 
 ### Domain-Specific Synthesis Addendums
 
-These rules supplement the CLAUDE.md domain synthesis rules with additional precision
+These rules supplement the shared domain research checklist with precision
 requirements derived from common accuracy failures:
 
 **IAM domain synthesis**:
@@ -654,8 +656,8 @@ After all steps complete, verify:
 - [ ] `.service-approval/<slug>/01-assess/checkpoint-results.json` exists and is valid JSON
 - [ ] `.service-approval/<slug>/01-assess/assessment-summary.md` exists with all 5 domain sections
 - [ ] GAPS counts match actual table rows
-- [ ] No leaked terminology (check CLAUDE.md terminology rules)
-- [ ] No meta-commentary (check CLAUDE.md meta-commentary rules)
+- [ ] No leaked terminology (check the shared report-writing rules)
+- [ ] No meta-commentary (check the shared report-writing rules)
 - [ ] If `--questions` provided: `.service-approval/<slug>/01-assess/assessment-questionnaire.md` exists
 
 ## Print Summary
